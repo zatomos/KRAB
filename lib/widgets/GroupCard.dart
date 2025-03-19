@@ -79,6 +79,7 @@ class _GroupCardState extends State<GroupCard> {
             icon: Icon(
               isFavorite ? Icons.star_rounded : Icons.star_border_rounded,
               color: isFavorite ? Colors.amber : Colors.grey,
+              size: 30,
             ),
           ),
         ),

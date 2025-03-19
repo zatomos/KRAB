@@ -41,4 +41,9 @@ class Group {
   String toJsonString() {
     return json.encode(toJson());
   }
+
+  @override
+  String toString() {
+    return 'Group{id: $id, name: $name, code: $code, memberCount: $memberCount}';
+  }
 }

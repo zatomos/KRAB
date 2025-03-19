@@ -52,7 +52,6 @@ class UserPreferences {
 
   static Future<bool> isGroupFavorite(String group) async {
     final favoriteGroups = _preferences?.getStringList('favoriteGroups') ?? [];
-    debugPrint("Checking if $group is in $favoriteGroups");
     return favoriteGroups.contains(group);
   }
 

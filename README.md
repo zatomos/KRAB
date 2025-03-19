@@ -6,8 +6,8 @@
 An Android app to share photos with friends, visible on your home screen.
 
 <div style="display: flex; justify-content: center; gap: 10px;">
-  <img src="github/camera_page_preview.png" alt="Camera preview" width="200">
-  <img src="github/home_screen_preview.png" alt="Home screen preview" width="200">
+  <img src="github/camera_page_preview.png" alt="Camera preview" height="400">
+  <img src="github/home_screen_preview.png" alt="Home screen preview" height="400">
 </div>
 </div>
 

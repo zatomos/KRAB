@@ -181,14 +181,23 @@ void main() async {
 
     // Handle foreground messages
     FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
-      debugPrint("${message.notification?.title}");
-      await updateHomeWidget();
+      try {
+        debugPrint("${message.notification?.title}");
+        await updateHomeWidget();
 
-      if (message.notification != null) {
+        if (message.notification != null) {
+          showSnackBar(
+            scaffoldMessengerKey.currentContext!,
+            message.notification!.title!,
+            color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
+          );
+        }
+      } catch (e) {
+        debugPrint('Error handling foreground message: $e');
         showSnackBar(
           scaffoldMessengerKey.currentContext!,
-          message.notification!.title!,
-          color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
+          'Error updating widget',
+          color: Colors.red,
         );
       }
     });

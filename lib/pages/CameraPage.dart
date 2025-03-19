@@ -80,7 +80,7 @@ class CameraPageState extends State<CameraPage> {
       if (_cameras != null && _cameras!.isNotEmpty) {
         _controller = CameraController(
           _cameras![_selectedCameraIndex],
-          ResolutionPreset.high,
+          ResolutionPreset.max,
         );
         _initializeControllerFuture = _controller!.initialize();
         await _initializeControllerFuture;
@@ -169,6 +169,9 @@ class CameraPageState extends State<CameraPage> {
     // Pre-select favorite groups
     selectedGroups.addAll(favoriteGroups);
 
+    // Preload groups once.
+    final groupsFuture = getUserGroups();
+
     await showDialog(
       context: context,
       builder: (context) {
@@ -201,17 +204,18 @@ class CameraPageState extends State<CameraPage> {
                         ),
                       ),
                       const SizedBox(height: 10),
-                      // Load groups asynchronously using FutureBuilder.
+                      // Load groups asynchronously using FutureBuilder and the preloaded future.
                       FutureBuilder(
-                        future: getUserGroups(),
+                        future: groupsFuture,
                         builder: (context, snapshot) {
                           if (snapshot.connectionState == ConnectionState.waiting) {
-                            // Show a loading indicator while waiting.
-                            return const Padding(padding: EdgeInsets.all(30), child: CircularProgressIndicator());
+                            return const Padding(
+                              padding: EdgeInsets.all(30),
+                              child: CircularProgressIndicator(),
+                            );
                           } else if (snapshot.hasError ||
                               !snapshot.hasData ||
                               !(snapshot.data?.success ?? false)) {
-                            // If there's an error or no groups available, display an error message.
                             final errorMsg = snapshot.hasError
                                 ? snapshot.error.toString()
                                 : (snapshot.data?.error ?? "Failed to load groups");
@@ -306,10 +310,24 @@ class CameraPageState extends State<CameraPage> {
   }
 
 
+
   @override
   Widget build(BuildContext context) {
-    final previewHeight = MediaQuery.of(context).size.height * 0.7;
-    final previewWidth = previewHeight / (_controller?.value.aspectRatio ?? 1);
+    final maxPreviewHeight = MediaQuery.of(context).size.height * 0.7;
+    final maxPreviewWidth = MediaQuery.of(context).size.width * 0.9;
+    final aspectRatio = _controller?.value.aspectRatio ?? 16 / 9;
+    final portraitAspectRatio = 1 / aspectRatio;
+
+    double previewWidth;
+    double previewHeight;
+
+    if (maxPreviewHeight * portraitAspectRatio <= maxPreviewWidth) {
+      previewHeight = maxPreviewHeight;
+      previewWidth = maxPreviewHeight * portraitAspectRatio;
+    } else {
+      previewWidth = maxPreviewWidth;
+      previewHeight = maxPreviewWidth / portraitAspectRatio;
+    }
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -363,7 +381,7 @@ class CameraPageState extends State<CameraPage> {
                       color: Colors.white12,
                     ),
                     child: IconButton(
-                      icon: const Icon(Icons.photo_rounded,
+                      icon: const Icon(Icons.photo_library_rounded,
                           color: Colors.white, size: 30),
                       onPressed: () {
                         _sendPictureFromStorage();
