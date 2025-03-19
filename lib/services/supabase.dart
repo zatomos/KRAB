@@ -1,0 +1,387 @@
+import 'dart:io';
+import 'dart:typed_data';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+
+import 'package:krab/models/Group.dart';
+
+final supabase = Supabase.instance.client;
+
+/// Response Wrapper
+class SupabaseResponse<T> {
+  final bool success;
+  final T? data;
+  final String? error;
+
+  SupabaseResponse({required this.success, this.data, this.error});
+}
+
+/// ------------------ GROUP FUNCTIONS ------------------
+
+/// Get all groups for the current user.
+Future<SupabaseResponse<List<Group>>> getUserGroups() async {
+  try {
+    final response = await supabase.rpc("get_user_groups");
+    if (response['success'] == true) {
+      final groups = response['groups'] as List;
+      final List<Group> groupsList =
+          groups.map((group) => Group.fromJson(group)).toList();
+      return SupabaseResponse(success: true, data: groupsList);
+    } else {
+      return SupabaseResponse(
+          success: false,
+          error:
+              "Error loading groups: ${response['error'] ?? 'Unknown error'}");
+    }
+  } catch (error) {
+    return SupabaseResponse(
+        success: false, error: "Error loading groups: $error");
+  }
+}
+
+/// Get members for a given group.
+Future<SupabaseResponse<List<dynamic>>> getGroupMembers(String groupId) async {
+  try {
+    final response =
+        await supabase.rpc("get_group_members", params: {"group_id": groupId});
+    if (response['success'] == false) {
+      return SupabaseResponse(
+          success: false,
+          error: "Error loading group members: ${response['error']}");
+    }
+    return SupabaseResponse(success: true, data: response['members'] as List);
+  } catch (error) {
+    return SupabaseResponse(
+        success: false, error: "Error loading group members: $error");
+  }
+}
+
+/// Check if the current user is admin in a group.
+Future<SupabaseResponse<bool>> isAdmin(String groupId) async {
+  try {
+    final response =
+        await supabase.rpc("is_admin", params: {"group_id": groupId});
+    return SupabaseResponse(success: true, data: response as bool);
+  } catch (error) {
+    return SupabaseResponse(
+        success: false, error: "Error checking admin status: $error");
+  }
+}
+
+/// Create a new group.
+Future<SupabaseResponse<void>> createGroup(String name) async {
+  try {
+    final response =
+        await supabase.rpc("create_group", params: {"group_name": name});
+    if (response['success'] == false) {
+      if (response['error'].toString().contains("new row")) {
+        return SupabaseResponse(success: false, error: "Name too short.");
+      }
+      return SupabaseResponse(success: false, error: response['error']);
+    }
+    return SupabaseResponse(success: true);
+  } catch (error) {
+    return SupabaseResponse(
+        success: false, error: "Error creating group: $error");
+  }
+}
+
+/// Update the name of an existing group.
+Future<SupabaseResponse<void>> updateGroupName(
+    String groupId, String name) async {
+  try {
+    final response = await supabase.rpc("update_group_name",
+        params: {"group_id": groupId, "new_name": name});
+    if (response['success'] == false) {
+      return SupabaseResponse(success: false, error: response['error']);
+    }
+    return SupabaseResponse(success: true);
+  } catch (error) {
+    return SupabaseResponse(
+        success: false, error: "Error updating group name: $error");
+  }
+}
+
+/// Delete a group.
+Future<SupabaseResponse<void>> deleteGroup(String groupId) async {
+  try {
+    final response =
+        await supabase.rpc("remove_group", params: {"group_id": groupId});
+    if (response['success'] == false) {
+      return SupabaseResponse(success: false, error: response['error']);
+    }
+    return SupabaseResponse(success: true);
+  } catch (error) {
+    return SupabaseResponse(
+        success: false, error: "Error deleting group: $error");
+  }
+}
+
+/// Join a group using a code.
+Future<SupabaseResponse<void>> joinGroup(String code) async {
+  try {
+    // Normalize code to lowercase
+    code = code.toLowerCase();
+    final response =
+        await supabase.rpc("join_group_by_code", params: {"group_code": code});
+    if (response['success'] == false) {
+      return SupabaseResponse(success: false, error: response['error']);
+    }
+    return SupabaseResponse(success: true);
+  } catch (error) {
+    return SupabaseResponse(
+        success: false, error: "Error joining group: $error");
+  }
+}
+
+/// Leave a group.
+Future<SupabaseResponse<void>> leaveGroup(String groupId) async {
+  try {
+    final response =
+        await supabase.rpc("leave_group", params: {"group_id": groupId});
+    if (response['success'] == false) {
+      return SupabaseResponse(success: false, error: response['error']);
+    }
+    return SupabaseResponse(success: true);
+  } catch (error) {
+    return SupabaseResponse(
+        success: false, error: "Error leaving group: $error");
+  }
+}
+
+/// ------------------ IMAGE FUNCTIONS ------------------
+
+/// Send an image to selected groups with an optional description.
+/// Note: This function first registers the image via an RPC call and then uploads the file.
+Future<SupabaseResponse<void>> sendImageToGroups(
+    File imageFile, List<String> selectedGroups, String description) async {
+  try {
+    final regResponse = await supabase.rpc("upload_image_to_groups", params: {
+      "group_ids": selectedGroups,
+      "image_description": description,
+    });
+    if (regResponse['success'] == false) {
+      return SupabaseResponse(
+          success: false,
+          error: "Error registering image: ${regResponse['error']}");
+    }
+    final imageId = regResponse['image_id'];
+
+    final uploadResponse =
+        await supabase.storage.from("images").upload(imageId, imageFile);
+    return SupabaseResponse(success: true);
+  } catch (error) {
+    return SupabaseResponse(
+        success: false, error: "Error sending image: $error");
+  }
+}
+
+/// Get images for a given group.
+Future<SupabaseResponse<List<dynamic>>> getGroupImages(String groupId) async {
+  try {
+    final response =
+        await supabase.rpc("get_group_images", params: {"p_group_id": groupId});
+    if (response['success'] == false) {
+      return SupabaseResponse(
+          success: false,
+          error: "Error loading group images: ${response['error']}");
+    }
+    return SupabaseResponse(success: true, data: response['images'] as List);
+  } catch (error) {
+    return SupabaseResponse(
+        success: false, error: "Error loading group images: $error");
+  }
+}
+
+/// Get all images.
+Future<SupabaseResponse<List<dynamic>>> getAllImages() async {
+  try {
+    final response = await supabase.rpc("get_all_images");
+    if (response['success'] == false) {
+      return SupabaseResponse(
+          success: false, error: "Error loading images: ${response['error']}");
+    }
+    return SupabaseResponse(success: true, data: response['images'] as List);
+  } catch (error) {
+    return SupabaseResponse(
+        success: false, error: "Error loading images: $error");
+  }
+}
+
+/// Get the ID of the latest image the user has access to.
+Future<SupabaseResponse<String>> getLatestImage() async {
+  try {
+    final response = await supabase.rpc("get_latest_image");
+    if (response['success'] == false) {
+      return SupabaseResponse(
+          success: false,
+          error: "Error loading latest image: ${response['error']}");
+    }
+    final latestImageId = response['latest_image']['id'] as String;
+    return SupabaseResponse(success: true, data: latestImageId);
+  } catch (error) {
+    return SupabaseResponse(
+        success: false, error: "Error loading latest image: $error");
+  }
+}
+
+/// Download an image from storage.
+Future<SupabaseResponse<Uint8List>> getImage(String imageId) async {
+  try {
+    final Uint8List response =
+        await supabase.storage.from("images").download(imageId);
+    if (response.isEmpty) {
+      return SupabaseResponse(
+          success: false, error: "Downloaded image is empty");
+    }
+    return SupabaseResponse(success: true, data: response);
+  } catch (error) {
+    return SupabaseResponse(
+        success: false, error: "Error downloading image: $error");
+  }
+}
+
+/// Get detailed information about an image.
+Future<SupabaseResponse<Map<String, dynamic>>> getImageDetails(
+    String imageId) async {
+  try {
+    final response =
+        await supabase.rpc("get_image_details", params: {"image_id": imageId});
+    if (response == null || response.isEmpty) {
+      return SupabaseResponse(success: false, error: "No image details found");
+    }
+    return SupabaseResponse(
+        success: true, data: response.first as Map<String, dynamic>);
+  } catch (error) {
+    return SupabaseResponse(
+        success: false, error: "Error fetching image details: $error");
+  }
+}
+
+/// ------------------ FCM TOKEN & USER FUNCTIONS ------------------
+
+/// Handles FCM token registration.
+Future<SupabaseResponse<void>> fcmTokenHandler() async {
+  try {
+    await FirebaseMessaging.instance.requestPermission();
+    await FirebaseMessaging.instance.getAPNSToken();
+    final fcmToken = await FirebaseMessaging.instance.getToken();
+    if (fcmToken == null) {
+      return SupabaseResponse(success: false, error: "Error getting FCM token");
+    }
+    final userId = supabase.auth.currentUser!.id;
+    await supabase.from('Users').upsert({
+      'id': userId,
+      'fcm_token': fcmToken,
+    });
+    return SupabaseResponse(success: true);
+  } catch (error) {
+    return SupabaseResponse(
+        success: false, error: "Error handling FCM token: $error");
+  }
+}
+
+/// Register a new user.
+Future<SupabaseResponse<void>> registerUser(
+    String username, String email, String password) async {
+  try {
+    final authResponse =
+    await supabase.auth.signUp(email: email, password: password);
+
+    if (authResponse.user == null) {
+      return SupabaseResponse(
+          success: false, error: "No user returned during sign up");
+    }
+
+    // Sign in the user
+    final signInResponse = await supabase.auth
+        .signInWithPassword(email: email, password: password);
+
+    if (signInResponse.user == null) {
+      return SupabaseResponse(
+          success: false, error: "Failed to sign in after sign up");
+    }
+
+    // Create user profile using RPC
+    final bool profileCreated = await supabase
+        .rpc("create_user_profile", params: {"username": username});
+
+    if (!profileCreated) {
+      return SupabaseResponse(success: false, error: "Failed to create user profile");
+    }
+
+    // Handle FCM token registration
+    await fcmTokenHandler();
+
+    return SupabaseResponse(success: true);
+  } catch (error) {
+    return SupabaseResponse(
+        success: false, error: "Error registering user: ${error.toString()}");
+  }
+}
+
+/// Log in an existing user.
+Future<SupabaseResponse<void>> loginUser(String email, String password) async {
+  try {
+    final authResponse = await supabase.auth
+        .signInWithPassword(email: email, password: password);
+    if (authResponse.user == null) {
+      return SupabaseResponse(
+          success: false, error: "No user returned during login");
+    }
+    await fcmTokenHandler();
+    return SupabaseResponse(success: true);
+  } catch (error) {
+    return SupabaseResponse(success: false, error: "Error logging in: $error");
+  }
+}
+
+/// Log out the current user.
+Future<SupabaseResponse<void>> logOut() async {
+  try {
+    await supabase.auth.signOut();
+    return SupabaseResponse(success: true);
+  } catch (error) {
+    return SupabaseResponse(success: false, error: "Error signing out: $error");
+  }
+}
+
+/// Get the username for a given user ID.
+Future<SupabaseResponse<String>> getUsername(String userId) async {
+  try {
+    final response =
+        await supabase.rpc("get_username", params: {"user_id": userId});
+    if (response == "" || response == null) {
+      return SupabaseResponse(success: false, error: "Could not get username");
+    }
+    return SupabaseResponse(success: true, data: response as String);
+  } catch (error) {
+    return SupabaseResponse(
+        success: false, error: "Error loading username: $error");
+  }
+}
+
+/// Get the email of the current user.
+Future<SupabaseResponse<String>> getEmail() async {
+  try {
+    final user = supabase.auth.currentUser;
+    if (user == null) {
+      return SupabaseResponse(success: false, error: "No current user");
+    }
+    return SupabaseResponse(success: true, data: user.email);
+  } catch (error) {
+    return SupabaseResponse(
+        success: false, error: "Error getting email: $error");
+  }
+}
+
+/// Send a password reset email.
+Future<SupabaseResponse<void>> sendPasswordResetEmail(String email) async {
+  try {
+    await supabase.auth.resetPasswordForEmail(email);
+    return SupabaseResponse(success: true);
+  } catch (error) {
+    return SupabaseResponse(
+        success: false, error: "Error sending password reset email: $error");
+  }
+}
