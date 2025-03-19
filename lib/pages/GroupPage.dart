@@ -1,10 +1,13 @@
+import 'dart:async';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 import 'package:krab/services/supabase.dart';
 import 'package:krab/models/Group.dart';
 import 'package:krab/models/ImageData.dart';
 import 'package:krab/pages/GroupSettingsPage.dart';
+import 'package:krab/widgets/FloatingSnackBar.dart';
 import 'package:krab/widgets/UserAvatar.dart';
 import 'package:krab/themes/GlobalThemeData.dart';
 import 'package:krab/filesaver.dart';
@@ -92,6 +95,15 @@ class GroupPageState extends State<GroupPage> {
     );
   }
 
+  // Decode image dimensions
+  Future<ui.Image> _getImageInfo(Uint8List imageBytes) async {
+    final Completer<ui.Image> completer = Completer();
+    ui.decodeImageFromList(imageBytes, (ui.Image img) {
+      completer.complete(img);
+    });
+    return completer.future;
+  }
+
   void _showImagePreview(String imageId) {
     showDialog(
       context: context,
@@ -148,11 +160,18 @@ class GroupPageState extends State<GroupPage> {
                                 icon: const Icon(Icons.download,
                                     color: Colors.white),
                                 onPressed: () async {
-                                  await downloadImage(
+                                  bool success = await downloadImage(
                                     imageData.imageBytes,
                                     imageData.uploadedBy,
                                     imageData.createdAt,
                                   );
+                                  showSnackBar(
+                                      context,
+                                      success
+                                          ? "Image saved successfully"
+                                          : "Error saving image",
+                                      color:
+                                          success ? Colors.green : Colors.red);
                                 },
                               ),
                             ),
@@ -168,8 +187,9 @@ class GroupPageState extends State<GroupPage> {
                         subtitle: Text(
                           imageData.description ?? "",
                           style: TextStyle(
-                              color: GlobalThemeData
-                                  .darkColorScheme.onSurfaceVariant),
+                            color: GlobalThemeData
+                                .darkColorScheme.onSurfaceVariant,
+                          ),
                         ),
                       ),
                       TextButton(
@@ -214,8 +234,7 @@ class GroupPageState extends State<GroupPage> {
           }
           if (snapshot.hasError) {
             return Center(
-              child: Text("Error loading images: ${snapshot.error}"),
-            );
+                child: Text("Error loading images: ${snapshot.error}"));
           }
           final images = snapshot.data!.data!;
           if (images.isEmpty) {
@@ -260,9 +279,28 @@ class GroupPageState extends State<GroupPage> {
                         child: Stack(
                           fit: StackFit.expand,
                           children: [
-                            Image.memory(
-                              imageData.imageBytes,
-                              fit: BoxFit.cover,
+                            FutureBuilder<ui.Image>(
+                              future: _getImageInfo(imageData.imageBytes),
+                              builder: (context, snapshot) {
+                                if (snapshot.hasData) {
+                                  final imgInfo = snapshot.data!;
+                                  final halfWidth = (imgInfo.width / 4)
+                                      .round(); // 1/4th of original size for efficiency
+                                  final halfHeight =
+                                      (imgInfo.height / 4).round();
+                                  return Image.memory(
+                                    imageData.imageBytes,
+                                    fit: BoxFit.cover,
+                                    cacheWidth: halfWidth,
+                                    cacheHeight: halfHeight,
+                                  );
+                                } else {
+                                  return Image.memory(
+                                    imageData.imageBytes,
+                                    fit: BoxFit.cover,
+                                  );
+                                }
+                              },
                             ),
                             Align(
                               alignment: Alignment.bottomRight,

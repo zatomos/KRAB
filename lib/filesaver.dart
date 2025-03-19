@@ -27,7 +27,7 @@ Future<bool> downloadImage(
     }
     return true;
   } catch (e) {
-    debugPrint("❌ Error saving image: $e");
+    debugPrint("Error saving image: $e");
     return false;
   }
 }

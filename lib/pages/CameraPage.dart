@@ -80,12 +80,10 @@ class CameraPageState extends State<CameraPage> {
       if (_cameras != null && _cameras!.isNotEmpty) {
         _controller = CameraController(
           _cameras![_selectedCameraIndex],
-          ResolutionPreset.max,
+          ResolutionPreset.ultraHigh,
         );
         _initializeControllerFuture = _controller!.initialize();
         await _initializeControllerFuture;
-        await _controller!.setExposureMode(ExposureMode.auto);
-        await _controller!.setFocusMode(FocusMode.auto);
         if (mounted) setState(() {});
       } else {
         debugPrint("No cameras available");
@@ -128,7 +126,6 @@ class CameraPageState extends State<CameraPage> {
       await _showSendImageDialog(File(image.path));
 
       if (mounted) setState(() => _captureInProgress = false);
-
     } catch (e) {
       debugPrint("Error capturing image: $e");
       showSnackBar(context, "Error capturing image: $e");
@@ -208,7 +205,8 @@ class CameraPageState extends State<CameraPage> {
                       FutureBuilder(
                         future: groupsFuture,
                         builder: (context, snapshot) {
-                          if (snapshot.connectionState == ConnectionState.waiting) {
+                          if (snapshot.connectionState ==
+                              ConnectionState.waiting) {
                             return const Padding(
                               padding: EdgeInsets.all(30),
                               child: CircularProgressIndicator(),
@@ -218,12 +216,14 @@ class CameraPageState extends State<CameraPage> {
                               !(snapshot.data?.success ?? false)) {
                             final errorMsg = snapshot.hasError
                                 ? snapshot.error.toString()
-                                : (snapshot.data?.error ?? "Failed to load groups");
+                                : (snapshot.data?.error ??
+                                    "Failed to load groups");
                             return Center(child: Text("Error: $errorMsg"));
                           } else {
                             final groups = snapshot.data!.data ?? [];
                             if (groups.isEmpty) {
-                              return const Center(child: Text("Please join a group first!"));
+                              return const Center(
+                                  child: Text("Please join a group first!"));
                             } else {
                               return SizedBox(
                                 height: 200,
@@ -274,7 +274,8 @@ class CameraPageState extends State<CameraPage> {
                         context: context,
                         builder: (context) => AlertDialog(
                           title: const Text("Error"),
-                          content: const Text("Please select at least one group."),
+                          content:
+                              const Text("Please select at least one group."),
                           actions: [
                             TextButton(
                               onPressed: () => Navigator.of(context).pop(),
@@ -285,12 +286,26 @@ class CameraPageState extends State<CameraPage> {
                       );
                       return;
                     }
+
+                    // Show loading dialog
+                    showDialog(
+                        context: context,
+                        barrierDismissible: false,
+                        builder: (context) =>
+                            const Center(child: CircularProgressIndicator()));
+
+                    // Send the image to the selected groups
                     final response = await sendImageToGroups(
                       imageFile,
                       selectedGroups.toList(),
                       description.text,
                     );
+
+                    // Close the loading and send image dialogs
                     Navigator.of(context).pop();
+                    Navigator.of(context).pop();
+
+                    // Show the result dialog
                     await showDialog(
                       context: context,
                       builder: (context) => ImageSentDialog(
@@ -308,8 +323,6 @@ class CameraPageState extends State<CameraPage> {
       },
     );
   }
-
-
 
   @override
   Widget build(BuildContext context) {
