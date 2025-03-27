@@ -9,13 +9,15 @@ import 'package:krab/models/ImageData.dart';
 import 'package:krab/pages/GroupSettingsPage.dart';
 import 'package:krab/widgets/FloatingSnackBar.dart';
 import 'package:krab/widgets/UserAvatar.dart';
+import 'package:krab/widgets/CommentsBottomSheet.dart';
 import 'package:krab/themes/GlobalThemeData.dart';
 import 'package:krab/filesaver.dart';
 
 class GroupPage extends StatefulWidget {
   final Group group;
+  final String? imageId; // Only set when opening the page from a notification, to display the image directly
 
-  const GroupPage({super.key, required this.group});
+  const GroupPage({super.key, required this.group, this.imageId});
 
   @override
   GroupPageState createState() => GroupPageState();
@@ -33,6 +35,12 @@ class GroupPageState extends State<GroupPage> {
     super.initState();
     _groupImagesFuture = getGroupImages(widget.group.id);
     _checkAdminStatus();
+    // Wait for the widget to be built before showing the image preview
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (widget.imageId != null) {
+        _showImagePreview(widget.imageId!);
+      }
+    });
   }
 
   @override
@@ -80,16 +88,12 @@ class GroupPageState extends State<GroupPage> {
     }
     final Map<String, dynamic> imageDetails = imageDetailsResponse.data!;
 
-    // Retrieve uploader's username
-    final usernameResponse = await getUsername(imageDetails['uploaded_by']);
-    if (!usernameResponse.success || usernameResponse.data == null) {
-      throw Exception("Error fetching username: ${usernameResponse.error}");
-    }
-    final String uploadedBy = usernameResponse.data!;
+    // Use uploader's uuid instead of username
+    final String uploaderId = imageDetails['uploaded_by'];
 
     return ImageData(
       imageBytes: imageBytes,
-      uploadedBy: uploadedBy,
+      uploadedBy: uploaderId,
       createdAt: imageDetails['created_at'],
       description: imageDetails['description'],
     );
@@ -114,7 +118,7 @@ class GroupPageState extends State<GroupPage> {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return Dialog(
                 child: SizedBox(
-                  width: MediaQuery.of(context).size.width * 0.9,
+                  width: MediaQuery.of(context).size.width * 0.5,
                   height: MediaQuery.of(context).size.height * 0.8,
                   child: const Center(child: CircularProgressIndicator()),
                 ),
@@ -122,7 +126,7 @@ class GroupPageState extends State<GroupPage> {
             } else if (snapshot.hasError) {
               return Dialog(
                 child: SizedBox(
-                  width: MediaQuery.of(context).size.width * 0.9,
+                  width: MediaQuery.of(context).size.width * 0.5,
                   height: MediaQuery.of(context).size.height * 0.8,
                   child: Center(child: Text("Error: ${snapshot.error}")),
                 ),
@@ -130,73 +134,135 @@ class GroupPageState extends State<GroupPage> {
             } else if (snapshot.hasData) {
               final imageData = snapshot.data!;
               return Dialog(
-                child: Container(
+                child: ConstrainedBox(
                   constraints: BoxConstraints(
                     maxWidth: MediaQuery.of(context).size.width * 0.9,
-                    maxHeight: MediaQuery.of(context).size.height * 0.8,
+                    // Let content size naturally without a fixed maxHeight.
                   ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      ConstrainedBox(
-                        constraints: BoxConstraints(
-                          maxWidth: MediaQuery.of(context).size.width * 0.9,
-                          maxHeight: MediaQuery.of(context).size.height * 0.6,
-                        ),
-                        child: Stack(
-                          fit: StackFit.passthrough,
-                          children: [
-                            ClipRRect(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        LayoutBuilder(
+                          builder: (context, constraints) {
+                            return ClipRRect(
                               borderRadius: BorderRadius.circular(10),
-                              child: FittedBox(
-                                fit: BoxFit.contain,
-                                child: Image.memory(imageData.imageBytes),
+                              child: Stack(
+                                alignment: Alignment.center,
+                                children: [
+                                  // Center the image so it takes as much vertical space as needed.
+                                  Center(
+                                    child: Image.memory(
+                                      imageData.imageBytes,
+                                      fit: BoxFit.contain,
+                                      width: constraints.maxWidth,
+                                    ),
+                                  ),
+                                  // Download button overlay
+                                  Positioned(
+                                    top: 5,
+                                    right: 5,
+                                    child: IconButton(
+                                      icon: const Icon(Icons.download,
+                                          color: Colors.white),
+                                      onPressed: () async {
+                                        bool success = await downloadImage(
+                                          imageData.imageBytes,
+                                          imageData.uploadedBy,
+                                          imageData.createdAt,
+                                        );
+                                        showSnackBar(
+                                          context,
+                                          success
+                                              ? "Image saved successfully"
+                                              : "Error saving image",
+                                          color: success
+                                              ? Colors.green
+                                              : Colors.red,
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                  // Close button overlay
+                                  Positioned(
+                                    top: 5,
+                                    left: 5,
+                                    child: IconButton(
+                                      icon: const Icon(Icons.close,
+                                          color: Colors.white),
+                                      onPressed: () => Navigator.of(context).pop(),
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ),
-                            Positioned(
-                              top: 10,
-                              right: 10,
-                              child: IconButton(
-                                icon: const Icon(Icons.download,
-                                    color: Colors.white),
-                                onPressed: () async {
-                                  bool success = await downloadImage(
-                                    imageData.imageBytes,
-                                    imageData.uploadedBy,
-                                    imageData.createdAt,
-                                  );
-                                  showSnackBar(
-                                      context,
-                                      success
-                                          ? "Image saved successfully"
-                                          : "Error saving image",
-                                      color:
-                                          success ? Colors.green : Colors.red);
-                                },
+                            );
+                          },
+                        ),
+                        // Uploader info: display username fetched from uploader's uuid
+                        FutureBuilder(
+                          future: getUsername(imageData.uploadedBy),
+                          builder: (context, snapshot) {
+                            String uploaderName = "Loading...";
+                            if (snapshot.connectionState ==
+                                ConnectionState.done) {
+                              if (snapshot.hasError ||
+                                  !snapshot.hasData ||
+                                  !(snapshot.data as SupabaseResponse).success ||
+                                  (snapshot.data as SupabaseResponse).data == null) {
+                                uploaderName = "Unknown user";
+                              } else {
+                                uploaderName =
+                                (snapshot.data as SupabaseResponse).data!;
+                              }
+                            }
+                            return ListTile(
+                              title: Text(
+                                uploaderName,
+                                style: const TextStyle(
+                                    fontSize: 18, fontWeight: FontWeight.bold),
                               ),
+                              subtitle: Text(
+                                imageData.description ?? "",
+                                style: TextStyle(
+                                  color: GlobalThemeData.darkColorScheme
+                                      .onSurfaceVariant,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                        // Button to open the comments bottom sheet with comment count
+                        Padding(
+                          padding: const EdgeInsets.all(8.0),
+                          child: ElevatedButton.icon(
+                            icon: const Icon(Icons.comment),
+                            label: FutureBuilder(
+                              future: getCommentCount(imageId, widget.group.id),
+                              builder: (context, snapshot) {
+                                if (snapshot.connectionState ==
+                                    ConnectionState.waiting) {
+                                  return const Text("Comments (...)");
+                                } else if (snapshot.hasError ||
+                                    !snapshot.hasData ||
+                                    !(snapshot.data as SupabaseResponse).success) {
+                                  return const Text("Comments");
+                                } else {
+                                  final count = (snapshot.data
+                                  as SupabaseResponse)
+                                      .data;
+                                  return Text("Comments ($count)");
+                                }
+                              },
                             ),
-                          ],
-                        ),
-                      ),
-                      ListTile(
-                        title: Text(
-                          imageData.uploadedBy,
-                          style: const TextStyle(
-                              fontSize: 18, fontWeight: FontWeight.bold),
-                        ),
-                        subtitle: Text(
-                          imageData.description ?? "",
-                          style: TextStyle(
-                            color: GlobalThemeData
-                                .darkColorScheme.onSurfaceVariant,
+                            onPressed: () => _showCommentsBottomSheet(
+                              imageData.uploadedBy,
+                              imageId,
+                              widget.group.id,
+                            ),
                           ),
                         ),
-                      ),
-                      TextButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        child: const Text("Close"),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               );
@@ -205,6 +271,19 @@ class GroupPageState extends State<GroupPage> {
           },
         );
       },
+    );
+  }
+
+  /// Opens a modal bottom sheet that displays comments for the given image.
+  void _showCommentsBottomSheet(String uploaderId, String imageId, String groupId) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => CommentsBottomSheet(
+        uploaderId: uploaderId,
+        imageId: imageId,
+        groupId: groupId,
+      ),
     );
   }
 
@@ -260,7 +339,7 @@ class GroupPageState extends State<GroupPage> {
                       return Container(
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(10),
-                          color: Colors.grey[300],
+                          color: Colors.grey[350]
                         ),
                         child: const Center(child: CircularProgressIndicator()),
                       );
@@ -306,8 +385,23 @@ class GroupPageState extends State<GroupPage> {
                               alignment: Alignment.bottomRight,
                               child: Padding(
                                 padding: const EdgeInsets.all(8.0),
-                                child: UserAvatar(imageData.uploadedBy,
-                                    radius: 20),
+                                child: FutureBuilder(
+                                  future: getUsername(imageData.uploadedBy),
+                                  builder: (context, snapshot) {
+                                    String displayName = "";
+                                    if (snapshot.connectionState == ConnectionState.done) {
+                                      if (snapshot.hasError ||
+                                          !snapshot.hasData ||
+                                          !(snapshot.data as SupabaseResponse).success ||
+                                          (snapshot.data as SupabaseResponse).data == null) {
+                                        displayName = "Unknown user";
+                                      } else {
+                                        displayName = (snapshot.data as SupabaseResponse).data!;
+                                      }
+                                    }
+                                    return UserAvatar(displayName, radius: 20);
+                                  },
+                                ),
                               ),
                             ),
                           ],

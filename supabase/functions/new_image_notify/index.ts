@@ -133,6 +133,11 @@ const supabase = createClient(
                             title: `${senderUsername} sent an image in group ${groupName}`,
                             body: imageDescription,
                         },
+                        data: {
+                            type: 'new_image',
+                            image_id: payload.record.image_id,
+                            group_id: payload.record.group_id,
+                            },
                     },
                 }),
             }

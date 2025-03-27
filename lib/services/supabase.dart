@@ -39,6 +39,41 @@ Future<SupabaseResponse<List<Group>>> getUserGroups() async {
   }
 }
 
+/// Get group details for a given group ID.
+Future<SupabaseResponse<Group>> getGroupDetails(String groupId) async {
+  try {
+    final response =
+        await supabase.rpc("get_group_details", params: {"group_id": groupId});
+    if (response['success'] == false) {
+      return SupabaseResponse(
+          success: false,
+          error: "Error loading group details: ${response['error']}");
+    }
+    final group = Group.fromJson(response['group']);
+    return SupabaseResponse(success: true, data: group);
+  } catch (error) {
+    return SupabaseResponse(
+        success: false, error: "Error loading group details: $error");
+  }
+}
+
+/// Get count of members for a given group.
+Future<SupabaseResponse<int>> getGroupMemberCount(String groupId) async {
+  try {
+    final response = await supabase.rpc("get_group_members_count",
+        params: {"group_id": groupId});
+    if (response['success'] == false) {
+      return SupabaseResponse(
+          success: false,
+          error: "Error loading group member count: ${response['error']}");
+    }
+    return SupabaseResponse(success: true, data: response['member_count'] as int);
+  } catch (error) {
+    return SupabaseResponse(
+        success: false, error: "Error loading group member count: $error");
+  }
+}
+
 /// Get members for a given group.
 Future<SupabaseResponse<List<dynamic>>> getGroupMembers(String groupId) async {
   try {
@@ -258,6 +293,99 @@ Future<SupabaseResponse<Map<String, dynamic>>> getImageDetails(
   }
 }
 
+Future<SupabaseResponse<void>> postComment(
+    String imageId, String groupId, String comment) async {
+  try {
+    final response = await supabase.rpc("add_comment", params: {
+      "image_id": imageId,
+      "group_id": groupId,
+      "text": comment,
+    });
+    if (response['success'] == false) {
+      return SupabaseResponse(success: false, error: response['error']);
+    }
+    return SupabaseResponse(success: true);
+  } catch (error) {
+    return SupabaseResponse(
+        success: false, error: "Error posting comment: $error");
+  }
+}
+
+Future<SupabaseResponse<void>> updateComment(
+    String imageId, String groupId, String text) async {
+  try {
+    final response = await supabase.rpc("update_comment", params: {
+      "image_id": imageId,
+      "group_id": groupId,
+      "text": text,
+    });
+    if (response['success'] == false) {
+      return SupabaseResponse(success: false, error: response['error']);
+    }
+    return SupabaseResponse(success: true);
+  } catch (error) {
+    return SupabaseResponse(
+        success: false, error: "Error updating comment: $error");
+  }
+}
+
+Future<SupabaseResponse<void>> deleteComment(
+    String imageId, String groupId) async {
+  try {
+    final response = await supabase.rpc("delete_comment", params: {
+      "image_id": imageId,
+      "group_id": groupId,
+    });
+    if (response['success'] == false) {
+      return SupabaseResponse(success: false, error: response['error']);
+    }
+    return SupabaseResponse(success: true);
+  } catch (error) {
+    return SupabaseResponse(
+        success: false, error: "Error deleting comment: $error");
+  }
+}
+
+Future<SupabaseResponse<List<dynamic>>> getComments(
+    String imageId, String groupId) async {
+  try {
+    final response = await supabase.rpc("get_comments", params: {
+      "image_id": imageId,
+      "group_id": groupId,
+    });
+    if (response['success'] == false) {
+      return SupabaseResponse(success: false, error: response['error']);
+    }
+
+    // If there are no comments, return an empty list
+    if (response['comments'] == null) {
+      return SupabaseResponse(success: true, data: []);
+    }
+
+    return SupabaseResponse(success: true, data: response['comments'] as List);
+  } catch (error) {
+    return SupabaseResponse(
+        success: false, error: "Error loading comments: $error");
+  }
+}
+
+Future<SupabaseResponse<int>> getCommentCount(
+    String imageId, String groupId) async {
+  try {
+    final response = await supabase.rpc("get_comment_count", params: {
+      "image_id": imageId,
+      "group_id": groupId,
+    });
+    if (response['success'] == false) {
+      return SupabaseResponse(success: false, error: response['error']);
+    }
+    return SupabaseResponse(success: true, data: response['count'] as int);
+  } catch (error) {
+    return SupabaseResponse(
+        success: false, error: "Error loading comment count: $error");
+  }
+}
+
 /// ------------------ FCM TOKEN & USER FUNCTIONS ------------------
 
 /// Handles FCM token registration.
@@ -286,7 +414,7 @@ Future<SupabaseResponse<void>> registerUser(
     String username, String email, String password) async {
   try {
     final authResponse =
-    await supabase.auth.signUp(email: email, password: password);
+        await supabase.auth.signUp(email: email, password: password);
 
     if (authResponse.user == null) {
       return SupabaseResponse(
@@ -307,7 +435,8 @@ Future<SupabaseResponse<void>> registerUser(
         .rpc("create_user_profile", params: {"username": username});
 
     if (!profileCreated) {
-      return SupabaseResponse(success: false, error: "Failed to create user profile");
+      return SupabaseResponse(
+          success: false, error: "Failed to create user profile");
     }
 
     // Handle FCM token registration

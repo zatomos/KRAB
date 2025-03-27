@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-
 import 'package:krab/pages/GroupPage.dart';
 import 'package:krab/models/Group.dart';
 import 'package:krab/widgets/FloatingSnackBar.dart';
 import 'package:krab/UserPreferences.dart';
+import 'package:krab/services/supabase.dart';
 
 class GroupCard extends StatefulWidget {
   final Group group;
@@ -20,6 +20,11 @@ class _GroupCardState extends State<GroupCard> {
   @override
   void initState() {
     super.initState();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
     _loadFavoriteStatus();
   }
 
@@ -28,6 +33,15 @@ class _GroupCardState extends State<GroupCard> {
     setState(() {
       isFavorite = favorite;
     });
+  }
+
+  Future<int> _fetchGroupMemberCount(String groupId) async {
+    final response = await getGroupMemberCount(groupId);
+    if (response.error != null) {
+      showSnackBar(context, "${response.error}");
+      return 0;
+    }
+    return response.data!;
   }
 
   @override
@@ -42,10 +56,7 @@ class _GroupCardState extends State<GroupCard> {
         );
       },
       child: Card(
-        margin: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 8,
-        ),
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         elevation: 0,
         child: ListTile(
           leading: const Icon(Icons.group, size: 40),
@@ -53,9 +64,21 @@ class _GroupCardState extends State<GroupCard> {
             widget.group.name,
             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           ),
-          subtitle: Text(
-            "${widget.group.memberCount} ${widget.group.memberCount == 1 ? "member" : "members"}",
-            style: const TextStyle(fontSize: 14, color: Colors.grey),
+          subtitle: FutureBuilder<int>(
+            future: _fetchGroupMemberCount(widget.group.id),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Text("Loading members...");
+              } else if (snapshot.hasError) {
+                return const Text("Error loading members");
+              } else {
+                final count = snapshot.data ?? 0;
+                return Text(
+                  "$count ${count == 1 ? "member" : "members"}",
+                  style: const TextStyle(fontSize: 14, color: Colors.grey),
+                );
+              }
+            },
           ),
           trailing: IconButton(
             onLongPress: () {

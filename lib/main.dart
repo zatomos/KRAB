@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'firebase_options.dart';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -14,6 +13,7 @@ import 'package:krab/services/supabase.dart';
 import 'package:krab/pages/LoginPage.dart';
 import 'package:krab/pages/CameraPage.dart';
 import 'package:krab/pages/WelcomePage.dart';
+import 'package:krab/pages/GroupPage.dart';
 import 'package:krab/themes/GlobalThemeData.dart';
 import 'package:krab/widgets/FloatingSnackBar.dart';
 import 'package:krab/filesaver.dart';
@@ -25,6 +25,7 @@ bool isSupabaseInitialized = false;
 // Context
 final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey =
     GlobalKey<ScaffoldMessengerState>();
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 /// Updates the home widget with the latest image
 Future<void> updateHomeWidget() async {
@@ -128,6 +129,12 @@ Future<void> initializeSupabaseIfNeeded() async {
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   debugPrint('Handling background message: ${message.messageId}');
 
+  // Check if the message is about a new image
+  if (message.data['type'] != 'new_image') {
+    debugPrint('Message is not about a new image, skipping');
+    return;
+  }
+
   try {
     // Initialize Firebase first
     await Firebase.initializeApp(
@@ -183,7 +190,12 @@ void main() async {
     FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
       try {
         debugPrint("${message.notification?.title}");
-        await updateHomeWidget();
+        if (message.data['type'] == 'new_image') {
+          debugPrint('New image notification received');
+          await updateHomeWidget();
+        } else {
+          debugPrint('Non-image notification received');
+        }
 
         if (message.notification != null) {
           showSnackBar(
@@ -202,7 +214,38 @@ void main() async {
       }
     });
 
-    runApp(const MyApp());
+    // Handle notification clicks
+    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) async {
+      debugPrint('Notification clicked: ${message.messageId}');
+      debugPrint('Notification data: ${message.data}');
+
+      // Fetch data
+      final data = message.data;
+      final imageId = data['image_id'] ?? '';
+      final groupId = data['group_id'] ?? '';
+
+      // Get group
+      final groupResponse = await getGroupDetails(groupId);
+      if (groupResponse.success == false) {
+        debugPrint('Error fetching group: ${groupResponse.error}');
+        return;
+      }
+      final group = groupResponse.data;
+
+      if (group == null) {
+        debugPrint('Group is null, aborting navigation');
+        return;
+      }
+
+      // Navigate to group page
+      navigatorKey.currentState!.push(
+        MaterialPageRoute(
+          builder: (_) => GroupPage(group: group, imageId: imageId),
+        ),
+      );
+    });
+
+    runApp(MyApp(navigatorKey: navigatorKey));
   } catch (e) {
     debugPrint('Error starting app: $e');
   }
@@ -250,7 +293,9 @@ Future<void> _setFcmToken(String fcmToken) async {
 }
 
 class MyApp extends StatefulWidget {
-  const MyApp({super.key});
+  final GlobalKey<NavigatorState> navigatorKey;
+
+  const MyApp({super.key, required this.navigatorKey});
 
   @override
   MyAppState createState() => MyAppState();
@@ -272,6 +317,7 @@ class MyAppState extends State<MyApp> {
     final user = Supabase.instance.client.auth.currentUser;
 
     return MaterialApp(
+      navigatorKey: widget.navigatorKey,
       scaffoldMessengerKey: scaffoldMessengerKey,
       title: 'KRAB',
       theme: ThemeData(

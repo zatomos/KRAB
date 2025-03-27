@@ -4,13 +4,13 @@ class Group {
   final String id;
   final String name;
   final String code;
-  final int memberCount;
+  final String createdAt;
 
   Group({
     required this.id,
     required this.name,
     required this.code,
-    required this.memberCount,
+    required this.createdAt,
   });
 
   // Convert a JSON Map to a Group object
@@ -19,7 +19,7 @@ class Group {
       id: json['id'] as String,
       name: json['name'] as String,
       code: json['code'] as String,
-      memberCount: json['member_count'] as int,
+      createdAt: json['created_at'] as String,
     );
   }
 
@@ -29,6 +29,7 @@ class Group {
       'id': id,
       'name': name,
       'code': code,
+      'created_at': createdAt,
     };
   }
 
@@ -44,6 +45,6 @@ class Group {
 
   @override
   String toString() {
-    return 'Group{id: $id, name: $name, code: $code, memberCount: $memberCount}';
+    return 'Group{id: $id, name: $name, code: $code, createdAt: $createdAt}';
   }
 }
