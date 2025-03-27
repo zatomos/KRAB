@@ -72,13 +72,93 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA "extensions";
 
 
 
+CREATE OR REPLACE FUNCTION "public"."add_comment"("group_id" "uuid", "image_id" "uuid", "text" "text") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    AS $$
+DECLARE
+    current_user_id UUID;
+BEGIN
+    current_user_id := auth.uid();
+
+    -- Check if user is authenticated
+    IF current_user_id IS NULL THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'error', 'User not authenticated'
+        );
+    END IF;
+
+    -- Validate that the user is a member of the group
+    IF NOT EXISTS (
+        SELECT 1
+        FROM "Members" m
+        WHERE m.user_id = current_user_id
+          AND m.group_id = add_comment.group_id
+    ) THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'error', 'You are not a member of this group'
+        );
+    END IF;
+
+    -- Validate that the image belongs to the specified group
+    IF NOT EXISTS (
+        SELECT 1
+        FROM "ImageGroups" ig
+        WHERE ig.image_id = add_comment.image_id
+          AND ig.group_id = add_comment.group_id
+    ) THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'error', 'Image does not belong to the specified group'
+        );
+    END IF;
+
+    -- Insert comment
+    INSERT INTO "public"."Comments" (user_id, image_id, group_id, text)
+    VALUES (current_user_id, add_comment.image_id, add_comment.group_id, add_comment.text);
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'message', 'Comment added successfully'
+    );
+EXCEPTION
+    WHEN UNIQUE_VIOLATION THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'error', 'You have already commented on this image'
+        );
+    WHEN OTHERS THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'error', SQLERRM
+        );
+END;
+$$;
+
+
+ALTER FUNCTION "public"."add_comment"("group_id" "uuid", "image_id" "uuid", "text" "text") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."call_get_group_members_count"("p_group_id" "uuid") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    AS $$
+BEGIN
+  RETURN public.get_group_members_count('1df209bc-6c5b-4624-8f88-d69fdf12f3d6');
+END;
+$$;
+
+
+ALTER FUNCTION "public"."call_get_group_members_count"("p_group_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."check_user_in_group"("user_uuid" "uuid", "group_uuid" "uuid") RETURNS boolean
     LANGUAGE "plpgsql" SECURITY DEFINER
     AS $$
 BEGIN
   RETURN EXISTS (
-    SELECT 1 
-    FROM "Members" 
+    SELECT 1
+    FROM "Members"
     WHERE user_id = user_uuid AND group_id = group_uuid
   );
 END;
@@ -90,8 +170,7 @@ ALTER FUNCTION "public"."check_user_in_group"("user_uuid" "uuid", "group_uuid" "
 
 CREATE OR REPLACE FUNCTION "public"."create_group"("group_name" "text") RETURNS "jsonb"
     LANGUAGE "plpgsql"
-    AS $$
-DECLARE
+    AS $$DECLARE
     new_group_id UUID;
 BEGIN
     -- Generate a new UUID for the group
@@ -105,7 +184,6 @@ BEGIN
     INSERT INTO "public"."Members" (user_id, group_id, admin)
     VALUES (auth.uid(), new_group_id, TRUE);
 
-    -- Return success response
     RETURN jsonb_build_object(
         'success', true,
         'message', 'Group created successfully'
@@ -117,8 +195,7 @@ EXCEPTION
             'success', false,
             'error', SQLERRM
         );
-END;
-$$;
+END;$$;
 
 
 ALTER FUNCTION "public"."create_group"("group_name" "text") OWNER TO "postgres";
@@ -140,28 +217,97 @@ $$;
 ALTER FUNCTION "public"."create_user_profile"("username" "text") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."delete_comment"("group_id" "uuid", "image_id" "uuid") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    AS $$DECLARE
+    current_user_id UUID;
+BEGIN
+    current_user_id := auth.uid();
+
+    -- Check if user is authenticated
+    IF current_user_id IS NULL THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'error', 'User not authenticated'
+        );
+    END IF;
+
+    -- Validate that the user is a member of the group
+    IF NOT EXISTS (
+        SELECT 1
+        FROM "Members" m
+        WHERE m.user_id = current_user_id
+          AND m.group_id = delete_comment.group_id
+    ) THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'error', 'You are not a member of this group'
+        );
+    END IF;
+
+    -- Validate that the image belongs to the specified group
+    IF NOT EXISTS (
+        SELECT 1
+        FROM "ImageGroups" ig
+        WHERE ig.image_id = delete_comment.image_id
+          AND ig.group_id = delete_comment.group_id
+    ) THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'error', 'Image does not belong to the specified group'
+        );
+    END IF;
+
+    -- Delete the comment if it belongs to the current user
+    DELETE FROM "Comments" c
+    WHERE c.image_id = delete_comment.image_id
+      AND c.group_id = delete_comment.group_id
+      AND c.user_id = current_user_id;
+
+    IF FOUND THEN
+        RETURN jsonb_build_object(
+            'success', true,
+            'message', 'Comment deleted successfully'
+        );
+    ELSE
+        RETURN jsonb_build_object(
+            'success', false,
+            'error', 'No comment found to delete or permission denied'
+        );
+    END IF;
+
+EXCEPTION
+    WHEN OTHERS THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'error', SQLERRM
+        );
+END;$$;
+
+
+ALTER FUNCTION "public"."delete_comment"("group_id" "uuid", "image_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."delete_image"("image_id" "uuid") RETURNS boolean
     LANGUAGE "plpgsql" SECURITY DEFINER
-    AS $$
-DECLARE
+    AS $$DECLARE
   storage_path TEXT;
 BEGIN
   -- Get the storage path
   SELECT storage_path INTO storage_path FROM "Images" WHERE id = image_id;
-  
+
   -- Delete from storage first
-  DELETE FROM storage.objects 
+  DELETE FROM storage.objects
   WHERE name = storage_path;
-  
+
   -- Delete from Images table
-  DELETE FROM "Images" 
+  DELETE FROM "Images"
   WHERE id = image_id;
-  
+
   RETURN FOUND;
 EXCEPTION WHEN OTHERS THEN
   RETURN FALSE;
-END;
-$$;
+END;$$;
 
 
 ALTER FUNCTION "public"."delete_image"("image_id" "uuid") OWNER TO "postgres";
@@ -169,14 +315,13 @@ ALTER FUNCTION "public"."delete_image"("image_id" "uuid") OWNER TO "postgres";
 
 CREATE OR REPLACE FUNCTION "public"."get_all_images"() RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
-    AS $$
-DECLARE
+    AS $$DECLARE
   current_user_id UUID;
   images_data JSONB;
 BEGIN
   -- Get the user ID from the current request
   current_user_id := auth.uid();
-  
+
   -- Check if user is authenticated
   IF current_user_id IS NULL THEN
     RETURN jsonb_build_object(
@@ -184,7 +329,7 @@ BEGIN
       'error', 'User not authenticated'
     );
   END IF;
-  
+
   -- Get all images that the user has access to through group membership
   SELECT jsonb_agg(
     jsonb_build_object(
@@ -200,7 +345,7 @@ BEGIN
   JOIN auth.users u ON i.uploaded_by = u.id
   WHERE m.user_id = current_user_id
   INTO images_data;
-  
+
   -- Return the complete result
   RETURN jsonb_build_object(
     'success', true,
@@ -218,25 +363,194 @@ EXCEPTION WHEN OTHERS THEN
     'success', false,
     'error', SQLERRM
   );
-END;
-$$;
+END;$$;
 
 
 ALTER FUNCTION "public"."get_all_images"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."get_comment_count"("group_id" "uuid", "image_id" "uuid") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    AS $$
+DECLARE
+    current_user_id UUID;
+    comment_count INTEGER;
+BEGIN
+    current_user_id := auth.uid();
+
+    -- Check if user is authenticated
+    IF current_user_id IS NULL THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'error', 'User not authenticated'
+        );
+    END IF;
+
+    -- Validate that the user is a member of the group
+    IF NOT EXISTS (
+        SELECT 1 FROM "Members" m
+        WHERE m.user_id = current_user_id
+          AND m.group_id = get_comment_count.group_id
+    ) THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'error', 'You are not a member of this group'
+        );
+    END IF;
+
+    -- Validate that the image belongs to the specified group
+    IF NOT EXISTS (
+        SELECT 1 FROM "ImageGroups" ig
+        WHERE ig.image_id = get_comment_count.image_id
+          AND ig.group_id = get_comment_count.group_id
+    ) THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'error', 'Image does not belong to the specified group'
+        );
+    END IF;
+
+    -- Count comments for the image in the specified group
+    SELECT COUNT(*) INTO comment_count
+    FROM "Comments" c
+    WHERE c.image_id = get_comment_count.image_id
+      AND c.group_id = get_comment_count.group_id;
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'count', comment_count
+    );
+EXCEPTION
+    WHEN OTHERS THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'error', SQLERRM
+        );
+END;
+$$;
+
+
+ALTER FUNCTION "public"."get_comment_count"("group_id" "uuid", "image_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."get_comments"("group_id" "uuid", "image_id" "uuid") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    AS $$
+DECLARE
+    current_user_id UUID;
+    comments JSONB;
+BEGIN
+    current_user_id := auth.uid();
+
+    -- Check if user is authenticated
+    IF current_user_id IS NULL THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'error', 'User not authenticated'
+        );
+    END IF;
+
+    -- Validate that the user is a member of the group
+    IF NOT EXISTS (
+        SELECT 1
+        FROM "Members" AS m
+        WHERE m.user_id = current_user_id
+          AND m.group_id = get_comments.group_id
+    ) THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'error', 'You are not a member of this group'
+        );
+    END IF;
+
+    -- Validate that the image belongs to the specified group
+    IF NOT EXISTS (
+        SELECT 1
+        FROM "ImageGroups" AS ig
+        WHERE ig.image_id = get_comments.image_id
+          AND ig.group_id = get_comments.group_id
+    ) THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'error', 'Image does not belong to the specified group'
+        );
+    END IF;
+
+    -- Retrieve comments for the image in the specified group
+    SELECT jsonb_agg(comment_obj) INTO comments
+    FROM (
+        SELECT
+            c.user_id,
+            c.text,
+            c.created_at
+        FROM "Comments" AS c
+        WHERE c.image_id = get_comments.image_id
+          AND c.group_id = get_comments.group_id
+        ORDER BY c.created_at DESC
+    ) AS comment_obj;
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'comments', comments
+    );
+EXCEPTION
+    WHEN OTHERS THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'error', SQLERRM
+        );
+END;
+$$;
+
+
+ALTER FUNCTION "public"."get_comments"("group_id" "uuid", "image_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."get_group_details"("group_id" "uuid") RETURNS "jsonb"
+    LANGUAGE "plpgsql"
+    AS $$
+DECLARE
+    group_record RECORD;
+BEGIN
+    SELECT id, created_at, name, code
+    INTO group_record
+    FROM "Groups"
+    WHERE id = get_group_details.group_id;
+
+    IF group_record IS NULL THEN
+        RETURN jsonb_build_object('success', false, 'error', 'Group not found');
+    END IF;
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'group', jsonb_build_object(
+            'id', group_record.id,
+            'created_at', group_record.created_at,
+            'name', group_record.name,
+            'code', group_record.code
+        )
+    );
+EXCEPTION
+    WHEN OTHERS THEN
+        RETURN jsonb_build_object('success', false, 'error', SQLERRM);
+END;
+$$;
+
+
+ALTER FUNCTION "public"."get_group_details"("group_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."get_group_images"("p_group_id" "uuid") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
-    AS $$
-DECLARE
+    AS $$DECLARE
   current_user_id UUID;
   images_data JSONB;
   is_member BOOLEAN;
 BEGIN
   -- Get the user ID from the current request
   current_user_id := auth.uid();
-  
+
   -- Check if user is authenticated
   IF current_user_id IS NULL THEN
     RETURN jsonb_build_object(
@@ -244,21 +558,21 @@ BEGIN
       'error', 'User not authenticated'
     );
   END IF;
-  
+
   -- Check if user is a member of this group
   SELECT EXISTS (
     SELECT 1 FROM "Members"
     WHERE user_id = current_user_id
       AND group_id = p_group_id
   ) INTO is_member;
-  
+
   IF NOT is_member THEN
     RETURN jsonb_build_object(
       'success', false,
       'error', 'You are not a member of this group'
     );
   END IF;
-  
+
   -- Get all images for this group, ordering them by created_at descending.
   SELECT jsonb_agg(
     jsonb_build_object(
@@ -272,7 +586,7 @@ BEGIN
   JOIN auth.users u ON i.uploaded_by = u.id
   WHERE ig.group_id = p_group_id
   INTO images_data;
-  
+
   -- Return the complete result.
   RETURN jsonb_build_object(
     'success', true,
@@ -283,8 +597,7 @@ EXCEPTION WHEN OTHERS THEN
     'success', false,
     'error', SQLERRM
   );
-END;
-$$;
+END;$$;
 
 
 ALTER FUNCTION "public"."get_group_images"("p_group_id" "uuid") OWNER TO "postgres";
@@ -292,8 +605,7 @@ ALTER FUNCTION "public"."get_group_images"("p_group_id" "uuid") OWNER TO "postgr
 
 CREATE OR REPLACE FUNCTION "public"."get_group_members"("group_id" "uuid") RETURNS "jsonb"
     LANGUAGE "plpgsql"
-    AS $$
-DECLARE
+    AS $$DECLARE
     members JSONB;
 BEGIN
     -- Fetch user IDs from Members table and retrieve usernames using get_username function
@@ -324,18 +636,60 @@ EXCEPTION
             'success', false,
             'error', SQLERRM
         );
-END;
-$$;
+END;$$;
 
 
 ALTER FUNCTION "public"."get_group_members"("group_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."get_group_members_count"("group_id" "uuid") RETURNS "jsonb"
+    LANGUAGE "plpgsql"
+    AS $$DECLARE
+    member_count INTEGER;
+    group_exists BOOLEAN;
+BEGIN
+    -- Check if the group exists
+    SELECT EXISTS(SELECT 1 FROM "Groups" g WHERE g.id = get_group_members_count.group_id)
+    INTO group_exists;
+
+    -- If group doesn't exist, return error
+    IF NOT group_exists THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'error', 'Group not found'
+        );
+    END IF;
+
+    -- Count members in the group
+    SELECT COUNT(*)
+    INTO member_count
+    FROM "Members" m
+    WHERE m.group_id = get_group_members_count.group_id;
+
+    -- Return results
+    RETURN jsonb_build_object(
+        'success', true,
+        'group_id', get_group_members_count.group_id,
+        'member_count', member_count
+    );
+
+EXCEPTION
+    WHEN OTHERS THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'error', SQLERRM
+        );
+END;$$;
+
+
+ALTER FUNCTION "public"."get_group_members_count"("group_id" "uuid") OWNER TO "postgres";
 
 
 CREATE OR REPLACE FUNCTION "public"."get_image_details"("image_id" "uuid") RETURNS TABLE("created_at" timestamp with time zone, "uploaded_by" "uuid", "description" "text")
     LANGUAGE "plpgsql"
     AS $$
 BEGIN
-  RETURN QUERY 
+  RETURN QUERY
   SELECT i.created_at, i.uploaded_by, i.description
   FROM "Images" i
   WHERE i.id = image_id
@@ -362,7 +716,7 @@ DECLARE
 BEGIN
   -- Get the user ID from the current request
   current_user_id := auth.uid();
-  
+
   -- Check if user is authenticated
   IF current_user_id IS NULL THEN
     RETURN jsonb_build_object(
@@ -370,7 +724,7 @@ BEGIN
       'error', 'User not authenticated'
     );
   END IF;
-  
+
   -- Get the most recent image the user has access to
   SELECT jsonb_build_object(
     'id', i.id,
@@ -385,13 +739,14 @@ BEGIN
   ORDER BY i.created_at DESC
   LIMIT 1
   INTO latest_image;
-  
+
   -- Return the result
   RETURN jsonb_build_object(
     'success', true,
     'latest_image', COALESCE(latest_image, 'null'::jsonb)
   );
 EXCEPTION WHEN OTHERS THEN
+  -- Handle any errors
   RETURN jsonb_build_object(
     'success', false,
     'error', SQLERRM
@@ -406,14 +761,13 @@ ALTER FUNCTION "public"."get_latest_image"() OWNER TO "postgres";
 CREATE OR REPLACE FUNCTION "public"."get_user_groups"() RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
-    AS $$
-DECLARE
+    AS $$DECLARE
   current_user_id UUID;
   user_groups JSONB;
 BEGIN
   -- Get the user ID from the current request
   current_user_id := auth.uid();
-  
+
   -- Check if user is authenticated
   IF current_user_id IS NULL THEN
     RETURN jsonb_build_object(
@@ -421,25 +775,21 @@ BEGIN
       'error', 'User not authenticated'
     );
   END IF;
-  
-  -- Get all groups the user is a member of with extra information
+
+  -- Get all groups the user is a member of
   SELECT jsonb_agg(
     jsonb_build_object(
       'id', g.id,
       'name', g.name,
       'code', g.code,
-      'member_count', (
-        SELECT COUNT(*) 
-        FROM "Members" 
-        WHERE group_id = g.id
-      )
+      'created_at', g.created_at
     )
   )
   FROM "Groups" g
   JOIN "Members" gm ON g.id = gm.group_id
   WHERE gm.user_id = current_user_id
   INTO user_groups;
-  
+
   RETURN jsonb_build_object(
     'success', true,
     'groups', COALESCE(user_groups, '[]'::jsonb)
@@ -449,8 +799,7 @@ EXCEPTION WHEN OTHERS THEN
     'success', false,
     'error', SQLERRM
   );
-END;
-$$;
+END;$$;
 
 
 ALTER FUNCTION "public"."get_user_groups"() OWNER TO "postgres";
@@ -458,8 +807,7 @@ ALTER FUNCTION "public"."get_user_groups"() OWNER TO "postgres";
 
 CREATE OR REPLACE FUNCTION "public"."get_username"("user_id" "text") RETURNS "text"
     LANGUAGE "plpgsql"
-    AS $$
-DECLARE
+    AS $$DECLARE
     username TEXT;
 BEGIN
     -- Convert user_id (TEXT) to UUID before querying Users
@@ -468,8 +816,7 @@ BEGIN
     WHERE u.id = user_id::UUID;
 
     RETURN username;
-END;
-$$;
+END;$$;
 
 
 ALTER FUNCTION "public"."get_username"("user_id" "text") OWNER TO "postgres";
@@ -480,9 +827,9 @@ CREATE OR REPLACE FUNCTION "public"."handle_storage_delete"() RETURNS "trigger"
     AS $$
 BEGIN
   -- Delete the corresponding record from the Images table
-  DELETE FROM "Images" 
+  DELETE FROM "Images"
   WHERE id = (SELECT uuid(REPLACE(OLD.name, '.jpg', '')) FROM regexp_matches(OLD.name, '([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})') AS match);
-  
+
   RETURN OLD;
 END;
 $$;
@@ -514,15 +861,14 @@ ALTER FUNCTION "public"."is_admin"("group_id" "uuid") OWNER TO "postgres";
 CREATE OR REPLACE FUNCTION "public"."join_group_by_code"("group_code" "text") RETURNS "jsonb"
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
-    AS $$
-DECLARE
+    AS $$DECLARE
   current_user_id UUID;
   found_group_id UUID;
   is_already_member BOOLEAN;
 BEGIN
   -- Get the user ID from the current request
   current_user_id := auth.uid();
-  
+
   -- Check if user is authenticated
   IF current_user_id IS NULL THEN
     RETURN jsonb_build_object(
@@ -530,12 +876,12 @@ BEGIN
       'error', 'User not authenticated'
     );
   END IF;
-  
+
   -- Find the group by code
   SELECT id INTO found_group_id
   FROM "Groups"
   WHERE code = group_code;
-  
+
   -- Check if group exists
   IF found_group_id IS NULL THEN
     RETURN jsonb_build_object(
@@ -543,25 +889,25 @@ BEGIN
       'error', 'Invalid group code'
     );
   END IF;
-  
+
   -- Check if user is already a member
   SELECT EXISTS (
     SELECT 1 FROM "Members"
     WHERE group_id = found_group_id
     AND user_id = current_user_id
   ) INTO is_already_member;
-  
+
   IF is_already_member THEN
     RETURN jsonb_build_object(
       'success', false,
       'error', 'You are already a member of this group'
     );
   END IF;
-  
+
   -- Add user to the group as a regular member
   INSERT INTO "Members" (group_id, user_id)
   VALUES (found_group_id, current_user_id);
-  
+
   -- Return success
   RETURN jsonb_build_object(
     'success', true,
@@ -572,8 +918,7 @@ EXCEPTION WHEN OTHERS THEN
     'success', false,
     'error', SQLERRM
   );
-END;
-$$;
+END;$$;
 
 
 ALTER FUNCTION "public"."join_group_by_code"("group_code" "text") OWNER TO "postgres";
@@ -581,8 +926,7 @@ ALTER FUNCTION "public"."join_group_by_code"("group_code" "text") OWNER TO "post
 
 CREATE OR REPLACE FUNCTION "public"."leave_group"("group_id" "uuid") RETURNS "jsonb"
     LANGUAGE "plpgsql"
-    AS $$
-DECLARE
+    AS $$DECLARE
     deleted_count INT;
     user_check UUID;
 BEGIN
@@ -626,8 +970,7 @@ EXCEPTION
             'success', false,
             'error', SQLERRM
         );
-END;
-$$;
+END;$$;
 
 
 ALTER FUNCTION "public"."leave_group"("group_id" "uuid") OWNER TO "postgres";
@@ -635,8 +978,7 @@ ALTER FUNCTION "public"."leave_group"("group_id" "uuid") OWNER TO "postgres";
 
 CREATE OR REPLACE FUNCTION "public"."remove_group"("group_id" "uuid") RETURNS "jsonb"
     LANGUAGE "plpgsql"
-    AS $$
-DECLARE
+    AS $$DECLARE
     is_admin BOOLEAN;
 BEGIN
     -- Check if the user is an admin of the group
@@ -672,17 +1014,87 @@ EXCEPTION
             'success', false,
             'error', SQLERRM
         );
-END;
-$$;
+END;$$;
 
 
 ALTER FUNCTION "public"."remove_group"("group_id" "uuid") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."update_comment"("group_id" "uuid", "image_id" "uuid", "text" "text") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    AS $$DECLARE
+    current_user_id UUID;
+BEGIN
+    current_user_id := auth.uid();
+
+    -- Check if user is authenticated
+    IF current_user_id IS NULL THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'error', 'User not authenticated'
+        );
+    END IF;
+
+    -- Validate that the user is a member of the group
+    IF NOT EXISTS (
+        SELECT 1
+        FROM "Members" m
+        WHERE m.user_id = current_user_id
+          AND m.group_id = update_comment.group_id
+    ) THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'error', 'You are not a member of this group'
+        );
+    END IF;
+
+    -- Validate that the image belongs to the specified group
+    IF NOT EXISTS (
+        SELECT 1
+        FROM "ImageGroups" ig
+        WHERE ig.image_id = update_comment.image_id
+          AND ig.group_id = update_comment.group_id
+    ) THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'error', 'Image does not belong to the specified group'
+        );
+    END IF;
+
+    -- Update the comment if it belongs to the current user
+    UPDATE "Comments" c
+    SET text = update_comment.text
+    WHERE c.image_id = update_comment.image_id
+      AND c.group_id = update_comment.group_id
+      AND c.user_id = current_user_id;
+
+    IF FOUND THEN
+        RETURN jsonb_build_object(
+            'success', true,
+            'message', 'Comment updated successfully'
+        );
+    ELSE
+        RETURN jsonb_build_object(
+            'success', false,
+            'error', 'No comment found to update or permission denied'
+        );
+    END IF;
+
+EXCEPTION
+    WHEN OTHERS THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'error', SQLERRM
+        );
+END;$$;
+
+
+ALTER FUNCTION "public"."update_comment"("group_id" "uuid", "image_id" "uuid", "text" "text") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."update_group_name"("group_id" "uuid", "new_name" "text") RETURNS "jsonb"
     LANGUAGE "plpgsql"
-    AS $$
-DECLARE
+    AS $$DECLARE
   current_user_id UUID;
 BEGIN
   -- Get the user ID from the current request
@@ -719,14 +1131,13 @@ BEGIN
     'message', 'Group name updated successfully'
   );
 
-EXCEPTION 
+EXCEPTION
   WHEN OTHERS THEN
     RETURN jsonb_build_object(
       'success', false,
       'error', SQLERRM
     );
-END;
-$$;
+END;$$;
 
 
 ALTER FUNCTION "public"."update_group_name"("group_id" "uuid", "new_name" "text") OWNER TO "postgres";
@@ -740,26 +1151,26 @@ CREATE OR REPLACE FUNCTION "public"."upload_image_to_groups"("group_ids" "uuid"[
   authorized_count INTEGER;
 BEGIN
   current_user_id := auth.uid();
-  
+
   IF current_user_id IS NULL THEN
     RETURN jsonb_build_object(
       'success', false,
       'error', 'User not authenticated'
     );
   END IF;
-  
+
   image_id := uuid_generate_v4();
-  
+
   INSERT INTO "Images" (id, uploaded_by, description)
   VALUES (image_id, current_user_id, image_description);
-  
+
   -- Insert all associations in one go
   WITH inserted AS (
     INSERT INTO "ImageGroups" (image_id, group_id)
     SELECT image_id, g
     FROM unnest(group_ids) AS g
     WHERE EXISTS (
-      SELECT 1 
+      SELECT 1
       FROM "Members" m
       WHERE m.user_id = current_user_id
         AND m.group_id = g
@@ -767,14 +1178,14 @@ BEGIN
     RETURNING 1
   )
   SELECT count(*) INTO authorized_count FROM inserted;
-  
+
   RETURN jsonb_build_object(
     'success', true,
     'image_id', image_id,
     'authorized_groups', authorized_count
   );
-  
-EXCEPTION 
+
+EXCEPTION
   WHEN OTHERS THEN
     RETURN jsonb_build_object(
       'success', false,
@@ -788,6 +1199,24 @@ ALTER FUNCTION "public"."upload_image_to_groups"("group_ids" "uuid"[], "image_de
 SET default_tablespace = '';
 
 SET default_table_access_method = "heap";
+
+
+CREATE TABLE IF NOT EXISTS "public"."Comments" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "image_id" "uuid" NOT NULL,
+    "text" "text",
+    "group_id" "uuid" NOT NULL,
+    CONSTRAINT "Comments_text_check" CHECK (("length"("text") < 200))
+);
+
+
+ALTER TABLE "public"."Comments" OWNER TO "postgres";
+
+
+COMMENT ON TABLE "public"."Comments" IS 'Comments left by users about an image';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."Groups" (
@@ -852,6 +1281,11 @@ COMMENT ON TABLE "public"."Users" IS 'contains usernames';
 
 
 
+ALTER TABLE ONLY "public"."Comments"
+    ADD CONSTRAINT "Comments_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."Groups"
     ADD CONSTRAINT "Groups_code_key" UNIQUE ("code");
 
@@ -897,7 +1331,31 @@ ALTER TABLE ONLY "public"."Users"
 
 
 
+ALTER TABLE ONLY "public"."Comments"
+    ADD CONSTRAINT "unique_user_image_comment" UNIQUE ("user_id", "image_id");
+
+
+
+CREATE OR REPLACE TRIGGER "on-comment-insert" AFTER INSERT ON "public"."Comments" FOR EACH ROW EXECUTE FUNCTION "supabase_functions"."http_request"('https://your_url.supabase.co/functions/v1/new_comment_notify', 'POST', '{"Content-type":"application/json"}', '{}', '5000');
+
+
+
 CREATE OR REPLACE TRIGGER "on-image-insert" AFTER INSERT ON "public"."ImageGroups" FOR EACH ROW EXECUTE FUNCTION "supabase_functions"."http_request"('https://your_url.supabase.co/functions/v1/new_image_notify', 'POST', '{"Content-type":"application/json"}', '{}', '5000');
+
+
+
+ALTER TABLE ONLY "public"."Comments"
+    ADD CONSTRAINT "Comments_group_id_fkey" FOREIGN KEY ("group_id") REFERENCES "public"."Groups"("id") ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."Comments"
+    ADD CONSTRAINT "Comments_image_id_fkey" FOREIGN KEY ("image_id") REFERENCES "public"."Images"("id") ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."Comments"
+    ADD CONSTRAINT "Comments_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."Users"("id") ON UPDATE CASCADE ON DELETE CASCADE;
 
 
 
@@ -945,6 +1403,9 @@ CREATE POLICY "Allow admins to delete a group" ON "public"."Groups" FOR DELETE T
 
 CREATE POLICY "Allow users to create groups" ON "public"."Groups" FOR INSERT TO "authenticated" WITH CHECK (("auth"."uid"() IS NOT NULL));
 
+
+
+ALTER TABLE "public"."Comments" ENABLE ROW LEVEL SECURITY;
 
 
 CREATE POLICY "Enable delete for users based on user_id" ON "public"."Members" FOR DELETE USING ((( SELECT "auth"."uid"() AS "uid") = "user_id"));
@@ -1006,7 +1467,28 @@ ALTER TABLE "public"."Images" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."Members" ENABLE ROW LEVEL SECURITY;
 
 
+CREATE POLICY "Only group members can insert comments" ON "public"."Comments" FOR SELECT USING ((EXISTS ( SELECT 1
+   FROM ("public"."ImageGroups" "ig"
+     JOIN "public"."Members" "m" ON (("ig"."group_id" = "m"."group_id")))
+  WHERE (("ig"."image_id" = "Comments"."image_id") AND ("m"."user_id" = "auth"."uid"())))));
+
+
+
+CREATE POLICY "Only group members can select comments" ON "public"."Comments" FOR SELECT USING ((EXISTS ( SELECT 1
+   FROM ("public"."ImageGroups" "ig"
+     JOIN "public"."Members" "m" ON (("ig"."group_id" = "m"."group_id")))
+  WHERE (("ig"."image_id" = "Comments"."image_id") AND ("m"."user_id" = "auth"."uid"())))));
+
+
+
 ALTER TABLE "public"."Users" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "Users can delete their own comments" ON "public"."Comments" FOR DELETE USING ((("user_id" = "auth"."uid"()) AND (EXISTS ( SELECT 1
+   FROM ("public"."ImageGroups" "ig"
+     JOIN "public"."Members" "m" ON (("ig"."group_id" = "m"."group_id")))
+  WHERE (("ig"."image_id" = "Comments"."image_id") AND ("m"."user_id" = "auth"."uid"()))))));
+
 
 
 CREATE POLICY "Users can see members of groups they belong to" ON "public"."Members" FOR SELECT USING ("public"."check_user_in_group"("auth"."uid"(), "group_id"));
@@ -1017,6 +1499,13 @@ CREATE POLICY "Users can see members of their groups" ON "public"."Users" FOR SE
    FROM ("public"."Members" "m1"
      JOIN "public"."Members" "m2" ON (("m1"."group_id" = "m2"."group_id")))
   WHERE (("m1"."user_id" = "auth"."uid"()) AND ("m2"."user_id" = "Users"."id")))));
+
+
+
+CREATE POLICY "Users can update their own comments" ON "public"."Comments" FOR UPDATE USING ((("user_id" = "auth"."uid"()) AND (EXISTS ( SELECT 1
+   FROM ("public"."ImageGroups" "ig"
+     JOIN "public"."Members" "m" ON (("ig"."group_id" = "m"."group_id")))
+  WHERE (("ig"."image_id" = "Comments"."image_id") AND ("m"."user_id" = "auth"."uid"()))))));
 
 
 
@@ -1216,6 +1705,18 @@ GRANT USAGE ON SCHEMA "public" TO "service_role";
 
 
 
+GRANT ALL ON FUNCTION "public"."add_comment"("group_id" "uuid", "image_id" "uuid", "text" "text") TO "anon";
+GRANT ALL ON FUNCTION "public"."add_comment"("group_id" "uuid", "image_id" "uuid", "text" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."add_comment"("group_id" "uuid", "image_id" "uuid", "text" "text") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."call_get_group_members_count"("p_group_id" "uuid") TO "anon";
+GRANT ALL ON FUNCTION "public"."call_get_group_members_count"("p_group_id" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."call_get_group_members_count"("p_group_id" "uuid") TO "service_role";
+
+
+
 GRANT ALL ON FUNCTION "public"."check_user_in_group"("user_uuid" "uuid", "group_uuid" "uuid") TO "anon";
 GRANT ALL ON FUNCTION "public"."check_user_in_group"("user_uuid" "uuid", "group_uuid" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."check_user_in_group"("user_uuid" "uuid", "group_uuid" "uuid") TO "service_role";
@@ -1234,6 +1735,12 @@ GRANT ALL ON FUNCTION "public"."create_user_profile"("username" "text") TO "serv
 
 
 
+GRANT ALL ON FUNCTION "public"."delete_comment"("group_id" "uuid", "image_id" "uuid") TO "anon";
+GRANT ALL ON FUNCTION "public"."delete_comment"("group_id" "uuid", "image_id" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."delete_comment"("group_id" "uuid", "image_id" "uuid") TO "service_role";
+
+
+
 GRANT ALL ON FUNCTION "public"."delete_image"("image_id" "uuid") TO "anon";
 GRANT ALL ON FUNCTION "public"."delete_image"("image_id" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."delete_image"("image_id" "uuid") TO "service_role";
@@ -1246,6 +1753,24 @@ GRANT ALL ON FUNCTION "public"."get_all_images"() TO "service_role";
 
 
 
+GRANT ALL ON FUNCTION "public"."get_comment_count"("group_id" "uuid", "image_id" "uuid") TO "anon";
+GRANT ALL ON FUNCTION "public"."get_comment_count"("group_id" "uuid", "image_id" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."get_comment_count"("group_id" "uuid", "image_id" "uuid") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."get_comments"("group_id" "uuid", "image_id" "uuid") TO "anon";
+GRANT ALL ON FUNCTION "public"."get_comments"("group_id" "uuid", "image_id" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."get_comments"("group_id" "uuid", "image_id" "uuid") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."get_group_details"("group_id" "uuid") TO "anon";
+GRANT ALL ON FUNCTION "public"."get_group_details"("group_id" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."get_group_details"("group_id" "uuid") TO "service_role";
+
+
+
 GRANT ALL ON FUNCTION "public"."get_group_images"("p_group_id" "uuid") TO "anon";
 GRANT ALL ON FUNCTION "public"."get_group_images"("p_group_id" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."get_group_images"("p_group_id" "uuid") TO "service_role";
@@ -1255,6 +1780,12 @@ GRANT ALL ON FUNCTION "public"."get_group_images"("p_group_id" "uuid") TO "servi
 GRANT ALL ON FUNCTION "public"."get_group_members"("group_id" "uuid") TO "anon";
 GRANT ALL ON FUNCTION "public"."get_group_members"("group_id" "uuid") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."get_group_members"("group_id" "uuid") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."get_group_members_count"("group_id" "uuid") TO "anon";
+GRANT ALL ON FUNCTION "public"."get_group_members_count"("group_id" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."get_group_members_count"("group_id" "uuid") TO "service_role";
 
 
 
@@ -1312,6 +1843,12 @@ GRANT ALL ON FUNCTION "public"."remove_group"("group_id" "uuid") TO "service_rol
 
 
 
+GRANT ALL ON FUNCTION "public"."update_comment"("group_id" "uuid", "image_id" "uuid", "text" "text") TO "anon";
+GRANT ALL ON FUNCTION "public"."update_comment"("group_id" "uuid", "image_id" "uuid", "text" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."update_comment"("group_id" "uuid", "image_id" "uuid", "text" "text") TO "service_role";
+
+
+
 GRANT ALL ON FUNCTION "public"."update_group_name"("group_id" "uuid", "new_name" "text") TO "anon";
 GRANT ALL ON FUNCTION "public"."update_group_name"("group_id" "uuid", "new_name" "text") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."update_group_name"("group_id" "uuid", "new_name" "text") TO "service_role";
@@ -1336,6 +1873,12 @@ GRANT ALL ON FUNCTION "public"."upload_image_to_groups"("group_ids" "uuid"[], "i
 
 
 
+
+
+
+GRANT ALL ON TABLE "public"."Comments" TO "anon";
+GRANT ALL ON TABLE "public"."Comments" TO "authenticated";
+GRANT ALL ON TABLE "public"."Comments" TO "service_role";
 
 
 
