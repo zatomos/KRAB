@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:krab/pages/GroupPage.dart';
+
+import 'package:krab/l10n/l10n.dart';
+import 'package:krab/pages/GroupImagesPage.dart';
 import 'package:krab/models/Group.dart';
 import 'package:krab/widgets/FloatingSnackBar.dart';
 import 'package:krab/UserPreferences.dart';
@@ -51,7 +53,7 @@ class _GroupCardState extends State<GroupCard> {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => GroupPage(group: widget.group),
+            builder: (_) => GroupImagesPage(group: widget.group),
           ),
         );
       },
@@ -68,13 +70,13 @@ class _GroupCardState extends State<GroupCard> {
             future: _fetchGroupMemberCount(widget.group.id),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Text("Loading members...");
+                return const Text(" ");
               } else if (snapshot.hasError) {
-                return const Text("Error loading members");
+                return Text(context.l10n.error_loading_members);
               } else {
                 final count = snapshot.data ?? 0;
                 return Text(
-                  "$count ${count == 1 ? "member" : "members"}",
+                  "$count ${count == 1 ? context.l10n.member_singular : context.l10n.members_plural}",
                   style: const TextStyle(fontSize: 14, color: Colors.grey),
                 );
               }
@@ -83,17 +85,17 @@ class _GroupCardState extends State<GroupCard> {
           trailing: IconButton(
             onLongPress: () {
               showSnackBar(context,
-                  "Starred groups will be automatically selected when sending images.");
+                  context.l10n.starred_groups_long_press);
             },
             onPressed: () async {
               if (isFavorite) {
                 await UserPreferences.removeFavoriteGroup(widget.group.id);
                 showSnackBar(
-                    context, "Removed ${widget.group.name} from favorites.");
+                    context, context.l10n.removed_group_favorites(widget.group.name));
               } else {
                 await UserPreferences.addFavoriteGroup(widget.group.id);
                 showSnackBar(
-                    context, "Added ${widget.group.name} to favorites.");
+                    context, context.l10n.added_group_favorites(widget.group.name));
               }
               setState(() {
                 isFavorite = !isFavorite;

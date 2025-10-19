@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
@@ -5,6 +6,7 @@ import 'package:krab/widgets/FloatingSnackBar.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:image_picker/image_picker.dart';
 
+import 'package:krab/l10n/l10n.dart';
 import 'package:krab/services/supabase.dart';
 import 'package:krab/themes/GlobalThemeData.dart';
 import 'package:krab/widgets/RoundedInputField.dart';
@@ -21,15 +23,15 @@ class ImageSentDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(success ? "Image Sent" : "Error Sending Image"),
-      content: Text(success
-          ? "Your image has been sent to the selected groups."
-          : "There was an error sending your image: $errorMsg"),
+      title: Text(success ? context.l10n.image_sent_title : context.l10n.error_image_not_sent_title),
+      content: Text(
+        success
+            ? context.l10n.image_sent_subtitle
+            : context.l10n.error_image_not_sent_subtitle(errorMsg ?? 'Unknown error')
+      ),
       actions: [
         TextButton(
-          onPressed: () {
-            Navigator.of(context).pop();
-          },
+          onPressed: () => Navigator.of(context).pop(),
           child: const Text("OK"),
         ),
       ],
@@ -48,9 +50,23 @@ class CameraPageState extends State<CameraPage> {
   CameraController? _controller;
   Future<void>? _initializeControllerFuture;
   List<CameraDescription>? _cameras;
+
   int _selectedCameraIndex = 0;
   bool _isFlashOn = false;
   bool _captureInProgress = false;
+
+  // Zoom state
+  double _currentZoom = 1.0;
+  double _baseZoom = 1.0;
+  double _minZoom = 1.0;
+  double _maxZoom = 1.0;
+  double _desiredZoom = 1.0;
+  Timer? _zoomTimer;
+  bool _zoomApplying = false;
+  final Duration _zoomPeriod = const Duration(milliseconds: 16); // ~60fps
+
+  // Tap focus UI
+  Offset? _focusPoint;
 
   @override
   void initState() {
@@ -60,12 +76,14 @@ class CameraPageState extends State<CameraPage> {
 
   @override
   void dispose() {
+    _zoomTimer?.cancel();
     _controller?.dispose();
     super.dispose();
   }
 
+  // ===== Initialization ========================================================
+
   Future<void> _initializeCamera() async {
-    // Check if camera permission is granted.
     final cameraPermissionStatus = await Permission.camera.status;
     if (!cameraPermissionStatus.isGranted) {
       final result = await Permission.camera.request();
@@ -77,51 +95,199 @@ class CameraPageState extends State<CameraPage> {
 
     try {
       _cameras = await availableCameras();
-      if (_cameras != null && _cameras!.isNotEmpty) {
-        _controller = CameraController(
-          _cameras![_selectedCameraIndex],
-          ResolutionPreset.ultraHigh,
-        );
-        _initializeControllerFuture = _controller!.initialize();
-        await _initializeControllerFuture;
-        if (mounted) setState(() {});
-      } else {
+      if (_cameras == null || _cameras!.isEmpty) {
         debugPrint("No cameras available");
+        return;
       }
+
+      debugPrint("Raw cameras from platform:");
+      for (var i = 0; i < _cameras!.length; i++) {
+        final c = _cameras![i];
+        debugPrint(
+            "  [$i] name='${c.name}' direction=${c.lensDirection} orientation=${c.sensorOrientation}");
+      }
+
+      // Prefer back camera if present, otherwise index 0.
+      final backIndex = _cameras!
+          .indexWhere((c) => c.lensDirection == CameraLensDirection.back);
+      _selectedCameraIndex = backIndex != -1 ? backIndex : 0;
+
+      await _createControllerForIndex(_selectedCameraIndex);
+      if (mounted) setState(() {});
     } catch (e) {
       debugPrint("Error during camera initialization: $e");
     }
   }
+
+  Future<void> _createControllerForIndex(int cameraIndex) async {
+    final cams = _cameras;
+    if (cams == null || cameraIndex < 0 || cameraIndex >= cams.length) {
+      debugPrint("Invalid camera index: $cameraIndex");
+      return;
+    }
+
+    debugPrint("Creating controller for camera[$cameraIndex]: "
+        "${cams[cameraIndex].name} (${cams[cameraIndex].lensDirection})");
+
+    _controller?.dispose();
+    _controller = CameraController(
+      cams[cameraIndex],
+      ResolutionPreset.ultraHigh,
+      enableAudio: false,
+    );
+    _initializeControllerFuture = _controller!.initialize();
+    await _initializeControllerFuture;
+
+    try {
+      await _controller!.setFocusMode(FocusMode.auto);
+    } catch (e) {
+      debugPrint("setFocusMode unsupported: $e");
+    }
+    try {
+      await _controller!.setExposureMode(ExposureMode.auto);
+    } catch (e) {
+      debugPrint("setExposureMode unsupported: $e");
+    }
+
+    _minZoom = await _controller!.getMinZoomLevel();
+    _maxZoom = await _controller!.getMaxZoomLevel();
+    _currentZoom = 1.0;
+    _desiredZoom = 1.0;
+
+    debugPrint("Zoom caps: min=$_minZoom max=$_maxZoom");
+  }
+
+  // ===== Flash, camera switching, zoom, focus/AE ===============================
 
   Future<void> _switchFlashLight() async {
     if (_controller == null) return;
     _isFlashOn = !_isFlashOn;
     await _controller!
         .setFlashMode(_isFlashOn ? FlashMode.torch : FlashMode.off);
-    setState(() {});
+    if (mounted) setState(() {});
   }
 
-  Future<void> _switchCamera() async {
+  Future<void> _flipFrontBack() async {
     if (_cameras == null || _cameras!.isEmpty) return;
-    _selectedCameraIndex = (_selectedCameraIndex + 1) % _cameras!.length;
-    await _controller?.dispose();
-    _controller = CameraController(
-      _cameras![_selectedCameraIndex],
-      ResolutionPreset.high,
-    );
-    _initializeControllerFuture = _controller!.initialize();
-    await _initializeControllerFuture;
-    setState(() {});
+
+    final current = _cameras![_selectedCameraIndex];
+    final targetDir = current.lensDirection == CameraLensDirection.front
+        ? CameraLensDirection.back
+        : CameraLensDirection.front;
+
+    final targetIndex =
+        _cameras!.indexWhere((c) => c.lensDirection == targetDir);
+    if (targetIndex == -1) {
+      debugPrint("No camera with direction=$targetDir");
+      return;
+    }
+
+    debugPrint(
+        "Switching to camera[$targetIndex] (${_cameras![targetIndex].lensDirection})");
+    _selectedCameraIndex = targetIndex;
+    await _createControllerForIndex(targetIndex);
+    if (mounted) setState(() {});
   }
+
+  void _scheduleZoomApply() {
+    _zoomTimer ??= Timer(_zoomPeriod, () async {
+      _zoomTimer = null;
+      final ctrl = _controller;
+      if (ctrl == null || !ctrl.value.isInitialized) return;
+
+      if (_zoomApplying) {
+        _scheduleZoomApply();
+        return;
+      }
+
+      _zoomApplying = true;
+      final double toApply = _desiredZoom;
+      try {
+        await ctrl.setZoomLevel(toApply);
+      } catch (e) {
+        debugPrint("setZoomLevel failed: $e");
+      } finally {
+        _zoomApplying = false;
+        if ((toApply - _desiredZoom).abs() > 1e-3) _scheduleZoomApply();
+      }
+    });
+  }
+
+  Future<void> _onZoomChanged(double zoom) async {
+    _desiredZoom = zoom.clamp(_minZoom, _maxZoom).toDouble();
+    if (mounted) setState(() => _currentZoom = _desiredZoom);
+    _scheduleZoomApply();
+  }
+
+  Future<void> _setFocusPoint(Offset point, Size previewSize) async {
+    final ctrl = _controller;
+    if (ctrl == null || !ctrl.value.isInitialized) return;
+
+    if (mounted) setState(() => _focusPoint = point);
+
+    // Normalize
+    double x = point.dx / previewSize.width;
+    double y = point.dy / previewSize.height;
+
+    // Flip X for front
+    final isFront = _cameras != null &&
+        _cameras!.isNotEmpty &&
+        _cameras![_selectedCameraIndex].lensDirection ==
+            CameraLensDirection.front;
+    if (isFront) x = 1.0 - x;
+
+    try {
+      // Always stay in auto
+      if (ctrl.value.focusMode != FocusMode.auto) {
+        try {
+          await ctrl.setFocusMode(FocusMode.auto);
+        } catch (e) {
+          debugPrint("setFocusMode(auto) failed: $e");
+        }
+      }
+      if (ctrl.value.exposureMode != ExposureMode.auto) {
+        try {
+          await ctrl.setExposureMode(ExposureMode.auto);
+        } catch (e) {
+          debugPrint("setExposureMode(auto) failed: $e");
+        }
+      }
+
+      ctrl.setExposureOffset(0).catchError((_) {});
+
+      await ctrl.setFocusPoint(Offset(x, y));
+      await ctrl.setExposurePoint(Offset(x, y));
+
+      // Small delay before returning to auto modes
+      await Future.delayed(const Duration(milliseconds: 180));
+      try {
+        await ctrl.setFocusMode(FocusMode.auto);
+      } catch (_) {}
+      try {
+        await ctrl.setExposureMode(ExposureMode.auto);
+      } catch (_) {}
+    } catch (e) {
+      debugPrint("Error setting focus/exposure point: $e");
+      try {
+        await ctrl.setFocusMode(FocusMode.auto);
+      } catch (_) {}
+      try {
+        await ctrl.setExposureMode(ExposureMode.auto);
+      } catch (_) {}
+    }
+
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) setState(() => _focusPoint = null);
+    });
+  }
+
+  // ===== Capture & gallery =====================================================
 
   Future<void> _takePicture() async {
     try {
-      // Prevent multiple captures
       if (_captureInProgress) return;
-
       if (mounted) setState(() => _captureInProgress = true);
 
-      // Capture the image
       final image = await _controller!.takePicture();
       await _showSendImageDialog(File(image.path));
 
@@ -135,22 +301,14 @@ class CameraPageState extends State<CameraPage> {
 
   Future<void> _sendPictureFromStorage() async {
     try {
-      // Create an instance of ImagePickerAndroid
       final ImagePicker imagePicker = ImagePicker();
-
-      // Pick an image from the gallery
       final XFile? pickedImage =
           await imagePicker.pickImage(source: ImageSource.gallery);
-
-      // User canceled the picker
       if (pickedImage == null) {
         debugPrint("No image selected");
         return;
       }
-
       final File imageFile = File(pickedImage.path);
-
-      // Show the send image dialog
       await _showSendImageDialog(imageFile);
     } catch (e) {
       debugPrint("Error picking image: $e");
@@ -162,11 +320,7 @@ class CameraPageState extends State<CameraPage> {
     final TextEditingController description = TextEditingController();
     final favoriteGroups = await UserPreferences.getFavoriteGroups();
     Set<String> selectedGroups = {};
-
-    // Pre-select favorite groups
     selectedGroups.addAll(favoriteGroups);
-
-    // Preload groups once.
     final groupsFuture = getUserGroups();
 
     await showDialog(
@@ -176,32 +330,26 @@ class CameraPageState extends State<CameraPage> {
           builder: (BuildContext context, StateSetter setState) {
             return AlertDialog(
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              title: const Text("Select Groups"),
+                  borderRadius: BorderRadius.circular(8)),
+              title: Text(context.l10n.select_groups),
               content: Container(
                 width: MediaQuery.of(context).size.width * 0.9,
                 constraints: BoxConstraints(
-                  maxHeight: MediaQuery.of(context).size.height * 0.8,
-                ),
+                    maxHeight: MediaQuery.of(context).size.height * 0.8),
                 child: SingleChildScrollView(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Image preview
                       Container(
                         width: double.infinity,
                         height: 200,
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(10),
                           image: DecorationImage(
-                            image: FileImage(imageFile),
-                            fit: BoxFit.cover,
-                          ),
+                              image: FileImage(imageFile), fit: BoxFit.cover),
                         ),
                       ),
                       const SizedBox(height: 10),
-                      // Load groups asynchronously using FutureBuilder and the preloaded future.
                       FutureBuilder(
                         future: groupsFuture,
                         builder: (context, snapshot) {
@@ -217,13 +365,13 @@ class CameraPageState extends State<CameraPage> {
                             final errorMsg = snapshot.hasError
                                 ? snapshot.error.toString()
                                 : (snapshot.data?.error ??
-                                    "Failed to load groups");
+                                    context.l10n.failed_to_load_groups);
                             return Center(child: Text("Error: $errorMsg"));
                           } else {
                             final groups = snapshot.data!.data ?? [];
                             if (groups.isEmpty) {
-                              return const Center(
-                                  child: Text("Please join a group first!"));
+                              return Center(
+                                  child: Text(context.l10n.join_group_first));
                             } else {
                               return SizedBox(
                                 height: 200,
@@ -253,59 +401,53 @@ class CameraPageState extends State<CameraPage> {
                         },
                       ),
                       const SizedBox(height: 10),
-                      // Description input field
                       RoundedInputField(
-                        hintText: "Add a description...",
-                        controller: description,
-                      ),
+                          hintText: context.l10n.add_description,
+                          capitalizeSentences: true,
+                          controller: description),
                     ],
                   ),
                 ),
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text("Cancel"),
-                ),
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: Text(context.l10n.cancel)),
                 TextButton(
                   onPressed: () async {
                     if (selectedGroups.isEmpty) {
                       await showDialog(
                         context: context,
                         builder: (context) => AlertDialog(
-                          title: const Text("Error"),
+                          title: Text(context.l10n.error),
                           content:
-                              const Text("Please select at least one group."),
+                              Text(context.l10n.select_at_least_one_group),
                           actions: [
                             TextButton(
-                              onPressed: () => Navigator.of(context).pop(),
-                              child: const Text("OK"),
-                            ),
+                                onPressed: () => Navigator.of(context).pop(),
+                                child: const Text("OK")),
                           ],
                         ),
                       );
                       return;
                     }
 
-                    // Show loading dialog
                     showDialog(
-                        context: context,
-                        barrierDismissible: false,
-                        builder: (context) =>
-                            const Center(child: CircularProgressIndicator()));
+                      context: context,
+                      barrierDismissible: false,
+                      builder: (context) =>
+                          const Center(child: CircularProgressIndicator()),
+                    );
 
-                    // Send the image to the selected groups
                     final response = await sendImageToGroups(
                       imageFile,
                       selectedGroups.toList(),
                       description.text,
                     );
 
-                    // Close the loading and send image dialogs
-                    Navigator.of(context).pop();
-                    Navigator.of(context).pop();
+                    Navigator.of(context).pop(); // loading
+                    Navigator.of(context).pop(); // main dialog
 
-                    // Show the result dialog
                     await showDialog(
                       context: context,
                       builder: (context) => ImageSentDialog(
@@ -314,7 +456,7 @@ class CameraPageState extends State<CameraPage> {
                       ),
                     );
                   },
-                  child: const Text("Send"),
+                  child: Text(context.l10n.send)
                 ),
               ],
             );
@@ -323,6 +465,8 @@ class CameraPageState extends State<CameraPage> {
       },
     );
   }
+
+  // ===== UI ====================================================================
 
   @override
   Widget build(BuildContext context) {
@@ -347,31 +491,110 @@ class CameraPageState extends State<CameraPage> {
       body: FutureBuilder<void>(
         future: _initializeControllerFuture,
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.done) {
+          if (snapshot.connectionState == ConnectionState.done &&
+              _controller != null &&
+              _controller!.value.isInitialized) {
             return Stack(
               children: [
+                // Preview + gestures
                 Positioned.fill(
                   child: Center(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(20),
-                      child: Container(
-                        width: previewWidth,
-                        height: previewHeight,
-                        color: Colors.white12,
-                        child: CameraPreview(_controller!),
+                    child: GestureDetector(
+                      onTapDown: (details) {
+                        final RenderBox box =
+                            context.findRenderObject() as RenderBox;
+                        final Offset localPosition =
+                            box.globalToLocal(details.globalPosition);
+
+                        final screenWidth = MediaQuery.of(context).size.width;
+                        final screenHeight = MediaQuery.of(context).size.height;
+                        final previewLeft = (screenWidth - previewWidth) / 2;
+                        final previewTop = (screenHeight - previewHeight) / 2;
+
+                        if (localPosition.dx >= previewLeft &&
+                            localPosition.dx <= previewLeft + previewWidth &&
+                            localPosition.dy >= previewTop &&
+                            localPosition.dy <= previewTop + previewHeight) {
+                          final relativePosition = Offset(
+                            localPosition.dx - previewLeft,
+                            localPosition.dy - previewTop,
+                          );
+                          _setFocusPoint(relativePosition,
+                              Size(previewWidth, previewHeight));
+                        }
+                      },
+                      onScaleStart: (_) => _baseZoom = _currentZoom,
+                      onScaleUpdate: (details) {
+                        if (details.scale == 1.0) return;
+                        final target = (_baseZoom * details.scale)
+                            .clamp(_minZoom, _maxZoom)
+                            .toDouble();
+                        _onZoomChanged(target);
+                      },
+                      onScaleEnd: (_) => _onZoomChanged(_currentZoom),
+                      child: Stack(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(20),
+                            child: Container(
+                              width: previewWidth,
+                              height: previewHeight,
+                              color: Colors.white12,
+                              child: CameraPreview(_controller!),
+                            ),
+                          ),
+                          if (_focusPoint != null)
+                            Positioned(
+                              left: _focusPoint!.dx - 40,
+                              top: _focusPoint!.dy - 40,
+                              child: AnimatedOpacity(
+                                opacity: 1.0,
+                                duration: const Duration(milliseconds: 80),
+                                child: Container(
+                                  width: 80,
+                                  height: 80,
+                                  decoration: BoxDecoration(
+                                    border: Border.all(
+                                        color: Colors.white, width: 2),
+                                    borderRadius: BorderRadius.circular(40),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                   ),
                 ),
+
+                // Zoom HUD
+                if (_currentZoom > 1.01)
+                  Positioned(
+                    top: MediaQuery.of(context).size.height * 0.15,
+                    left: MediaQuery.of(context).size.width / 2 - 30,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        '${_currentZoom.toStringAsFixed(_currentZoom < 1 ? 1 : 1)}x',
+                        style:
+                            const TextStyle(color: Colors.white, fontSize: 16),
+                      ),
+                    ),
+                  ),
+
+                // Top buttons
                 Positioned(
                   top: 50,
                   left: 25,
                   child: Container(
                     padding: const EdgeInsets.all(2),
                     decoration: const BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.white12,
-                    ),
+                        shape: BoxShape.circle, color: Colors.white12),
                     child: IconButton(
                       icon: const Icon(Icons.group,
                           color: Colors.white, size: 30),
@@ -390,38 +613,35 @@ class CameraPageState extends State<CameraPage> {
                   child: Container(
                     padding: const EdgeInsets.all(2),
                     decoration: const BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.white12,
-                    ),
+                        shape: BoxShape.circle, color: Colors.white12),
                     child: IconButton(
-                      icon: const Icon(Icons.photo_library_rounded,
+                      icon: const Icon(Icons.upload_rounded,
                           color: Colors.white, size: 30),
-                      onPressed: () {
-                        _sendPictureFromStorage();
-                      },
+                      onPressed: _sendPictureFromStorage,
                     ),
                   ),
                 ),
                 Positioned(
-                    top: 50,
-                    right: 25,
-                    child: Container(
-                      padding: const EdgeInsets.all(2),
-                      decoration: const BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white12,
-                      ),
-                      child: IconButton(
-                        icon: const Icon(Icons.account_circle_rounded,
-                            color: Colors.white, size: 30),
-                        onPressed: () {
-                          Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (_) => const AccountPage()));
-                        },
-                      ),
-                    )),
+                  top: 50,
+                  right: 25,
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: const BoxDecoration(
+                        shape: BoxShape.circle, color: Colors.white12),
+                    child: IconButton(
+                      icon: const Icon(Icons.account_circle_rounded,
+                          color: Colors.white, size: 30),
+                      onPressed: () {
+                        Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const AccountPage()));
+                      },
+                    ),
+                  ),
+                ),
+
+                // Shutter row
                 Positioned(
                   bottom: 20,
                   left: 0,
@@ -432,9 +652,8 @@ class CameraPageState extends State<CameraPage> {
                       IconButton(
                         onPressed: _switchFlashLight,
                         icon: Icon(
-                          _isFlashOn ? Icons.flash_on : Icons.flash_off,
-                          color: Colors.white,
-                        ),
+                            _isFlashOn ? Icons.flash_on : Icons.flash_off,
+                            color: Colors.white),
                       ),
                       IconButton(
                         onPressed: _takePicture,
@@ -446,8 +665,9 @@ class CameraPageState extends State<CameraPage> {
                           size: 70,
                         ),
                       ),
+                      // Flip front/back
                       IconButton(
-                        onPressed: _switchCamera,
+                        onPressed: _flipFrontBack,
                         icon: const Icon(Icons.flip_camera_android_rounded,
                             color: Colors.white),
                       ),
@@ -458,10 +678,8 @@ class CameraPageState extends State<CameraPage> {
             );
           } else if (snapshot.hasError) {
             return Center(
-              child: Text(
-                "Error initializing camera: ${snapshot.error}",
-                style: const TextStyle(color: Colors.white),
-              ),
+              child: Text("Error initializing camera: ${snapshot.error}",
+                  style: const TextStyle(color: Colors.white)),
             );
           } else {
             return const Center(child: CircularProgressIndicator());

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:krab/l10n/l10n.dart';
 import 'package:krab/services/supabase.dart';
 import 'package:krab/themes/GlobalThemeData.dart';
 import 'package:krab/widgets/FloatingSnackBar.dart';
@@ -25,7 +26,7 @@ class GroupsPageState extends State<GroupsPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Your Groups"),
+        title: Text(context.l10n.your_groups_page_title),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -44,7 +45,7 @@ class GroupsPageState extends State<GroupsPage> {
                     PopupMenuItem(
                       child: ListTile(
                         leading: const Icon(Icons.group_add_rounded),
-                        title: const Text("Create New Group"),
+                        title: Text(context.l10n.create_new_group),
                         onTap: () {
                           Navigator.pop(context);
                           showDialog(
@@ -61,7 +62,7 @@ class GroupsPageState extends State<GroupsPage> {
                     PopupMenuItem(
                       child: ListTile(
                         leading: const Icon(Icons.groups_2_rounded),
-                        title: const Text("Join Group"),
+                        title: Text(context.l10n.join_group),
                         onTap: () {
                           Navigator.pop(context);
                           showDialog(
@@ -90,7 +91,7 @@ class GroupsPageState extends State<GroupsPage> {
                 }
                 if (snapshot.hasError) {
                   return Center(
-                      child: Text("Error loading groups: ${snapshot.error}"));
+                      child: Text(context.l10n.error_loading_groups(snapshot.error.toString())));
                 }
                 if (!snapshot.hasData) {
                   return const Center(child: Text("No groups data available."));
@@ -101,8 +102,8 @@ class GroupsPageState extends State<GroupsPage> {
                 }
                 final groups = response.data ?? [];
                 if (groups.isEmpty) {
-                  return const Center(
-                    child: Text("You haven't joined any groups yet."),
+                  return Center(
+                    child: Text(context.l10n.no_group_joined)
                   );
                 }
                 return ListView.builder(
@@ -140,7 +141,7 @@ class JoinGroupDialogState extends State<JoinGroupDialog> {
     final code = _controller.text.trim();
     if (code.length != 8) {
       setState(() {
-        error = "Group code must be exactly 8 characters.";
+        error = context.l10n.group_code_eight_chars;
       });
       return;
     }
@@ -151,13 +152,13 @@ class JoinGroupDialogState extends State<JoinGroupDialog> {
       final response = await joinGroup(code);
       if (!response.success) {
         setState(() {
-          error = "Invalid group code: ${response.error}";
+          error = context.l10n.group_code_invalid(response.error ?? "Unknown error");
         });
         return;
       }
       Navigator.of(context).pop(true);
       setState(() {});
-      showSnackBar(context, "Successfully joined group!", color: Colors.green);
+      showSnackBar(context, context.l10n.group_joined_success, color: Colors.green);
     } catch (e) {
       setState(() {
         error = e.toString();
@@ -172,7 +173,7 @@ class JoinGroupDialogState extends State<JoinGroupDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text("Join Group"),
+      title: Text(context.l10n.join_group),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -180,7 +181,7 @@ class JoinGroupDialogState extends State<JoinGroupDialog> {
             controller: _controller,
             maxLength: 8,
             decoration: InputDecoration(
-              labelText: "Enter Group Code",
+              labelText: context.l10n.enter_group_code,
               errorText: error,
             ),
           ),
@@ -189,7 +190,7 @@ class JoinGroupDialogState extends State<JoinGroupDialog> {
       actions: [
         TextButton(
           onPressed: isLoading ? null : () => Navigator.of(context).pop(),
-          child: const Text("Cancel"),
+          child: Text(context.l10n.cancel),
         ),
         ElevatedButton(
           onPressed: isLoading ? null : _joinGroup,
@@ -199,7 +200,7 @@ class JoinGroupDialogState extends State<JoinGroupDialog> {
                   height: 20,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Text("Join"),
+              : Text(context.l10n.join),
         ),
       ],
     );
@@ -227,7 +228,7 @@ class CreateGroupDialogState extends State<CreateGroupDialog> {
     final name = _controller.text.trim();
     if (name.isEmpty) {
       setState(() {
-        error = "Group name cannot be empty.";
+        error = context.l10n.group_name_empty_error;
       });
       return;
     }
@@ -240,13 +241,13 @@ class CreateGroupDialogState extends State<CreateGroupDialog> {
       final response = await createGroup(name);
       if (!response.success) {
         setState(() {
-          error = "Error creating group: ${response.error}";
+          error = context.l10n.error_creating_group(response.error ?? "Unknown error");
         });
         return;
       }
 
       Navigator.of(context).pop(true);
-      showSnackBar(context, "Group created successfully.", color: Colors.green);
+      showSnackBar(context, context.l10n.group_created_success, color: Colors.green);
     } catch (e) {
       setState(() {
         error = e.toString();
@@ -261,14 +262,14 @@ class CreateGroupDialogState extends State<CreateGroupDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text("Create Group"),
+      title: Text(context.l10n.create_group),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           TextField(
             controller: _controller,
             decoration: InputDecoration(
-              labelText: "Enter Group Name",
+              labelText: context.l10n.enter_group_name,
               errorText: error,
             ),
           ),
@@ -277,7 +278,7 @@ class CreateGroupDialogState extends State<CreateGroupDialog> {
       actions: [
         TextButton(
           onPressed: isLoading ? null : () => Navigator.of(context).pop(),
-          child: const Text("Cancel"),
+          child: Text(context.l10n.cancel),
         ),
         ElevatedButton(
           onPressed: isLoading ? null : _createGroup,
@@ -287,7 +288,7 @@ class CreateGroupDialogState extends State<CreateGroupDialog> {
                   height: 20,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Text("Create"),
+              : Text(context.l10n.create)
         ),
       ],
     );

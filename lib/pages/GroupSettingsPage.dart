@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:qr_bar_code/qr/src/qr_code.dart';
 
+import 'package:krab/l10n/l10n.dart';
 import 'package:krab/widgets/FloatingSnackBar.dart';
 import 'package:krab/widgets/RectangleButton.dart';
 import 'package:krab/widgets/RoundedInputField.dart';
@@ -32,10 +33,12 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
     await UserPreferences.removeFavoriteGroup(widget.group.id);
     final response = await leaveGroup(widget.group.id);
     if (response.success) {
-      showSnackBar(context, "Left group successfully.", color: Colors.green);
+      showSnackBar(context, context.l10n.left_group_success,
+          color: Colors.green);
       Navigator.of(context).popUntil((route) => route.isFirst);
     } else {
-      showSnackBar(context, "Failed to leave group: ${response.error}",
+      showSnackBar(
+          context, context.l10n.error_leaving_group(response.error ?? "Unknown error"),
           color: Colors.red);
     }
   }
@@ -51,14 +54,13 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
         return StatefulBuilder(
           builder: (context, setState) {
             return AlertDialog(
-              title: const Text("Edit Group Name"),
+              title: Text(context.l10n.edit_group_name),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   RoundedInputField(
-                    controller: controller,
-                    hintText: "New group name",
-                  ),
+                      controller: controller,
+                      hintText: context.l10n.new_group_name),
                   if (error)
                     Padding(
                       padding: const EdgeInsets.only(top: 8.0),
@@ -71,40 +73,38 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
               ),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: const Text("Cancel"),
-                ),
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: Text(context.l10n.cancel)),
                 TextButton(
-                  onPressed: () async {
-                    // Validate input
-                    if (controller.text.trim().isEmpty) {
-                      setState(() {
-                        error = true;
-                        errorMessage = "Group name cannot be empty";
-                      });
-                      return;
-                    }
+                    onPressed: () async {
+                      // Validate input
+                      if (controller.text.trim().isEmpty) {
+                        setState(() {
+                          error = true;
+                          errorMessage = context.l10n.group_name_empty;
+                        });
+                        return;
+                      }
 
-                    // Attempt to update the group name
-                    final response = await updateGroupName(
-                        widget.group.id, controller.text.trim());
+                      // Attempt to update the group name
+                      final response = await updateGroupName(
+                          widget.group.id, controller.text.trim());
 
-                    // Check if the response contains an error
-                    if (!response.success) {
-                      setState(() {
-                        error = true;
-                        errorMessage =
-                            "Failed to update group name: ${response.error}";
-                      });
-                    } else {
-                      Navigator.of(context)
-                          .pop();
-                      showSnackBar(context, "Group name updated successfully.",
-                          color: Colors.green);
-                    }
-                  },
-                  child: const Text("Save"),
-                ),
+                      // Check if the response contains an error
+                      if (!response.success) {
+                        setState(() {
+                          error = true;
+                          errorMessage = context.l10n.error_updating_group_name(
+                              response.error.toString());
+                        });
+                      } else {
+                        Navigator.of(context).pop();
+                        showSnackBar(
+                            context, context.l10n.group_name_updated_success,
+                            color: Colors.green);
+                      }
+                    },
+                    child: Text(context.l10n.save)),
               ],
             );
           },
@@ -118,18 +118,15 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
           context: context,
           builder: (context) {
             return AlertDialog(
-              title: const Text("Delete Group"),
-              content:
-                  const Text("Are you sure you want to delete this group?"),
+              title: Text(context.l10n.delete_group),
+              content: Text(context.l10n.delete_group_confirmation),
               actions: [
                 TextButton(
-                  onPressed: () => Navigator.of(context).pop(false),
-                  child: const Text("Cancel"),
-                ),
+                    onPressed: () => Navigator.of(context).pop(false),
+                    child: Text(context.l10n.cancel)),
                 TextButton(
-                  onPressed: () => Navigator.of(context).pop(true),
-                  child: const Text("Delete"),
-                ),
+                    onPressed: () => Navigator.of(context).pop(true),
+                    child: Text(context.l10n.delete)),
               ],
             );
           },
@@ -140,11 +137,12 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
       await UserPreferences.removeFavoriteGroup(widget.group.id);
       final response = await deleteGroup(widget.group.id);
       if (response.success) {
-        showSnackBar(context, "Group deleted successfully.",
+        showSnackBar(context, context.l10n.group_deleted_success,
             color: Colors.green);
         Navigator.of(context).popUntil((route) => route.isFirst);
       } else {
-        showSnackBar(context, "Failed to delete group: ${response.error}",
+        showSnackBar(context,
+            context.l10n.error_deleting_group(response.error ?? "Unknown error"),
             color: Colors.red);
       }
     }
@@ -153,7 +151,8 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Group Settings"), actions: [
+      appBar:
+          AppBar(title: Text(context.l10n.group_settings_page_title), actions: [
         IconButton(
           icon: const Icon(Icons.edit),
           onPressed: () {
@@ -164,8 +163,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
-          crossAxisAlignment:
-              CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Centered Section
             Center(
@@ -175,8 +173,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                     child: Container(
                       decoration: BoxDecoration(
                         color: Colors.white,
-                        borderRadius:
-                            BorderRadius.circular(16),
+                        borderRadius: BorderRadius.circular(16),
                       ),
                       padding: const EdgeInsets.all(2),
                       child: QRCode(
@@ -188,7 +185,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                   ),
                   const SizedBox(height: 16),
                   Text(
-                    "Group Code: ${widget.group.code.toUpperCase()}",
+                    context.l10n.group_code(widget.group.code.toUpperCase()),
                     style: const TextStyle(
                         fontSize: 16, fontWeight: FontWeight.bold),
                   ),
@@ -197,9 +194,9 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
             ),
             const SizedBox(height: 16),
 
-            const Text(
-              "Members",
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            Text(
+              context.l10n.members,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
 
@@ -215,7 +212,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                   } else {
                     final members = snapshot.data!.data!;
                     if (members.isEmpty) {
-                      return const Center(child: Text("No members found."));
+                      return Center(child: Text(context.l10n.no_members));
                     }
                     return ListView.builder(
                       itemCount: members.length,
@@ -239,14 +236,14 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                 children: [
                   RectangleButton(
                     onPressed: _leaveGroup,
-                    label: 'Leave Group',
+                    label: context.l10n.leave_group,
                     backgroundColor: Colors.red,
                   ),
                   if (widget.isAdmin) const SizedBox(height: 16),
                   if (widget.isAdmin)
                     RectangleButton(
                       onPressed: _deleteGroup,
-                      label: 'Delete Group',
+                      label: context.l10n.delete_group,
                       backgroundColor: Colors.red,
                     ),
                 ],

@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/cupertino.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 
@@ -60,14 +61,15 @@ Future<SupabaseResponse<Group>> getGroupDetails(String groupId) async {
 /// Get count of members for a given group.
 Future<SupabaseResponse<int>> getGroupMemberCount(String groupId) async {
   try {
-    final response = await supabase.rpc("get_group_members_count",
-        params: {"group_id": groupId});
+    final response = await supabase
+        .rpc("get_group_members_count", params: {"group_id": groupId});
     if (response['success'] == false) {
       return SupabaseResponse(
           success: false,
           error: "Error loading group member count: ${response['error']}");
     }
-    return SupabaseResponse(success: true, data: response['member_count'] as int);
+    return SupabaseResponse(
+        success: true, data: response['member_count'] as int);
   } catch (error) {
     return SupabaseResponse(
         success: false, error: "Error loading group member count: $error");
@@ -187,27 +189,54 @@ Future<SupabaseResponse<void>> leaveGroup(String groupId) async {
 /// ------------------ IMAGE FUNCTIONS ------------------
 
 /// Send an image to selected groups with an optional description.
-/// Note: This function first registers the image via an RPC call and then uploads the file.
 Future<SupabaseResponse<void>> sendImageToGroups(
-    File imageFile, List<String> selectedGroups, String description) async {
+    File imageFile,
+    List<String> selectedGroups,
+    String description,
+    ) async {
   try {
-    final regResponse = await supabase.rpc("upload_image_to_groups", params: {
+    // Request UUID
+    final uuidResponse = await supabase.rpc("request_image_uuid");
+
+    if (uuidResponse['success'] == false) {
+      return SupabaseResponse(
+        success: false,
+        error: "Error requesting UUID: ${uuidResponse['error']}",
+      );
+    }
+
+    final imageId = uuidResponse['image_id'];
+
+    // Upload image to storage
+    try {
+      await supabase.storage.from("images").upload(imageId, imageFile);
+    } catch (uploadError) {
+      return SupabaseResponse(
+        success: false,
+        error: "Error uploading image: $uploadError",
+      );
+    }
+
+    // Register image in database
+    final regResponse = await supabase.rpc("register_uploaded_image", params: {
+      "image_id": imageId,
       "group_ids": selectedGroups,
       "image_description": description,
     });
+
     if (regResponse['success'] == false) {
       return SupabaseResponse(
-          success: false,
-          error: "Error registering image: ${regResponse['error']}");
+        success: false,
+        error: "Error registering image in database: ${regResponse['error']}",
+      );
     }
-    final imageId = regResponse['image_id'];
 
-    final uploadResponse =
-        await supabase.storage.from("images").upload(imageId, imageFile);
     return SupabaseResponse(success: true);
   } catch (error) {
     return SupabaseResponse(
-        success: false, error: "Error sending image: $error");
+      success: false,
+      error: "Error sending image: $error",
+    );
   }
 }
 
@@ -389,29 +418,46 @@ Future<SupabaseResponse<int>> getCommentCount(
 /// ------------------ FCM TOKEN & USER FUNCTIONS ------------------
 
 /// Handles FCM token registration.
-Future<SupabaseResponse<void>> fcmTokenHandler() async {
+Future<SupabaseResponse<void>> fcmTokenHandler({String? username}) async {
   try {
+    // Ask permission (don’t fail if denied here; you can decide policy)
     await FirebaseMessaging.instance.requestPermission();
-    await FirebaseMessaging.instance.getAPNSToken();
+
+    // iOS-only: APNs token (optional)
+    // if (Platform.isIOS) { await FirebaseMessaging.instance.getAPNSToken(); }
+
     final fcmToken = await FirebaseMessaging.instance.getToken();
     if (fcmToken == null) {
       return SupabaseResponse(success: false, error: "Error getting FCM token");
     }
-    final userId = supabase.auth.currentUser!.id;
-    await supabase.from('Users').upsert({
-      'id': userId,
+
+    final user = supabase.auth.currentUser;
+    if (user == null) {
+      return SupabaseResponse(success: false, error: "No authenticated user");
+    }
+
+    final payload = <String, dynamic>{
+      'id': user.id,
       'fcm_token': fcmToken,
-    });
-    return SupabaseResponse(success: true);
+      if (username != null) 'username': username,
+    };
+
+    await supabase.from('Users').upsert(payload);
+
+    return SupabaseResponse(success: true); // <-- return it
   } catch (error) {
     return SupabaseResponse(
-        success: false, error: "Error handling FCM token: $error");
+      success: false,
+      error: "Error handling FCM token: $error",
+    );
   }
 }
+
 
 /// Register a new user.
 Future<SupabaseResponse<void>> registerUser(
     String username, String email, String password) async {
+  print("Registering user: $username, $email");
   try {
     final authResponse =
         await supabase.auth.signUp(email: email, password: password);
@@ -430,17 +476,8 @@ Future<SupabaseResponse<void>> registerUser(
           success: false, error: "Failed to sign in after sign up");
     }
 
-    // Create user profile using RPC
-    final bool profileCreated = await supabase
-        .rpc("create_user_profile", params: {"username": username});
-
-    if (!profileCreated) {
-      return SupabaseResponse(
-          success: false, error: "Failed to create user profile");
-    }
-
     // Handle FCM token registration
-    await fcmTokenHandler();
+    await fcmTokenHandler(username: username);
 
     return SupabaseResponse(success: true);
   } catch (error) {

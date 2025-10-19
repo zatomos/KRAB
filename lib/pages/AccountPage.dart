@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:krab/l10n/l10n.dart';
 import 'package:krab/services/supabase.dart';
 import 'package:krab/UserPreferences.dart';
 import 'package:krab/widgets/RectangleButton.dart';
@@ -40,7 +41,6 @@ class AccountPageState extends State<AccountPage> {
     final user = supabase.auth.currentUser;
 
     if (user == null) {
-      // Optionally handle missing user (e.g., redirect to login)
       setState(() {
         _isLoading = false;
       });
@@ -51,10 +51,10 @@ class AccountPageState extends State<AccountPage> {
     final usernameResponse = await getUsername(user.id);
     final emailResponse = await getEmail();
 
-// Settings
+    // Settings
     autoImageSave = await UserPreferences.getAutoImageSave();
 
-// Optionally show errors if responses failed
+    // Show errors if responses failed
     if (!usernameResponse.success) {
       showSnackBar(context, "Error loading username: ${usernameResponse.error}",
           color: Colors.red);
@@ -83,7 +83,7 @@ class AccountPageState extends State<AccountPage> {
   Scaffold build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('My Account'),
+        title: Text(context.l10n.account_page_title)
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -96,24 +96,24 @@ class AccountPageState extends State<AccountPage> {
                     child: Stack(
                       children: [
                         UserAvatar(username, radius: 60),
-                        Positioned(
-                          bottom: 0,
-                          right: 0,
-                          child: CircleAvatar(
-                            radius: 20,
-                            backgroundColor: Colors.white,
-                            child: IconButton(
-                              icon: const Icon(Icons.edit, size: 20),
-                              onPressed: () {
-                                // TODO: Implement image upload
-                              },
-                            ),
-                          ),
-                        ),
+                        //const Positioned(
+                        //  bottom: 0,
+                        //  right: 0,
+                        //  child: CircleAvatar(
+                        //    radius: 20,
+                        //    backgroundColor: Colors.white,
+                            // child: IconButton(
+                            //  icon: const Icon(Icons.edit, size: 20),
+                            //  onPressed: () {
+                            //    // TODO: Implement image upload
+                            //  },
+                            // ),
+                        //  ),
+                        // ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 30),
+                  const SizedBox(height: 20),
                   Text(
                     username,
                     textAlign: TextAlign.center,
@@ -123,23 +123,25 @@ class AccountPageState extends State<AccountPage> {
                     ),
                   ),
 
+                  const SizedBox(height: 40),
+
                   // Email Field
                   TextField(
                     controller: _emailController,
-                    decoration: const InputDecoration(
-                      labelText: 'Email',
-                      prefixIcon: Icon(Icons.email),
+                    decoration: InputDecoration(
+                      labelText: context.l10n.email,
+                      prefixIcon: const Icon(Icons.email),
                     ),
                     readOnly: true,
                   ),
                   const SizedBox(height: 50),
 
                   // Settings Section
-                  const Padding(
-                    padding: EdgeInsets.only(left: 8.0),
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8.0),
                     child: Text(
-                      "Settings",
-                      style: TextStyle(
+                      context.l10n.settings,
+                      style: const TextStyle(
                         fontSize: 22,
                         fontWeight: FontWeight.bold,
                       ),
@@ -148,9 +150,9 @@ class AccountPageState extends State<AccountPage> {
                   const SizedBox(height: 10),
 
                   SwitchListTile(
-                    title: const Text("Automatically Save Images"),
-                    subtitle: const Text(
-                        "Images will be saved to your gallery when received."),
+                    title: Text(context.l10n.auto_save_imgs),
+                    subtitle: Text(
+                      context.l10n.auto_save_imgs_description),
                     value: autoImageSave,
                     onChanged: (bool value) {
                       UserPreferences.setAutoImageSave(value);
@@ -164,7 +166,7 @@ class AccountPageState extends State<AccountPage> {
 
                   // Logout Button
                   RectangleButton(
-                    label: 'Logout',
+                    label: context.l10n.log_out,
                     onPressed: _logout,
                     backgroundColor: Colors.redAccent,
                   ),

@@ -6,6 +6,8 @@ import 'package:krab/filesaver.dart';
 class UserPreferences {
   static SharedPreferences? _preferences;
 
+  static late String supabaseUrl;
+  static late String supabaseAnonKey;
   static late bool autoImageSave;
   static late bool isFirstLaunch;
   static late List<String> favoriteGroups;
@@ -13,9 +15,24 @@ class UserPreferences {
   Future<void> initPrefs() async {
     _preferences = await SharedPreferences.getInstance();
 
+    supabaseUrl = _preferences?.getString('supabaseUrl') ??
+        '';
+    supabaseAnonKey = _preferences?.getString('supabaseAnonKey') ??
+        '';
     autoImageSave = _preferences?.getBool('autoImageSave') ?? false;
     isFirstLaunch = _preferences?.getBool('isFirstLaunch') ?? true;
     favoriteGroups = _preferences?.getStringList('favoriteGroups') ?? [];
+  }
+
+  static Future<void> setSupabaseConfig(String url, String anonKey) async {
+    await _preferences?.setString('supabaseUrl', url);
+    await _preferences?.setString('supabaseAnonKey', anonKey);
+  }
+
+  static Future<String> getSupabaseConfig() async {
+    final url = _preferences?.getString('supabaseUrl') ?? '';
+    final anonKey = _preferences?.getString('supabaseAnonKey') ?? '';
+    return 'URL: $url\nAnon Key: $anonKey';
   }
 
   static Future<bool> getAutoImageSave() async {

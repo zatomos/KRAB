@@ -27,6 +27,6 @@ void showSnackBar(BuildContext? context, String message, {Color? color}) {
       ),
     );
   } else {
-    debugPrint("⚠showSnackBar called but no valid ScaffoldMessenger found.");
+    debugPrint("showSnackBar called but no valid ScaffoldMessenger found.");
   }
 }

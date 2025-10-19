@@ -6,6 +6,7 @@ class RoundedInputField extends StatelessWidget {
   final TextEditingController? controller;
   final String hintText;
   final bool obscureText;
+  final bool capitalizeSentences;
   final double borderRadius;
   final Icon? icon;
   final EdgeInsetsGeometry contentPadding;
@@ -15,6 +16,7 @@ class RoundedInputField extends StatelessWidget {
     this.controller,
     this.hintText = '',
     this.obscureText = false,
+    this.capitalizeSentences = false,
     this.borderRadius = 12.0,
     this.icon,
     this.contentPadding =
@@ -28,6 +30,9 @@ class RoundedInputField extends StatelessWidget {
       child: TextField(
         controller: controller,
         obscureText: obscureText,
+        textCapitalization: capitalizeSentences
+            ? TextCapitalization.sentences
+            : TextCapitalization.none,
         decoration: InputDecoration(
           icon: icon,
           labelText: hintText,

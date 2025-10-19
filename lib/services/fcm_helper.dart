@@ -1,0 +1,79 @@
+import 'package:flutter/foundation.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../UserPreferences.dart';
+
+class FcmHelper {
+  static bool _listenersWired = false;
+
+  /// Call this after Supabase is initialized
+  static Future<void> initializeAndSyncToken() async {
+    try {
+      if (UserPreferences.supabaseUrl.isEmpty ||
+          UserPreferences.supabaseAnonKey.isEmpty) {
+        debugPrint('FCM: Supabase config missing; skipping FCM token sync.');
+        return;
+      }
+
+      final messaging = FirebaseMessaging.instance;
+
+      final settings = await messaging.requestPermission();
+      debugPrint('FCM: permission status = ${settings.authorizationStatus}');
+
+      await FirebaseMessaging.instance.setAutoInitEnabled(true);
+
+      // Get the token and push it if logged in
+      final token = await messaging.getToken();
+      debugPrint('FCM: current token = $token');
+      if (token != null) {
+        await _pushTokenIfLoggedIn(token);
+      }
+
+      if (!_listenersWired) {
+        _listenersWired = true;
+
+        // Token refresh
+        FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
+          debugPrint('FCM: token refreshed = $newToken');
+          await _pushTokenIfLoggedIn(newToken);
+        });
+
+        // Auth changes
+        Supabase.instance.client.auth.onAuthStateChange.listen((_) async {
+          final t = await FirebaseMessaging.instance.getToken();
+          debugPrint('FCM: auth state changed; pushing latest token = $t');
+          if (t != null) {
+            await _pushTokenIfLoggedIn(t);
+          }
+        });
+      }
+    } catch (e, st) {
+      debugPrint('FCM: initializeAndSyncToken error: $e');
+      debugPrint('$st');
+    }
+  }
+
+  static Future<void> _pushTokenIfLoggedIn(String token) async {
+    try {
+      if (UserPreferences.supabaseUrl.isEmpty ||
+          UserPreferences.supabaseAnonKey.isEmpty) {
+        debugPrint('FCM: Supabase not configured; skipping token push.');
+        return;
+      }
+      final user = Supabase.instance.client.auth.currentUser;
+      if (user == null) {
+        debugPrint('FCM: no logged-in user; skipping token push.');
+        return;
+      }
+
+      await Supabase.instance.client.from('Users').upsert({
+        'id': user.id,
+        'fcm_token': token,
+      });
+      debugPrint('FCM: token pushed to Supabase for user ${user.id}');
+    } catch (e, st) {
+      debugPrint('FCM: failed to push token: $e');
+      debugPrint('$st');
+    }
+  }
+}

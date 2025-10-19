@@ -5,7 +5,7 @@
     android:initialLayout="@layout/home_screen_widget_with_text"
     android:minWidth="110dp"
     android:minHeight="180dp"
-    android:previewImage="@drawable/default_img_widget"
+    android:previewImage="@drawable/txt_img_widget"
     android:previewLayout="@layout/home_screen_widget_with_text"
     android:resizeMode="horizontal|vertical"
     android:targetCellWidth="2"

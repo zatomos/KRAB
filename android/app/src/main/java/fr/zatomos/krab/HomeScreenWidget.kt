@@ -59,8 +59,12 @@ class HomeScreenWidget : AppWidgetProvider() {
             val views = RemoteViews(context.packageName, R.layout.home_screen_widget).apply {
                 setImageViewResource(R.id.recent_image, R.drawable.ic_placeholder)
             }
+
+            // Launch the app from the widget when clicked
             val clickIntent = Intent(context, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                addCategory(Intent.CATEGORY_LAUNCHER)
+                action = Intent.ACTION_MAIN
             }
             val clickPendingIntent = PendingIntent.getActivity(
                 context,

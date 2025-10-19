@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
+import 'package:krab/l10n/l10n.dart';
 import 'package:krab/services/supabase.dart';
 import 'package:krab/models/Group.dart';
 import 'package:krab/models/ImageData.dart';
@@ -13,29 +14,31 @@ import 'package:krab/widgets/CommentsBottomSheet.dart';
 import 'package:krab/themes/GlobalThemeData.dart';
 import 'package:krab/filesaver.dart';
 
-class GroupPage extends StatefulWidget {
+class GroupImagesPage extends StatefulWidget {
   final Group group;
-  final String? imageId; // Only set when opening the page from a notification, to display the image directly
+  final String? imageId;
 
-  const GroupPage({super.key, required this.group, this.imageId});
+  const GroupImagesPage({super.key, required this.group, this.imageId});
 
   @override
   GroupPageState createState() => GroupPageState();
 }
 
-class GroupPageState extends State<GroupPage> {
+class GroupPageState extends State<GroupImagesPage> {
   late Future<SupabaseResponse<List<dynamic>>> _groupImagesFuture;
   bool _isAdmin = false;
 
   // In-memory cache for images
   final Map<String, Uint8List> _imageCache = {};
 
+  // Cache for futures
+  final Map<String, Future<ImageData>> _imageFutureCache = {};
+
   @override
   void initState() {
     super.initState();
     _groupImagesFuture = getGroupImages(widget.group.id);
     _checkAdminStatus();
-    // Wait for the widget to be built before showing the image preview
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (widget.imageId != null) {
         _showImagePreview(widget.imageId!);
@@ -46,6 +49,7 @@ class GroupPageState extends State<GroupPage> {
   @override
   void dispose() {
     _imageCache.clear();
+    _imageFutureCache.clear();
     super.dispose();
   }
 
@@ -73,14 +77,23 @@ class GroupPageState extends State<GroupPage> {
     return null;
   }
 
+  // Get or create a cached future for image data
+  Future<ImageData> _getImageDataFuture(String imageId) {
+    if (_imageFutureCache.containsKey(imageId)) {
+      return _imageFutureCache[imageId]!;
+    }
+
+    final future = _fetchImageData(imageId);
+    _imageFutureCache[imageId] = future;
+    return future;
+  }
+
   Future<ImageData> _fetchImageData(String imageId) async {
-    // Retrieve image bytes from cache or download
     final imageBytes = await _getCachedImage(imageId);
     if (imageBytes == null) {
       throw Exception("Error downloading image");
     }
 
-    // Retrieve image details
     final imageDetailsResponse = await getImageDetails(imageId);
     if (!imageDetailsResponse.success || imageDetailsResponse.data == null) {
       throw Exception(
@@ -88,7 +101,6 @@ class GroupPageState extends State<GroupPage> {
     }
     final Map<String, dynamic> imageDetails = imageDetailsResponse.data!;
 
-    // Use uploader's uuid instead of username
     final String uploaderId = imageDetails['uploaded_by'];
 
     return ImageData(
@@ -99,7 +111,6 @@ class GroupPageState extends State<GroupPage> {
     );
   }
 
-  // Decode image dimensions
   Future<ui.Image> _getImageInfo(Uint8List imageBytes) async {
     final Completer<ui.Image> completer = Completer();
     ui.decodeImageFromList(imageBytes, (ui.Image img) {
@@ -113,7 +124,7 @@ class GroupPageState extends State<GroupPage> {
       context: context,
       builder: (context) {
         return FutureBuilder<ImageData>(
-          future: _fetchImageData(imageId),
+          future: _getImageDataFuture(imageId), // Use cached future
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return Dialog(
@@ -137,7 +148,6 @@ class GroupPageState extends State<GroupPage> {
                 child: ConstrainedBox(
                   constraints: BoxConstraints(
                     maxWidth: MediaQuery.of(context).size.width * 0.9,
-                    // Let content size naturally without a fixed maxHeight.
                   ),
                   child: SingleChildScrollView(
                     child: Column(
@@ -150,15 +160,14 @@ class GroupPageState extends State<GroupPage> {
                               child: Stack(
                                 alignment: Alignment.center,
                                 children: [
-                                  // Center the image so it takes as much vertical space as needed.
                                   Center(
                                     child: Image.memory(
                                       imageData.imageBytes,
                                       fit: BoxFit.contain,
                                       width: constraints.maxWidth,
+                                      gaplessPlayback: true, // Prevents flicker
                                     ),
                                   ),
-                                  // Download button overlay
                                   Positioned(
                                     top: 5,
                                     right: 5,
@@ -174,8 +183,8 @@ class GroupPageState extends State<GroupPage> {
                                         showSnackBar(
                                           context,
                                           success
-                                              ? "Image saved successfully"
-                                              : "Error saving image",
+                                              ? context.l10n.image_saved_success
+                                              : context.l10n.error_saving_image,
                                           color: success
                                               ? Colors.green
                                               : Colors.red,
@@ -183,7 +192,6 @@ class GroupPageState extends State<GroupPage> {
                                       },
                                     ),
                                   ),
-                                  // Close button overlay
                                   Positioned(
                                     top: 5,
                                     left: 5,
@@ -198,11 +206,10 @@ class GroupPageState extends State<GroupPage> {
                             );
                           },
                         ),
-                        // Uploader info: display username fetched from uploader's uuid
                         FutureBuilder(
                           future: getUsername(imageData.uploadedBy),
                           builder: (context, snapshot) {
-                            String uploaderName = "Loading...";
+                            String uploaderName = " ";
                             if (snapshot.connectionState ==
                                 ConnectionState.done) {
                               if (snapshot.hasError ||
@@ -231,7 +238,6 @@ class GroupPageState extends State<GroupPage> {
                             );
                           },
                         ),
-                        // Button to open the comments bottom sheet with comment count
                         Padding(
                           padding: const EdgeInsets.all(8.0),
                           child: ElevatedButton.icon(
@@ -241,16 +247,16 @@ class GroupPageState extends State<GroupPage> {
                               builder: (context, snapshot) {
                                 if (snapshot.connectionState ==
                                     ConnectionState.waiting) {
-                                  return const Text("Comments (...)");
+                                  return Text(context.l10n.comments_count("..."));
                                 } else if (snapshot.hasError ||
                                     !snapshot.hasData ||
                                     !(snapshot.data as SupabaseResponse).success) {
-                                  return const Text("Comments");
+                                  return Text(context.l10n.comments_count("0"));
                                 } else {
                                   final count = (snapshot.data
                                   as SupabaseResponse)
                                       .data;
-                                  return Text("Comments ($count)");
+                                  return Text(context.l10n.comments_count(count.toString()));
                                 }
                               },
                             ),
@@ -274,7 +280,6 @@ class GroupPageState extends State<GroupPage> {
     );
   }
 
-  /// Opens a modal bottom sheet that displays comments for the given image.
   void _showCommentsBottomSheet(String uploaderId, String imageId, String groupId) {
     showModalBottomSheet(
       context: context,
@@ -313,11 +318,11 @@ class GroupPageState extends State<GroupPage> {
           }
           if (snapshot.hasError) {
             return Center(
-                child: Text("Error loading images: ${snapshot.error}"));
+                child: Text(context.l10n.error_loading_images(snapshot.error.toString())));
           }
           final images = snapshot.data!.data!;
           if (images.isEmpty) {
-            return const Center(child: Text("No images in this group."));
+            return Center(child: Text(context.l10n.no_images));
           }
           return Padding(
             padding: const EdgeInsets.all(8.0),
@@ -333,13 +338,13 @@ class GroupPageState extends State<GroupPage> {
                 final image = images[index];
                 final imageId = image['id'].toString();
                 return FutureBuilder<ImageData>(
-                  future: _fetchImageData(imageId),
+                  future: _getImageDataFuture(imageId),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
                       return Container(
                         decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(10),
-                          color: Colors.grey[350]
+                            borderRadius: BorderRadius.circular(10),
+                            color: Colors.grey[350]
                         ),
                         child: const Center(child: CircularProgressIndicator()),
                       );
@@ -363,20 +368,20 @@ class GroupPageState extends State<GroupPage> {
                               builder: (context, snapshot) {
                                 if (snapshot.hasData) {
                                   final imgInfo = snapshot.data!;
-                                  final halfWidth = (imgInfo.width / 4)
-                                      .round(); // 1/4th of original size for efficiency
-                                  final halfHeight =
-                                      (imgInfo.height / 4).round();
+                                  final halfWidth = (imgInfo.width / 4).round();
+                                  final halfHeight = (imgInfo.height / 4).round();
                                   return Image.memory(
                                     imageData.imageBytes,
                                     fit: BoxFit.cover,
                                     cacheWidth: halfWidth,
                                     cacheHeight: halfHeight,
+                                    gaplessPlayback: true,
                                   );
                                 } else {
                                   return Image.memory(
                                     imageData.imageBytes,
                                     fit: BoxFit.cover,
+                                    gaplessPlayback: true,
                                   );
                                 }
                               },

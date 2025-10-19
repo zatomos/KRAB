@@ -1,4 +1,5 @@
 import 'dart:io';
+
 import 'firebase_options.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,24 +8,27 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:home_widget/home_widget.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'package:krab/services/supabase.dart';
-import 'package:krab/pages/LoginPage.dart';
-import 'package:krab/pages/CameraPage.dart';
+import 'package:krab/services/fcm_helper.dart';
 import 'package:krab/pages/WelcomePage.dart';
-import 'package:krab/pages/GroupPage.dart';
+import 'package:krab/pages/LoginPage.dart';
+import 'package:krab/pages/DBConfigPage.dart';
+import 'package:krab/pages/CameraPage.dart';
+import 'package:krab/pages/GroupImagesPage.dart';
 import 'package:krab/themes/GlobalThemeData.dart';
 import 'package:krab/widgets/FloatingSnackBar.dart';
 import 'package:krab/filesaver.dart';
+import 'package:krab/l10n/l10n.dart';
 import 'UserPreferences.dart';
 
 // Flag to track initialization
 bool isSupabaseInitialized = false;
+bool isAppInitialized = false; // New flag
 
 // Context
 final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey =
-    GlobalKey<ScaffoldMessengerState>();
+GlobalKey<ScaffoldMessengerState>();
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 /// Updates the home widget with the latest image
@@ -48,8 +52,7 @@ Future<void> updateHomeWidget() async {
       debugPrint("Image bytes are null, aborting widget update.");
       return;
     }
-    debugPrint(
-        "Retrieved image bytes successfully: ${imageBytes.length} bytes");
+    debugPrint("Retrieved image bytes successfully: ${imageBytes.length} bytes");
 
     // Get image description and sender
     final imageDescriptionResponse = await getImageDetails(imageId);
@@ -62,34 +65,55 @@ Future<void> updateHomeWidget() async {
 
     // Use the temporary directory
     final Directory tempDir = await getTemporaryDirectory();
-    final String imagePath = '${tempDir.path}/krab_image.jpg';
 
-    // Check if the old image exists and delete it
-    final File imageFile = File(imagePath);
-    if (await imageFile.exists()) {
-      debugPrint("Deleting old image file");
-      await imageFile.delete();
+    // Use a unique filename with timestamp
+    final String timestamp = DateTime.now().millisecondsSinceEpoch.toString();
+    final String imagePath = '${tempDir.path}/krab_image_$timestamp.jpg';
+
+    // Clean up old widget images
+    try {
+      final files = tempDir.listSync()
+          .whereType<File>()
+          .where((f) => f.path.contains('krab_image_'))
+          .toList()
+        ..sort((a, b) => b.path.compareTo(a.path)); // Sort newest first
+
+      // Delete all but the 3 most recent
+      for (var i = 3; i < files.length; i++) {
+        await files[i].delete();
+      }
+    } catch (e) {
+      debugPrint("Error cleaning old images: $e");
     }
 
     // Write new image bytes to the file
+    final File imageFile = File(imagePath);
     await imageFile.writeAsBytes(imageBytes);
     debugPrint("Saved new image to: $imagePath");
 
-    // Clear any old widget data first
-    await HomeWidget.saveWidgetData<String>('recentImageUrl', null);
-    await HomeWidget.saveWidgetData<String>('recentImageDescription', null);
-    await HomeWidget.saveWidgetData<String>('recentImageSender', null);
+    // Verify file was written successfully
+    if (!await imageFile.exists()) {
+      debugPrint("ERROR: Image file was not created successfully");
+      return;
+    }
+    final fileSize = await imageFile.length();
+    debugPrint("Verified file exists with size: $fileSize bytes");
 
-    // Small delay to ensure previous data is cleared
-    await Future.delayed(const Duration(milliseconds: 100));
-
-    // Save the new widget data and update the widget
+    // Save the new widget data
     await HomeWidget.saveWidgetData<String>('recentImageUrl', imageFile.path);
-    await HomeWidget.saveWidgetData<String>(
-        'recentImageDescription', imageDescription);
+    await HomeWidget.saveWidgetData<String>('recentImageDescription', imageDescription);
     await HomeWidget.saveWidgetData<String>('recentImageSender', imageSender);
-    await HomeWidget.updateWidget(name: 'HomeScreenWidget');
-    await HomeWidget.updateWidget(name: 'HomeScreenWidgetWithText');
+
+    await Future.delayed(const Duration(milliseconds: 300));
+
+    // Update widget
+    try {
+      final updated1 = await HomeWidget.updateWidget(name: 'HomeScreenWidget');
+      final updated2 = await HomeWidget.updateWidget(name: 'HomeScreenWidgetWithText');
+      debugPrint('Widget update results - HomeScreenWidget: $updated1, HomeScreenWidgetWithText: $updated2');
+    } catch (e) {
+      debugPrint('Error calling HomeWidget.updateWidget: $e');
+    }
 
     debugPrint('Widget updated successfully with image: $imagePath');
 
@@ -97,7 +121,7 @@ Future<void> updateHomeWidget() async {
     final autoSave = await UserPreferences.getAutoImageSave();
     if (autoSave) {
       debugPrint('Saving image to gallery...');
-      final uploadedByResponse = await getUsername(imageId);
+      final uploadedByResponse = await getUsername(imageSenderID);
       final uploadedBy = uploadedByResponse.data;
       if (uploadedBy != null) {
         final createdAt = DateTime.now().toIso8601String();
@@ -113,14 +137,25 @@ Future<void> updateHomeWidget() async {
 }
 
 /// Initialize Supabase if not already initialized
-Future<void> initializeSupabaseIfNeeded() async {
-  if (!isSupabaseInitialized) {
-    await Supabase.initialize(
-      url: dotenv.env['SUPABASE_URL']!,
-      anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
-    );
+Future<bool> initializeSupabaseIfNeeded() async {
+  if (isSupabaseInitialized) return true;
+
+  final url = UserPreferences.supabaseUrl;
+  final anon = UserPreferences.supabaseAnonKey;
+
+  if (url.isEmpty || anon.isEmpty) {
+    debugPrint('Supabase config missing, cannot initialize.');
+    return false;
+  }
+
+  try {
+    await Supabase.initialize(url: url, anonKey: anon);
     isSupabaseInitialized = true;
-    debugPrint('Supabase initialized');
+    return true;
+  } catch (e) {
+    debugPrint('Supabase init failed: $e');
+    isSupabaseInitialized = false;
+    return false;
   }
 }
 
@@ -141,9 +176,12 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       options: DefaultFirebaseOptions.currentPlatform,
     );
 
-    // Initialize Supabase
-    await dotenv.load(fileName: ".env");
-    await initializeSupabaseIfNeeded();
+    await UserPreferences().initPrefs();
+    final supabaseOk = await initializeSupabaseIfNeeded();
+    if (!supabaseOk) {
+      debugPrint('Skipping widget update, Supabase not initialized');
+      return;
+    }
 
     // Update widget
     await updateHomeWidget();
@@ -158,14 +196,11 @@ void main() async {
   try {
     WidgetsFlutterBinding.ensureInitialized();
 
-    // Load .env file
-    await dotenv.load(fileName: ".env");
-
-    // Initialize Shared Preferences
+    // Initialize Shared Preferences FIRST and WAIT for it
     await UserPreferences().initPrefs();
 
     // Initialize Supabase with safety check
-    await initializeSupabaseIfNeeded();
+    final supabaseOk = await initializeSupabaseIfNeeded();
 
     // Initialize Firebase
     await Firebase.initializeApp(
@@ -184,7 +219,14 @@ void main() async {
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
     // Initialize FCM token storage and listener
-    await _initializeFCM();
+    if (supabaseOk) {
+      await FcmHelper.initializeAndSyncToken();
+    } else {
+      debugPrint('Skipping FCM initialization, Supabase not initialized');
+    }
+
+    // Mark initialization as complete
+    isAppInitialized = true;
 
     // Handle foreground messages
     FirebaseMessaging.onMessage.listen((RemoteMessage message) async {
@@ -240,56 +282,17 @@ void main() async {
       // Navigate to group page
       navigatorKey.currentState!.push(
         MaterialPageRoute(
-          builder: (_) => GroupPage(group: group, imageId: imageId),
+          builder: (_) => GroupImagesPage(group: group, imageId: imageId),
         ),
       );
     });
 
     runApp(MyApp(navigatorKey: navigatorKey));
-  } catch (e) {
+  } catch (e, stackTrace) {
     debugPrint('Error starting app: $e');
+    debugPrint('Stack trace: $stackTrace');
+    runApp(MyApp(navigatorKey: navigatorKey));
   }
-}
-
-/// Ensures FCM token is stored and refreshed
-Future<void> _initializeFCM() async {
-  try {
-    final fcmToken = await FirebaseMessaging.instance.getToken();
-    debugPrint('FCM Token: $fcmToken');
-
-    if (fcmToken != null) {
-      final user = Supabase.instance.client.auth.currentUser;
-      if (user != null) {
-        await _setFcmToken(fcmToken);
-      } else {
-        debugPrint("No logged-in user, skipping FCM token update.");
-      }
-    }
-
-    FirebaseMessaging.instance.onTokenRefresh.listen((event) async {
-      debugPrint('FCM Token refreshed: $event');
-      final user = Supabase.instance.client.auth.currentUser;
-      if (user != null) {
-        await _setFcmToken(event);
-      }
-    });
-  } catch (e) {
-    debugPrint('Error initializing FCM: $e');
-  }
-}
-
-/// Stores the FCM token in Supabase
-Future<void> _setFcmToken(String fcmToken) async {
-  final user = Supabase.instance.client.auth.currentUser;
-  if (user == null) {
-    debugPrint("No logged-in user, skipping FCM token update.");
-    return;
-  }
-
-  await Supabase.instance.client.from('users').upsert({
-    'id': user.id,
-    'fcm_token': fcmToken,
-  });
 }
 
 class MyApp extends StatefulWidget {
@@ -314,7 +317,9 @@ class MyAppState extends State<MyApp> {
       systemNavigationBarIconBrightness: Brightness.light,
     ));
 
-    final user = Supabase.instance.client.auth.currentUser;
+    debugPrint('Building MyApp - isAppInitialized: $isAppInitialized');
+    debugPrint('Current supabaseUrl: ${UserPreferences.supabaseUrl}');
+    debugPrint('Current supabaseAnonKey: ${UserPreferences.supabaseAnonKey}');
 
     return MaterialApp(
       navigatorKey: widget.navigatorKey,
@@ -324,9 +329,51 @@ class MyAppState extends State<MyApp> {
         colorScheme: GlobalThemeData.darkColorScheme,
         useMaterial3: true,
       ),
-      home: UserPreferences.isFirstLaunch
-          ? const WelcomePage()
-          : (user == null ? const LoginPage() : const CameraPage()),
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      home: FutureBuilder(
+        future: _determineHomePage(),
+        builder: (context, snapshot) {
+          // Loading indicator
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Scaffold(
+              body: Center(
+                child: CircularProgressIndicator(),
+              ),
+            );
+          }
+
+          // Return home page
+          return snapshot.data ?? const DBConfigPage();
+        },
+      ),
     );
+  }
+
+  Future<Widget> _determineHomePage() async {
+    try {
+      // Ensure initialization is complete
+      if (!isAppInitialized) {
+        debugPrint('Waiting for app initialization...');
+        await Future.delayed(const Duration(milliseconds: 500));
+      }
+
+      final hasConfig = UserPreferences.supabaseUrl.isNotEmpty &&
+          UserPreferences.supabaseAnonKey.isNotEmpty;
+
+      if (!hasConfig) {
+        return UserPreferences.isFirstLaunch
+            ? const WelcomePage()
+            : const DBConfigPage();
+      }
+
+      // Check if user is logged in
+      final isLoggedIn = Supabase.instance.client.auth.currentUser != null;
+
+      return isLoggedIn ? const CameraPage() : const LoginPage();
+    } catch (e) {
+      debugPrint('Error determining home page: $e');
+      return const DBConfigPage();
+    }
   }
 }

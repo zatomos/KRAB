@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:krab/l10n/l10n.dart';
 import 'package:krab/widgets/UserAvatar.dart';
 import 'package:krab/services/supabase.dart';
 import 'package:krab/models/Comment.dart';
@@ -89,9 +90,9 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
         _editingCommentIndex = null;
       });
       _newCommentController.clear();
-      showSnackBar(context, "Comment added successfully", color: Colors.green);
+      showSnackBar(context, context.l10n.comment_added_success, color: Colors.green);
     } else {
-      showSnackBar(context, "Error adding comment: ${response.error}",
+      showSnackBar(context, context.l10n.error_adding_comment(response.error ?? "Unknown error"),
           color: Colors.red);
     }
   }
@@ -111,10 +112,10 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
         _editingCommentIndex = null;
       });
       _newCommentController.clear();
-      showSnackBar(context, "Comment updated successfully", color: Colors.green);
+      showSnackBar(context, context.l10n.comment_updated_success, color: Colors.green);
     } else {
       print(response.error);
-      showSnackBar(context, "Error updating comment: ${response.error}",
+      showSnackBar(context, context.l10n.error_updating_comment(response.error ?? "Unknown error"),
           color: Colors.red);
     }
   }
@@ -127,9 +128,9 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
         _comments.removeAt(index);
         if (_editingCommentIndex == index) _editingCommentIndex = null;
       });
-      showSnackBar(context, "Comment deleted successfully", color: Colors.green);
+      showSnackBar(context, context.l10n.comment_deleted_success, color: Colors.green);
     } else {
-      showSnackBar(context, "Error deleting comment: ${response.error}",
+      showSnackBar(context, context.l10n.error_deleting_comment(response.error ?? "Unknown error"),
           color: Colors.red);
     }
   }
@@ -167,9 +168,9 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text("Comments",
+                  Text(context.l10n.comments,
                       style:
-                      TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                      const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                   IconButton(
                       icon: const Icon(Icons.close),
                       onPressed: () => Navigator.of(context).pop()),
@@ -181,9 +182,9 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
                   height: 200,
                   child: Center(child: CircularProgressIndicator()))
                   : _comments.isEmpty
-                  ? const SizedBox(
+                  ? SizedBox(
                   height: 100,
-                  child: Center(child: Text("No comments yet")))
+                  child: Center(child: Text(context.l10n.no_comments)))
                   : SizedBox(
                 height: 300,
                 child: ListView.builder(
@@ -200,7 +201,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
                       }),
                       builder: (context, snapshot) {
                         final displayName =
-                            snapshot.data ?? "Loading...";
+                            snapshot.data ?? context.l10n.loading;
                         if (comment.userId == currentUserId) {
                           return ListTile(
                             leading: UserAvatar(displayName, radius: 20),
@@ -219,13 +220,13 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
                                 }
                               },
                               itemBuilder: (context) => [
-                                const PopupMenuItem(
+                                PopupMenuItem(
                                   value: 'edit',
-                                  child: Text('Edit'),
+                                  child: Text(context.l10n.edit)
                                 ),
-                                const PopupMenuItem(
+                                PopupMenuItem(
                                   value: 'delete',
-                                  child: Text('Delete'),
+                                  child: Text(context.l10n.delete)
                                 ),
                               ],
                             ),
@@ -249,9 +250,10 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
                     Expanded(
                       child: RoundedInputField(
                         controller: _newCommentController,
+                        capitalizeSentences: true,
                         hintText: _editingCommentIndex != null
-                            ? "Edit your comment..."
-                            : "Post a comment...",
+                            ? context.l10n.edit_comment
+                            : context.l10n.post_comment,
                       ),
                     ),
                     const SizedBox(width: 8),

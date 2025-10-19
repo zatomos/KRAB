@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
+import 'package:krab/l10n/l10n.dart';
 import 'package:krab/services/supabase.dart';
 import 'package:krab/themes/GlobalThemeData.dart';
+import 'package:krab/widgets/FloatingSnackBar.dart';
 import 'package:krab/widgets/RoundedInputField.dart';
 import 'package:krab/widgets/RectangleButton.dart';
 import 'package:krab/pages/CameraPage.dart';
@@ -17,6 +19,7 @@ class LoginPageState extends State<LoginPage> {
   final _usernameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _passwordConfirmController = TextEditingController();
   final _forgotPasswordController = TextEditingController();
 
   String _message = "";
@@ -25,11 +28,19 @@ class LoginPageState extends State<LoginPage> {
   Future<void> _signUp() async {
     final email = _emailController.text.trim();
     final password = _passwordController.text;
+    final passwordConfirm = _passwordConfirmController.text;
     final username = _usernameController.text.trim();
+
+    if (password != passwordConfirm) {
+      setState(() {
+        _message = context.l10n.passwords_do_not_match;
+      });
+      return;
+    }
 
     if (email.isEmpty || password.isEmpty || username.isEmpty) {
       setState(() {
-        _message = "Please fill in all fields.";
+        _message = context.l10n.fill_in_all_fields;
       });
       return;
     }
@@ -39,6 +50,7 @@ class LoginPageState extends State<LoginPage> {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (context) => const CameraPage()),
       );
+      showSnackBar(context, context.l10n.register_user_success);
     } else {
       setState(() {
         _message = "${response.error}";
@@ -52,7 +64,7 @@ class LoginPageState extends State<LoginPage> {
 
     if (email.isEmpty || password.isEmpty) {
       setState(() {
-        _message = "Please fill in all fields.";
+        _message = context.l10n.fill_in_all_fields;
       });
       return;
     }
@@ -156,7 +168,7 @@ class LoginPageState extends State<LoginPage> {
           children: [
             Center(
               child: Text(
-                _isSigningUp ? "Sign Up" : "Login",
+                _isSigningUp ? context.l10n.sign_up : context.l10n.log_in,
                 style: TextStyle(
                     fontSize: 40,
                     fontWeight: FontWeight.bold,
@@ -169,28 +181,38 @@ class LoginPageState extends State<LoginPage> {
               visible: _isSigningUp,
               child: RoundedInputField(
                 controller: _usernameController,
-                hintText: "Username",
-                icon: const Icon(Icons.person),
+                hintText: context.l10n.username,
+                icon: const Icon(Icons.person_rounded)
               ),
             ),
             // Email field.
             RoundedInputField(
               controller: _emailController,
-              hintText: "Email",
-              icon: const Icon(Icons.email),
+              hintText: context.l10n.email,
+              icon: const Icon(Icons.email_rounded)
             ),
             // Password field.
             RoundedInputField(
               controller: _passwordController,
-              hintText: "Password",
+              hintText: context.l10n.password,
               obscureText: true,
-              icon: const Icon(Icons.lock),
+              icon: const Icon(Icons.lock_rounded),
+            ),
+            // Password confirmation field
+            Visibility(
+              visible: _isSigningUp,
+              child: RoundedInputField(
+                controller: _passwordConfirmController,
+                hintText: context.l10n.confirm_password,
+                obscureText: true,
+                icon: const Icon(Icons.replay_circle_filled_rounded),
+              ),
             ),
             const SizedBox(height: 20),
             // Wrap the button in Center to preserve its intrinsic (fixed) width.
             Center(
               child: RectangleButton(
-                label: _isSigningUp ? "Sign Up" : "Login",
+                label: _isSigningUp ? context.l10n.sign_up : context.l10n.log_in,
                 onPressed: _isSigningUp ? _signUp : _logIn,
               ),
             ),
@@ -199,24 +221,27 @@ class LoginPageState extends State<LoginPage> {
                 visible: !_isSigningUp,
                 child: TextButton(
                     onPressed: _forgotPasswordDialog,
-                    child: const Text("Forgot Password?"))),
-            const SizedBox(height: 20),*/
+                    child: const Text("Forgot Password?"))),*/
+            const SizedBox(height: 10),
             Center(
                 child:
-                    Text(_message, style: const TextStyle(color: Colors.red))),
+                    Text(_message, style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold))),
             Center(
               child: TextButton(
                 onPressed: () {
                   setState(() {
                     _isSigningUp = !_isSigningUp;
+                    _message = "";
+                    _passwordController.clear();
+                    if (!_isSigningUp) _usernameController.clear(); // leaving sign-up
                   });
                 },
                 child: Text(
                   _isSigningUp
-                      ? "Already have an account? Login"
-                      : "Don't have an account? Sign Up",
+                      ? context.l10n.already_have_account
+                      : context.l10n.dont_have_account,
                 ),
-              ),
+              )
             ),
           ],
         ),
