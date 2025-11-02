@@ -24,12 +24,15 @@ import 'UserPreferences.dart';
 
 // Flag to track initialization
 bool isSupabaseInitialized = false;
-bool isAppInitialized = false; // New flag
+bool isAppInitialized = false;
 
 // Context
 final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey =
 GlobalKey<ScaffoldMessengerState>();
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
+// Store pending notification for navigation after app is ready
+RemoteMessage? pendingNotificationMessage;
 
 /// Updates the home widget with the latest image
 Future<void> updateHomeWidget() async {
@@ -63,33 +66,16 @@ Future<void> updateHomeWidget() async {
     debugPrint("Got image description: $imageDescription");
     debugPrint("Got image sender: $imageSender");
 
-    // Use the temporary directory
     final Directory tempDir = await getTemporaryDirectory();
-
-    // Use a unique filename with timestamp
-    final String timestamp = DateTime.now().millisecondsSinceEpoch.toString();
-    final String imagePath = '${tempDir.path}/krab_image_$timestamp.jpg';
-
-    // Clean up old widget images
-    try {
-      final files = tempDir.listSync()
-          .whereType<File>()
-          .where((f) => f.path.contains('krab_image_'))
-          .toList()
-        ..sort((a, b) => b.path.compareTo(a.path)); // Sort newest first
-
-      // Delete all but the 3 most recent
-      for (var i = 3; i < files.length; i++) {
-        await files[i].delete();
-      }
-    } catch (e) {
-      debugPrint("Error cleaning old images: $e");
-    }
+    final String imagePath = '${tempDir.path}/krab_widget_current.jpg';
 
     // Write new image bytes to the file
     final File imageFile = File(imagePath);
-    await imageFile.writeAsBytes(imageBytes);
+    await imageFile.writeAsBytes(imageBytes, flush: true);
     debugPrint("Saved new image to: $imagePath");
+
+    // Delay
+    await Future.delayed(const Duration(milliseconds: 100));
 
     // Verify file was written successfully
     if (!await imageFile.exists()) {
@@ -101,9 +87,10 @@ Future<void> updateHomeWidget() async {
 
     // Save the new widget data
     await HomeWidget.saveWidgetData<String>('recentImageUrl', imageFile.path);
-    await HomeWidget.saveWidgetData<String>('recentImageDescription', imageDescription);
-    await HomeWidget.saveWidgetData<String>('recentImageSender', imageSender);
+    await HomeWidget.saveWidgetData<String>('recentImageDescription', imageDescription ?? '');
+    await HomeWidget.saveWidgetData<String>('recentImageSender', imageSender ?? '');
 
+    // Delay
     await Future.delayed(const Duration(milliseconds: 300));
 
     // Update widget
@@ -116,6 +103,24 @@ Future<void> updateHomeWidget() async {
     }
 
     debugPrint('Widget updated successfully with image: $imagePath');
+
+    // Clean up old images
+    try {
+      final files = tempDir.listSync()
+          .whereType<File>()
+          .where((f) => f.path.contains('krab_image_') && !f.path.contains('krab_widget_current'))
+          .toList();
+
+      for (var file in files) {
+        try {
+          await file.delete();
+        } catch (e) {
+          debugPrint("Error deleting old image: $e");
+        }
+      }
+    } catch (e) {
+      debugPrint("Error cleaning old images: $e");
+    }
 
     // Save the image to the gallery if auto-save is enabled
     final autoSave = await UserPreferences.getAutoImageSave();
@@ -192,6 +197,60 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   }
 }
 
+/// Handle notification navigation
+Future<void> handleNotificationNavigation(RemoteMessage message) async {
+  debugPrint('Processing notification navigation: ${message.messageId}');
+  debugPrint('Notification data: ${message.data}');
+
+  try {
+    // Fetch data
+    final data = message.data;
+    final imageId = data['image_id'] ?? '';
+    final groupId = data['group_id'] ?? '';
+
+    if (groupId.isEmpty) {
+      debugPrint('Group ID is empty, aborting navigation');
+      return;
+    }
+
+    // Get group
+    final groupResponse = await getGroupDetails(groupId);
+    if (groupResponse.success == false) {
+      debugPrint('Error fetching group: ${groupResponse.error}');
+      return;
+    }
+    final group = groupResponse.data;
+
+    if (group == null) {
+      debugPrint('Group is null, aborting navigation');
+      return;
+    }
+
+    // Wait for navigator to be ready
+    int attempts = 0;
+    while (navigatorKey.currentState == null && attempts < 20) {
+      await Future.delayed(const Duration(milliseconds: 100));
+      attempts++;
+    }
+
+    if (navigatorKey.currentState == null) {
+      debugPrint('Navigator still not ready after waiting, storing for later');
+      return;
+    }
+
+    // Navigate to group page
+    debugPrint('Navigating to GroupImagesPage');
+    navigatorKey.currentState!.push(
+      MaterialPageRoute(
+        builder: (_) => GroupImagesPage(group: group, imageId: imageId),
+      ),
+    );
+  } catch (e, stackTrace) {
+    debugPrint('Error handling notification navigation: $e');
+    debugPrint('Stack trace: $stackTrace');
+  }
+}
+
 void main() async {
   try {
     WidgetsFlutterBinding.ensureInitialized();
@@ -206,6 +265,13 @@ void main() async {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
+
+    // Check for notification that launched the app
+    final initialMessage = await FirebaseMessaging.instance.getInitialMessage();
+    if (initialMessage != null) {
+      debugPrint('App launched from notification: ${initialMessage.messageId}');
+      pendingNotificationMessage = initialMessage;
+    }
 
     // Request permission for notifications
     FirebaseMessaging messaging = FirebaseMessaging.instance;
@@ -256,35 +322,9 @@ void main() async {
       }
     });
 
-    // Handle notification clicks
+    // Handle notification clicks when app is in background
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) async {
-      debugPrint('Notification clicked: ${message.messageId}');
-      debugPrint('Notification data: ${message.data}');
-
-      // Fetch data
-      final data = message.data;
-      final imageId = data['image_id'] ?? '';
-      final groupId = data['group_id'] ?? '';
-
-      // Get group
-      final groupResponse = await getGroupDetails(groupId);
-      if (groupResponse.success == false) {
-        debugPrint('Error fetching group: ${groupResponse.error}');
-        return;
-      }
-      final group = groupResponse.data;
-
-      if (group == null) {
-        debugPrint('Group is null, aborting navigation');
-        return;
-      }
-
-      // Navigate to group page
-      navigatorKey.currentState!.push(
-        MaterialPageRoute(
-          builder: (_) => GroupImagesPage(group: group, imageId: imageId),
-        ),
-      );
+      await handleNotificationNavigation(message);
     });
 
     runApp(MyApp(navigatorKey: navigatorKey));
@@ -305,6 +345,20 @@ class MyApp extends StatefulWidget {
 }
 
 class MyAppState extends State<MyApp> {
+  @override
+  void initState() {
+    super.initState();
+
+    // Handle pending notification
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (pendingNotificationMessage != null) {
+        debugPrint('Processing pending notification message');
+        handleNotificationNavigation(pendingNotificationMessage!);
+        pendingNotificationMessage = null;
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     SystemChrome.setPreferredOrientations([

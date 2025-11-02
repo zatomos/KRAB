@@ -190,10 +190,10 @@ Future<SupabaseResponse<void>> leaveGroup(String groupId) async {
 
 /// Send an image to selected groups with an optional description.
 Future<SupabaseResponse<void>> sendImageToGroups(
-    File imageFile,
-    List<String> selectedGroups,
-    String description,
-    ) async {
+  File imageFile,
+  List<String> selectedGroups,
+  String description,
+) async {
   try {
     // Request UUID
     final uuidResponse = await supabase.rpc("request_image_uuid");
@@ -290,16 +290,31 @@ Future<SupabaseResponse<String>> getLatestImage() async {
 }
 
 /// Download an image from storage.
-Future<SupabaseResponse<Uint8List>> getImage(String imageId) async {
+Future<SupabaseResponse<Uint8List>> getImage(String imageId,
+    {bool lowRes = false}) async {
   try {
-    final Uint8List response =
-        await supabase.storage.from("images").download(imageId);
-    if (response.isEmpty) {
+    final transform = lowRes
+        ? const TransformOptions(
+            width: 400,
+            quality: 50,
+          )
+        : null;
+
+    debugPrint(
+        "Downloading image $imageId with transform: ${lowRes ? 'low' : 'full'}");
+
+    final data = await supabase.storage
+        .from('images')
+        .download(imageId, transform: transform);
+
+    if (data.isEmpty) {
       return SupabaseResponse(
           success: false, error: "Downloaded image is empty");
     }
-    return SupabaseResponse(success: true, data: response);
+
+    return SupabaseResponse(success: true, data: data);
   } catch (error) {
+    debugPrint("Error downloading image $imageId: $error");
     return SupabaseResponse(
         success: false, error: "Error downloading image: $error");
   }
@@ -452,7 +467,6 @@ Future<SupabaseResponse<void>> fcmTokenHandler({String? username}) async {
     );
   }
 }
-
 
 /// Register a new user.
 Future<SupabaseResponse<void>> registerUser(

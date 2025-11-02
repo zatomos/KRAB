@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:typed_data';
-import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 import 'package:krab/l10n/l10n.dart';
@@ -28,28 +27,36 @@ class GroupPageState extends State<GroupImagesPage> {
   late Future<SupabaseResponse<List<dynamic>>> _groupImagesFuture;
   bool _isAdmin = false;
 
-  // In-memory cache for images
-  final Map<String, Uint8List> _imageCache = {};
-
-  // Cache for futures
+  /// Caches
+  final Map<String, Uint8List> _lowResCache = {};
+  final Map<String, Uint8List> _fullResCache = {};
   final Map<String, Future<ImageData>> _imageFutureCache = {};
+  final Map<String, String> _usernameCache = {};
+  final Map<String, int> _commentCountCache = {};
 
   @override
   void initState() {
     super.initState();
     _groupImagesFuture = getGroupImages(widget.group.id);
     _checkAdminStatus();
+
+    // If an imageId is provided, show its preview after the first frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (widget.imageId != null) {
-        _showImagePreview(widget.imageId!);
+        _getImageDataFuture(widget.imageId!).then((data) {
+          _showImagePreview(widget.imageId!, data);
+        });
       }
     });
   }
 
   @override
   void dispose() {
-    _imageCache.clear();
+    _lowResCache.clear();
+    _fullResCache.clear();
     _imageFutureCache.clear();
+    _usernameCache.clear();
+    _commentCountCache.clear();
     super.dispose();
   }
 
@@ -62,46 +69,60 @@ class GroupPageState extends State<GroupImagesPage> {
     }
   }
 
-  Future<Uint8List?> _getCachedImage(String imageId) async {
-    if (_imageCache.containsKey(imageId)) {
-      debugPrint("Image $imageId found in cache");
-      return _imageCache[imageId];
-    } else {
-      final response = await getImage(imageId);
-      if (response.success && response.data != null) {
-        debugPrint("Image $imageId downloaded");
-        _imageCache[imageId] = response.data!;
-        return response.data!;
-      }
+  Future<Uint8List?> _getCachedImage(String imageId, {bool lowRes = true}) async {
+    final cache = lowRes ? _lowResCache : _fullResCache;
+    if (cache.containsKey(imageId)) {
+      debugPrint("Image $imageId (${lowRes ? 'low' : 'full'}) from cache");
+      return cache[imageId];
+    }
+
+    final response = await getImage(imageId, lowRes: lowRes);
+    if (response.success && response.data != null) {
+      debugPrint("Image $imageId (${lowRes ? 'low' : 'full'}) downloaded");
+      cache[imageId] = response.data!;
+      return response.data!;
     }
     return null;
   }
 
-  // Get or create a cached future for image data
   Future<ImageData> _getImageDataFuture(String imageId) {
     if (_imageFutureCache.containsKey(imageId)) {
       return _imageFutureCache[imageId]!;
     }
-
     final future = _fetchImageData(imageId);
     _imageFutureCache[imageId] = future;
     return future;
   }
 
   Future<ImageData> _fetchImageData(String imageId) async {
-    final imageBytes = await _getCachedImage(imageId);
-    if (imageBytes == null) {
-      throw Exception("Error downloading image");
-    }
+    final imageBytes = await _getCachedImage(imageId, lowRes: true);
+    if (imageBytes == null) throw Exception("Error downloading low-res image");
 
     final imageDetailsResponse = await getImageDetails(imageId);
     if (!imageDetailsResponse.success || imageDetailsResponse.data == null) {
-      throw Exception(
-          "Error fetching image details: ${imageDetailsResponse.error}");
+      throw Exception("Error fetching image details: ${imageDetailsResponse.error}");
     }
-    final Map<String, dynamic> imageDetails = imageDetailsResponse.data!;
 
+    final Map<String, dynamic> imageDetails = imageDetailsResponse.data!;
     final String uploaderId = imageDetails['uploaded_by'];
+
+    // Cache username
+    if (!_usernameCache.containsKey(uploaderId)) {
+      final usernameResponse = await getUsername(uploaderId);
+      _usernameCache[uploaderId] =
+      (usernameResponse.success && usernameResponse.data != null)
+          ? usernameResponse.data!
+          : "Unknown user";
+    }
+
+    // Cache comment count
+    if (!_commentCountCache.containsKey(imageId)) {
+      final commentResponse = await getCommentCount(imageId, widget.group.id);
+      _commentCountCache[imageId] =
+      (commentResponse.success && commentResponse.data != null)
+          ? commentResponse.data!
+          : 0;
+    }
 
     return ImageData(
       imageBytes: imageBytes,
@@ -111,176 +132,117 @@ class GroupPageState extends State<GroupImagesPage> {
     );
   }
 
-  Future<ui.Image> _getImageInfo(Uint8List imageBytes) async {
-    final Completer<ui.Image> completer = Completer();
-    ui.decodeImageFromList(imageBytes, (ui.Image img) {
-      completer.complete(img);
-    });
-    return completer.future;
-  }
+  void _showImagePreview(String imageId, ImageData imageData) {
+    final uploaderName = _usernameCache[imageData.uploadedBy] ?? "Unknown user";
+    final commentCount = _commentCountCache[imageId] ?? 0;
 
-  void _showImagePreview(String imageId) {
     showDialog(
       context: context,
       builder: (context) {
-        return FutureBuilder<ImageData>(
-          future: _getImageDataFuture(imageId), // Use cached future
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return Dialog(
-                child: SizedBox(
-                  width: MediaQuery.of(context).size.width * 0.5,
-                  height: MediaQuery.of(context).size.height * 0.8,
-                  child: const Center(child: CircularProgressIndicator()),
-                ),
-              );
-            } else if (snapshot.hasError) {
-              return Dialog(
-                child: SizedBox(
-                  width: MediaQuery.of(context).size.width * 0.5,
-                  height: MediaQuery.of(context).size.height * 0.8,
-                  child: Center(child: Text("Error: ${snapshot.error}")),
-                ),
-              );
-            } else if (snapshot.hasData) {
-              final imageData = snapshot.data!;
-              return Dialog(
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxWidth: MediaQuery.of(context).size.width * 0.9,
-                  ),
-                  child: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        LayoutBuilder(
-                          builder: (context, constraints) {
-                            return ClipRRect(
-                              borderRadius: BorderRadius.circular(10),
-                              child: Stack(
-                                alignment: Alignment.center,
-                                children: [
-                                  Center(
-                                    child: Image.memory(
-                                      imageData.imageBytes,
-                                      fit: BoxFit.contain,
-                                      width: constraints.maxWidth,
-                                      gaplessPlayback: true, // Prevents flicker
-                                    ),
+        return FutureBuilder<Uint8List?>(
+          future: _getCachedImage(imageId, lowRes: false),
+          builder: (context, fullSnapshot) {
+            final imageBytes = fullSnapshot.data ?? imageData.imageBytes;
+            return Dialog(
+              child: ConstrainedBox(
+                constraints:
+                BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.9),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          return ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                Center(
+                                  child: Image.memory(
+                                    imageBytes,
+                                    fit: BoxFit.contain,
+                                    width: constraints.maxWidth,
+                                    gaplessPlayback: true,
                                   ),
-                                  Positioned(
-                                    top: 5,
-                                    right: 5,
-                                    child: IconButton(
-                                      icon: const Icon(Icons.download,
-                                          color: Colors.white),
-                                      onPressed: () async {
-                                        bool success = await downloadImage(
-                                          imageData.imageBytes,
-                                          imageData.uploadedBy,
-                                          imageData.createdAt,
-                                        );
-                                        showSnackBar(
-                                          context,
-                                          success
-                                              ? context.l10n.image_saved_success
-                                              : context.l10n.error_saving_image,
-                                          color: success
-                                              ? Colors.green
-                                              : Colors.red,
-                                        );
-                                      },
-                                    ),
-                                  ),
-                                  Positioned(
-                                    top: 5,
-                                    left: 5,
-                                    child: IconButton(
-                                      icon: const Icon(Icons.close,
-                                          color: Colors.white),
-                                      onPressed: () => Navigator.of(context).pop(),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
-                        FutureBuilder(
-                          future: getUsername(imageData.uploadedBy),
-                          builder: (context, snapshot) {
-                            String uploaderName = " ";
-                            if (snapshot.connectionState ==
-                                ConnectionState.done) {
-                              if (snapshot.hasError ||
-                                  !snapshot.hasData ||
-                                  !(snapshot.data as SupabaseResponse).success ||
-                                  (snapshot.data as SupabaseResponse).data == null) {
-                                uploaderName = "Unknown user";
-                              } else {
-                                uploaderName =
-                                (snapshot.data as SupabaseResponse).data!;
-                              }
-                            }
-                            return ListTile(
-                              title: Text(
-                                uploaderName,
-                                style: const TextStyle(
-                                    fontSize: 18, fontWeight: FontWeight.bold),
-                              ),
-                              subtitle: Text(
-                                imageData.description ?? "",
-                                style: TextStyle(
-                                  color: GlobalThemeData.darkColorScheme
-                                      .onSurfaceVariant,
                                 ),
-                              ),
-                            );
-                          },
+                                Positioned(
+                                  top: 5,
+                                  right: 5,
+                                  child: IconButton(
+                                    icon: const Icon(Icons.download,
+                                        color: Colors.white),
+                                    onPressed: () async {
+                                      bool success = await downloadImage(
+                                        imageBytes,
+                                        imageData.uploadedBy,
+                                        imageData.createdAt,
+                                      );
+                                      showSnackBar(
+                                        context,
+                                        success
+                                            ? context.l10n.image_saved_success
+                                            : context.l10n.error_saving_image,
+                                        color:
+                                        success ? Colors.green : Colors.red,
+                                      );
+                                    },
+                                  ),
+                                ),
+                                Positioned(
+                                  top: 5,
+                                  left: 5,
+                                  child: IconButton(
+                                    icon: const Icon(Icons.close,
+                                        color: Colors.white),
+                                    onPressed: () =>
+                                        Navigator.of(context).pop(),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                      ListTile(
+                        title: Text(
+                          uploaderName,
+                          style: const TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.bold),
                         ),
-                        Padding(
-                          padding: const EdgeInsets.all(8.0),
-                          child: ElevatedButton.icon(
-                            icon: const Icon(Icons.comment),
-                            label: FutureBuilder(
-                              future: getCommentCount(imageId, widget.group.id),
-                              builder: (context, snapshot) {
-                                if (snapshot.connectionState ==
-                                    ConnectionState.waiting) {
-                                  return Text(context.l10n.comments_count("..."));
-                                } else if (snapshot.hasError ||
-                                    !snapshot.hasData ||
-                                    !(snapshot.data as SupabaseResponse).success) {
-                                  return Text(context.l10n.comments_count("0"));
-                                } else {
-                                  final count = (snapshot.data
-                                  as SupabaseResponse)
-                                      .data;
-                                  return Text(context.l10n.comments_count(count.toString()));
-                                }
-                              },
-                            ),
-                            onPressed: () => _showCommentsBottomSheet(
-                              imageData.uploadedBy,
-                              imageId,
-                              widget.group.id,
-                            ),
+                        subtitle: Text(
+                          imageData.description ?? "",
+                          style: TextStyle(
+                            color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(8.0),
+                        child: ElevatedButton.icon(
+                          icon: const Icon(Icons.comment),
+                          label: Text(context.l10n
+                              .comments_count(commentCount.toString())),
+                          onPressed: () => _showCommentsBottomSheet(
+                            imageData.uploadedBy,
+                            imageId,
+                            widget.group.id,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              );
-            }
-            return const SizedBox();
+              ),
+            );
           },
         );
       },
     );
   }
 
-  void _showCommentsBottomSheet(String uploaderId, String imageId, String groupId) {
+  void _showCommentsBottomSheet(
+      String uploaderId, String imageId, String groupId) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -318,12 +280,14 @@ class GroupPageState extends State<GroupImagesPage> {
           }
           if (snapshot.hasError) {
             return Center(
-                child: Text(context.l10n.error_loading_images(snapshot.error.toString())));
+                child: Text(context.l10n
+                    .error_loading_images(snapshot.error.toString())));
           }
           final images = snapshot.data!.data!;
           if (images.isEmpty) {
             return Center(child: Text(context.l10n.no_images));
           }
+
           return Padding(
             padding: const EdgeInsets.all(8.0),
             child: GridView.builder(
@@ -337,16 +301,18 @@ class GroupPageState extends State<GroupImagesPage> {
               itemBuilder: (context, index) {
                 final image = images[index];
                 final imageId = image['id'].toString();
+
                 return FutureBuilder<ImageData>(
                   future: _getImageDataFuture(imageId),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
                       return Container(
                         decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(10),
-                            color: Colors.grey[350]
+                          borderRadius: BorderRadius.circular(10),
+                          color: Colors.grey[350],
                         ),
-                        child: const Center(child: CircularProgressIndicator()),
+                        child:
+                        const Center(child: CircularProgressIndicator()),
                       );
                     }
                     if (!snapshot.hasData) {
@@ -355,58 +321,28 @@ class GroupPageState extends State<GroupImagesPage> {
                         child: const Icon(Icons.error, size: 50),
                       );
                     }
+
                     final imageData = snapshot.data!;
+                    final uploaderName =
+                        _usernameCache[imageData.uploadedBy] ?? "";
+
                     return GestureDetector(
-                      onTap: () => _showImagePreview(imageId),
+                      onTap: () => _showImagePreview(imageId, imageData),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(10),
                         child: Stack(
                           fit: StackFit.expand,
                           children: [
-                            FutureBuilder<ui.Image>(
-                              future: _getImageInfo(imageData.imageBytes),
-                              builder: (context, snapshot) {
-                                if (snapshot.hasData) {
-                                  final imgInfo = snapshot.data!;
-                                  final halfWidth = (imgInfo.width / 4).round();
-                                  final halfHeight = (imgInfo.height / 4).round();
-                                  return Image.memory(
-                                    imageData.imageBytes,
-                                    fit: BoxFit.cover,
-                                    cacheWidth: halfWidth,
-                                    cacheHeight: halfHeight,
-                                    gaplessPlayback: true,
-                                  );
-                                } else {
-                                  return Image.memory(
-                                    imageData.imageBytes,
-                                    fit: BoxFit.cover,
-                                    gaplessPlayback: true,
-                                  );
-                                }
-                              },
+                            Image.memory(
+                              imageData.imageBytes,
+                              fit: BoxFit.cover,
+                              gaplessPlayback: true,
                             ),
                             Align(
                               alignment: Alignment.bottomRight,
                               child: Padding(
                                 padding: const EdgeInsets.all(8.0),
-                                child: FutureBuilder(
-                                  future: getUsername(imageData.uploadedBy),
-                                  builder: (context, snapshot) {
-                                    String displayName = "";
-                                    if (snapshot.connectionState == ConnectionState.done) {
-                                      if (snapshot.hasError ||
-                                          !snapshot.hasData ||
-                                          !(snapshot.data as SupabaseResponse).success ||
-                                          (snapshot.data as SupabaseResponse).data == null) {
-                                        displayName = "Unknown user";
-                                      } else {
-                                        displayName = (snapshot.data as SupabaseResponse).data!;
-                                      }
-                                    }
-                                    return UserAvatar(displayName, radius: 20);
-                                  },
-                                ),
+                                child: UserAvatar(uploaderName, radius: 20),
                               ),
                             ),
                           ],
