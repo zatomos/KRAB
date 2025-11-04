@@ -209,7 +209,8 @@ Future<SupabaseResponse<void>> sendImageToGroups(
 
     // Upload image to storage
     try {
-      await supabase.storage.from("images").upload(imageId, imageFile);
+      await supabase.storage.from("images").upload(imageId, imageFile,
+          fileOptions: const FileOptions(contentType: 'image/jpeg'));
     } catch (uploadError) {
       return SupabaseResponse(
         success: false,
@@ -293,30 +294,45 @@ Future<SupabaseResponse<String>> getLatestImage() async {
 Future<SupabaseResponse<Uint8List>> getImage(String imageId,
     {bool lowRes = false}) async {
   try {
-    final transform = lowRes
-        ? const TransformOptions(
-            width: 400,
-            quality: 50,
-          )
-        : null;
-
     debugPrint(
         "Downloading image $imageId with transform: ${lowRes ? 'low' : 'full'}");
 
-    final data = await supabase.storage
-        .from('images')
-        .download(imageId, transform: transform);
+    Uint8List data;
+
+    if (lowRes) {
+      // Try with transform
+      try {
+        data = await supabase.storage.from('images').download(
+              imageId,
+              transform: const TransformOptions(width: 400, quality: 50),
+            );
+        debugPrint("Successfully downloaded low-res image for $imageId");
+      } catch (e) {
+        // Fallback to full image
+        debugPrint(
+            "Low-res transform failed for $imageId, falling back to full image. Error: $e");
+        data = await supabase.storage.from('images').download(imageId);
+      }
+    } else {
+      // Fullres download
+      data = await supabase.storage.from('images').download(imageId);
+    }
 
     if (data.isEmpty) {
       return SupabaseResponse(
-          success: false, error: "Downloaded image is empty");
+        success: false,
+        error: "Downloaded image is empty",
+      );
     }
 
     return SupabaseResponse(success: true, data: data);
-  } catch (error) {
+  } catch (error, stack) {
     debugPrint("Error downloading image $imageId: $error");
+    debugPrint(stack.toString());
     return SupabaseResponse(
-        success: false, error: "Error downloading image: $error");
+      success: false,
+      error: "Error downloading image: $error",
+    );
   }
 }
 

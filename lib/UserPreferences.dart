@@ -11,6 +11,7 @@ class UserPreferences {
   static late bool autoImageSave;
   static late bool isFirstLaunch;
   static late List<String> favoriteGroups;
+  static late int widgetBitmapLimit;
 
   Future<void> initPrefs() async {
     _preferences = await SharedPreferences.getInstance();
@@ -22,6 +23,7 @@ class UserPreferences {
     autoImageSave = _preferences?.getBool('autoImageSave') ?? false;
     isFirstLaunch = _preferences?.getBool('isFirstLaunch') ?? true;
     favoriteGroups = _preferences?.getStringList('favoriteGroups') ?? [];
+    widgetBitmapLimit = 10 * 1024 * 1024; // Default 10 MB
   }
 
   static Future<void> setSupabaseConfig(String url, String anonKey) async {
@@ -33,6 +35,14 @@ class UserPreferences {
     final url = _preferences?.getString('supabaseUrl') ?? '';
     final anonKey = _preferences?.getString('supabaseAnonKey') ?? '';
     return 'URL: $url\nAnon Key: $anonKey';
+  }
+
+  static Future<int> getWidgetBitmapLimit() async {
+    return _preferences?.getInt('widgetBitmapLimit') ?? (10 * 1024 * 1024);
+  }
+
+  static Future<void> setWidgetBitmapLimit(int bytes) async {
+    await _preferences?.setInt('widgetBitmapLimit', bytes);
   }
 
   static Future<bool> getAutoImageSave() async {

@@ -1,16 +1,13 @@
-import 'dart:io';
-
 import 'firebase_options.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:home_widget/home_widget.dart';
-import 'package:path_provider/path_provider.dart';
 
 import 'package:krab/services/supabase.dart';
 import 'package:krab/services/fcm_helper.dart';
+import 'package:krab/services/home_widget_updater.dart';
 import 'package:krab/pages/WelcomePage.dart';
 import 'package:krab/pages/LoginPage.dart';
 import 'package:krab/pages/DBConfigPage.dart';
@@ -18,7 +15,6 @@ import 'package:krab/pages/CameraPage.dart';
 import 'package:krab/pages/GroupImagesPage.dart';
 import 'package:krab/themes/GlobalThemeData.dart';
 import 'package:krab/widgets/FloatingSnackBar.dart';
-import 'package:krab/filesaver.dart';
 import 'package:krab/l10n/l10n.dart';
 import 'UserPreferences.dart';
 
@@ -34,111 +30,28 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 // Store pending notification for navigation after app is ready
 RemoteMessage? pendingNotificationMessage;
 
-/// Updates the home widget with the latest image
-Future<void> updateHomeWidget() async {
-  try {
-    debugPrint("Starting home widget update...");
+/// Compute bitmap size limit
+/// screen width * height * 4 bytes per pixel * 1.5
+Future<int> _getWidgetBitmapLimitBytes() async {
+  final views = WidgetsBinding.instance.platformDispatcher.views;
 
-    // Get the ID of the latest image
-    final response = await getLatestImage();
-    final imageId = response.data;
-    if (imageId == null) {
-      debugPrint("Latest image ID is null, aborting widget update.");
-      return;
-    }
-    debugPrint("Got latest image ID: $imageId");
+  final view = views.first;
+  final mq = MediaQueryData.fromView(view);
+  final width = mq.size.width * mq.devicePixelRatio;
+  final height = mq.size.height * mq.devicePixelRatio;
+  final bytes = (width * height * 4 * 1.5).round();
 
-    // Get image bytes
-    final imageResponse = await getImage(imageId);
-    final Uint8List? imageBytes = imageResponse.data;
-    if (imageBytes == null) {
-      debugPrint("Image bytes are null, aborting widget update.");
-      return;
-    }
-    debugPrint("Retrieved image bytes successfully: ${imageBytes.length} bytes");
-
-    // Get image description and sender
-    final imageDescriptionResponse = await getImageDetails(imageId);
-    final imageDescription = imageDescriptionResponse.data?['description'];
-    final imageSenderID = imageDescriptionResponse.data?['uploaded_by'];
-    final imageSenderResponse = await getUsername(imageSenderID);
-    final imageSender = imageSenderResponse.data;
-    debugPrint("Got image description: $imageDescription");
-    debugPrint("Got image sender: $imageSender");
-
-    final Directory tempDir = await getTemporaryDirectory();
-    final String imagePath = '${tempDir.path}/krab_widget_current.jpg';
-
-    // Write new image bytes to the file
-    final File imageFile = File(imagePath);
-    await imageFile.writeAsBytes(imageBytes, flush: true);
-    debugPrint("Saved new image to: $imagePath");
-
-    // Delay
-    await Future.delayed(const Duration(milliseconds: 100));
-
-    // Verify file was written successfully
-    if (!await imageFile.exists()) {
-      debugPrint("ERROR: Image file was not created successfully");
-      return;
-    }
-    final fileSize = await imageFile.length();
-    debugPrint("Verified file exists with size: $fileSize bytes");
-
-    // Save the new widget data
-    await HomeWidget.saveWidgetData<String>('recentImageUrl', imageFile.path);
-    await HomeWidget.saveWidgetData<String>('recentImageDescription', imageDescription ?? '');
-    await HomeWidget.saveWidgetData<String>('recentImageSender', imageSender ?? '');
-
-    // Delay
-    await Future.delayed(const Duration(milliseconds: 300));
-
-    // Update widget
-    try {
-      final updated1 = await HomeWidget.updateWidget(name: 'HomeScreenWidget');
-      final updated2 = await HomeWidget.updateWidget(name: 'HomeScreenWidgetWithText');
-      debugPrint('Widget update results - HomeScreenWidget: $updated1, HomeScreenWidgetWithText: $updated2');
-    } catch (e) {
-      debugPrint('Error calling HomeWidget.updateWidget: $e');
-    }
-
-    debugPrint('Widget updated successfully with image: $imagePath');
-
-    // Clean up old images
-    try {
-      final files = tempDir.listSync()
-          .whereType<File>()
-          .where((f) => f.path.contains('krab_image_') && !f.path.contains('krab_widget_current'))
-          .toList();
-
-      for (var file in files) {
-        try {
-          await file.delete();
-        } catch (e) {
-          debugPrint("Error deleting old image: $e");
-        }
-      }
-    } catch (e) {
-      debugPrint("Error cleaning old images: $e");
-    }
-
-    // Save the image to the gallery if auto-save is enabled
-    final autoSave = await UserPreferences.getAutoImageSave();
-    if (autoSave) {
-      debugPrint('Saving image to gallery...');
-      final uploadedByResponse = await getUsername(imageSenderID);
-      final uploadedBy = uploadedByResponse.data;
-      if (uploadedBy != null) {
-        final createdAt = DateTime.now().toIso8601String();
-        await downloadImage(imageBytes, uploadedBy, createdAt);
-      } else {
-        debugPrint('Uploaded by value is null, skipping gallery save.');
-      }
-    }
-  } catch (e, stackTrace) {
-    debugPrint('Error updating home widget: $e');
-    debugPrint('Stack trace: $stackTrace');
+  if (views.isEmpty || bytes <= 0) {
+    debugPrint('Failed to get screen size, using default 10 MB limit.');
+    return 10 * 1024 * 1024;
   }
+
+  debugPrint(
+    'Computed widget bitmap limit: ${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB '
+        '(${width.round()}×${height.round()})',
+  );
+
+  return bytes;
 }
 
 /// Initialize Supabase if not already initialized
@@ -255,8 +168,21 @@ void main() async {
   try {
     WidgetsFlutterBinding.ensureInitialized();
 
-    // Initialize Shared Preferences FIRST and WAIT for it
+    // Initialize Shared Preferences
     await UserPreferences().initPrefs();
+
+    // Compute and store widget bitmap limit
+    final cachedWidgetLimit = await UserPreferences.getWidgetBitmapLimit();
+    if (cachedWidgetLimit != 10 * 1024 * 1024) {
+      debugPrint('Using cached widget bitmap limit: '
+          '${(cachedWidgetLimit / (1024 * 1024)).toStringAsFixed(1)} MB');
+    }
+    else {
+      final computedWidgetLimit = await _getWidgetBitmapLimitBytes();
+      await UserPreferences.setWidgetBitmapLimit(computedWidgetLimit);
+      debugPrint('Stored computed widget bitmap limit: '
+          '${(computedWidgetLimit / (1024 * 1024)).toStringAsFixed(1)} MB');
+    }
 
     // Initialize Supabase with safety check
     final supabaseOk = await initializeSupabaseIfNeeded();
