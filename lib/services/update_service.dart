@@ -30,41 +30,54 @@ class UpdateInfo {
   }
 }
 
+class UpdateCheckResult {
+  final UpdateInfo? info;
+  final bool success;
+  final bool hasUpdate;
+
+  UpdateCheckResult({
+    required this.success,
+    required this.hasUpdate,
+    this.info,
+  });
+}
+
 class UpdateService {
   final Dio _dio = Dio();
 
   String get manifestUrl => dotenv.env['MANIFEST_URL'] ?? '';
-  bool get isEnabled => (dotenv.env['ENABLE_AUTO_UPDATE']?.toLowerCase() == 'true');
+  bool get isEnabled =>
+      (dotenv.env['ENABLE_AUTO_UPDATE']?.toLowerCase() == 'true');
 
-  Future<UpdateInfo?> checkForUpdate() async {
-    if (!isEnabled) return null;
+  Future<UpdateCheckResult> checkForUpdate() async {
+    if (!isEnabled) {
+      return UpdateCheckResult(success: false, hasUpdate: false);
+    }
 
     try {
       final response = await _dio.get(manifestUrl);
-
       dynamic rawData = response.data;
-      if (rawData is String) {
-        rawData = jsonDecode(rawData);
-      }
+      if (rawData is String) rawData = jsonDecode(rawData);
 
       final updateInfo = UpdateInfo.fromJson(rawData);
       final packageInfo = await PackageInfo.fromPlatform();
       final currentVersion = packageInfo.version;
 
-      if (_isUpdateAvailable(currentVersion, updateInfo.version)) {
-        return updateInfo;
-      }
-      return null;
+      final hasUpdate = _isUpdateAvailable(currentVersion, updateInfo.version);
+      return UpdateCheckResult(
+          success: true,
+          hasUpdate: hasUpdate,
+          info: hasUpdate ? updateInfo : null);
     } catch (e) {
       debugPrint('Error checking for updates: $e');
-      return null;
+      return UpdateCheckResult(success: false, hasUpdate: false);
     }
   }
 
   Future<bool> downloadAndInstall(
-      String downloadUrl,
-      Function(double) onProgress,
-      ) async {
+    String downloadUrl,
+    Function(double) onProgress,
+  ) async {
     try {
       final dir = await getApplicationDocumentsDirectory();
       final savePath = '${dir.path}/app_update.apk';
@@ -83,7 +96,7 @@ class UpdateService {
 
       debugPrint('Download complete, launching installer...');
       final statusCode =
-      await AndroidPackageInstaller.installApk(apkFilePath: savePath);
+          await AndroidPackageInstaller.installApk(apkFilePath: savePath);
 
       if (statusCode != null) {
         final status = PackageInstallerStatus.byCode(statusCode);

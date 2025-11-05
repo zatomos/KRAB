@@ -35,15 +35,26 @@ class _UpdateCheckerState extends State<UpdateChecker> {
   }
 
   Future<void> _checkForUpdates() async {
-    // Skip if update service is disabled
-    if (!_updateService.isEnabled) return;
+    if (!_updateService.isEnabled) {
+      debugPrint('Auto-update disabled');
+      return;
+    }
 
-    final updateInfo = await _updateService.checkForUpdate();
-    if (updateInfo == null) {
-      showSnackBar(context, context.l10n.update_check_failed,
-          color: Colors.orangeAccent);
-    } else if (mounted) {
-      _showUpdateDialog(updateInfo);
+    final result = await _updateService.checkForUpdate();
+
+    if (!result.success && mounted) {
+      showSnackBar(
+        context,
+        'Failed to check for updates.',
+        color: Colors.orangeAccent,
+      );
+      return;
+    }
+
+    if (result.hasUpdate && result.info != null && mounted) {
+      _showUpdateDialog(result.info!);
+    } else {
+      debugPrint('No update available');
     }
   }
 
