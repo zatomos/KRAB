@@ -27,7 +27,7 @@ This is a small, quite barebones personal project. I am not an app developer and
 ## Getting Started
 ### Prerequisites
 - Install [Flutter](https://flutter.dev/docs/get-started/install).
-- Set up a [Supabase](https://supabase.com) project and get the API URL and key..
+- Set up a [Supabase](https://supabase.com) project and get the API URL and key.
 - Set up a [Firebase](https://firebase.google.com) project and get the `google-services.json` file.
 
 ### Installation
@@ -40,14 +40,12 @@ This is a small, quite barebones personal project. I am not an app developer and
   ```bash
   flutter pub get
   ```
-  
-- Create a `.env` file in the root directory and add the following:
-  ```bash
-  SUPABASE_URL=your-supabase-url
-  SUPABASE_ANON_KEY=your-anon-key
-  ```
 
 - Setup the Supabase database using the files provided under the `supabase` directory.
+
+
+- If you wish to provide your users with auto-updates, set up your `.env` file with the `.env.example` as a template. A `manifest.json.example` template is provided as well.
+
 - Run the app:
   ```bash
   flutter run
