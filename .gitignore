@@ -51,3 +51,4 @@ firebase.json
 supabase/functions/service-account.json
 supabase/.temp
 lib/firebase_options.dart
+.env

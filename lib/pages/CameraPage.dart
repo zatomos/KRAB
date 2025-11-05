@@ -596,7 +596,7 @@ class CameraPageState extends State<CameraPage> {
                     decoration: const BoxDecoration(
                         shape: BoxShape.circle, color: Colors.white12),
                     child: IconButton(
-                      icon: const Icon(Icons.group,
+                      icon: const Icon(Icons.group_rounded,
                           color: Colors.white, size: 30),
                       onPressed: () {
                         Navigator.push(

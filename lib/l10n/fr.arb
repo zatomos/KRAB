@@ -96,5 +96,17 @@
   "members_plural": "membres",
   "starred_groups_long_press": "Les groupes favoris seront automatiquement sélectionnés lors de l'envoi d'images.",
   "removed_group_favorites": "Retiré {groupName} des favoris.",
-  "added_group_favorites": "Ajouté {groupName} aux favoris."
+  "added_group_favorites": "Ajouté {groupName} aux favoris.",
+  "update_available": "Mise à jour disponible",
+  "version": "Version {version}",
+  "current_version": "Version actuelle : {currentVersion}",
+  "update_required": "Cette mise à jour est obligatoire.",
+  "whats_new": "Changements:",
+  "no_changelog": "Aucun journal des modifications n'a été fourni.",
+  "downloading": "Téléchargement... {progress}%",
+  "later": "Pas maintenant",
+  "installing_update": "Mise à jour en cours...",
+  "update_failed": "Échec de la mise à jour. Veuillez réessayer plus tard.",
+  "update_check_failed": "Échec lors de la vérification des mises à jour.",
+  "update_now": "Mettre à jour"
 }

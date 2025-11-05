@@ -1,0 +1,9 @@
+{
+  "latestVersion": "1.0.0",
+  "downloadUrl": "YOUR_LATEST_APK_DOWNLOAD_URL_HERE",
+  "changelog": [
+    "Change 1",
+    "Change 2"
+  ],
+  "forceUpdate": false
+}

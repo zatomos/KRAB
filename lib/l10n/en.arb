@@ -96,5 +96,18 @@
   "members_plural": "members",
   "starred_groups_long_press": "Starred groups will be automatically selected when sending images.",
   "removed_group_favorites": "Removed {groupName} from favorites.",
-  "added_group_favorites": "Added {groupName} to favorites."
+  "added_group_favorites": "Added {groupName} to favorites.",
+  "update_available": "Update Available",
+  "version": "Version {version}",
+  "current_version": "Current version: {currentVersion}",
+  "update_required": "This update is required.",
+  "whats_new": "What's new:",
+  "no_changelog": "No changelog available.",
+  "downloading": "Downloading... {progress}%",
+  "later": "Later",
+  "installing_update": "Installing update...",
+  "update_failed": "Update failed. Please try again later.",
+  "update_check_failed": "Failed to check for updates.",
+  "update_now": "Update Now"
+
 }

@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'package:krab/services/supabase.dart';
 import 'package:krab/services/fcm_helper.dart';
@@ -15,6 +16,7 @@ import 'package:krab/pages/CameraPage.dart';
 import 'package:krab/pages/GroupImagesPage.dart';
 import 'package:krab/themes/GlobalThemeData.dart';
 import 'package:krab/widgets/FloatingSnackBar.dart';
+import 'package:krab/widgets/UpdateChecker.dart';
 import 'package:krab/l10n/l10n.dart';
 import 'UserPreferences.dart';
 
@@ -217,6 +219,9 @@ void main() async {
       debugPrint('Skipping FCM initialization, Supabase not initialized');
     }
 
+    // Load dotenv
+    await dotenv.load(fileName: ".env");
+
     // Mark initialization as complete
     isAppInitialized = true;
 
@@ -324,7 +329,9 @@ class MyAppState extends State<MyApp> {
           }
 
           // Return home page
-          return snapshot.data ?? const DBConfigPage();
+          return UpdateChecker(
+            child: snapshot.data ?? const DBConfigPage(),
+          );
         },
       ),
     );
