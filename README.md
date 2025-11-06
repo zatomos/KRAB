@@ -1,5 +1,5 @@
 <div align="center">
-<img src="./krab_logo.png" width="80" height="80" alt="KRAB Logo">
+<img src="logo/krab_logo.png" width="80" height="80" alt="KRAB Logo">
 
 # KRAB
 
