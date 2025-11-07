@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 
 import 'package:krab/models/Group.dart';
+import 'package:krab/models/User.dart' as KRAB_User;
 
 final supabase = Supabase.instance.client;
 
@@ -454,9 +455,6 @@ Future<SupabaseResponse<void>> fcmTokenHandler({String? username}) async {
     // Ask permission (don’t fail if denied here; you can decide policy)
     await FirebaseMessaging.instance.requestPermission();
 
-    // iOS-only: APNs token (optional)
-    // if (Platform.isIOS) { await FirebaseMessaging.instance.getAPNSToken(); }
-
     final fcmToken = await FirebaseMessaging.instance.getToken();
     if (fcmToken == null) {
       return SupabaseResponse(success: false, error: "Error getting FCM token");
@@ -475,7 +473,7 @@ Future<SupabaseResponse<void>> fcmTokenHandler({String? username}) async {
 
     await supabase.from('Users').upsert(payload);
 
-    return SupabaseResponse(success: true); // <-- return it
+    return SupabaseResponse(success: true);
   } catch (error) {
     return SupabaseResponse(
       success: false,
@@ -487,7 +485,7 @@ Future<SupabaseResponse<void>> fcmTokenHandler({String? username}) async {
 /// Register a new user.
 Future<SupabaseResponse<void>> registerUser(
     String username, String email, String password) async {
-  print("Registering user: $username, $email");
+  debugPrint("Registering user: $username, $email");
   try {
     final authResponse =
         await supabase.auth.signUp(email: email, password: password);
@@ -543,17 +541,122 @@ Future<SupabaseResponse<void>> logOut() async {
 }
 
 /// Get the username for a given user ID.
-Future<SupabaseResponse<String>> getUsername(String userId) async {
+Future<SupabaseResponse<KRAB_User.User>> getUserDetails(String userId) async {
   try {
-    final response =
-        await supabase.rpc("get_username", params: {"user_id": userId});
-    if (response == "" || response == null) {
-      return SupabaseResponse(success: false, error: "Could not get username");
+    final supabase = Supabase.instance.client;
+
+    // Get username
+    final usernameResponse =
+    await supabase.rpc('get_username', params: {'user_id': userId});
+    if (usernameResponse == null || usernameResponse == '') {
+      return SupabaseResponse(
+          success: false, error: 'Could not get username for this user');
     }
-    return SupabaseResponse(success: true, data: response as String);
+
+    final username = usernameResponse as String;
+    debugPrint("Fetched username for $userId: $username");
+
+    // Get profile picture URL
+    String? pfpUrl;
+    try {
+      pfpUrl = await supabase.storage
+          .from('profile-pictures')
+          .createSignedUrl(userId, 3600); // 1 hour expiry
+    } catch (e) {
+      pfpUrl = null;
+    }
+
+    debugPrint("Fetched profile picture URL for $userId: $pfpUrl");
+
+    // Construct user object
+    final user = KRAB_User.User(
+      id: userId,
+      username: username,
+      pfpUrl: pfpUrl ?? '',
+    );
+
+    return SupabaseResponse(success: true, data: user);
   } catch (error) {
     return SupabaseResponse(
-        success: false, error: "Error loading username: $error");
+      success: false,
+      error: 'Error fetching user details: $error',
+    );
+  }
+}
+
+
+/// Edit the username of the current user.
+Future<SupabaseResponse<void>> editUsername(String newUsername) async {
+  try {
+    final user = supabase.auth.currentUser;
+    if (user == null) {
+      return SupabaseResponse(success: false, error: "No current user");
+    }
+
+    await supabase.rpc("edit_username", params: {
+      "new_username": newUsername,
+    });
+
+    return SupabaseResponse(success: true);
+  } catch (error) {
+    return SupabaseResponse(
+      success: false,
+      error: "Error updating username: $error",
+    );
+  }
+}
+
+/// Edit the profile picture of the current user.
+Future<SupabaseResponse<void>> editProfilePicture(File imageFile) async {
+  try {
+    final user = supabase.auth.currentUser;
+    if (user == null) {
+      return SupabaseResponse(success: false, error: "No current user");
+    }
+
+    await supabase.storage
+        .from("profile-pictures")
+        .upload(user.id, imageFile,
+            fileOptions: const FileOptions(contentType: 'image/jpeg'));
+
+    return SupabaseResponse(success: true);
+  } catch (error) {
+    return SupabaseResponse(
+      success: false,
+      error: "Error updating profile picture: $error",
+    );
+  }
+}
+
+/// Get the profile picture of the requested user.
+Future<SupabaseResponse<String>> getProfilePictureUrl(String userId) async {
+  try {
+    final data = await supabase.storage
+        .from("profile-pictures")
+        .createSignedUrl(userId, 3600); // 1 hour expiry
+    return SupabaseResponse(success: true, data: data);
+  } catch (error) {
+    return SupabaseResponse(
+      success: false,
+      error: "Error fetching profile picture: $error",
+    );
+  }
+}
+
+/// Delete the profile picture of the current user.
+Future<SupabaseResponse<void>> deleteProfilePicture() async {
+  try {
+    final user = supabase.auth.currentUser;
+    if (user == null) {
+      return SupabaseResponse(success: false, error: "No current user");
+    }
+    await supabase.storage.from("profile-pictures").remove([user.id]);
+    return SupabaseResponse(success: true);
+  } catch (error) {
+    return SupabaseResponse(
+      success: false,
+      error: "Error deleting profile picture: $error",
+    );
   }
 }
 

@@ -5,6 +5,7 @@ import 'package:krab/l10n/l10n.dart';
 import 'package:krab/widgets/UserAvatar.dart';
 import 'package:krab/services/supabase.dart';
 import 'package:krab/models/Comment.dart';
+import 'package:krab/models/User.dart' as KRAB_User;
 import 'package:krab/widgets/RoundedInputField.dart';
 import 'package:krab/widgets/FloatingSnackBar.dart';
 
@@ -27,7 +28,6 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
   final TextEditingController _newCommentController = TextEditingController();
   List<Comment> _comments = [];
   bool _loading = true;
-  // _editingCommentIndex is null when not editing
   int? _editingCommentIndex;
 
   @override
@@ -191,21 +191,30 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
                   itemCount: _comments.length,
                   itemBuilder: (context, index) {
                     final comment = _comments[index];
-                    return FutureBuilder<String>(
-                      future: getUsername(comment.userId).then((response) {
+                    return FutureBuilder<KRAB_User.User>(
+                      future: getUserDetails(comment.userId).then((response) {
                         if (response.success &&
                             response.data != null) {
-                          return response.data!;
+                          return response.data ?? KRAB_User.User(
+                              id: comment.userId,
+                              username: "");
                         }
-                        return "Unknown user";
+                        return KRAB_User.User(
+                            id: comment.userId,
+                            username: "");
                       }),
                       builder: (context, snapshot) {
-                        final displayName =
-                            snapshot.data ?? context.l10n.loading;
+                        if (!snapshot.hasData) {
+                          return const ListTile(
+                            leading: CircularProgressIndicator(),
+                            title: Text("Loading..."),
+                          );
+                        }
+                        final postUser = snapshot.data;
                         if (comment.userId == currentUserId) {
                           return ListTile(
-                            leading: UserAvatar(displayName, radius: 20),
-                            title: Text(displayName),
+                            leading: UserAvatar(postUser!, radius: 20),
+                            title: Text(postUser.username),
                             subtitle: Text(comment.text),
                             trailing: PopupMenuButton<String>(
                               onSelected: (value) {
@@ -233,8 +242,8 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
                           );
                         } else {
                           return ListTile(
-                            leading: UserAvatar(displayName, radius: 20),
-                            title: Text(displayName),
+                            leading: UserAvatar(postUser!, radius: 20),
+                            title: Text(postUser.username),
                             subtitle: Text(comment.text),
                           );
                         }

@@ -108,6 +108,15 @@
   "installing_update": "Installing update...",
   "update_failed": "Update failed. Please try again later.",
   "update_check_failed": "Failed to check for updates.",
-  "update_now": "Update Now"
-
+  "update_now": "Update Now",
+  "edit_username": "Edit Username",
+  "username_updated_success": "Username updated successfully.",
+  "error_updating_username": "Error updating username: {errorMsg}",
+  "edit_pfp_title": "Edit Profile Picture",
+  "pfp_updated_success": "Profile picture updated successfully.",
+  "error_updating_pfp": "Error updating profile picture: {errorMsg}",
+  "pfp_deleted_success": "Profile picture deleted successfully.",
+  "error_deleting_pfp": "Error deleting profile picture: {errorMsg}",
+  "crop_image": "Crop Image",
+  "add": "Add"
 }

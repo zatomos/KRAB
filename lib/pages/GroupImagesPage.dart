@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/services/supabase.dart';
 import 'package:krab/models/Group.dart';
+import 'package:krab/models/User.dart' as KRAB_User;
 import 'package:krab/models/ImageData.dart';
 import 'package:krab/pages/GroupSettingsPage.dart';
 import 'package:krab/widgets/FloatingSnackBar.dart';
@@ -12,6 +13,7 @@ import 'package:krab/widgets/UserAvatar.dart';
 import 'package:krab/widgets/CommentsBottomSheet.dart';
 import 'package:krab/themes/GlobalThemeData.dart';
 import 'package:krab/filesaver.dart';
+
 
 class GroupImagesPage extends StatefulWidget {
   final Group group;
@@ -31,7 +33,7 @@ class GroupPageState extends State<GroupImagesPage> {
   final Map<String, Uint8List> _lowResCache = {};
   final Map<String, Uint8List> _fullResCache = {};
   final Map<String, Future<ImageData>> _imageFutureCache = {};
-  final Map<String, String> _usernameCache = {};
+  final Map<String, KRAB_User.User> _userCache = {};
   final Map<String, int> _commentCountCache = {};
 
   @override
@@ -55,7 +57,7 @@ class GroupPageState extends State<GroupImagesPage> {
     _lowResCache.clear();
     _fullResCache.clear();
     _imageFutureCache.clear();
-    _usernameCache.clear();
+    _userCache.clear();
     _commentCountCache.clear();
     super.dispose();
   }
@@ -107,12 +109,12 @@ class GroupPageState extends State<GroupImagesPage> {
     final String uploaderId = imageDetails['uploaded_by'];
 
     // Cache username
-    if (!_usernameCache.containsKey(uploaderId)) {
-      final usernameResponse = await getUsername(uploaderId);
-      _usernameCache[uploaderId] =
-      (usernameResponse.success && usernameResponse.data != null)
-          ? usernameResponse.data!
-          : "Unknown user";
+    if (!_userCache.containsKey(uploaderId)) {
+      final userResponse = await getUserDetails(uploaderId);
+      _userCache[uploaderId] =
+      (userResponse.success && userResponse.data != null)
+          ? userResponse.data!
+          : KRAB_User.User(id: uploaderId, username: "");
     }
 
     // Cache comment count
@@ -133,7 +135,10 @@ class GroupPageState extends State<GroupImagesPage> {
   }
 
   void _showImagePreview(String imageId, ImageData imageData) {
-    final uploaderName = _usernameCache[imageData.uploadedBy] ?? "Unknown user";
+    final uploader = _userCache[imageData.uploadedBy] ?? KRAB_User.User(
+      id: imageData.uploadedBy,
+      username: "",
+    );
     final commentCount = _commentCountCache[imageId] ?? 0;
 
     showDialog(
@@ -206,7 +211,7 @@ class GroupPageState extends State<GroupImagesPage> {
                       ),
                       ListTile(
                         title: Text(
-                          uploaderName,
+                          uploader.username,
                           style: const TextStyle(
                               fontSize: 18, fontWeight: FontWeight.bold),
                         ),
@@ -323,8 +328,11 @@ class GroupPageState extends State<GroupImagesPage> {
                     }
 
                     final imageData = snapshot.data!;
-                    final uploaderName =
-                        _usernameCache[imageData.uploadedBy] ?? "";
+                    final uploader =
+                        _userCache[imageData.uploadedBy] ?? KRAB_User.User(
+                          id: imageData.uploadedBy,
+                          username: "",
+                        );
 
                     return GestureDetector(
                       onTap: () => _showImagePreview(imageId, imageData),
@@ -342,7 +350,7 @@ class GroupPageState extends State<GroupImagesPage> {
                               alignment: Alignment.bottomRight,
                               child: Padding(
                                 padding: const EdgeInsets.all(8.0),
-                                child: UserAvatar(uploaderName, radius: 20),
+                                child: UserAvatar(uploader, radius: 20),
                               ),
                             ),
                           ],

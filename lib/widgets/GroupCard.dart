@@ -61,7 +61,7 @@ class _GroupCardState extends State<GroupCard> {
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         elevation: 0,
         child: ListTile(
-          leading: const Icon(Icons.group, size: 40),
+          leading: const Icon(Icons.group_rounded, size: 40),
           title: Text(
             widget.group.name,
             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),

@@ -108,5 +108,15 @@
   "installing_update": "Mise à jour en cours...",
   "update_failed": "Échec de la mise à jour. Veuillez réessayer plus tard.",
   "update_check_failed": "Échec lors de la vérification des mises à jour.",
-  "update_now": "Mettre à jour"
+  "update_now": "Mettre à jour",
+  "edit_username": "Modifier le nom d'utilisateur",
+  "username_updated_success": "Nom d'utilisateur mis à jour avec succès.",
+  "error_updating_username": "Erreur lors de la mise à jour du nom d'utilisateur: {errorMsg}",
+  "edit_pfp_title": "Modifier la photo de profil",
+  "pfp_updated_success": "Photo de profil mise à jour avec succès.",
+  "error_updating_pfp": "Erreur lors de la mise à jour de la photo de profil: {errorMsg}",
+  "pfp_deleted_success": "Photo de profil supprimée avec succès.",
+  "error_deleting_pfp": "Erreur lors de la suppression de la photo de profil: {errorMsg}",
+  "crop_image": "Rogner l'image",
+  "add": "Ajouter"
 }

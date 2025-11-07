@@ -70,8 +70,8 @@ Future<void> updateHomeWidget() async {
     final imageDetails = await getImageDetails(imageId);
     final description = imageDetails.data?['description'] ?? '';
     final uploaderId = imageDetails.data?['uploaded_by'];
-    final uploaderNameResp = await getUsername(uploaderId);
-    final uploaderName = uploaderNameResp.data ?? 'Unknown';
+    final uploaderInfo = await getUserDetails(uploaderId);
+    final uploaderName = uploaderInfo.data?.username ?? 'Unknown';
 
     debugPrint("Got image description: $description");
     debugPrint("Got image sender: $uploaderName");
