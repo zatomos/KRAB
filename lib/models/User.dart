@@ -1,4 +1,7 @@
 import 'dart:convert';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'package:krab/services/supabase.dart';
 
 class User {
   final String id;
@@ -55,6 +58,25 @@ class User {
 
   @override
   String toString() {
-    return 'User{id: $id, username: $username}';
+    return 'User{id: $id, username: $username, pfpUrl: $pfpUrl}';
   }
+}
+
+Future<User> getCurrentUser() async {
+  final authUser = Supabase.instance.client.auth.currentUser;
+  if (authUser == null) {
+    throw Exception('No authenticated user found');
+  }
+
+  final response = await getUserDetails(authUser.id);
+  if (!response.success || response.data == null) {
+    throw Exception('Failed to fetch user details for ${authUser.id}');
+  }
+
+  final krabUser = response.data!;
+  return User(
+    id: authUser.id,
+    username: krabUser.username,
+    pfpUrl: krabUser.pfpUrl ?? '',
+  );
 }

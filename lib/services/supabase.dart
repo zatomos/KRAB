@@ -614,10 +614,20 @@ Future<SupabaseResponse<void>> editProfilePicture(File imageFile) async {
       return SupabaseResponse(success: false, error: "No current user");
     }
 
-    await supabase.storage
-        .from("profile-pictures")
-        .upload(user.id, imageFile,
-            fileOptions: const FileOptions(contentType: 'image/jpeg'));
+    // Check if a profile picture already exists
+    if (await supabase.storage.from("profile-pictures").exists(user.id)) {
+      await supabase.storage
+          .from("profile-pictures")
+          .update(user.id, imageFile,
+          fileOptions: const FileOptions(contentType: 'image/jpeg'));
+    }
+
+    else {
+      await supabase.storage
+          .from("profile-pictures")
+          .upload(user.id, imageFile,
+          fileOptions: const FileOptions(contentType: 'image/jpeg'));
+    }
 
     return SupabaseResponse(success: true);
   } catch (error) {

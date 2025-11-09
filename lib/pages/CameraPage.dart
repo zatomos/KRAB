@@ -9,7 +9,9 @@ import 'package:image_picker/image_picker.dart';
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/services/supabase.dart';
 import 'package:krab/themes/GlobalThemeData.dart';
+import 'package:krab/models/User.dart' as KRAB_User;
 import 'package:krab/widgets/RoundedInputField.dart';
+import 'package:krab/widgets/UserAvatar.dart';
 import 'package:krab/UserPreferences.dart';
 import 'GroupsPage.dart';
 import 'AccountPage.dart';
@@ -23,12 +25,13 @@ class ImageSentDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(success ? context.l10n.image_sent_title : context.l10n.error_image_not_sent_title),
-      content: Text(
-        success
-            ? context.l10n.image_sent_subtitle
-            : context.l10n.error_image_not_sent_subtitle(errorMsg ?? 'Unknown error')
-      ),
+      title: Text(success
+          ? context.l10n.image_sent_title
+          : context.l10n.error_image_not_sent_title),
+      content: Text(success
+          ? context.l10n.image_sent_subtitle
+          : context.l10n
+              .error_image_not_sent_subtitle(errorMsg ?? 'Unknown error')),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
@@ -68,10 +71,14 @@ class CameraPageState extends State<CameraPage> {
   // Tap focus UI
   Offset? _focusPoint;
 
+  // User
+  KRAB_User.User? currentUser;
+
   @override
   void initState() {
     super.initState();
     _initializeCamera();
+    _loadCurrentUser();
   }
 
   @override
@@ -82,6 +89,11 @@ class CameraPageState extends State<CameraPage> {
   }
 
   // ===== Initialization ========================================================
+
+  Future<void> _loadCurrentUser() async {
+    currentUser = await KRAB_User.getCurrentUser();
+    debugPrint("Loaded current user: $currentUser");
+  }
 
   Future<void> _initializeCamera() async {
     final cameraPermissionStatus = await Permission.camera.status;
@@ -414,50 +426,49 @@ class CameraPageState extends State<CameraPage> {
                     onPressed: () => Navigator.of(context).pop(),
                     child: Text(context.l10n.cancel)),
                 TextButton(
-                  onPressed: () async {
-                    if (selectedGroups.isEmpty) {
+                    onPressed: () async {
+                      if (selectedGroups.isEmpty) {
+                        await showDialog(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: Text(context.l10n.error),
+                            content:
+                                Text(context.l10n.select_at_least_one_group),
+                            actions: [
+                              TextButton(
+                                  onPressed: () => Navigator.of(context).pop(),
+                                  child: const Text("OK")),
+                            ],
+                          ),
+                        );
+                        return;
+                      }
+
+                      showDialog(
+                        context: context,
+                        barrierDismissible: false,
+                        builder: (context) =>
+                            const Center(child: CircularProgressIndicator()),
+                      );
+
+                      final response = await sendImageToGroups(
+                        imageFile,
+                        selectedGroups.toList(),
+                        description.text,
+                      );
+
+                      Navigator.of(context).pop(); // loading
+                      Navigator.of(context).pop(); // main dialog
+
                       await showDialog(
                         context: context,
-                        builder: (context) => AlertDialog(
-                          title: Text(context.l10n.error),
-                          content:
-                              Text(context.l10n.select_at_least_one_group),
-                          actions: [
-                            TextButton(
-                                onPressed: () => Navigator.of(context).pop(),
-                                child: const Text("OK")),
-                          ],
+                        builder: (context) => ImageSentDialog(
+                          success: response.success,
+                          errorMsg: response.error,
                         ),
                       );
-                      return;
-                    }
-
-                    showDialog(
-                      context: context,
-                      barrierDismissible: false,
-                      builder: (context) =>
-                          const Center(child: CircularProgressIndicator()),
-                    );
-
-                    final response = await sendImageToGroups(
-                      imageFile,
-                      selectedGroups.toList(),
-                      description.text,
-                    );
-
-                    Navigator.of(context).pop(); // loading
-                    Navigator.of(context).pop(); // main dialog
-
-                    await showDialog(
-                      context: context,
-                      builder: (context) => ImageSentDialog(
-                        success: response.success,
-                        errorMsg: response.error,
-                      ),
-                    );
-                  },
-                  child: Text(context.l10n.send)
-                ),
+                    },
+                    child: Text(context.l10n.send)),
               ],
             );
           },
@@ -628,16 +639,40 @@ class CameraPageState extends State<CameraPage> {
                     padding: const EdgeInsets.all(2),
                     decoration: const BoxDecoration(
                         shape: BoxShape.circle, color: Colors.white12),
-                    child: IconButton(
-                      icon: const Icon(Icons.account_circle_rounded,
-                          color: Colors.white, size: 30),
-                      onPressed: () {
-                        Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) => const AccountPage()));
-                      },
-                    ),
+                    child: currentUser?.pfpUrl != null &&
+                            currentUser!.pfpUrl.isNotEmpty
+                        ? GestureDetector(
+                            onTap: () async {
+                              await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                    builder: (_) => const AccountPage()),
+                              );
+
+                              // After returning, reload user data
+                              await _loadCurrentUser();
+                              if (mounted) setState(() {});
+                            },
+                            child: UserAvatar(currentUser!, radius: 24),
+                          )
+                        : IconButton(
+                            icon: const Icon(
+                              Icons.account_circle_rounded,
+                              color: Colors.white,
+                              size: 30,
+                            ),
+                            onPressed: () async {
+                              await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                    builder: (_) => const AccountPage()),
+                              );
+
+                              // After returning, reload user data
+                              await _loadCurrentUser();
+                              if (mounted) setState(() {});
+                            },
+                          ),
                   ),
                 ),
 
