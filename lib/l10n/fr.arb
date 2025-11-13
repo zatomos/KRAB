@@ -118,5 +118,10 @@
   "pfp_deleted_success": "Photo de profil supprimée avec succès.",
   "error_deleting_pfp": "Erreur lors de la suppression de la photo de profil: {errorMsg}",
   "crop_image": "Rogner l'image",
-  "add": "Ajouter"
+  "add": "Ajouter",
+  "edit_icon_title": "Modifier l'icône",
+  "icon_updated_success": "Icône mise à jour avec succès.",
+  "error_updating_icon": "Erreur lors de la mise à jour de l'icône: {errorMsg}",
+  "icon_deleted_success": "Icône supprimée avec succès.",
+  "error_deleting_icon": "Erreur lors de la suppression de l'icône: {errorMsg}"
 }

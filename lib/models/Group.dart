@@ -3,13 +3,15 @@ import 'dart:convert';
 class Group {
   final String id;
   final String name;
-  final String code;
+  final String? code;
+  final String? iconUrl;
   final String createdAt;
 
   Group({
     required this.id,
     required this.name,
-    required this.code,
+    this.code,
+    this.iconUrl,
     required this.createdAt,
   });
 
@@ -18,8 +20,25 @@ class Group {
     return Group(
       id: json['id'] as String,
       name: json['name'] as String,
-      code: json['code'] as String,
+      code: json['code'] as String?,
+      iconUrl: json['icon_url'] as String?,
       createdAt: json['created_at'] as String,
+    );
+  }
+
+  Group copyWith({
+    String? id,
+    String? name,
+    String? code,
+    String? iconUrl,
+    String? createdAt,
+  }) {
+    return Group(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      code: code ?? this.code,
+      iconUrl: iconUrl ?? this.iconUrl,
+      createdAt: createdAt ?? this.createdAt,
     );
   }
 
@@ -29,6 +48,7 @@ class Group {
       'id': id,
       'name': name,
       'code': code,
+      'icon_url': iconUrl,
       'created_at': createdAt,
     };
   }
@@ -45,6 +65,6 @@ class Group {
 
   @override
   String toString() {
-    return 'Group{id: $id, name: $name, code: $code, createdAt: $createdAt}';
+    return 'Group{id: $id, name: $name, code: $code, icon_url: $iconUrl, createdAt: $createdAt}';
   }
 }

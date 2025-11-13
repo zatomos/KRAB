@@ -14,12 +14,33 @@ class GroupsPage extends StatefulWidget {
   GroupsPageState createState() => GroupsPageState();
 }
 
-class GroupsPageState extends State<GroupsPage> {
+class GroupsPageState extends State<GroupsPage> with WidgetsBindingObserver {
+  // Add a unique key that changes whenever we want to refresh
+  Key _refreshKey = UniqueKey();
+
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    debugPrint("GroupsPageState.didChangeDependencies");
-    setState(() {});
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshData();
+    }
+  }
+
+  void _refreshData() {
+    setState(() {
+      _refreshKey = UniqueKey();
+    });
   }
 
   @override
@@ -30,9 +51,7 @@ class GroupsPageState extends State<GroupsPage> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            onPressed: () {
-              setState(() {});
-            },
+            onPressed: _refreshData,
           ),
           IconButton(
               icon: const Icon(Icons.more_vert_rounded),
@@ -53,7 +72,7 @@ class GroupsPageState extends State<GroupsPage> {
                             builder: (context) => const CreateGroupDialog(),
                           ).then((value) {
                             if (value == true) {
-                              setState(() {});
+                              _refreshData();
                             }
                           });
                         },
@@ -69,7 +88,9 @@ class GroupsPageState extends State<GroupsPage> {
                             context: context,
                             builder: (context) => const JoinGroupDialog(),
                           ).then((value) {
-                            setState(() {});
+                            if (value == true) {
+                              _refreshData();
+                            }
                           });
                         },
                       ),
@@ -83,8 +104,8 @@ class GroupsPageState extends State<GroupsPage> {
         children: [
           Expanded(
             child: FutureBuilder<SupabaseResponse<List<Group>>>(
-              future:
-                  getUserGroups(),
+              key: _refreshKey, // Forces rebuild on refresh
+              future: getUserGroups(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
@@ -103,13 +124,16 @@ class GroupsPageState extends State<GroupsPage> {
                 final groups = response.data ?? [];
                 if (groups.isEmpty) {
                   return Center(
-                    child: Text(context.l10n.no_group_joined)
+                      child: Text(context.l10n.no_group_joined)
                   );
                 }
                 return ListView.builder(
                   itemCount: groups.length,
                   itemBuilder: (context, index) {
-                    return GroupCard(group: groups[index]);
+                    return GroupCard(
+                      group: groups[index],
+                      onReturn: _refreshData, // Refresh when returning from group
+                    );
                   },
                 );
               },
@@ -196,10 +220,10 @@ class JoinGroupDialogState extends State<JoinGroupDialog> {
           onPressed: isLoading ? null : _joinGroup,
           child: isLoading
               ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          )
               : Text(context.l10n.join),
         ),
       ],
@@ -281,14 +305,14 @@ class CreateGroupDialogState extends State<CreateGroupDialog> {
           child: Text(context.l10n.cancel),
         ),
         ElevatedButton(
-          onPressed: isLoading ? null : _createGroup,
-          child: isLoading
-              ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : Text(context.l10n.create)
+            onPressed: isLoading ? null : _createGroup,
+            child: isLoading
+                ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+                : Text(context.l10n.create)
         ),
       ],
     );

@@ -46,7 +46,7 @@
   "comments_count": "Comment ({count})",
   "error_loading_images": "Error loading images: {errorMsg}",
   "no_images" : "No images in this group (yet).",
-  "group_settings_page_title": "Groups Settings",
+  "group_settings_page_title": "Group Settings",
   "leave_group": "Leave Group",
   "left_group_success": "Left group successfully.",
   "error_leaving_group": "Failed to leave group: {errorMsg}",
@@ -118,5 +118,10 @@
   "pfp_deleted_success": "Profile picture deleted successfully.",
   "error_deleting_pfp": "Error deleting profile picture: {errorMsg}",
   "crop_image": "Crop Image",
-  "add": "Add"
+  "add": "Add",
+  "edit_icon_title": "Edit Icon",
+  "icon_updated_success": "Icon updated successfully.",
+  "error_updating_icon": "Error updating icon: {errorMsg}",
+  "icon_deleted_success": "Icon deleted successfully.",
+  "error_deleting_icon": "Error deleting icon: {errorMsg}"
 }

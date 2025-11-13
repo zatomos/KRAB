@@ -9,6 +9,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:krab/services/supabase.dart';
 import 'package:krab/services/fcm_helper.dart';
 import 'package:krab/services/home_widget_updater.dart';
+import 'package:krab/services/profile_picture_cache.dart';
 import 'package:krab/pages/WelcomePage.dart';
 import 'package:krab/pages/LoginPage.dart';
 import 'package:krab/pages/DBConfigPage.dart';
@@ -218,6 +219,10 @@ void main() async {
     } else {
       debugPrint('Skipping FCM initialization, Supabase not initialized');
     }
+
+    // Initialize URL cache
+    final cache = ProfilePictureCache.of(Supabase.instance.client);
+    await cache.hydrate();
 
     // Load dotenv
     await dotenv.load(fileName: ".env");

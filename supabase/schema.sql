@@ -540,10 +540,11 @@ $$;
 CREATE FUNCTION public.get_group_details(group_id uuid) RETURNS jsonb
     LANGUAGE plpgsql
     SET search_path TO 'public', 'extensions', 'pg_temp'
-    AS $$
-DECLARE
+    AS $$DECLARE
     group_record RECORD;
+    is_admin BOOLEAN;
 BEGIN
+    -- Fetch group details
     SELECT id, created_at, name, code
     INTO group_record
     FROM "Groups"
@@ -553,20 +554,28 @@ BEGIN
         RETURN jsonb_build_object('success', false, 'error', 'Group not found');
     END IF;
 
+    -- Check if current user is admin in this group
+    SELECT admin
+    INTO is_admin
+    FROM "Members"
+    WHERE "Members".group_id = get_group_details.group_id
+      AND user_id = auth.uid();
+
+    -- Return group details, without the code if the user isn't admin
     RETURN jsonb_build_object(
         'success', true,
         'group', jsonb_build_object(
             'id', group_record.id,
             'created_at', group_record.created_at,
             'name', group_record.name,
-            'code', group_record.code
+            'code', CASE WHEN is_admin THEN group_record.code ELSE NULL END
         )
     );
+
 EXCEPTION
     WHEN OTHERS THEN
         RETURN jsonb_build_object('success', false, 'error', SQLERRM);
-END;
-$$;
+END;$$;
 
 
 --
@@ -818,29 +827,31 @@ BEGIN
     );
   END IF;
 
-  -- Get all groups the user is a member of
+  -- Get all groups the user is a member of, show code only for admins
   SELECT jsonb_agg(
     jsonb_build_object(
       'id', g.id,
       'name', g.name,
-      'code', g.code,
+      'code', CASE WHEN gm.admin THEN g.code ELSE NULL END,
       'created_at', g.created_at
     )
   )
+  INTO user_groups
   FROM "Groups" g
   JOIN "Members" gm ON g.id = gm.group_id
-  WHERE gm.user_id = current_user_id
-  INTO user_groups;
+  WHERE gm.user_id = current_user_id;
 
   RETURN jsonb_build_object(
     'success', true,
     'groups', COALESCE(user_groups, '[]'::jsonb)
   );
-EXCEPTION WHEN OTHERS THEN
-  RETURN jsonb_build_object(
-    'success', false,
-    'error', SQLERRM
-  );
+
+EXCEPTION
+  WHEN OTHERS THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', SQLERRM
+    );
 END;$$;
 
 
@@ -854,7 +865,7 @@ CREATE FUNCTION public.get_username(user_id text) RETURNS text
     AS $$DECLARE
     username TEXT;
 BEGIN
-    -- Convert user_id (TEXT) to UUID before querying Users
+    -- Convert user_id
     SELECT u.username INTO username
     FROM "public"."Users" u
     WHERE u.id = user_id::UUID;
@@ -1942,6 +1953,7 @@ CREATE TABLE public."Groups" (
     name text DEFAULT 'My new group'::text NOT NULL,
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     code text DEFAULT encode(extensions.gen_random_bytes(4), 'hex'::text) NOT NULL,
+    owner uuid,
     CONSTRAINT "Groups_name_check" CHECK ((length(name) < 20)),
     CONSTRAINT check_group_name_length CHECK (((length(name) > 2) AND (length(name) < 20)))
 );
@@ -2498,6 +2510,14 @@ ALTER TABLE ONLY public."Comments"
 
 
 --
+-- Name: Groups Groups_owner_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Groups"
+    ADD CONSTRAINT "Groups_owner_fkey" FOREIGN KEY (owner) REFERENCES public."Users"(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
+
+--
 -- Name: ImageGroups ImageGroups_group_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -2816,6 +2836,42 @@ CREATE POLICY "users update own row" ON public."Users" FOR UPDATE TO authenticat
 --
 
 CREATE POLICY "Give users authenticated access to insert" ON storage.objects FOR INSERT TO authenticated WITH CHECK (((auth.uid() IS NOT NULL) AND (bucket_id = 'images'::text)));
+
+
+--
+-- Name: objects Group admins can update the group icon 1tf5vm4_0; Type: POLICY; Schema: storage; Owner: -
+--
+
+CREATE POLICY "Group admins can update the group icon 1tf5vm4_0" ON storage.objects FOR INSERT TO authenticated WITH CHECK (((bucket_id = 'group-icons'::text) AND (EXISTS ( SELECT 1
+   FROM public."Members" m
+  WHERE (((m.group_id)::text = objects.name) AND (m.user_id = auth.uid()) AND (m.admin = true))))));
+
+
+--
+-- Name: objects Group admins can update the group icon 1tf5vm4_1; Type: POLICY; Schema: storage; Owner: -
+--
+
+CREATE POLICY "Group admins can update the group icon 1tf5vm4_1" ON storage.objects FOR UPDATE TO authenticated USING (((bucket_id = 'group-icons'::text) AND (EXISTS ( SELECT 1
+   FROM public."Members" m
+  WHERE (((m.group_id)::text = objects.name) AND (m.user_id = auth.uid()) AND (m.admin = true))))));
+
+
+--
+-- Name: objects Group admins can update the group icon 1tf5vm4_2; Type: POLICY; Schema: storage; Owner: -
+--
+
+CREATE POLICY "Group admins can update the group icon 1tf5vm4_2" ON storage.objects FOR DELETE TO authenticated USING (((bucket_id = 'group-icons'::text) AND (EXISTS ( SELECT 1
+   FROM public."Members" m
+  WHERE (((m.group_id)::text = objects.name) AND (m.user_id = auth.uid()) AND (m.admin = true))))));
+
+
+--
+-- Name: objects Group members can access the group icon 1tf5vm4_0; Type: POLICY; Schema: storage; Owner: -
+--
+
+CREATE POLICY "Group members can access the group icon 1tf5vm4_0" ON storage.objects FOR SELECT TO authenticated USING (((bucket_id = 'group-icons'::text) AND (EXISTS ( SELECT 1
+   FROM public."Members" m
+  WHERE (((m.group_id)::text = objects.name) AND (m.user_id = auth.uid()))))));
 
 
 --
@@ -3426,3 +3482,4 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA storage GRANT ALL ON TABLES
 --
 -- PostgreSQL database dump complete
 --
+

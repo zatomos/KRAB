@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/cupertino.dart';
+import 'package:krab/services/profile_picture_cache.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 
@@ -23,41 +24,86 @@ class SupabaseResponse<T> {
 /// Get all groups for the current user.
 Future<SupabaseResponse<List<Group>>> getUserGroups() async {
   try {
+    final supabase = Supabase.instance.client;
+    final cache = ProfilePictureCache.of(supabase);
+
+    // Call RPC to get groups
     final response = await supabase.rpc("get_user_groups");
+
     if (response['success'] == true) {
       final groups = response['groups'] as List;
-      final List<Group> groupsList =
-          groups.map((group) => Group.fromJson(group)).toList();
+
+      // Create group list
+      final List<Group> groupsList = [];
+      for (final groupJson in groups) {
+        final group = Group.fromJson(groupJson);
+
+        // Get cached icon URL
+        final iconUrl = await cache.getUrl(
+          group.id,
+          bucket: 'group-icons',
+          ttl: const Duration(hours: 1),
+        );
+
+        groupsList.add(group.copyWith(iconUrl: iconUrl ?? ''));
+      }
+
       return SupabaseResponse(success: true, data: groupsList);
     } else {
       return SupabaseResponse(
-          success: false,
-          error:
-              "Error loading groups: ${response['error'] ?? 'Unknown error'}");
+        success: false,
+        error: "Error loading groups: ${response['error'] ?? 'Unknown error'}",
+      );
     }
   } catch (error) {
     return SupabaseResponse(
-        success: false, error: "Error loading groups: $error");
+      success: false,
+      error: "Error loading groups: $error",
+    );
   }
 }
 
 /// Get group details for a given group ID.
 Future<SupabaseResponse<Group>> getGroupDetails(String groupId) async {
   try {
+    final supabase = Supabase.instance.client;
+
+    // Fetch group data from RPC
     final response =
-        await supabase.rpc("get_group_details", params: {"group_id": groupId});
-    if (response['success'] == false) {
+    await supabase.rpc("get_group_details", params: {"group_id": groupId});
+
+    if (response == null ||
+        response is! Map ||
+        response['success'] == false ||
+        response['group'] == null) {
       return SupabaseResponse(
-          success: false,
-          error: "Error loading group details: ${response['error']}");
+        success: false,
+        error: "Error loading group details: ${response?['error'] ?? 'Unknown'}",
+      );
     }
+
+    // Parse the group
     final group = Group.fromJson(response['group']);
-    return SupabaseResponse(success: true, data: group);
+
+    // Fetch cached icon URL
+    final cache = ProfilePictureCache.of(supabase);
+    final iconUrl = await cache.getUrl(
+      group.id,
+      ttl: const Duration(hours: 1),
+      bucket: 'group-icons',
+    );
+
+    final groupWithIcon = group.copyWith(iconUrl: iconUrl ?? '');
+
+    return SupabaseResponse(success: true, data: groupWithIcon);
   } catch (error) {
     return SupabaseResponse(
-        success: false, error: "Error loading group details: $error");
+      success: false,
+      error: "Error loading group details: $error",
+    );
   }
 }
+
 
 /// Get count of members for a given group.
 Future<SupabaseResponse<int>> getGroupMemberCount(String groupId) async {
@@ -78,7 +124,7 @@ Future<SupabaseResponse<int>> getGroupMemberCount(String groupId) async {
 }
 
 /// Get members for a given group.
-Future<SupabaseResponse<List<dynamic>>> getGroupMembers(String groupId) async {
+Future<SupabaseResponse<List<KRAB_User.User>>> getGroupMembers(String groupId) async {
   try {
     final response =
         await supabase.rpc("get_group_members", params: {"group_id": groupId});
@@ -87,7 +133,20 @@ Future<SupabaseResponse<List<dynamic>>> getGroupMembers(String groupId) async {
           success: false,
           error: "Error loading group members: ${response['error']}");
     }
-    return SupabaseResponse(success: true, data: response['members'] as List);
+
+    // Create list of users
+    final members = response['members'] as List;
+    final List<KRAB_User.User> membersList = [];
+    for (final member in members) {
+      debugPrint("Fetching details for member ID: $member");
+      final userId = member['user_id'] as String;
+      final userDetailsResponse = await getUserDetails(userId);
+      if (userDetailsResponse.success && userDetailsResponse.data != null) {
+        membersList.add(userDetailsResponse.data!);
+      }
+    }
+    debugPrint('Fetched ${membersList.length} members for group $groupId');
+    return SupabaseResponse(success: true, data: membersList);
   } catch (error) {
     return SupabaseResponse(
         success: false, error: "Error loading group members: $error");
@@ -103,6 +162,78 @@ Future<SupabaseResponse<bool>> isAdmin(String groupId) async {
   } catch (error) {
     return SupabaseResponse(
         success: false, error: "Error checking admin status: $error");
+  }
+}
+
+/// Edit the profile picture of the current user.
+Future<SupabaseResponse<Group>> editGroupIcon(File imageFile, String groupId) async {
+  try {
+    // Upload or update the image
+    final storage = supabase.storage.from("group-icons");
+    final exists = await storage.exists(groupId);
+
+    if (exists) {
+      await storage.update(
+        groupId,
+        imageFile,
+        fileOptions: const FileOptions(contentType: 'image/jpeg'),
+      );
+    } else {
+      await storage.upload(
+        groupId,
+        imageFile,
+        fileOptions: const FileOptions(contentType: 'image/jpeg'),
+      );
+    }
+
+    // Refresh cache and get the new signed URL
+    final cache = ProfilePictureCache.of(supabase);
+    final iconUrl = await cache.refresh(groupId, bucket: 'group-icons');
+
+    // Return the updated group
+    final groupResponse = await getGroupDetails(groupId);
+    if (!groupResponse.success || groupResponse.data == null) {
+      return SupabaseResponse(
+        success: true,
+        data: groupResponse.data?.copyWith(iconUrl: iconUrl ?? ''),
+      );
+    }
+
+    final updatedGroup =
+    groupResponse.data!.copyWith(iconUrl: iconUrl ?? '');
+
+    return SupabaseResponse(success: true, data: updatedGroup);
+  } catch (error) {
+    return SupabaseResponse(
+      success: false,
+      error: "Error updating group icon: $error",
+    );
+  }
+}
+
+
+/// Get the icon picture of the requested group.
+Future<SupabaseResponse<String>> getGroupIconUrl(String groupId) async {
+  // Force refresh
+  final iconUrl = await ProfilePictureCache.of(supabase).refresh(groupId, bucket: 'group-icons');
+
+  return SupabaseResponse(
+    success: true,
+    data: iconUrl ?? '',
+  );
+}
+
+/// Delete the icon picture of the requested group.
+Future<SupabaseResponse<void>> deleteGroupIcon(String groupId) async {
+  try {
+    await supabase.storage.from("group-icons").remove([groupId]);
+    await ProfilePictureCache.of(supabase).refresh(groupId, bucket: 'group-icons');
+    return SupabaseResponse(success: true);
+  } catch (error) {
+    return SupabaseResponse(
+      success: false,
+      error: "Error deleting group icon: $error",
+    );
   }
 }
 
@@ -556,15 +687,9 @@ Future<SupabaseResponse<KRAB_User.User>> getUserDetails(String userId) async {
     final username = usernameResponse as String;
     debugPrint("Fetched username for $userId: $username");
 
-    // Get profile picture URL
-    String? pfpUrl;
-    try {
-      pfpUrl = await supabase.storage
-          .from('profile-pictures')
-          .createSignedUrl(userId, 3600); // 1 hour expiry
-    } catch (e) {
-      pfpUrl = null;
-    }
+    // Cached signed URL
+    final pfpUrl = await ProfilePictureCache.of(supabase)
+        .getUrl(userId, ttl: const Duration(hours: 1));
 
     debugPrint("Fetched profile picture URL for $userId: $pfpUrl");
 
@@ -629,6 +754,8 @@ Future<SupabaseResponse<void>> editProfilePicture(File imageFile) async {
           fileOptions: const FileOptions(contentType: 'image/jpeg'));
     }
 
+    await ProfilePictureCache.of(supabase).refresh(user.id);
+
     return SupabaseResponse(success: true);
   } catch (error) {
     return SupabaseResponse(
@@ -640,17 +767,13 @@ Future<SupabaseResponse<void>> editProfilePicture(File imageFile) async {
 
 /// Get the profile picture of the requested user.
 Future<SupabaseResponse<String>> getProfilePictureUrl(String userId) async {
-  try {
-    final data = await supabase.storage
-        .from("profile-pictures")
-        .createSignedUrl(userId, 3600); // 1 hour expiry
-    return SupabaseResponse(success: true, data: data);
-  } catch (error) {
-    return SupabaseResponse(
-      success: false,
-      error: "Error fetching profile picture: $error",
-    );
-  }
+  // Force refresh
+  final pfpUrl = await ProfilePictureCache.of(supabase).refresh(userId);
+
+  return SupabaseResponse(
+    success: true,
+    data: pfpUrl ?? '',
+  );
 }
 
 /// Delete the profile picture of the current user.
@@ -661,6 +784,7 @@ Future<SupabaseResponse<void>> deleteProfilePicture() async {
       return SupabaseResponse(success: false, error: "No current user");
     }
     await supabase.storage.from("profile-pictures").remove([user.id]);
+    await ProfilePictureCache.of(supabase).refresh(user.id);
     return SupabaseResponse(success: true);
   } catch (error) {
     return SupabaseResponse(
