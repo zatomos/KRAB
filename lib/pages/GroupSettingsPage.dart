@@ -3,28 +3,24 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:qr_bar_code/qr/src/qr_code.dart';
 import 'package:image_cropper/image_cropper.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import 'package:krab/widgets/GroupAvatar.dart';
 import 'package:krab/widgets/UserAvatar.dart';
-
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/widgets/FloatingSnackBar.dart';
 import 'package:krab/widgets/RectangleButton.dart';
 import 'package:krab/widgets/RoundedInputField.dart';
 import 'package:krab/models/Group.dart';
-import 'package:krab/models/User.dart' as KrabUser;
+import 'package:krab/models/GroupMember.dart';
 import 'package:krab/services/supabase.dart';
 import 'package:krab/UserPreferences.dart';
 import '../themes/GlobalThemeData.dart';
 
 class GroupSettingsPage extends StatefulWidget {
   final Group group;
-  final bool isAdmin;
 
-  const GroupSettingsPage({
-    super.key,
-    required this.group,
-    this.isAdmin = false,
-  });
+  const GroupSettingsPage({super.key, required this.group});
 
   @override
   GroupSettingsPageState createState() => GroupSettingsPageState();
@@ -32,100 +28,26 @@ class GroupSettingsPage extends StatefulWidget {
 
 class GroupSettingsPageState extends State<GroupSettingsPage> {
   late Group _group;
-  late Future<SupabaseResponse<List<KrabUser.User>>> _membersFuture;
+  late Future<SupabaseResponse<List<GroupMember>>> _membersFuture;
+  late String? _currentUserId;
 
   @override
   void initState() {
     super.initState();
     _group = widget.group;
     _membersFuture = getGroupMembers(_group.id);
+    _currentUserId = Supabase.instance.client.auth.currentUser?.id;
   }
 
-  Future<void> _leaveGroup() async {
-    await UserPreferences.removeFavoriteGroup(_group.id);
-    final response = await leaveGroup(_group.id);
-    if (response.success) {
-      showSnackBar(context, context.l10n.left_group_success, color: Colors.green);
-      Navigator.of(context).popUntil((route) => route.isFirst);
-    } else {
-      showSnackBar(
-        context,
-        context.l10n.error_leaving_group(response.error ?? "Unknown error"),
-        color: Colors.red,
-      );
-    }
-  }
+  String _getCurrentUserRole(List<GroupMember> members) {
+    if (_currentUserId == null) return 'member';
 
-  Future<void> _updateGroupName() async {
-    TextEditingController controller = TextEditingController(text: _group.name);
-    bool error = false;
-    String errorMessage = "";
-
-    await showDialog(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: Text(context.l10n.edit_group_name),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  RoundedInputField(
-                    controller: controller,
-                    hintText: context.l10n.new_group_name,
-                  ),
-                  if (error)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8.0),
-                      child: Text(
-                        errorMessage,
-                        style: const TextStyle(color: Colors.red),
-                      ),
-                    ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(context).pop(),
-                  child: Text(context.l10n.cancel),
-                ),
-                TextButton(
-                  onPressed: () async {
-                    final newName = controller.text.trim();
-                    if (newName.isEmpty) {
-                      setDialogState(() {
-                        error = true;
-                        errorMessage = context.l10n.group_name_empty;
-                      });
-                      return;
-                    }
-
-                    final response = await updateGroupName(_group.id, newName);
-                    if (!response.success) {
-                      setDialogState(() {
-                        error = true;
-                        errorMessage = context.l10n.error_updating_group_name(
-                          response.error.toString(),
-                        );
-                      });
-                    } else {
-                      Navigator.of(context).pop();
-                      showSnackBar(context, context.l10n.group_name_updated_success,
-                          color: Colors.green);
-                      setState(() {
-                        _group = _group.copyWith(name: newName);
-                      });
-                    }
-                  },
-                  child: Text(context.l10n.save),
-                ),
-              ],
-            );
-          },
-        );
-      },
+    final me = members.firstWhere(
+      (m) => m.user.id == _currentUserId,
+      orElse: () => GroupMember.empty(),
     );
+
+    return me.role;
   }
 
   Future<File?> pickCropPfp() async {
@@ -154,8 +76,91 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
     return File(cropped.path);
   }
 
+  Future<void> _leaveGroup() async {
+    await UserPreferences.removeFavoriteGroup(widget.group.id);
+    final response = await leaveGroup(widget.group.id);
+    if (response.success) {
+      showSnackBar(context, context.l10n.left_group_success,
+          color: Colors.green);
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    } else {
+      showSnackBar(context,
+          context.l10n.error_leaving_group(response.error ?? "Unknown error"),
+          color: Colors.red);
+    }
+  }
+
+  Future<void> _updateGroupName() async {
+    TextEditingController controller = TextEditingController(text: _group.name);
+    bool error = false;
+    String errorMessage = "";
+
+    await showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: Text(context.l10n.edit_group_name),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                RoundedInputField(
+                  controller: controller,
+                  hintText: context.l10n.new_group_name,
+                ),
+                if (error)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: Text(errorMessage,
+                        style: const TextStyle(color: Colors.red)),
+                  ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: Text(context.l10n.cancel),
+              ),
+              TextButton(
+                onPressed: () async {
+                  final newName = controller.text.trim();
+                  if (newName.isEmpty) {
+                    setDialogState(() {
+                      error = true;
+                      errorMessage = context.l10n.group_name_empty;
+                    });
+                    return;
+                  }
+
+                  final response = await updateGroupName(_group.id, newName);
+
+                  if (!response.success) {
+                    setDialogState(() {
+                      error = true;
+                      errorMessage = response.error.toString();
+                    });
+                    return;
+                  }
+
+                  Navigator.of(context).pop();
+                  showSnackBar(context, context.l10n.group_name_updated_success,
+                      color: Colors.green);
+
+                  setState(() {
+                    _group = _group.copyWith(name: newName);
+                  });
+                },
+                child: Text(context.l10n.save),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   Future<void> openEditIconDialog() async {
-    await showDialog<String>(
+    await showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
@@ -166,35 +171,37 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
               child: Text(context.l10n.cancel),
             ),
 
-            // Add/Edit icon
+            // Add / edit icon
             ElevatedButton(
               onPressed: () {
                 pickCropPfp().then((file) async {
                   if (file == null) return;
 
-                  final successMsg = context.l10n.icon_updated_success;
-                  final errorMsg = context.l10n.error_updating_icon;
-
                   Navigator.of(context).pop();
 
-                  final response = await editGroupIcon(file, _group.id);
-                  if (response.success) {
-                    // Refresh signed URL
-                    final newUrlResponse = await getGroupIconUrl(_group.id);
-                    if (newUrlResponse.success) {
-                      setState(() {
-                        _group = _group.copyWith(iconUrl: newUrlResponse.data);
-                      });
-                    }
-                    showSnackBar(null, successMsg, color: Colors.green);
-                  } else {
-                    showSnackBar(null, "$errorMsg: ${response.error}",
+                  final res = await editGroupIcon(file, _group.id);
+                  if (!res.success) {
+                    showSnackBar(
+                        null,
+                        context.l10n
+                            .error_updating_icon(res.error ?? "Unknown"),
                         color: Colors.red);
+                    return;
                   }
+
+                  final newUrl = await getGroupIconUrl(_group.id);
+                  if (newUrl.success) {
+                    setState(() {
+                      _group = _group.copyWith(iconUrl: newUrl.data);
+                    });
+                  }
+
+                  showSnackBar(null, context.l10n.icon_updated_success,
+                      color: Colors.green);
                 });
               },
               child: Text(
-                (_group.iconUrl == null || _group.iconUrl!.isEmpty)
+                (_group.iconUrl?.isEmpty ?? true)
                     ? context.l10n.add
                     : context.l10n.edit,
               ),
@@ -204,22 +211,24 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
             if (_group.iconUrl != null && _group.iconUrl!.isNotEmpty)
               ElevatedButton(
                 onPressed: () async {
-                  final response = await deleteGroupIcon(_group.id);
-
-                  final successMsg = context.l10n.icon_deleted_success;
-                  final errorMsg = context.l10n.error_deleting_icon;
-
                   Navigator.of(context).pop();
 
-                  if (response.success) {
-                    setState(() {
-                      _group = _group.copyWith(iconUrl: '');
-                    });
-                    showSnackBar(null, successMsg, color: Colors.green);
-                  } else {
-                    showSnackBar(null, "$errorMsg: ${response.error}",
+                  final res = await deleteGroupIcon(_group.id);
+                  if (!res.success) {
+                    showSnackBar(
+                        null,
+                        context.l10n
+                            .error_deleting_icon(res.error ?? "Unknown"),
                         color: Colors.red);
+                    return;
                   }
+
+                  setState(() {
+                    _group = _group.copyWith(iconUrl: '');
+                  });
+
+                  showSnackBar(null, context.l10n.icon_deleted_success,
+                      color: Colors.green);
                 },
                 child: Text(context.l10n.delete),
               ),
@@ -229,184 +238,459 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
     );
   }
 
-  Future<void> _deleteGroup() async {
-    final confirm = await showDialog<bool>(
+  Future<void> _manageUserRoleDialog(String userId, String action) async {
+    await showDialog(
       context: context,
       builder: (context) {
+        final title = {
+          "promote_admin": context.l10n.promote_user,
+          "demote": context.l10n.demote_user,
+          "transfer_ownership": context.l10n.transfer_ownership,
+        }[action]!;
+
+        final content = {
+          "promote_admin": context.l10n.promote_user_confirmation,
+          "demote": context.l10n.demote_user_confirmation,
+          "transfer_ownership": context.l10n.transfer_ownership_confirmation,
+        }[action]!;
+
         return AlertDialog(
-          title: Text(context.l10n.delete_group),
-          content: Text(context.l10n.delete_group_confirmation),
+          title: Text(title),
+          content: Text(content),
           actions: [
             TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: Text(context.l10n.cancel)),
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text(context.l10n.cancel),
+            ),
             TextButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                child: Text(context.l10n.delete)),
+              onPressed: () async {
+                Navigator.of(context).pop();
+
+                final res = await changeMemberRole(_group.id, userId, action);
+
+                if (res.success) {
+                  showSnackBar(null, context.l10n.user_role_updated_success,
+                      color: Colors.green);
+                  setState(() {
+                    _membersFuture = getGroupMembers(_group.id);
+                  });
+                } else {
+                  showSnackBar(
+                    null,
+                    context.l10n
+                        .error_updating_user_role(res.error ?? "Unknown"),
+                    color: Colors.red,
+                  );
+                }
+              },
+              child: Text(context.l10n.confirm),
+            ),
           ],
         );
       },
-    ) ??
+    );
+  }
+
+  Future<void> _manageUserBanDialog(String userId) async {
+    await showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(context.l10n.ban_user),
+          content: Text(context.l10n.ban_user_confirmation),
+
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text(context.l10n.cancel),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.of(context).pop();
+                await _banUser(userId);
+              },
+              child: Text(context.l10n.confirm),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _banUser(String userId) async {
+    final res = await banUser(widget.group.id, userId);
+    if (res.success) {
+      showSnackBar(null, context.l10n.user_banned_success, color: Colors.green);
+      setState(() => _membersFuture = getGroupMembers(widget.group.id));
+    } else {
+      showSnackBar(null, context.l10n.error_banning_user(res.error ?? "Unknown"), color: Colors.red);
+    }
+  }
+
+  Future<void> _manageUserUnbanDialog(String userId) async {
+    await showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(context.l10n.unban_user),
+          content: Text(context.l10n.unban_user_confirmation),
+
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text(context.l10n.cancel),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.of(context).pop();
+                await _unbanUser(userId);
+              },
+              child: Text(context.l10n.confirm),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _unbanUser(String userId) async {
+    final res = await unbanUser(widget.group.id, userId);
+    if (res.success) {
+      showSnackBar(null, "User unbanned", color: Colors.green);
+      setState(() => _membersFuture = getGroupMembers(widget.group.id));
+    } else {
+      showSnackBar(null, "Error: ${res.error}", color: Colors.red);
+    }
+  }
+
+
+  Future<void> _deleteGroup() async {
+    final confirm = await showDialog<bool>(
+          context: context,
+          builder: (context) {
+            return AlertDialog(
+              title: Text(context.l10n.delete_group),
+              content: Text(context.l10n.delete_group_confirmation),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: Text(context.l10n.cancel),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  child: Text(context.l10n.delete),
+                ),
+              ],
+            );
+          },
+        ) ??
         false;
 
     if (!confirm) return;
 
     await UserPreferences.removeFavoriteGroup(_group.id);
-    final response = await deleteGroup(_group.id);
-    if (response.success) {
-      showSnackBar(context, context.l10n.group_deleted_success, color: Colors.green);
-      Navigator.of(context).popUntil((route) => route.isFirst);
-    } else {
+
+    final res = await deleteGroup(_group.id);
+    if (!res.success) {
       showSnackBar(
-        context,
-        context.l10n.error_deleting_group(response.error ?? "Unknown error"),
-        color: Colors.red,
-      );
+          context, context.l10n.error_deleting_group(res.error ?? "Unknown"),
+          color: Colors.red);
+      return;
     }
+
+    showSnackBar(context, context.l10n.group_deleted_success,
+        color: Colors.green);
+    Navigator.of(context).popUntil((r) => r.isFirst);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(context.l10n.group_settings_page_title), actions: [
-        if (widget.isAdmin)
-          IconButton(
-            icon: const Icon(Icons.edit),
-            onPressed: () {
-              showMenu(
-                context: context,
-                color: GlobalThemeData.darkColorScheme.surfaceBright,
-                position: const RelativeRect.fromLTRB(0, 90, -1, 0),
-                items: [
-                  PopupMenuItem(
-                    child: ListTile(
-                      leading: const Icon(Icons.text_fields_rounded),
-                      title: Text(context.l10n.edit_group_name),
-                      onTap: () {
-                        Navigator.pop(context);
-                        _updateGroupName();
-                      },
-                    ),
-                  ),
-                  PopupMenuItem(
-                    child: ListTile(
-                      leading: const Icon(Icons.image_rounded),
-                      title: Text(context.l10n.edit_icon_title),
-                      onTap: () {
-                        Navigator.pop(context);
-                        openEditIconDialog();
-                      },
-                    ),
-                  ),
-                ],
+      appBar: AppBar(
+        title: Text(context.l10n.group_settings_page_title),
+        actions: [
+          FutureBuilder<SupabaseResponse<List<GroupMember>>>(
+            future: _membersFuture,
+            builder: (context, snapshot) {
+              final members = snapshot.data?.data ?? [];
+              final currentRole =
+                  snapshot.hasData ? _getCurrentUserRole(members) : 'member';
+
+              if (currentRole != 'admin' && currentRole != 'owner') {
+                return const SizedBox.shrink();
+              }
+
+              return IconButton(
+                icon: const Icon(Icons.edit),
+                onPressed: () {
+                  showMenu(
+                    context: context,
+                    color: GlobalThemeData.darkColorScheme.surfaceBright,
+                    position: const RelativeRect.fromLTRB(0, 90, -1, 0),
+                    items: [
+                      PopupMenuItem(
+                        child: ListTile(
+                          leading: const Icon(Icons.text_fields_rounded),
+                          title: Text(context.l10n.edit_group_name),
+                          onTap: () {
+                            Navigator.pop(context);
+                            _updateGroupName();
+                          },
+                        ),
+                      ),
+                      PopupMenuItem(
+                        child: ListTile(
+                          leading: const Icon(Icons.image_rounded),
+                          title: Text(context.l10n.edit_icon_title),
+                          onTap: () {
+                            Navigator.pop(context);
+                            openEditIconDialog();
+                          },
+                        ),
+                      ),
+                    ],
+                  );
+                },
               );
             },
           ),
-      ]),
+        ],
+      ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(16),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            /// Group Header
             Center(
               child: Column(
                 children: [
                   GroupAvatar(_group, radius: 60),
                   const SizedBox(height: 16),
-                  Text(
-                    _group.name,
-                    style: const TextStyle(
-                        fontSize: 24, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
+                  Text(_group.name,
+                      style: const TextStyle(
+                          fontSize: 24, fontWeight: FontWeight.bold)),
                 ],
               ),
             ),
-            Divider(height: 32, color: GlobalThemeData.darkColorScheme.onSurfaceVariant),
 
-            // Members section
-            Text(
-              context.l10n.members,
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            Divider(
+              height: 32,
+              color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
+            ),
+
+            /// Members List
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                context.l10n.members,
+                style:
+                    const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
             ),
             const SizedBox(height: 8),
 
-            FutureBuilder<SupabaseResponse<List<KrabUser.User>>>(
+            FutureBuilder<SupabaseResponse<List<GroupMember>>>(
               future: _membersFuture,
               builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
+                if (!snapshot.hasData) {
                   return const Center(child: CircularProgressIndicator());
                 }
-                if (snapshot.hasError) {
-                  return Center(child: Text("Error: ${snapshot.error}"));
-                }
 
-                final response = snapshot.data;
-                if (response == null || response.data == null) {
-                  return Center(child: Text(context.l10n.error_loading_members));
-                }
-
-                final members = response.data!;
+                final members = snapshot.data!.data ?? [];
                 if (members.isEmpty) {
                   return Center(child: Text(context.l10n.no_members));
                 }
 
+                final currentRole =
+                    members.firstWhere((m) => m.user.id == _currentUserId).role;
+
                 return Column(
-                  children: members.map((user) {
-                    return ListTile(
-                      leading: UserAvatar(user, radius: 25),
-                      title: Text(user.username),
+                  children: members.map((member) {
+                    final targetRole = member.role;
+                    Offset? tapPos;
+
+                    return GestureDetector(
+                      onLongPressDown: (details) {
+                        tapPos = details.globalPosition;
+                      },
+                      onLongPress: () {
+                        final isAdmin =
+                            currentRole == 'owner' || currentRole == 'admin';
+
+                        if (!isAdmin ||
+                            member.user.id == _currentUserId ||
+                            tapPos == null) {
+                          return;
+                        }
+
+                        final overlay = Overlay.of(context)
+                            .context
+                            .findRenderObject() as RenderBox;
+
+                        showMenu(
+                          context: context,
+                          color: GlobalThemeData.darkColorScheme.surfaceBright,
+                          position: RelativeRect.fromRect(
+                            Rect.fromLTWH(tapPos!.dx, tapPos!.dy, 0, 0),
+                            Offset.zero & overlay.size,
+                          ),
+                          items: [
+                            if (targetRole == 'member')
+                              PopupMenuItem(
+                                child: ListTile(
+                                  leading:
+                                      const Icon(Icons.add_moderator_rounded),
+                                  title: Text(context.l10n.promote_user),
+                                  onTap: () {
+                                    Navigator.pop(context);
+                                    _manageUserRoleDialog(
+                                        member.user.id, 'promote_admin');
+                                  },
+                                ),
+                              ),
+                            if (targetRole == 'admin')
+                              PopupMenuItem(
+                                child: ListTile(
+                                  leading: const Icon(
+                                      Icons.remove_moderator_rounded),
+                                  title: Text(context.l10n.demote_user),
+                                  onTap: () {
+                                    Navigator.pop(context);
+                                    _manageUserRoleDialog(
+                                        member.user.id, 'demote');
+                                  },
+                                ),
+                              ),
+                            if ((targetRole != 'banned') && ((currentRole == 'owner') || (currentRole == 'admin' && targetRole == 'member')))
+                              PopupMenuItem(
+                                child: ListTile(
+                                  leading: const Icon(Icons.person_off_rounded),
+                                  title: Text(context.l10n.ban_user),
+                                  onTap: () {
+                                    Navigator.pop(context);
+                                    _manageUserBanDialog(member.user.id);
+                                  },
+                                ),
+                              ),
+                            if ((targetRole == 'banned') && (currentRole == 'owner' || currentRole == 'admin'))
+                              PopupMenuItem(
+                                child: ListTile(
+                                  leading: const Icon(Icons.person_rounded),
+                                  title: Text(context.l10n.unban_user),
+                                  onTap: () {
+                                    Navigator.pop(context);
+                                    _manageUserUnbanDialog(member.user.id);
+                                  },
+                                ),
+                              ),
+
+                            if (currentRole == 'owner' && targetRole != 'owner' && targetRole != 'banned')
+                              PopupMenuItem(
+                                child: ListTile(
+                                  leading: const Icon(
+                                      Icons.workspace_premium_rounded),
+                                  title: Text(context.l10n.transfer_ownership),
+                                  onTap: () {
+                                    Navigator.pop(context);
+                                    _manageUserRoleDialog(
+                                        member.user.id, 'transfer_ownership');
+                                  },
+                                ),
+                              ),
+                          ],
+                        );
+                      },
+                      child: ListTile(
+                        leading: UserAvatar(member.user, radius: 25),
+                        title: Text(member.user.username),
+                        trailing: Icon(
+                          targetRole == 'owner'
+                              ? Icons.star_rounded
+                              : targetRole == 'admin'
+                                  ? Icons.shield_rounded
+                                  : targetRole == 'banned' ?
+                                      Icons.block_rounded
+                                      : null,
+                          color: targetRole == 'owner'
+                              ? Colors.amber
+                              : targetRole == 'admin'
+                                  ? Colors.blue
+                                  : targetRole == 'banned' ?
+                                      Colors.red
+                                      : null,
+                        ),
+                      ),
                     );
                   }).toList(),
                 );
               },
             ),
 
+            /// Group Invite Code
             if (_group.code != null) ...[
-              Divider(height: 64, color: GlobalThemeData.darkColorScheme.onSurfaceVariant),
-              Center(
-                child: Column(children: [
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: QRCode(
-                      data: _group.code!.toUpperCase(),
-                      size: MediaQuery.of(context).size.width * 0.3,
-                      backgroundColor: Colors.transparent,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    context.l10n.group_code(_group.code!.toUpperCase()),
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ]),
+              Divider(
+                height: 64,
+                color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
+              ),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: QRCode(
+                  data: _group.code!.toUpperCase(),
+                  size: MediaQuery.of(context).size.width * 0.32,
+                  backgroundColor: Colors.transparent,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                context.l10n.group_code(_group.code!.toUpperCase()),
+                style:
+                    const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               ),
             ],
 
-            Divider(height: 64, color: GlobalThemeData.darkColorScheme.onSurfaceVariant),
-            Center(
-              child: Column(
-                children: [
-                  RectangleButton(
-                    onPressed: _leaveGroup,
-                    label: context.l10n.leave_group,
-                    backgroundColor: Colors.red,
-                  ),
-                  if (widget.isAdmin) const SizedBox(height: 16),
-                  if (widget.isAdmin)
+            Divider(
+              height: 64,
+              color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
+            ),
+
+            /// Leave/delete group buttons
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                RectangleButton(
+                  onPressed: _leaveGroup,
+                  label: context.l10n.leave_group,
+                  backgroundColor: Colors.red,
+                ),
+              ],
+            ),
+
+            FutureBuilder<SupabaseResponse<List<GroupMember>>>(
+              future: _membersFuture,
+              builder: (context, snapshot) {
+                final members = snapshot.data?.data ?? [];
+                final currentRole =
+                    snapshot.hasData ? _getCurrentUserRole(members) : 'member';
+
+                if (currentRole != 'owner') {
+                  return const SizedBox.shrink();
+                }
+
+                return Column(
+                  children: [
+                    const SizedBox(height: 16),
                     RectangleButton(
                       onPressed: _deleteGroup,
                       label: context.l10n.delete_group,
                       backgroundColor: Colors.red,
                     ),
-                ],
-              ),
+                  ],
+                );
+              },
             ),
           ],
         ),

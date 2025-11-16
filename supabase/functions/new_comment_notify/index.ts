@@ -77,7 +77,6 @@ Deno.serve(async (req) => {
 
     const fcmToken = uploaderData.fcm_token;
 
-    // Optionally, you could also include group name in the notification
     const { data: groupData, error: groupError } = await supabase
       .from('Groups')
       .select('name')

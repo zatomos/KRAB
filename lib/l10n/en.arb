@@ -123,5 +123,22 @@
   "icon_updated_success": "Icon updated successfully.",
   "error_updating_icon": "Error updating icon: {errorMsg}",
   "icon_deleted_success": "Icon deleted successfully.",
-  "error_deleting_icon": "Error deleting icon: {errorMsg}"
+  "error_deleting_icon": "Error deleting icon: {errorMsg}",
+  "promote_user": "Promote to Admin",
+  "demote_user": "Demote from Admin",
+  "ban_user": "Ban User",
+  "unban_user": "Unban User",
+  "transfer_ownership": "Transfer Ownership",
+  "promote_user_confirmation": "Are you sure you want to promote this user to admin? \nThey will be able to manage group settings and members.",
+  "demote_user_confirmation": "Are you sure you want to demote this admin?",
+  "ban_user_confirmation": "Are you sure you want to ban this user from the group? \nThey will no longer be able to access the group or its content.",
+  "unban_user_confirmation": "Are you sure you want to unban this user? \nThey will still need to join this group again.",
+  "transfer_ownership_confirmation": "Are you sure you want to transfer group ownership to this user? \nYou will be demoted to an administrator.",
+  "user_role_updated_success": "User role updated successfully.",
+  "error_updating_user_role": "Error updating user role: {errorMsg}",
+  "confirm": "Confirm",
+  "user_banned_success": "User banned successfully.",
+  "error_banning_user": "Error banning user: {errorMsg}",
+  "user_unbanned_success": "User unbanned successfully.",
+  "error_unbanning_user": "Error unbanning user: {errorMsg}"
 }

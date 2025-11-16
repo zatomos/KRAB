@@ -27,7 +27,6 @@ class GroupImagesPage extends StatefulWidget {
 
 class GroupPageState extends State<GroupImagesPage> {
   late Future<SupabaseResponse<List<dynamic>>> _groupImagesFuture;
-  bool _isAdmin = false;
 
   /// Caches
   final Map<String, Uint8List> _lowResCache = {};
@@ -40,7 +39,6 @@ class GroupPageState extends State<GroupImagesPage> {
   void initState() {
     super.initState();
     _groupImagesFuture = getGroupImages(widget.group.id);
-    _checkAdminStatus();
 
     // If an imageId is provided, show its preview after the first frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -60,15 +58,6 @@ class GroupPageState extends State<GroupImagesPage> {
     _userCache.clear();
     _commentCountCache.clear();
     super.dispose();
-  }
-
-  Future<void> _checkAdminStatus() async {
-    final adminStatus = await isAdmin(widget.group.id);
-    if (adminStatus.success) {
-      setState(() {
-        _isAdmin = adminStatus.data!;
-      });
-    }
   }
 
   Future<Uint8List?> _getCachedImage(String imageId, {bool lowRes = true}) async {
@@ -271,7 +260,7 @@ class GroupPageState extends State<GroupImagesPage> {
               context,
               MaterialPageRoute(
                 builder: (_) =>
-                    GroupSettingsPage(group: widget.group, isAdmin: _isAdmin),
+                    GroupSettingsPage(group: widget.group),
               ),
             ),
           ),

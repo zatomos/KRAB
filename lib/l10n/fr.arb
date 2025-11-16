@@ -123,5 +123,22 @@
   "icon_updated_success": "Icône mise à jour avec succès.",
   "error_updating_icon": "Erreur lors de la mise à jour de l'icône: {errorMsg}",
   "icon_deleted_success": "Icône supprimée avec succès.",
-  "error_deleting_icon": "Erreur lors de la suppression de l'icône: {errorMsg}"
+  "error_deleting_icon": "Erreur lors de la suppression de l'icône: {errorMsg}",
+  "promote_user": "Promouvoir en administrateur",
+  "demote_user": "Rétrograder l'administrateur",
+  "ban_user": "Bannir",
+  "unban_user": "Débannir",
+  "transfer_ownership": "Transférer le groupe",
+  "promote_user_confirmation": "Êtes-vous certain de vouloir promouvoir cet utilisateur en tant qu'administrateur? \nCelui-ci pourra gérer les membres et les paramètres du groupe.",
+  "demote_user_confirmation": "Êtes-vous certain de vouloir rétrograder cet administrateur?",
+  "ban_user_confirmation": "Êtes-vous certain de vouloir bannir cet utilisateur? \nIl ne pourra plus rejoindre ce groupe ou accéder à son contenu.",
+  "unban_user_confirmation": "Êtes-vous certain de vouloir débannir cet utilisateur? \nIl devra rejoindre à nouveau le groupe pour accéder à son contenu.",
+  "transfer_ownership_confirmation": "Êtes-vous certain de vouloir transférer la propriété du groupe à cet utilisateur? \nVous serez rétrogradé au statut d'administrateur.",
+  "user_role_updated_success": "Rôle de l'utilisateur mis à jour avec succès.",
+  "error_updating_user_role": "Erreur lors de la mise à jour du rôle de l'utilisateur: {errorMsg}",
+  "confirm": "Confirmer",
+  "user_banned_success": "Utilisateur banni avec succès.",
+  "error_banning_user": "Erreur lors du bannissement de l'utilisateur: {errorMsg}",
+  "user_unbanned_success": "Utilisateur débanni avec succès.",
+  "error_unbanning_user": "Erreur lors du débannissement de l'utilisateur: {errorMsg}"
 }

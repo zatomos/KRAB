@@ -118,6 +118,69 @@ $$;
 
 
 --
+-- Name: ban_user(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.ban_user(group_id uuid, target_user_id uuid) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  user_role text;
+  target_role text;
+  rows_updated integer;
+BEGIN
+  -- Check caller role
+  SELECT role INTO user_role
+  FROM "Members" m
+  WHERE m.group_id = ban_user.group_id
+  AND m.user_id = auth.uid();
+
+  IF user_role NOT IN ('owner','admin') THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Only admins or owners can ban');
+  END IF;
+
+  -- Fetch target role
+  SELECT role INTO target_role
+  FROM "Members" m
+  WHERE m.group_id = ban_user.group_id
+  AND m.user_id = ban_user.target_user_id;
+
+  IF target_role IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'User not in group');
+  END IF;
+
+  -- Owners cannot be banned
+  IF target_role = 'owner' THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Cannot ban the owner');
+  END IF;
+
+  -- Admins cannot ban other admins
+  IF user_role = 'admin' AND target_role = 'admin' THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Admins cannot ban other admins');
+  END IF;
+
+  -- Ban logic
+  UPDATE "Members" m
+  SET role = 'banned'
+  WHERE m.group_id = ban_user.group_id AND m.user_id = ban_user.target_user_id;
+
+  GET DIAGNOSTICS rows_updated = ROW_COUNT;
+
+  IF rows_updated = 0 THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Failed to ban user');
+  END IF;
+
+  RETURN jsonb_build_object('success', true, 'message', 'User banned successfully');
+
+EXCEPTION
+  WHEN OTHERS THEN
+    RETURN jsonb_build_object('success', false, 'error', SQLERRM);
+END;
+$$;
+
+
+--
 -- Name: call_get_group_members_count(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -162,17 +225,18 @@ BEGIN
     -- Generate a new UUID for the group
     new_group_id := gen_random_uuid();
 
-    -- Insert the new group using the manually generated UUID
+    -- Insert the new group
     INSERT INTO "public"."Groups" (id, name)
     VALUES (new_group_id, group_name);
 
-    -- Insert the creator into Members as an admin
-    INSERT INTO "public"."Members" (user_id, group_id, admin)
-    VALUES (auth.uid(), new_group_id, TRUE);
+    -- Make the creator owner
+    INSERT INTO "public"."Members" (user_id, group_id, role)
+    VALUES (auth.uid(), new_group_id, 'owner');
 
     RETURN jsonb_build_object(
         'success', true,
-        'message', 'Group created successfully'
+        'message', 'Group created successfully',
+        'group_id', new_group_id
     );
 
 EXCEPTION
@@ -198,6 +262,39 @@ BEGIN
     RETURN TRUE;
 EXCEPTION WHEN OTHERS THEN
     RETURN FALSE;
+END;
+$$;
+
+
+--
+-- Name: debug_auth_context(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.debug_auth_context(p_group_id uuid) RETURNS jsonb
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    auth_user_id UUID;
+    current_db_user TEXT;
+    member_role TEXT;
+BEGIN
+    -- Get auth.uid()
+    auth_user_id := auth.uid();
+
+    -- Get current database user
+    current_db_user := current_user;
+
+    -- Try to get member role
+    SELECT role INTO member_role
+    FROM "Members"
+    WHERE group_id = p_group_id AND user_id = auth_user_id;
+
+    RETURN jsonb_build_object(
+        'auth_uid', auth_user_id,
+        'current_user', current_db_user,
+        'member_role', member_role,
+        'member_exists', (member_role IS NOT NULL)
+    );
 END;
 $$;
 
@@ -652,23 +749,21 @@ CREATE FUNCTION public.get_group_members(group_id uuid) RETURNS jsonb
     AS $$DECLARE
     members JSONB;
 BEGIN
-    -- Fetch user IDs from Members table and retrieve usernames using get_username function
     SELECT jsonb_agg(
         jsonb_build_object(
             'user_id', m.user_id,
-            'username', get_username(m.user_id::text)  -- Call get_username function
+            'role', m.role,
+            'username', get_username(m.user_id::text)
         )
     )
     INTO members
     FROM "public"."Members" m
-    WHERE m.group_id = get_group_members.group_id;  -- Ensure group_id is referenced correctly
-
-    -- Ensure members is not null (if no members, return empty array)
+    WHERE m.group_id = get_group_members.group_id;
     IF members IS NULL THEN
         members := '[]'::jsonb;
     END IF;
 
-    -- Return the result
+    -- Return
     RETURN jsonb_build_object(
         'success', true,
         'members', members
@@ -816,7 +911,7 @@ CREATE FUNCTION public.get_user_groups() RETURNS jsonb
   current_user_id UUID;
   user_groups JSONB;
 BEGIN
-  -- Get the user ID from the current request
+  -- Get the user ID
   current_user_id := auth.uid();
 
   -- Check if user is authenticated
@@ -827,19 +922,20 @@ BEGIN
     );
   END IF;
 
-  -- Get all groups the user is a member of, show code only for admins
+  -- Get all groups
   SELECT jsonb_agg(
     jsonb_build_object(
       'id', g.id,
       'name', g.name,
-      'code', CASE WHEN gm.admin THEN g.code ELSE NULL END,
+      'code', CASE WHEN gm.role IN ('owner','admin') THEN g.code ELSE NULL END,
       'created_at', g.created_at
     )
   )
   INTO user_groups
   FROM "Groups" g
   JOIN "Members" gm ON g.id = gm.group_id
-  WHERE gm.user_id = current_user_id;
+  WHERE gm.user_id = current_user_id
+    AND gm.role <> 'banned';          -- exclude banned users
 
   RETURN jsonb_build_object(
     'success', true,
@@ -915,6 +1011,26 @@ $$;
 
 
 --
+-- Name: is_admin_or_owner(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.is_admin_or_owner(p_group_id uuid) RETURNS boolean
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1
+    FROM "Members"
+    WHERE group_id = p_group_id
+    AND user_id = auth.uid()
+    AND role IN ('owner','admin')
+  );
+END;
+$$;
+
+
+--
 -- Name: join_group_by_code(text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -924,12 +1040,12 @@ CREATE FUNCTION public.join_group_by_code(group_code text) RETURNS jsonb
     AS $$DECLARE
   current_user_id UUID;
   found_group_id UUID;
-  is_already_member BOOLEAN;
+  existing_role text;
+  is_member boolean;
 BEGIN
-  -- Get the user ID from the current request
+  -- Current user
   current_user_id := auth.uid();
 
-  -- Check if user is authenticated
   IF current_user_id IS NULL THEN
     RETURN jsonb_build_object(
       'success', false,
@@ -937,12 +1053,11 @@ BEGIN
     );
   END IF;
 
-  -- Find the group by code
+  -- Find group by code
   SELECT id INTO found_group_id
   FROM "Groups"
   WHERE code = group_code;
 
-  -- Check if group exists
   IF found_group_id IS NULL THEN
     RETURN jsonb_build_object(
       'success', false,
@@ -950,29 +1065,41 @@ BEGIN
     );
   END IF;
 
-  -- Check if user is already a member
-  SELECT EXISTS (
-    SELECT 1 FROM "Members"
-    WHERE group_id = found_group_id
-    AND user_id = current_user_id
-  ) INTO is_already_member;
 
-  IF is_already_member THEN
+  -- Check if a row exists and get their role
+  SELECT role INTO existing_role
+  FROM "Members"
+  WHERE group_id = found_group_id
+    AND user_id = current_user_id;
+
+
+  -- Banned users cannot rejoin
+  IF existing_role = 'banned' THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'You have been banned from this group'
+    );
+  END IF;
+
+
+  -- If user already in group
+  IF existing_role IS NOT NULL THEN
     RETURN jsonb_build_object(
       'success', false,
       'error', 'You are already a member of this group'
     );
   END IF;
 
-  -- Add user to the group as a regular member
-  INSERT INTO "Members" (group_id, user_id)
-  VALUES (found_group_id, current_user_id);
 
-  -- Return success
+  -- Insert new membership
+  INSERT INTO "Members" (group_id, user_id, role)
+  VALUES (found_group_id, current_user_id, 'member');
+
   RETURN jsonb_build_object(
     'success', true,
     'group_id', found_group_id
   );
+
 EXCEPTION WHEN OTHERS THEN
   RETURN jsonb_build_object(
     'success', false,
@@ -990,29 +1117,44 @@ CREATE FUNCTION public.leave_group(group_id uuid) RETURNS jsonb
     SET search_path TO 'public', 'extensions', 'pg_temp'
     AS $$DECLARE
     deleted_count INT;
-    user_check UUID;
+    user_role TEXT;
 BEGIN
-    -- Check if the user exists in the group before deletion
-    SELECT user_id INTO user_check
+    -- Fetch role
+    SELECT role INTO user_role
     FROM "public"."Members" m
-    WHERE user_id = auth.uid()
-    AND m.group_id = leave_group.group_id;
+    WHERE m.user_id = auth.uid()
+      AND m.group_id = leave_group.group_id;
 
-    -- If user does not exist, return an error
-    IF user_check IS NULL THEN
+    -- User not in group
+    IF user_role IS NULL THEN
         RETURN jsonb_build_object(
             'success', false,
-            'error', 'User is not a member of this group or has no permission'
+            'error', 'You are not a member of this group'
         );
     END IF;
 
-    -- Perform the deletion
+    -- Banned users cannot "leave"
+    IF user_role = 'banned' THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'error', 'You are banned from this group'
+        );
+    END IF;
+
+    -- Owners cannot leave unless ownership is transferred
+    IF user_role = 'owner' THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'error', 'Owners cannot leave. Transfer ownership first.'
+        );
+    END IF;
+
+    -- Delete membership
     DELETE FROM "public"."Members" m
-    WHERE user_id = auth.uid()
-    AND m.group_id = leave_group.group_id
+    WHERE m.user_id = auth.uid()
+      AND m.group_id = leave_group.group_id
     RETURNING 1 INTO deleted_count;
 
-    -- If no rows were deleted, return an error
     IF deleted_count IS NULL THEN
         RETURN jsonb_build_object(
             'success', false,
@@ -1020,19 +1162,109 @@ BEGIN
         );
     END IF;
 
-    -- Return success message
     RETURN jsonb_build_object(
         'success', true,
         'message', 'You have successfully left the group'
     );
 
-EXCEPTION
-    WHEN OTHERS THEN
-        RETURN jsonb_build_object(
-            'success', false,
-            'error', SQLERRM
-        );
+EXCEPTION WHEN OTHERS THEN
+    RETURN jsonb_build_object(
+        'success', false,
+        'error', SQLERRM
+    );
 END;$$;
+
+
+--
+-- Name: manage_member_role(uuid, uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.manage_member_role(group_id uuid, target_user_id uuid, action text) RETURNS jsonb
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    user_role TEXT;
+    target_role TEXT;
+BEGIN
+    -- Ensure valid action
+    IF action NOT IN ('promote_admin', 'demote', 'transfer_ownership') THEN
+        RETURN jsonb_build_object('success', false, 'error', 'Invalid action');
+    END IF;
+
+    -- Get current user's role
+    SELECT role INTO user_role
+    FROM "Members" m
+    WHERE m.group_id = manage_member_role.group_id AND m.user_id = auth.uid();
+
+    IF user_role IS NULL THEN
+        RETURN jsonb_build_object('success', false, 'error', 'You are not in this group');
+    END IF;
+
+    -- Get target user role
+    SELECT role INTO target_role
+    FROM "Members" m
+    WHERE m.group_id = manage_member_role.group_id AND m.user_id = manage_member_role.target_user_id;
+
+    IF target_role IS NULL THEN
+        RETURN jsonb_build_object('success', false, 'error', 'Target user is not in this group');
+    END IF;
+
+    -- TRANSFER OWNERSHIP
+    IF action = 'transfer_ownership' THEN
+        IF user_role <> 'owner' THEN
+            RETURN jsonb_build_object('success', false, 'error', 'Only the owner can transfer ownership');
+        END IF;
+
+        -- Promote target to owner
+        UPDATE "Members" m
+        SET role = 'owner'
+        WHERE m.group_id = manage_member_role.group_id AND m.user_id = manage_member_role.target_user_id;
+
+        -- Demote current owner to admin
+        UPDATE "Members" m
+        SET role = 'admin'
+        WHERE m.group_id = manage_member_role.group_id AND m.user_id = auth.uid();
+
+        RETURN jsonb_build_object('success', true, 'role', 'owner');
+    END IF;
+
+    -- PROMOTE TO ADMIN
+    IF action = 'promote_admin' THEN
+        IF user_role NOT IN ('owner', 'admin') THEN
+            RETURN jsonb_build_object(
+                'success', false,
+                'error', 'Only admins or owners can promote'
+            );
+        END IF;
+
+        UPDATE "Members" m
+        SET role = 'admin'
+        WHERE m.group_id = manage_member_role.group_id AND m.user_id = manage_member_role.target_user_id;
+
+        RETURN jsonb_build_object('success', true, 'role', 'admin');
+    END IF;
+
+    -- DEMOTE
+    IF action = 'demote' THEN
+        IF user_role NOT IN ('owner', 'admin') THEN
+            RETURN jsonb_build_object('success', false, 'error', 'Only admins or owners can demote');
+        END IF;
+
+        -- Prevent demoting owner
+        IF target_role = 'owner' THEN
+            RETURN jsonb_build_object('success', false, 'error', 'Cannot demote the owner');
+        END IF;
+
+        UPDATE "Members" m
+        SET role = 'member'
+        WHERE m.group_id = manage_member_role.group_id AND m.user_id = manage_member_role.target_user_id;
+
+        RETURN jsonb_build_object('success', true, 'role', 'member');
+    END IF;
+
+    RETURN jsonb_build_object('success', false, 'error', 'Unknown error');
+END;
+$$;
 
 
 --
@@ -1096,28 +1328,43 @@ CREATE FUNCTION public.remove_group(group_id uuid) RETURNS jsonb
     LANGUAGE plpgsql
     SET search_path TO 'public', 'extensions', 'pg_temp'
     AS $$DECLARE
-    is_admin BOOLEAN;
+    user_role_check TEXT;
+    group_deleted INT;
 BEGIN
-    -- Check if the user is an admin of the group
-    SELECT admin INTO is_admin
-    FROM "public"."Members" m
-    WHERE user_id = auth.uid() AND m.group_id = remove_group.group_id;
 
-    -- If the user is not an admin, deny deletion
-    IF is_admin IS NULL OR is_admin = FALSE THEN
+    -- Get the user role in that group
+    SELECT role INTO user_role_check
+    FROM "public"."Members" m
+    WHERE m.user_id = auth.uid() AND m.group_id = remove_group.group_id;
+
+    -- If the user is not in the group
+    IF user_role_check IS NULL THEN
         RETURN jsonb_build_object(
             'success', false,
-            'error', 'Only admins can delete the group'
+            'error', 'You are not a member of this group'
         );
     END IF;
 
-    -- Remove all members from the group
-    DELETE FROM "public"."Members" m
-    WHERE m.group_id = remove_group.group_id;
+    -- If the user is not an owner, deny deletion
+    IF user_role_check != 'owner' THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'error', 'Only the owner can delete the group'
+        );
+    END IF;
 
-    -- Delete the group
-    DELETE FROM "public"."Groups"
-    WHERE id = remove_group.group_id;
+    -- Delete the group (and Members by cascade)
+    DELETE FROM "public"."Groups" g
+    WHERE g.id = remove_group.group_id;
+
+    GET DIAGNOSTICS group_deleted = ROW_COUNT;
+
+    IF group_deleted = 0 THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'error', 'Failed to delete group'
+        );
+    END IF;
 
     -- Return success response
     RETURN jsonb_build_object(
@@ -1160,6 +1407,85 @@ exception
     return jsonb_build_object('success', false, 'error', sqlerrm);
 end;
 $$;
+
+
+--
+-- Name: unban_user(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.unban_user(group_id uuid, target_user_id uuid) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$DECLARE
+  caller_role TEXT;
+  target_role TEXT;
+  rows_deleted INT;
+BEGIN
+  -- Verify caller role
+  SELECT role INTO caller_role
+  FROM "Members" m
+  WHERE m.group_id = unban_user.group_id
+  AND m.user_id = auth.uid();
+
+  IF caller_role IS NULL THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'You are not a member of this group'
+    );
+  END IF;
+
+  IF caller_role NOT IN ('owner','admin') THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'Only admins or owners can unban users'
+    );
+  END IF;
+
+  -- Verify target user exists
+  SELECT role INTO target_role
+  FROM "Members" m
+  WHERE m.group_id = unban_user.group_id
+  AND m.user_id = unban_user.target_user_id;
+
+  IF target_role IS NULL THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'Target user is not a member of this group'
+    );
+  END IF;
+
+  -- Ensure target user is banned
+  IF target_role <> 'banned' THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'User is not banned'
+    );
+  END IF;
+
+  -- Perform unban
+  DELETE FROM "Members" m
+  WHERE m.group_id = unban_user.group_id
+  AND m.user_id = unban_user.target_user_id
+  RETURNING 1 INTO rows_deleted;
+
+  IF rows_deleted IS NULL THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'Failed to unban user'
+    );
+  END IF;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'message', 'User unbanned successfully'
+  );
+
+EXCEPTION WHEN OTHERS THEN
+  RETURN jsonb_build_object(
+    'success', false,
+    'error', SQLERRM
+  );
+END;$$;
 
 
 --
@@ -1992,7 +2318,9 @@ CREATE TABLE public."Members" (
     group_id uuid NOT NULL,
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     admin boolean DEFAULT false NOT NULL,
-    CONSTRAINT "Members_admin_check" CHECK ((admin = ANY (ARRAY[true, false])))
+    role text DEFAULT 'member'::text,
+    CONSTRAINT "Members_admin_check" CHECK ((admin = ANY (ARRAY[true, false]))),
+    CONSTRAINT "Members_role_check" CHECK ((role = ANY (ARRAY['owner'::text, 'admin'::text, 'member'::text, 'banned'::text])))
 );
 
 
@@ -2546,7 +2874,7 @@ ALTER TABLE ONLY public."Images"
 --
 
 ALTER TABLE ONLY public."Members"
-    ADD CONSTRAINT "Members_group_id_fkey" FOREIGN KEY (group_id) REFERENCES public."Groups"(id);
+    ADD CONSTRAINT "Members_group_id_fkey" FOREIGN KEY (group_id) REFERENCES public."Groups"(id) ON UPDATE CASCADE ON DELETE CASCADE;
 
 
 --
@@ -2639,12 +2967,12 @@ CREATE POLICY "Admins can update the group name" ON public."Groups" FOR UPDATE T
 
 
 --
--- Name: Groups Allow admins to delete a group; Type: POLICY; Schema: public; Owner: -
+-- Name: Groups Allow owners to delete a group; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Allow admins to delete a group" ON public."Groups" FOR DELETE TO authenticated USING ((EXISTS ( SELECT 1
+CREATE POLICY "Allow owners to delete a group" ON public."Groups" FOR DELETE TO authenticated USING ((EXISTS ( SELECT 1
    FROM public."Members"
-  WHERE (("Members".group_id = "Groups".id) AND ("Members".user_id = auth.uid()) AND ("Members".admin = true)))));
+  WHERE (("Members".group_id = "Groups".id) AND ("Members".user_id = auth.uid()) AND ("Members".role = 'owner'::text)))));
 
 
 --
@@ -2664,14 +2992,16 @@ ALTER TABLE public."Comments" ENABLE ROW LEVEL SECURITY;
 -- Name: Members Enable delete for users based on user_id; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Enable delete for users based on user_id" ON public."Members" FOR DELETE USING ((( SELECT auth.uid() AS uid) = user_id));
+CREATE POLICY "Enable delete for users based on user_id" ON public."Members" FOR DELETE USING (((( SELECT auth.uid() AS uid) = user_id) AND (role <> 'banned'::text)));
 
 
 --
 -- Name: ImageGroups Enable insert for authenticated users only; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Enable insert for authenticated users only" ON public."ImageGroups" FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY "Enable insert for authenticated users only" ON public."ImageGroups" FOR INSERT TO authenticated WITH CHECK ((NOT (EXISTS ( SELECT 1
+   FROM public."Members" m
+  WHERE ((m.group_id = m.group_id) AND (m.user_id = auth.uid()) AND (m.role <> 'banned'::text))))));
 
 
 --
@@ -2734,7 +3064,7 @@ CREATE POLICY "Group members can see their groups" ON public."Groups" FOR SELECT
 
 CREATE POLICY "Group members can select images from that group" ON public."ImageGroups" FOR SELECT TO authenticated USING ((EXISTS ( SELECT 1
    FROM public."Members" m
-  WHERE ((m.group_id = "ImageGroups".group_id) AND (m.user_id = auth.uid())))));
+  WHERE ((m.group_id = "ImageGroups".group_id) AND (m.user_id = auth.uid()) AND (m.role <> 'banned'::text)))));
 
 
 --
@@ -2798,13 +3128,6 @@ CREATE POLICY "Users can delete their own comments" ON public."Comments" FOR DEL
 
 
 --
--- Name: Members Users can see members of groups they belong to; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Users can see members of groups they belong to" ON public."Members" FOR SELECT USING (public.check_user_in_group(auth.uid(), group_id));
-
-
---
 -- Name: Users Users can see members of their groups; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -2822,6 +3145,22 @@ CREATE POLICY "Users can update their own comments" ON public."Comments" FOR UPD
    FROM (public."ImageGroups" ig
      JOIN public."Members" m ON ((ig.group_id = m.group_id)))
   WHERE ((ig.image_id = "Comments".image_id) AND (m.user_id = auth.uid()))))));
+
+
+--
+-- Name: Members allow_admins_owners_update_roles; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY allow_admins_owners_update_roles ON public."Members" FOR UPDATE TO authenticated USING ((EXISTS ( SELECT 1
+   FROM public."Members" m
+  WHERE ((m.group_id = "Members".group_id) AND (m.user_id = auth.uid()) AND (m.role = ANY (ARRAY['owner'::text, 'admin'::text]))))));
+
+
+--
+-- Name: Members members_read; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY members_read ON public."Members" FOR SELECT USING (((role <> 'banned'::text) OR public.is_admin_or_owner(group_id)));
 
 
 --
@@ -3006,6 +3345,16 @@ GRANT ALL ON FUNCTION public.add_comment(group_id uuid, image_id uuid, text text
 
 
 --
+-- Name: FUNCTION ban_user(group_id uuid, target_user_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.ban_user(group_id uuid, target_user_id uuid) TO postgres;
+GRANT ALL ON FUNCTION public.ban_user(group_id uuid, target_user_id uuid) TO anon;
+GRANT ALL ON FUNCTION public.ban_user(group_id uuid, target_user_id uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.ban_user(group_id uuid, target_user_id uuid) TO service_role;
+
+
+--
 -- Name: FUNCTION call_get_group_members_count(p_group_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
@@ -3039,6 +3388,16 @@ GRANT ALL ON FUNCTION public.create_group(group_name text) TO service_role;
 GRANT ALL ON FUNCTION public.create_user_profile(username text) TO anon;
 GRANT ALL ON FUNCTION public.create_user_profile(username text) TO authenticated;
 GRANT ALL ON FUNCTION public.create_user_profile(username text) TO service_role;
+
+
+--
+-- Name: FUNCTION debug_auth_context(p_group_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.debug_auth_context(p_group_id uuid) TO postgres;
+GRANT ALL ON FUNCTION public.debug_auth_context(p_group_id uuid) TO anon;
+GRANT ALL ON FUNCTION public.debug_auth_context(p_group_id uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.debug_auth_context(p_group_id uuid) TO service_role;
 
 
 --
@@ -3187,6 +3546,16 @@ GRANT ALL ON FUNCTION public.is_admin(group_id uuid) TO service_role;
 
 
 --
+-- Name: FUNCTION is_admin_or_owner(p_group_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.is_admin_or_owner(p_group_id uuid) TO postgres;
+GRANT ALL ON FUNCTION public.is_admin_or_owner(p_group_id uuid) TO anon;
+GRANT ALL ON FUNCTION public.is_admin_or_owner(p_group_id uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.is_admin_or_owner(p_group_id uuid) TO service_role;
+
+
+--
 -- Name: FUNCTION join_group_by_code(group_code text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -3202,6 +3571,16 @@ GRANT ALL ON FUNCTION public.join_group_by_code(group_code text) TO service_role
 GRANT ALL ON FUNCTION public.leave_group(group_id uuid) TO anon;
 GRANT ALL ON FUNCTION public.leave_group(group_id uuid) TO authenticated;
 GRANT ALL ON FUNCTION public.leave_group(group_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION manage_member_role(group_id uuid, target_user_id uuid, action text); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.manage_member_role(group_id uuid, target_user_id uuid, action text) TO postgres;
+GRANT ALL ON FUNCTION public.manage_member_role(group_id uuid, target_user_id uuid, action text) TO anon;
+GRANT ALL ON FUNCTION public.manage_member_role(group_id uuid, target_user_id uuid, action text) TO authenticated;
+GRANT ALL ON FUNCTION public.manage_member_role(group_id uuid, target_user_id uuid, action text) TO service_role;
 
 
 --
@@ -3231,6 +3610,16 @@ GRANT ALL ON FUNCTION public.request_image_uuid() TO postgres;
 GRANT ALL ON FUNCTION public.request_image_uuid() TO anon;
 GRANT ALL ON FUNCTION public.request_image_uuid() TO authenticated;
 GRANT ALL ON FUNCTION public.request_image_uuid() TO service_role;
+
+
+--
+-- Name: FUNCTION unban_user(group_id uuid, target_user_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.unban_user(group_id uuid, target_user_id uuid) TO postgres;
+GRANT ALL ON FUNCTION public.unban_user(group_id uuid, target_user_id uuid) TO anon;
+GRANT ALL ON FUNCTION public.unban_user(group_id uuid, target_user_id uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.unban_user(group_id uuid, target_user_id uuid) TO service_role;
 
 
 --

@@ -77,6 +77,6 @@ Future<User> getCurrentUser() async {
   return User(
     id: authUser.id,
     username: krabUser.username,
-    pfpUrl: krabUser.pfpUrl ?? '',
+    pfpUrl: krabUser.pfpUrl,
   );
 }

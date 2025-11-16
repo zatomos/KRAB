@@ -265,7 +265,7 @@ class CameraPageState extends State<CameraPage> {
         }
       }
 
-      ctrl.setExposureOffset(0).catchError((_) {});
+      ctrl.setExposureOffset(0).catchError((_) {return 0.0;});
 
       await ctrl.setFocusPoint(Offset(x, y));
       await ctrl.setExposurePoint(Offset(x, y));

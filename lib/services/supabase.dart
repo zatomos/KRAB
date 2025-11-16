@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 
 import 'package:krab/models/Group.dart';
+import 'package:krab/models/GroupMember.dart';
 import 'package:krab/models/User.dart' as KRAB_User;
 
 final supabase = Supabase.instance.client;
@@ -70,7 +71,7 @@ Future<SupabaseResponse<Group>> getGroupDetails(String groupId) async {
 
     // Fetch group data from RPC
     final response =
-    await supabase.rpc("get_group_details", params: {"group_id": groupId});
+        await supabase.rpc("get_group_details", params: {"group_id": groupId});
 
     if (response == null ||
         response is! Map ||
@@ -78,7 +79,8 @@ Future<SupabaseResponse<Group>> getGroupDetails(String groupId) async {
         response['group'] == null) {
       return SupabaseResponse(
         success: false,
-        error: "Error loading group details: ${response?['error'] ?? 'Unknown'}",
+        error:
+            "Error loading group details: ${response?['error'] ?? 'Unknown'}",
       );
     }
 
@@ -104,7 +106,6 @@ Future<SupabaseResponse<Group>> getGroupDetails(String groupId) async {
   }
 }
 
-
 /// Get count of members for a given group.
 Future<SupabaseResponse<int>> getGroupMemberCount(String groupId) async {
   try {
@@ -124,49 +125,140 @@ Future<SupabaseResponse<int>> getGroupMemberCount(String groupId) async {
 }
 
 /// Get members for a given group.
-Future<SupabaseResponse<List<KRAB_User.User>>> getGroupMembers(String groupId) async {
+Future<SupabaseResponse<List<GroupMember>>> getGroupMembers(
+    String groupId) async {
   try {
-    final response =
-        await supabase.rpc("get_group_members", params: {"group_id": groupId});
+    final response = await supabase.rpc(
+      "get_group_members",
+      params: {"group_id": groupId},
+    );
+
     if (response['success'] == false) {
       return SupabaseResponse(
-          success: false,
-          error: "Error loading group members: ${response['error']}");
+        success: false,
+        error: "Error loading group members: ${response['error']}",
+      );
     }
 
-    // Create list of users
     final members = response['members'] as List;
-    final List<KRAB_User.User> membersList = [];
+    final List<GroupMember> membersList = [];
+
     for (final member in members) {
-      debugPrint("Fetching details for member ID: $member");
       final userId = member['user_id'] as String;
+      final role = member['role'] as String;
+
+      // Fetch user info
       final userDetailsResponse = await getUserDetails(userId);
+
       if (userDetailsResponse.success && userDetailsResponse.data != null) {
-        membersList.add(userDetailsResponse.data!);
+        final user = userDetailsResponse.data!;
+        membersList.add(GroupMember(user: user, role: role));
       }
     }
-    debugPrint('Fetched ${membersList.length} members for group $groupId');
+
+    debugPrint("Fetched ${membersList.length} members for group $groupId");
+
     return SupabaseResponse(success: true, data: membersList);
   } catch (error) {
     return SupabaseResponse(
-        success: false, error: "Error loading group members: $error");
+      success: false,
+      error: "Error loading group members: $error",
+    );
   }
 }
 
-/// Check if the current user is admin in a group.
-Future<SupabaseResponse<bool>> isAdmin(String groupId) async {
+Future<SupabaseResponse<String>> changeMemberRole(
+  String groupId,
+  String targetUserId,
+  String action, // 'promote_admin', 'demote', 'transfer_ownership'
+) async {
   try {
-    final response =
-        await supabase.rpc("is_admin", params: {"group_id": groupId});
-    return SupabaseResponse(success: true, data: response as bool);
-  } catch (error) {
+    final response = await supabase.rpc(
+      'manage_member_role',
+      params: {
+        'group_id': groupId,
+        'target_user_id': targetUserId,
+        'action': action,
+      },
+    );
+
+    if (response['success'] == true) {
+      return SupabaseResponse(success: true, data: response['role'] as String);
+    }
+
     return SupabaseResponse(
-        success: false, error: "Error checking admin status: $error");
+      success: false,
+      error: response['error']?.toString(),
+    );
+  } catch (err) {
+    return SupabaseResponse(
+      success: false,
+      error: 'Error changing role: $err',
+    );
+  }
+}
+
+Future<SupabaseResponse<String>> banUser(
+  String groupId,
+  String userId,
+) async {
+  try {
+    final response = await supabase.rpc(
+      'ban_user',
+      params: {
+        'group_id': groupId,
+        'target_user_id': userId,
+      },
+    );
+
+    if (response['success'] == true) {
+      return SupabaseResponse(success: true, data: 'banned');
+    }
+
+    return SupabaseResponse(
+      success: false,
+      error: response['error']?.toString(),
+    );
+  } catch (err) {
+    return SupabaseResponse(
+      success: false,
+      error: 'Error banning user: $err',
+    );
+  }
+}
+
+Future<SupabaseResponse<String>> unbanUser(
+    String groupId,
+    String userId,
+    ) async {
+  try {
+    final response = await supabase.rpc(
+      'unban_user',
+      params: {
+        'group_id': groupId,
+        'target_user_id': userId,
+      },
+    );
+
+    if (response['success'] == true) {
+      return SupabaseResponse(success: true, data: 'unbanned');
+    }
+
+    return SupabaseResponse(
+      success: false,
+      error: response['error']?.toString(),
+    );
+  } catch (err) {
+    return SupabaseResponse(
+      success: false,
+      error: 'Error banning user: $err',
+    );
   }
 }
 
 /// Edit the profile picture of the current user.
-Future<SupabaseResponse<Group>> editGroupIcon(File imageFile, String groupId) async {
+Future<SupabaseResponse<Group>> editGroupIcon(
+    File imageFile, String groupId) async {
   try {
     // Upload or update the image
     final storage = supabase.storage.from("group-icons");
@@ -199,8 +291,7 @@ Future<SupabaseResponse<Group>> editGroupIcon(File imageFile, String groupId) as
       );
     }
 
-    final updatedGroup =
-    groupResponse.data!.copyWith(iconUrl: iconUrl ?? '');
+    final updatedGroup = groupResponse.data!.copyWith(iconUrl: iconUrl ?? '');
 
     return SupabaseResponse(success: true, data: updatedGroup);
   } catch (error) {
@@ -211,11 +302,11 @@ Future<SupabaseResponse<Group>> editGroupIcon(File imageFile, String groupId) as
   }
 }
 
-
 /// Get the icon picture of the requested group.
 Future<SupabaseResponse<String>> getGroupIconUrl(String groupId) async {
   // Force refresh
-  final iconUrl = await ProfilePictureCache.of(supabase).refresh(groupId, bucket: 'group-icons');
+  final iconUrl = await ProfilePictureCache.of(supabase)
+      .refresh(groupId, bucket: 'group-icons');
 
   return SupabaseResponse(
     success: true,
@@ -227,7 +318,8 @@ Future<SupabaseResponse<String>> getGroupIconUrl(String groupId) async {
 Future<SupabaseResponse<void>> deleteGroupIcon(String groupId) async {
   try {
     await supabase.storage.from("group-icons").remove([groupId]);
-    await ProfilePictureCache.of(supabase).refresh(groupId, bucket: 'group-icons');
+    await ProfilePictureCache.of(supabase)
+        .refresh(groupId, bucket: 'group-icons');
     return SupabaseResponse(success: true);
   } catch (error) {
     return SupabaseResponse(
@@ -678,7 +770,7 @@ Future<SupabaseResponse<KRAB_User.User>> getUserDetails(String userId) async {
 
     // Get username
     final usernameResponse =
-    await supabase.rpc('get_username', params: {'user_id': userId});
+        await supabase.rpc('get_username', params: {'user_id': userId});
     if (usernameResponse == null || usernameResponse == '') {
       return SupabaseResponse(
           success: false, error: 'Could not get username for this user');
@@ -708,7 +800,6 @@ Future<SupabaseResponse<KRAB_User.User>> getUserDetails(String userId) async {
     );
   }
 }
-
 
 /// Edit the username of the current user.
 Future<SupabaseResponse<void>> editUsername(String newUsername) async {
@@ -741,16 +832,10 @@ Future<SupabaseResponse<void>> editProfilePicture(File imageFile) async {
 
     // Check if a profile picture already exists
     if (await supabase.storage.from("profile-pictures").exists(user.id)) {
-      await supabase.storage
-          .from("profile-pictures")
-          .update(user.id, imageFile,
+      await supabase.storage.from("profile-pictures").update(user.id, imageFile,
           fileOptions: const FileOptions(contentType: 'image/jpeg'));
-    }
-
-    else {
-      await supabase.storage
-          .from("profile-pictures")
-          .upload(user.id, imageFile,
+    } else {
+      await supabase.storage.from("profile-pictures").upload(user.id, imageFile,
           fileOptions: const FileOptions(contentType: 'image/jpeg'));
     }
 
