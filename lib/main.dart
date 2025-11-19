@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import 'package:krab/services/supabase.dart';
 import 'package:krab/services/fcm_helper.dart';
@@ -316,8 +317,20 @@ class MyAppState extends State<MyApp> {
       scaffoldMessengerKey: scaffoldMessengerKey,
       title: 'KRAB',
       theme: ThemeData(
+        actionIconTheme: ActionIconThemeData(
+          backButtonIconBuilder: (context) {
+            return const Icon(
+              Icons.arrow_back_ios_new_rounded,
+              fill: 1,
+              size: 24,
+            );
+          },
+        ),
         colorScheme: GlobalThemeData.darkColorScheme,
         useMaterial3: true,
+        fontFamily: GoogleFonts.rubik(fontWeight: FontWeight.w400).fontFamily,
+        iconTheme: const IconThemeData(
+            weight: 650),
       ),
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,

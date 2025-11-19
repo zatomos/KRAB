@@ -14,10 +14,10 @@ class GlobalThemeData {
     error: Colors.redAccent,
     onError: Colors.white,
     surface: Color(0xff181818),
-    surfaceBright: Color(0xff2f2f2f),
+    surfaceBright: Color(0xff242424),
     surfaceTint: Color(0xFF1B1B1B),
     onSurface: Color(0xffe1e1e1),
-    onSurfaceVariant: Color(0xffa1a1a1),
+    onSurfaceVariant: Color(0xffbebebe),
     brightness: Brightness.dark,
   );
 

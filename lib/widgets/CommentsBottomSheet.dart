@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/widgets/UserAvatar.dart';
@@ -75,7 +76,6 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
     });
   }
 
-  /// When no comment exists for the current user, call postComment.
   Future<void> _postComment() async {
     final text = _newCommentController.text;
     if (text.isEmpty) return;
@@ -97,7 +97,6 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
     }
   }
 
-  /// Update comment using updateComment(groupId, imageId, text).
   Future<void> _updateComment() async {
     final text = _newCommentController.text;
     if (text.isEmpty || _editingCommentIndex == null) return;
@@ -120,7 +119,6 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
     }
   }
 
-  /// Delete comment using deleteComment(groupId, imageId).
   Future<void> _deleteComment(int index) async {
     final response = await deleteComment(widget.imageId, widget.groupId);
     if (response.success) {
@@ -135,153 +133,141 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
     }
   }
 
+  Widget _buildCommentItem(BuildContext context, int index) {
+    final comment = _comments[index];
+    final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+
+    return FutureBuilder<KRAB_User.User>(
+      future: getUserDetails(comment.userId).then((response) {
+        if (response.success && response.data != null) {
+          return response.data!;
+        }
+        return KRAB_User.User(id: comment.userId, username: "");
+      }),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const ListTile(
+            leading: CircularProgressIndicator(),
+            title: Text("Loading..."),
+          );
+        }
+
+        final postUser = snapshot.data!;
+
+        final isCurrentUser = (comment.userId == currentUserId);
+
+        if (isCurrentUser) {
+          return ListTile(
+            leading: UserAvatar(postUser, radius: 20),
+            title: Text(postUser.username),
+            subtitle: Text(comment.text),
+            trailing: PopupMenuButton<String>(
+              color: Theme.of(context).colorScheme.surfaceBright,
+              onSelected: (value) {
+                if (value == 'edit') {
+                  setState(() {
+                    _editingCommentIndex = index;
+                    _newCommentController.text = comment.text;
+                  });
+                } else if (value == 'delete') {
+                  _deleteComment(index);
+                }
+              },
+              itemBuilder: (context) => [
+                PopupMenuItem(value: 'edit', child: Text(context.l10n.edit)),
+                PopupMenuItem(value: 'delete', child: Text(context.l10n.delete)),
+              ],
+            ),
+          );
+        }
+
+        return ListTile(
+          leading: UserAvatar(postUser, radius: 20),
+          title: Text(postUser.username),
+          subtitle: Text(comment.text),
+        );
+      },
+    );
+  }
+
+
   @override
   Widget build(BuildContext context) {
     final currentUserId = Supabase.instance.client.auth.currentUser?.id;
     final alreadyCommented =
     _comments.any((comment) => comment.userId == currentUserId);
 
-    return Padding(
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).viewInsets.bottom,
-        top: 16,
-        left: 16,
-        right: 16,
-      ),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () {
-          // If in edit mode, clear it when user taps outside.
-          if (_editingCommentIndex != null) {
-            setState(() {
-              _editingCommentIndex = null;
-              _newCommentController.clear();
-            });
-          }
-          FocusScope.of(context).unfocus();
-        },
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Header for comments modal
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(context.l10n.comments,
-                      style:
-                      const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.of(context).pop()),
-                ],
-              ),
-              // Display comments list
-              _loading
-                  ? const SizedBox(
-                  height: 200,
-                  child: Center(child: CircularProgressIndicator()))
-                  : _comments.isEmpty
-                  ? SizedBox(
-                  height: 100,
-                  child: Center(child: Text(context.l10n.no_comments)))
-                  : SizedBox(
-                height: 300,
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.of(context).viewInsets.bottom,
+          top: 16,
+          left: 16,
+          right: 16,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Header
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(context.l10n.comments,
+                    style: const TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.bold)),
+                IconButton(
+                  icon: const Icon(Symbols.close_rounded, color: Colors.white),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
+            // Comments list
+            if (_loading)
+              const SizedBox(
+                height: 200,
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (_comments.isEmpty)
+              SizedBox(
+                height: 100,
+                child: Center(child: Text(context.l10n.no_comments)),
+              )
+            else
+              Flexible(
                 child: ListView.builder(
+                  shrinkWrap: true,
                   itemCount: _comments.length,
-                  itemBuilder: (context, index) {
-                    final comment = _comments[index];
-                    return FutureBuilder<KRAB_User.User>(
-                      future: getUserDetails(comment.userId).then((response) {
-                        if (response.success &&
-                            response.data != null) {
-                          return response.data ?? KRAB_User.User(
-                              id: comment.userId,
-                              username: "");
-                        }
-                        return KRAB_User.User(
-                            id: comment.userId,
-                            username: "");
-                      }),
-                      builder: (context, snapshot) {
-                        if (!snapshot.hasData) {
-                          return const ListTile(
-                            leading: CircularProgressIndicator(),
-                            title: Text("Loading..."),
-                          );
-                        }
-                        final postUser = snapshot.data;
-                        if (comment.userId == currentUserId) {
-                          return ListTile(
-                            leading: UserAvatar(postUser!, radius: 20),
-                            title: Text(postUser.username),
-                            subtitle: Text(comment.text),
-                            trailing: PopupMenuButton<String>(
-                              onSelected: (value) {
-                                if (value == 'edit') {
-                                  setState(() {
-                                    _editingCommentIndex = index;
-                                    _newCommentController.text =
-                                        comment.text;
-                                  });
-                                } else if (value == 'delete') {
-                                  _deleteComment(index);
-                                }
-                              },
-                              itemBuilder: (context) => [
-                                PopupMenuItem(
-                                  value: 'edit',
-                                  child: Text(context.l10n.edit)
-                                ),
-                                PopupMenuItem(
-                                  value: 'delete',
-                                  child: Text(context.l10n.delete)
-                                ),
-                              ],
-                            ),
-                          );
-                        } else {
-                          return ListTile(
-                            leading: UserAvatar(postUser!, radius: 20),
-                            title: Text(postUser.username),
-                            subtitle: Text(comment.text),
-                          );
-                        }
-                      },
-                    );
-                  },
+                  itemBuilder: _buildCommentItem,
                 ),
               ),
-              if ((currentUserId != widget.uploaderId) &&
-                  (_editingCommentIndex != null || !alreadyCommented))
-                Row(
-                  children: [
-                    Expanded(
-                      child: RoundedInputField(
-                        controller: _newCommentController,
-                        capitalizeSentences: true,
-                        hintText: _editingCommentIndex != null
-                            ? context.l10n.edit_comment
-                            : context.l10n.post_comment,
-                      ),
+
+            const SizedBox(height: 20),
+
+            // Input row
+            if ((currentUserId != widget.uploaderId) &&
+                (_editingCommentIndex != null || !alreadyCommented))
+              Row(
+                children: [
+                  Expanded(
+                    child: RoundedInputField(
+                      controller: _newCommentController,
+                      capitalizeSentences: true,
+                      hintText: _editingCommentIndex != null
+                          ? context.l10n.edit_comment
+                          : context.l10n.post_comment,
                     ),
-                    const SizedBox(width: 8),
-                    IconButton(
-                      onPressed: () {
-                        if (_editingCommentIndex != null) {
-                          _updateComment();
-                        } else {
-                          _postComment();
-                        }
-                      },
-                      icon: const Icon(Icons.send),
-                    ),
-                  ],
-                )
-              else
-                const SizedBox(height: 16),
-            ],
-          ),
+                  ),
+                  IconButton(
+                    onPressed:
+                    _editingCommentIndex != null ? _updateComment : _postComment,
+                    icon: const Icon(Symbols.send_rounded, color: Colors.white),
+                  ),
+                ],
+              ),
+          ],
         ),
       ),
     );

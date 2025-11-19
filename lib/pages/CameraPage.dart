@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:krab/widgets/FloatingSnackBar.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/services/supabase.dart';
@@ -607,7 +608,7 @@ class CameraPageState extends State<CameraPage> {
                     decoration: const BoxDecoration(
                         shape: BoxShape.circle, color: Colors.white12),
                     child: IconButton(
-                      icon: const Icon(Icons.group_rounded,
+                      icon: const Icon(Symbols.group_rounded,
                           color: Colors.white, size: 30),
                       onPressed: () {
                         Navigator.push(
@@ -626,7 +627,7 @@ class CameraPageState extends State<CameraPage> {
                     decoration: const BoxDecoration(
                         shape: BoxShape.circle, color: Colors.white12),
                     child: IconButton(
-                      icon: const Icon(Icons.upload_rounded,
+                      icon: const Icon(Symbols.upload_rounded,
                           color: Colors.white, size: 30),
                       onPressed: _sendPictureFromStorage,
                     ),
@@ -657,7 +658,7 @@ class CameraPageState extends State<CameraPage> {
                           )
                         : IconButton(
                             icon: const Icon(
-                              Icons.account_circle_rounded,
+                              Symbols.account_circle_rounded,
                               color: Colors.white,
                               size: 30,
                             ),
@@ -687,7 +688,7 @@ class CameraPageState extends State<CameraPage> {
                       IconButton(
                         onPressed: _switchFlashLight,
                         icon: Icon(
-                            _isFlashOn ? Icons.flash_on : Icons.flash_off,
+                            _isFlashOn ? Symbols.flash_on_rounded : Symbols.flash_off_rounded,
                             color: Colors.white),
                       ),
                       IconButton(
@@ -703,7 +704,7 @@ class CameraPageState extends State<CameraPage> {
                       // Flip front/back
                       IconButton(
                         onPressed: _flipFrontBack,
-                        icon: const Icon(Icons.flip_camera_android_rounded,
+                        icon: const Icon(Symbols.flip_camera_android_rounded,
                             color: Colors.white),
                       ),
                     ],

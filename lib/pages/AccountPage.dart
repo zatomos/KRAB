@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
+import 'package:material_symbols_icons/symbols.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/themes/GlobalThemeData.dart';
@@ -13,6 +15,7 @@ import 'package:krab/widgets/RectangleButton.dart';
 import 'package:krab/widgets/UserAvatar.dart';
 import 'package:krab/widgets/FloatingSnackBar.dart';
 import 'package:krab/widgets/RoundedInputField.dart';
+import 'package:krab/widgets/SoftButton.dart';
 import 'LoginPage.dart';
 
 class AccountPage extends StatefulWidget {
@@ -31,10 +34,13 @@ class AccountPageState extends State<AccountPage> {
 
   bool autoImageSave = false;
 
+  String appVersion = "";
+
   @override
   void initState() {
     super.initState();
     _loadUserProfile();
+    _loadAppVersion();
   }
 
   Future<void> _loadUserProfile() async {
@@ -79,6 +85,13 @@ class AccountPageState extends State<AccountPage> {
     });
   }
 
+  Future<void> _loadAppVersion() async {
+    final packageInfo = await PackageInfo.fromPlatform();
+    setState(() {
+      appVersion = packageInfo.version;
+    });
+  }
+
   Future<void> _logout() async {
     await logOut();
     Navigator.of(context).pushReplacement(
@@ -97,11 +110,12 @@ class AccountPageState extends State<AccountPage> {
           content: RoundedInputField(
               controller: _usernameController, hintText: context.l10n.username),
           actions: [
-            TextButton(
+            SoftButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: Text(context.l10n.cancel),
+              label: context.l10n.cancel,
+              color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
             ),
-            ElevatedButton(
+            SoftButton(
               onPressed: () {
                 final response = editUsername(_usernameController.text);
                 Navigator.of(context).pop(_usernameController.text);
@@ -120,7 +134,8 @@ class AccountPageState extends State<AccountPage> {
                   }
                 });
               },
-              child: Text(context.l10n.save),
+              label: context.l10n.save,
+              color: GlobalThemeData.darkColorScheme.primary,
             ),
           ],
         );
@@ -135,13 +150,14 @@ class AccountPageState extends State<AccountPage> {
         return AlertDialog(
           title: Text(context.l10n.edit_pfp_title),
           actions: [
-            TextButton(
+            SoftButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: Text(context.l10n.cancel),
+              label: context.l10n.cancel,
+              color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
             ),
 
             // Edit pfp
-            ElevatedButton(
+            SoftButton(
                 onPressed: () {
                   pickCropPfp().then((file) {
                     if (file != null) {
@@ -183,15 +199,15 @@ class AccountPageState extends State<AccountPage> {
                     }
                   });
                 },
-                child: Text((user.pfpUrl.isEmpty)
+                label: (user.pfpUrl.isEmpty)
                     ? context.l10n.add
                     : context.l10n.edit,
-                )
+                color: GlobalThemeData.darkColorScheme.primary
             ),
 
             // Delete pfp
             if (user.pfpUrl.isNotEmpty)
-              ElevatedButton(
+              SoftButton(
                 onPressed: () {
                   // Delete profile picture from DB
                   final response = deleteProfilePicture();
@@ -214,7 +230,8 @@ class AccountPageState extends State<AccountPage> {
                     }
                   });
                 },
-                child: Text(context.l10n.delete),
+                label: context.l10n.delete,
+                color: Colors.redAccent,
               )
           ],
         );
@@ -253,9 +270,11 @@ class AccountPageState extends State<AccountPage> {
   Scaffold build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text(context.l10n.account_page_title)),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
+      body: Column(
+        children: [
+          // Scrollable content
+          Expanded(
+            child: SingleChildScrollView(
               padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -271,18 +290,21 @@ class AccountPageState extends State<AccountPage> {
                             radius: 20,
                             backgroundColor: Colors.white,
                             child: IconButton(
-                              icon: const Icon(Icons.edit,
-                                  size: 20, color: Colors.black),
-                              onPressed: () {
-                                openEditPfpDialog();
-                              },
+                              icon: const Icon(
+                                Symbols.edit_rounded,
+                                size: 20,
+                                color: Colors.black,
+                              ),
+                              onPressed: openEditPfpDialog,
                             ),
                           ),
                         ),
                       ],
                     ),
                   ),
+
                   const SizedBox(height: 20),
+
                   GestureDetector(
                     onTap: openEditUsernameDialog,
                     child: Stack(
@@ -300,7 +322,6 @@ class AccountPageState extends State<AccountPage> {
                         Center(
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
                               Opacity(
                                 opacity: 0,
@@ -314,10 +335,12 @@ class AccountPageState extends State<AccountPage> {
                               ),
                               Transform.translate(
                                 offset: const Offset(20, -2),
-                                child: Icon(Icons.keyboard_arrow_right_rounded,
-                                    size: 40,
-                                    color: GlobalThemeData
-                                        .darkColorScheme.onSurfaceVariant),
+                                child: Icon(
+                                  Icons.keyboard_arrow_right_rounded,
+                                  size: 40,
+                                  color: GlobalThemeData
+                                      .darkColorScheme.onSurfaceVariant,
+                                ),
                               ),
                             ],
                           ),
@@ -328,20 +351,19 @@ class AccountPageState extends State<AccountPage> {
 
                   const SizedBox(height: 40),
 
-                  // Email Field
                   AbsorbPointer(
                     child: TextField(
                       controller: _emailController,
                       decoration: InputDecoration(
                         labelText: context.l10n.email,
-                        prefixIcon: const Icon(Icons.email),
+                        prefixIcon: const Icon(Symbols.email_rounded, fill: 1),
                       ),
                       readOnly: true,
                     ),
                   ),
+
                   const SizedBox(height: 50),
 
-                  // Settings Section
                   Padding(
                     padding: const EdgeInsets.only(left: 8.0),
                     child: Text(
@@ -352,31 +374,44 @@ class AccountPageState extends State<AccountPage> {
                       ),
                     ),
                   ),
+
                   const SizedBox(height: 10),
 
                   SwitchListTile(
                     title: Text(context.l10n.auto_save_imgs),
                     subtitle: Text(context.l10n.auto_save_imgs_description),
                     value: autoImageSave,
-                    onChanged: (bool value) {
+                    onChanged: (value) {
                       UserPreferences.setAutoImageSave(value);
-                      setState(() {
-                        autoImageSave = value;
-                      });
+                      setState(() => autoImageSave = value);
                     },
                   ),
 
                   const SizedBox(height: 80),
 
-                  // Logout Button
                   RectangleButton(
                     label: context.l10n.log_out,
                     onPressed: _logout,
                     backgroundColor: Colors.redAccent,
                   ),
+
+                  const SizedBox(height: 20),
                 ],
               ),
             ),
+          ),
+
+          // Bottom text stays here if possible
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Text(
+              'KRAB v$appVersion',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.grey),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

@@ -5,7 +5,7 @@ import 'package:image/image.dart' as img;
 import 'package:home_widget/home_widget.dart';
 import 'package:path_provider/path_provider.dart';
 
-import 'package:krab/filesaver.dart';
+import 'package:krab/services/file_saver.dart';
 import 'package:krab/services/supabase.dart';
 import 'package:krab/UserPreferences.dart';
 

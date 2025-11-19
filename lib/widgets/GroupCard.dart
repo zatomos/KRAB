@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/pages/GroupImagesPage.dart';
@@ -10,7 +11,7 @@ import 'package:krab/services/supabase.dart';
 
 class GroupCard extends StatefulWidget {
   final Group group;
-  final VoidCallback? onReturn; // Add callback for when user returns
+  final VoidCallback? onReturn;
 
   const GroupCard({super.key, required this.group, this.onReturn});
 
@@ -50,6 +51,21 @@ class _GroupCardState extends State<GroupCard> {
     return response.data!;
   }
 
+  String timeAgo(DateTime date) {
+    final now = DateTime.now();
+    final diff = now.difference(date);
+
+    if (diff.inMinutes < 1) return context.l10n.just_now;
+    if (diff.inMinutes < 60) return context.l10n.minutes_ago(diff.inMinutes);
+    if (diff.inHours < 24) return context.l10n.hours_ago(diff.inHours);
+    if (diff.inDays < 7) return context.l10n.days_ago(diff.inDays);
+    if (diff.inDays < 30) {
+      return context.l10n.weeks_ago((diff.inDays / 7).floor());
+    }
+
+    return context.l10n.months_ago((diff.inDays / 30).floor());
+  }
+
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
@@ -64,54 +80,86 @@ class _GroupCardState extends State<GroupCard> {
         widget.onReturn?.call();
       },
       child: Card(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        elevation: 0,
-        child: ListTile(
-          leading: GroupAvatar(_group, radius: 25),
-          title: Text(
-            _group.name,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-          ),
-          subtitle: FutureBuilder<int>(
-            future: _fetchGroupMemberCount(_group.id),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Text(" ");
-              } else if (snapshot.hasError) {
-                return Text(context.l10n.error_loading_members);
-              } else {
-                final count = snapshot.data ?? 0;
-                return Text(
-                  "$count ${count == 1 ? context.l10n.member_singular : context.l10n.members_plural}",
-                  style: const TextStyle(fontSize: 14, color: Colors.grey),
-                );
-              }
-            },
-          ),
-          trailing: IconButton(
-            onLongPress: () {
-              showSnackBar(context, context.l10n.starred_groups_long_press);
-            },
-            onPressed: () async {
-              if (isFavorite) {
-                await UserPreferences.removeFavoriteGroup(_group.id);
-                showSnackBar(
-                    context, context.l10n.removed_group_favorites(_group.name));
-              } else {
-                await UserPreferences.addFavoriteGroup(_group.id);
-                showSnackBar(
-                    context, context.l10n.added_group_favorites(_group.name));
-              }
-              setState(() => isFavorite = !isFavorite);
-            },
-            icon: Icon(
-              isFavorite ? Icons.star_rounded : Icons.star_border_rounded,
-              color: isFavorite ? Colors.amber : Colors.grey,
-              size: 30,
+          margin: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
+          elevation: 0,
+          child: ListTile(
+            contentPadding: const EdgeInsets.fromLTRB(15, 2, 5, 2),
+            minVerticalPadding: 0,
+            visualDensity: VisualDensity.compact,
+
+            leading: GroupAvatar(_group, radius: 25),
+
+            title: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                // Group name
+                Expanded(
+                  child: Text(
+                    _group.name,
+                    style: const TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.bold),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+
+                const SizedBox(width: 8),
+
+                // Last image time
+                if (widget.group.latestImageAt != null)
+                  Text(
+                    timeAgo(widget.group.latestImageAt!),
+                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+              ],
             ),
-          ),
-        ),
-      ),
+
+            subtitle: FutureBuilder<int>(
+              future: _fetchGroupMemberCount(_group.id),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Text(" ");
+                } else if (snapshot.hasError) {
+                  return Text(context.l10n.error_loading_members);
+                } else {
+                  final count = snapshot.data ?? 0;
+                  return Text(
+                    "$count ${count == 1 ? context.l10n.member_singular : context.l10n.members_plural}",
+                    style: const TextStyle(fontSize: 14, color: Colors.grey),
+                  );
+                }
+              },
+            ),
+
+            // STAR FAVORITE BUTTON (moved closer to right edge)
+            trailing: Padding(
+              padding: EdgeInsets.zero,
+              child: IconButton(
+                constraints: const BoxConstraints(),
+                padding: EdgeInsets.zero,
+                icon: Icon(
+                  Symbols.star_rounded,
+                  color: isFavorite ? Colors.amber : Colors.grey,
+                  fill: isFavorite ? 1 : 0,
+                  size: 28,
+                ),
+                onLongPress: () {
+                  showSnackBar(context, context.l10n.starred_groups_long_press);
+                },
+                onPressed: () async {
+                  if (isFavorite) {
+                    await UserPreferences.removeFavoriteGroup(_group.id);
+                    showSnackBar(context,
+                        context.l10n.removed_group_favorites(_group.name));
+                  } else {
+                    await UserPreferences.addFavoriteGroup(_group.id);
+                    showSnackBar(context,
+                        context.l10n.added_group_favorites(_group.name));
+                  }
+                  setState(() => isFavorite = !isFavorite);
+                },
+              ),
+            ),
+          )),
     );
   }
 }

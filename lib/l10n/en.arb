@@ -140,5 +140,11 @@
   "user_banned_success": "User banned successfully.",
   "error_banning_user": "Error banning user: {errorMsg}",
   "user_unbanned_success": "User unbanned successfully.",
-  "error_unbanning_user": "Error unbanning user: {errorMsg}"
+  "error_unbanning_user": "Error unbanning user: {errorMsg}",
+  "just_now": "Just now",
+  "minutes_ago": "{count}m",
+  "hours_ago": "{count}h",
+  "days_ago": "{count}d",
+  "weeks_ago": "{count}w",
+  "months_ago": "{count}mo"
 }

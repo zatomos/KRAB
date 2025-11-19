@@ -5,8 +5,10 @@ import 'package:krab/themes/GlobalThemeData.dart';
 class RoundedInputField extends StatelessWidget {
   final TextEditingController? controller;
   final String hintText;
+  final String? errorText;
   final bool obscureText;
   final bool capitalizeSentences;
+  final int? maxLength;
   final double borderRadius;
   final Icon? icon;
   final EdgeInsetsGeometry contentPadding;
@@ -15,8 +17,10 @@ class RoundedInputField extends StatelessWidget {
     super.key,
     this.controller,
     this.hintText = '',
+    this.errorText,
     this.obscureText = false,
     this.capitalizeSentences = false,
+    this.maxLength,
     this.borderRadius = 12.0,
     this.icon,
     this.contentPadding =
@@ -33,9 +37,11 @@ class RoundedInputField extends StatelessWidget {
         textCapitalization: capitalizeSentences
             ? TextCapitalization.sentences
             : TextCapitalization.none,
+        maxLength: maxLength,
         decoration: InputDecoration(
           icon: icon,
           labelText: hintText,
+          errorText: errorText,
           contentPadding: contentPadding,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(borderRadius),

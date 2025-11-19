@@ -1,21 +1,22 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:qr_bar_code/qr/src/qr_code.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:krab/widgets/GroupAvatar.dart';
 import 'package:krab/widgets/UserAvatar.dart';
-import 'package:krab/l10n/l10n.dart';
 import 'package:krab/widgets/FloatingSnackBar.dart';
 import 'package:krab/widgets/RectangleButton.dart';
+import 'package:krab/widgets/SoftButton.dart';
 import 'package:krab/widgets/RoundedInputField.dart';
 import 'package:krab/models/Group.dart';
 import 'package:krab/models/GroupMember.dart';
 import 'package:krab/services/supabase.dart';
 import 'package:krab/UserPreferences.dart';
-import '../themes/GlobalThemeData.dart';
+import 'package:krab/themes/GlobalThemeData.dart';
+import 'package:krab/l10n/l10n.dart';
 
 class GroupSettingsPage extends StatefulWidget {
   final Group group;
@@ -117,11 +118,12 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
               ],
             ),
             actions: [
-              TextButton(
+              SoftButton(
                 onPressed: () => Navigator.of(context).pop(),
-                child: Text(context.l10n.cancel),
+                label: context.l10n.cancel,
+                color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
               ),
-              TextButton(
+              SoftButton(
                 onPressed: () async {
                   final newName = controller.text.trim();
                   if (newName.isEmpty) {
@@ -150,7 +152,8 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                     _group = _group.copyWith(name: newName);
                   });
                 },
-                child: Text(context.l10n.save),
+                label: context.l10n.save,
+                color: GlobalThemeData.darkColorScheme.primary,
               ),
             ],
           );
@@ -166,13 +169,14 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
         return AlertDialog(
           title: Text(context.l10n.edit_icon_title),
           actions: [
-            TextButton(
+            SoftButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: Text(context.l10n.cancel),
+              label: context.l10n.cancel,
+              color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
             ),
 
             // Add / edit icon
-            ElevatedButton(
+            SoftButton(
               onPressed: () {
                 pickCropPfp().then((file) async {
                   if (file == null) return;
@@ -200,16 +204,16 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                       color: Colors.green);
                 });
               },
-              child: Text(
+              label:
                 (_group.iconUrl?.isEmpty ?? true)
                     ? context.l10n.add
                     : context.l10n.edit,
-              ),
+              color: GlobalThemeData.darkColorScheme.primary,
             ),
 
             // Delete icon
             if (_group.iconUrl != null && _group.iconUrl!.isNotEmpty)
-              ElevatedButton(
+              SoftButton(
                 onPressed: () async {
                   Navigator.of(context).pop();
 
@@ -230,7 +234,8 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                   showSnackBar(null, context.l10n.icon_deleted_success,
                       color: Colors.green);
                 },
-                child: Text(context.l10n.delete),
+                label: context.l10n.delete,
+                color: Colors.red,
               ),
           ],
         );
@@ -258,11 +263,12 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
           title: Text(title),
           content: Text(content),
           actions: [
-            TextButton(
+            SoftButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: Text(context.l10n.cancel),
+              label: context.l10n.cancel,
+              color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
             ),
-            TextButton(
+            SoftButton(
               onPressed: () async {
                 Navigator.of(context).pop();
 
@@ -283,7 +289,8 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                   );
                 }
               },
-              child: Text(context.l10n.confirm),
+              label: context.l10n.confirm,
+              color: GlobalThemeData.darkColorScheme.primary,
             ),
           ],
         );
@@ -300,16 +307,18 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
           content: Text(context.l10n.ban_user_confirmation),
 
           actions: [
-            TextButton(
+            SoftButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: Text(context.l10n.cancel),
+              label: context.l10n.cancel,
+              color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
             ),
-            TextButton(
+            SoftButton(
               onPressed: () async {
                 Navigator.of(context).pop();
                 await _banUser(userId);
               },
-              child: Text(context.l10n.confirm),
+              label: context.l10n.confirm,
+              color: GlobalThemeData.darkColorScheme.primary,
             ),
           ],
         );
@@ -336,16 +345,17 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
           content: Text(context.l10n.unban_user_confirmation),
 
           actions: [
-            TextButton(
+            SoftButton(
               onPressed: () => Navigator.of(context).pop(),
-              child: Text(context.l10n.cancel),
+              label: context.l10n.cancel,
             ),
-            TextButton(
+            SoftButton(
               onPressed: () async {
                 Navigator.of(context).pop();
                 await _unbanUser(userId);
               },
-              child: Text(context.l10n.confirm),
+              label: context.l10n.confirm,
+              color: GlobalThemeData.darkColorScheme.primary,
             ),
           ],
         );
@@ -372,13 +382,15 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
               title: Text(context.l10n.delete_group),
               content: Text(context.l10n.delete_group_confirmation),
               actions: [
-                TextButton(
+                SoftButton(
                   onPressed: () => Navigator.of(context).pop(false),
-                  child: Text(context.l10n.cancel),
+                  label: context.l10n.cancel,
+                  color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
                 ),
-                TextButton(
+                SoftButton(
                   onPressed: () => Navigator.of(context).pop(true),
-                  child: Text(context.l10n.delete),
+                  label: context.l10n.delete,
+                  color: Colors.red,
                 ),
               ],
             );
@@ -421,7 +433,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
               }
 
               return IconButton(
-                icon: const Icon(Icons.edit),
+                icon: const Icon(Symbols.edit_square),
                 onPressed: () {
                   showMenu(
                     context: context,
@@ -539,7 +551,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                               PopupMenuItem(
                                 child: ListTile(
                                   leading:
-                                      const Icon(Icons.add_moderator_rounded),
+                                      const Icon(Symbols.add_moderator_rounded),
                                   title: Text(context.l10n.promote_user),
                                   onTap: () {
                                     Navigator.pop(context);
@@ -552,7 +564,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                               PopupMenuItem(
                                 child: ListTile(
                                   leading: const Icon(
-                                      Icons.remove_moderator_rounded),
+                                      Symbols.remove_moderator_rounded),
                                   title: Text(context.l10n.demote_user),
                                   onTap: () {
                                     Navigator.pop(context);
@@ -564,7 +576,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                             if ((targetRole != 'banned') && ((currentRole == 'owner') || (currentRole == 'admin' && targetRole == 'member')))
                               PopupMenuItem(
                                 child: ListTile(
-                                  leading: const Icon(Icons.person_off_rounded),
+                                  leading: const Icon(Symbols.person_off_rounded),
                                   title: Text(context.l10n.ban_user),
                                   onTap: () {
                                     Navigator.pop(context);
@@ -575,7 +587,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                             if ((targetRole == 'banned') && (currentRole == 'owner' || currentRole == 'admin'))
                               PopupMenuItem(
                                 child: ListTile(
-                                  leading: const Icon(Icons.person_rounded),
+                                  leading: const Icon(Symbols.person_check_rounded),
                                   title: Text(context.l10n.unban_user),
                                   onTap: () {
                                     Navigator.pop(context);
@@ -588,7 +600,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                               PopupMenuItem(
                                 child: ListTile(
                                   leading: const Icon(
-                                      Icons.workspace_premium_rounded),
+                                      Symbols.crown_rounded),
                                   title: Text(context.l10n.transfer_ownership),
                                   onTap: () {
                                     Navigator.pop(context);
@@ -605,11 +617,11 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                         title: Text(member.user.username),
                         trailing: Icon(
                           targetRole == 'owner'
-                              ? Icons.star_rounded
+                              ? Symbols.crown_rounded
                               : targetRole == 'admin'
-                                  ? Icons.shield_rounded
+                                  ? Symbols.shield_person_rounded
                                   : targetRole == 'banned' ?
-                                      Icons.block_rounded
+                                      Symbols.block_rounded
                                       : null,
                           color: targetRole == 'owner'
                               ? Colors.amber
@@ -618,6 +630,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                                   : targetRole == 'banned' ?
                                       Colors.red
                                       : null,
+                          fill: 1
                         ),
                       ),
                     );
@@ -632,19 +645,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                 height: 64,
                 color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
               ),
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: QRCode(
-                  data: _group.code!.toUpperCase(),
-                  size: MediaQuery.of(context).size.width * 0.32,
-                  backgroundColor: Colors.transparent,
-                ),
-              ),
-              const SizedBox(height: 12),
+
               Text(
                 context.l10n.group_code(_group.code!.toUpperCase()),
                 style:

@@ -6,6 +6,7 @@ class Group {
   final String? code;
   final String? iconUrl;
   final String createdAt;
+  final DateTime? latestImageAt;
 
   Group({
     required this.id,
@@ -13,6 +14,7 @@ class Group {
     this.code,
     this.iconUrl,
     required this.createdAt,
+    this.latestImageAt,
   });
 
   // Convert a JSON Map to a Group object
@@ -23,6 +25,9 @@ class Group {
       code: json['code'] as String?,
       iconUrl: json['icon_url'] as String?,
       createdAt: json['created_at'] as String,
+      latestImageAt: json['latest_image_at'] != null
+          ? DateTime.parse(json['latest_image_at'] as String)
+          : null
     );
   }
 
@@ -32,6 +37,7 @@ class Group {
     String? code,
     String? iconUrl,
     String? createdAt,
+    String? latestImageAt,
   }) {
     return Group(
       id: id ?? this.id,
@@ -39,6 +45,9 @@ class Group {
       code: code ?? this.code,
       iconUrl: iconUrl ?? this.iconUrl,
       createdAt: createdAt ?? this.createdAt,
+      latestImageAt: latestImageAt != null
+          ? DateTime.parse(latestImageAt)
+          : this.latestImageAt,
     );
   }
 
@@ -50,6 +59,7 @@ class Group {
       'code': code,
       'icon_url': iconUrl,
       'created_at': createdAt,
+      'latest_image_at': latestImageAt,
     };
   }
 
@@ -65,6 +75,6 @@ class Group {
 
   @override
   String toString() {
-    return 'Group{id: $id, name: $name, code: $code, icon_url: $iconUrl, createdAt: $createdAt}';
+    return 'Group{id: $id, name: $name, code: $code, icon_url: $iconUrl, createdAt: $createdAt, latestImageAt: $latestImageAt}';
   }
 }

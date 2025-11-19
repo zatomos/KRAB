@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/services/supabase.dart';
 import 'package:krab/themes/GlobalThemeData.dart';
+import 'package:krab/widgets/SoftButton.dart';
+import 'package:krab/widgets/RoundedInputField.dart';
 import 'package:krab/widgets/FloatingSnackBar.dart';
 import 'package:krab/widgets/GroupCard.dart';
 import 'package:krab/models/Group.dart';
@@ -50,10 +53,6 @@ class GroupsPageState extends State<GroupsPage> with WidgetsBindingObserver {
         title: Text(context.l10n.your_groups_page_title),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _refreshData,
-          ),
-          IconButton(
               icon: const Icon(Icons.more_vert_rounded),
               onPressed: () {
                 showMenu(
@@ -63,7 +62,7 @@ class GroupsPageState extends State<GroupsPage> with WidgetsBindingObserver {
                   items: [
                     PopupMenuItem(
                       child: ListTile(
-                        leading: const Icon(Icons.group_add_rounded),
+                        leading: const Icon(Symbols.group_add_rounded),
                         title: Text(context.l10n.create_new_group),
                         onTap: () {
                           Navigator.pop(context);
@@ -80,7 +79,7 @@ class GroupsPageState extends State<GroupsPage> with WidgetsBindingObserver {
                     ),
                     PopupMenuItem(
                       child: ListTile(
-                        leading: const Icon(Icons.groups_2_rounded),
+                        leading: const Icon(Symbols.groups_rounded),
                         title: Text(context.l10n.join_group),
                         onTap: () {
                           Navigator.pop(context);
@@ -156,7 +155,6 @@ class JoinGroupDialog extends StatefulWidget {
 class JoinGroupDialogState extends State<JoinGroupDialog> {
   final TextEditingController _controller = TextEditingController();
   String? error;
-  bool isLoading = false;
 
   Future<void> _joinGroup() async {
     setState(() {
@@ -169,9 +167,6 @@ class JoinGroupDialogState extends State<JoinGroupDialog> {
       });
       return;
     }
-    setState(() {
-      isLoading = true;
-    });
     try {
       final response = await joinGroup(code);
       if (!response.success) {
@@ -187,10 +182,6 @@ class JoinGroupDialogState extends State<JoinGroupDialog> {
       setState(() {
         error = e.toString();
       });
-    } finally {
-      setState(() {
-        isLoading = false;
-      });
     }
   }
 
@@ -201,30 +192,24 @@ class JoinGroupDialogState extends State<JoinGroupDialog> {
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          TextField(
+          RoundedInputField(
             controller: _controller,
             maxLength: 8,
-            decoration: InputDecoration(
-              labelText: context.l10n.enter_group_code,
-              errorText: error,
-            ),
+            hintText: context.l10n.enter_group_code,
+            errorText: error,
           ),
         ],
       ),
       actions: [
-        TextButton(
-          onPressed: isLoading ? null : () => Navigator.of(context).pop(),
-          child: Text(context.l10n.cancel),
+        SoftButton(
+          onPressed: () => Navigator.of(context).pop(),
+          label: context.l10n.cancel,
+          color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
         ),
-        ElevatedButton(
-          onPressed: isLoading ? null : _joinGroup,
-          child: isLoading
-              ? const SizedBox(
-            width: 20,
-            height: 20,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          )
-              : Text(context.l10n.join),
+        SoftButton(
+          onPressed: _joinGroup,
+          label: context.l10n.join,
+          color: GlobalThemeData.darkColorScheme.primary,
         ),
       ],
     );
@@ -242,7 +227,6 @@ class CreateGroupDialog extends StatefulWidget {
 class CreateGroupDialogState extends State<CreateGroupDialog> {
   final TextEditingController _controller = TextEditingController();
   String? error;
-  bool isLoading = false;
 
   Future<void> _createGroup() async {
     setState(() {
@@ -256,10 +240,6 @@ class CreateGroupDialogState extends State<CreateGroupDialog> {
       });
       return;
     }
-
-    setState(() {
-      isLoading = true;
-    });
 
     try {
       final response = await createGroup(name);
@@ -276,10 +256,6 @@ class CreateGroupDialogState extends State<CreateGroupDialog> {
       setState(() {
         error = e.toString();
       });
-    } finally {
-      setState(() {
-        isLoading = false;
-      });
     }
   }
 
@@ -290,29 +266,23 @@ class CreateGroupDialogState extends State<CreateGroupDialog> {
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          TextField(
+          RoundedInputField(
             controller: _controller,
-            decoration: InputDecoration(
-              labelText: context.l10n.enter_group_name,
-              errorText: error,
-            ),
+            hintText: context.l10n.enter_group_name,
+            errorText: error,
           ),
         ],
       ),
       actions: [
-        TextButton(
-          onPressed: isLoading ? null : () => Navigator.of(context).pop(),
-          child: Text(context.l10n.cancel),
+        SoftButton(
+          onPressed: () => Navigator.of(context).pop(),
+          label: context.l10n.cancel,
+          color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
         ),
-        ElevatedButton(
-            onPressed: isLoading ? null : _createGroup,
-            child: isLoading
-                ? const SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-                : Text(context.l10n.create)
+        SoftButton(
+            onPressed: _createGroup,
+            label: context.l10n.create,
+            color: GlobalThemeData.darkColorScheme.primary
         ),
       ],
     );

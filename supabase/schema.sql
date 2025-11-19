@@ -749,21 +749,29 @@ CREATE FUNCTION public.get_group_members(group_id uuid) RETURNS jsonb
     AS $$DECLARE
     members JSONB;
 BEGIN
+    WITH member_data AS (
+        SELECT
+            m.user_id,
+            m.role,
+            get_username(m.user_id::text) AS username
+        FROM "public"."Members" m
+        WHERE m.group_id = get_group_members.group_id
+    )
     SELECT jsonb_agg(
         jsonb_build_object(
-            'user_id', m.user_id,
-            'role', m.role,
-            'username', get_username(m.user_id::text)
+            'user_id', user_id,
+            'role', role,
+            'username', username
         )
+        ORDER BY username ASC
     )
     INTO members
-    FROM "public"."Members" m
-    WHERE m.group_id = get_group_members.group_id;
+    FROM member_data;
+
     IF members IS NULL THEN
         members := '[]'::jsonb;
     END IF;
 
-    -- Return
     RETURN jsonb_build_object(
         'success', true,
         'members', members
@@ -911,10 +919,8 @@ CREATE FUNCTION public.get_user_groups() RETURNS jsonb
   current_user_id UUID;
   user_groups JSONB;
 BEGIN
-  -- Get the user ID
   current_user_id := auth.uid();
 
-  -- Check if user is authenticated
   IF current_user_id IS NULL THEN
     RETURN jsonb_build_object(
       'success', false,
@@ -922,20 +928,34 @@ BEGIN
     );
   END IF;
 
-  -- Get all groups
+  -- Compute groups
+  WITH group_data AS (
+    SELECT
+      g.id,
+      g.name,
+      CASE WHEN gm.role IN ('owner','admin') THEN g.code ELSE NULL END AS code,
+      g.created_at,
+      MAX(ig.uploaded_at) AS latest_image_at
+    FROM "Groups" g
+    JOIN "Members" gm ON g.id = gm.group_id
+    LEFT JOIN "ImageGroups" ig ON ig.group_id = g.id
+    WHERE gm.user_id = current_user_id
+      AND gm.role <> 'banned'
+    GROUP BY g.id, g.name, g.code, g.created_at, gm.role
+  )
+
   SELECT jsonb_agg(
     jsonb_build_object(
-      'id', g.id,
-      'name', g.name,
-      'code', CASE WHEN gm.role IN ('owner','admin') THEN g.code ELSE NULL END,
-      'created_at', g.created_at
+      'id', id,
+      'name', name,
+      'code', code,
+      'created_at', created_at,
+      'latest_image_at', latest_image_at
     )
+    ORDER BY latest_image_at DESC NULLS LAST
   )
   INTO user_groups
-  FROM "Groups" g
-  JOIN "Members" gm ON g.id = gm.group_id
-  WHERE gm.user_id = current_user_id
-    AND gm.role <> 'banned';          -- exclude banned users
+  FROM group_data;
 
   RETURN jsonb_build_object(
     'success', true,
@@ -1274,8 +1294,7 @@ $$;
 CREATE FUNCTION public.register_uploaded_image(image_id uuid, group_ids text[], image_description text) RETURNS jsonb
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public'
-    AS $$
-declare
+    AS $$declare
   current_user_id uuid;
   authorized_count integer := 0;
 begin
@@ -1284,7 +1303,7 @@ begin
     return jsonb_build_object('success', false, 'error', 'User not authenticated');
   end if;
 
-  -- Insert/ensure image metadata (id already used for storage key)
+  -- Insert/ensure image metadata
   insert into "Images" (id, uploaded_by, description)
   values (register_uploaded_image.image_id, current_user_id, register_uploaded_image.image_description)
   on conflict (id) do nothing;
@@ -1313,11 +1332,8 @@ begin
 
 exception
   when others then
-    -- If something went wrong after creating the image row, you can decide
-    -- whether to clean it up. Usually we keep it and let client retry linking.
     return jsonb_build_object('success', false, 'error', sqlerrm);
-end;
-$$;
+end;$$;
 
 
 --
@@ -2292,7 +2308,8 @@ CREATE TABLE public."Groups" (
 CREATE TABLE public."ImageGroups" (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     image_id uuid NOT NULL,
-    group_id uuid DEFAULT gen_random_uuid()
+    group_id uuid DEFAULT gen_random_uuid(),
+    uploaded_at timestamp with time zone DEFAULT now()
 );
 
 

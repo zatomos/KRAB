@@ -140,5 +140,11 @@
   "user_banned_success": "Utilisateur banni avec succès.",
   "error_banning_user": "Erreur lors du bannissement de l'utilisateur: {errorMsg}",
   "user_unbanned_success": "Utilisateur débanni avec succès.",
-  "error_unbanning_user": "Erreur lors du débannissement de l'utilisateur: {errorMsg}"
+  "error_unbanning_user": "Erreur lors du débannissement de l'utilisateur: {errorMsg}",
+  "just_now": "Maintenant",
+  "minutes_ago": "{count}m",
+  "hours_ago": "{count}h",
+  "days_ago": "{count}j",
+  "weeks_ago": "{count}sem",
+  "months_ago": "{count}mo"
 }

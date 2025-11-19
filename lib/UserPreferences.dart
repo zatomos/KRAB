@@ -1,6 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:krab/filesaver.dart';
+import 'package:krab/services/file_saver.dart';
 
 class UserPreferences {
   static SharedPreferences? _preferences;
