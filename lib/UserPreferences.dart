@@ -1,4 +1,5 @@
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'package:krab/services/file_saver.dart';
 
@@ -15,25 +16,12 @@ class UserPreferences {
   Future<void> initPrefs() async {
     _preferences = await SharedPreferences.getInstance();
 
-    supabaseUrl = _preferences?.getString('supabaseUrl') ??
-        '';
-    supabaseAnonKey = _preferences?.getString('supabaseAnonKey') ??
-        '';
+    supabaseUrl = dotenv.env['SUPABASE_URL'] ?? '';
+    supabaseAnonKey = dotenv.env['SUPABASE_ANON_KEY'] ?? '';
     autoImageSave = _preferences?.getBool('autoImageSave') ?? false;
     isFirstLaunch = _preferences?.getBool('isFirstLaunch') ?? true;
     favoriteGroups = _preferences?.getStringList('favoriteGroups') ?? [];
     widgetBitmapLimit = 10 * 1024 * 1024; // Default 10 MB
-  }
-
-  static Future<void> setSupabaseConfig(String url, String anonKey) async {
-    await _preferences?.setString('supabaseUrl', url);
-    await _preferences?.setString('supabaseAnonKey', anonKey);
-  }
-
-  static Future<String> getSupabaseConfig() async {
-    final url = _preferences?.getString('supabaseUrl') ?? '';
-    final anonKey = _preferences?.getString('supabaseAnonKey') ?? '';
-    return 'URL: $url\nAnon Key: $anonKey';
   }
 
   static Future<int> getWidgetBitmapLimit() async {

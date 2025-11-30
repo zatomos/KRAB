@@ -1,7 +1,7 @@
 {
   "@@locale": "fr",
   "welcome_title": "Bienvenue sur KRAB!",
-  "welcome_subtitle": "Pour rester connecté, n'oubliez pas d'ajouter notre widget à votre écran d'accueil.",
+  "welcome_subtitle": "Afin d'obtenir la meilleure expérience, prenez un instant pour vérifier ces réglages.",
   "background_widget_description": "Afin de garantir que le widget se mette à jour correctement, il est recommandé d'autoriser l'application à s'exécuter en arrière-plan.",
   "background_widget_allow": "Autoriser l'activité en arrière-plan",
   "go_button": "C'est parti!",
@@ -146,5 +146,20 @@
   "hours_ago": "{count}h",
   "days_ago": "{count}j",
   "weeks_ago": "{count}sem",
-  "months_ago": "{count}mo"
+  "months_ago": "{count}mo",
+  "add_krab_widget": "Ajouter le widget KRAB",
+  "krab_widget_experience_desc": "Pour profiter de l'expérience complète, ajoutez le widget KRAB à votre écran d'accueil. \nVous pourrez ainsi voir les dernières images postées directement depuis votre écran d'accueil.",
+  "add_widget": "Ajouter le widget",
+  "widget_configuration": "Configuration du widget",
+  "widget_configuration_desc": "Choisissez le type d'affichage du widget",
+  "image_only": "Image seulement",
+  "image_with_description": "Image et sa description",
+  "widget_added_success": "Widget KRAB ajouté avec succès! Vous pouvez désormais le retrouver sur votre écran d'accueil.",
+  "follow_these_steps": "Suivez ces étapes :",
+  "krab_widget_instruction_1": "Allez sur votre écran d'accueil",
+  "krab_widget_instruction_2": "Appuyez longuement sur une zone vide",
+  "krab_widget_instruction_3": "Selectionnez 'Widgets' dans le menu",
+  "krab_widget_instruction_4": "Trouvez et ajoutez le widget KRAB",
+  "steps_vary_launcher": "Les étapes peuvent varier selon le lanceur d'applications. Veuillez vous référer aux instructions de votre lanceur si nécessaire.",
+  "got_it": "Compris!"
 }

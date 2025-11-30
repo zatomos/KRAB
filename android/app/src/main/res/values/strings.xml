@@ -3,6 +3,4 @@
     <string name="appwidget_text">EXAMPLE</string>
     <string name="configure">Configure</string>
     <string name="add_widget">Add widget</string>
-    <string name="app_widget_description">Most recent image.</string>
-    <string name="app_widget_with_text_description">Most recent image and its description.</string>
-</resources>
+    <string name="app_widget_description">View your friends\' pictures at a glance.</string></resources>

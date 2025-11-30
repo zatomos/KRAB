@@ -1,7 +1,7 @@
 {
   "@@locale": "en",
   "welcome_title": "Welcome to KRAB!",
-  "welcome_subtitle": "To stay connected, remember to add our widget to your home screen.",
+  "welcome_subtitle": "To get the best experience, please review these quick settings.",
   "background_widget_description": "To ensure that the widget updates properly, it is recommended to allow the app to run in the background.",
   "background_widget_allow": "Allow background activity",
   "go_button": "Let's go!",
@@ -146,5 +146,20 @@
   "hours_ago": "{count}h",
   "days_ago": "{count}d",
   "weeks_ago": "{count}w",
-  "months_ago": "{count}mo"
+  "months_ago": "{count}mo",
+  "add_krab_widget": "Add KRAB widget",
+  "krab_widget_experience_desc": "For the full experience, please add the KRAB home screen widget. \nThis lets you see new images instantly on your home screen.",
+  "add_widget": "Add widget",
+  "widget_configuration": "Widget Configuration",
+  "widget_configuration_desc": "Choose widget display style:",
+  "image_only": "Image Only",
+  "image_with_description": "Image with Description",
+  "widget_added_success": "KRAB widget added successfully! You can find it on your home screen.",
+  "follow_these_steps": "Follow these steps:",
+  "krab_widget_instruction_1": "Go to your home screen",
+  "krab_widget_instruction_2": "Long-press on an empty area",
+  "krab_widget_instruction_3": "Select 'Widgets' from the menu",
+  "krab_widget_instruction_4": "Find and add KRAB widget",
+  "steps_vary_launcher": "Steps may vary by launcher. Please refer to your launcher's instructions if needed.",
+  "got_it": "Got it!"
 }

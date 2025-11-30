@@ -3,6 +3,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/widgets/FloatingSnackBar.dart';
+import 'package:krab/widgets/SoftButton.dart';
 import 'package:krab/services/update_service.dart';
 import 'package:krab/themes/GlobalThemeData.dart';
 
@@ -163,46 +164,49 @@ class _UpdateCheckerState extends State<UpdateChecker> {
             ),
             actions: [
               if (!info.forceUpdate && !isDownloading)
-                TextButton(
+                SoftButton(
                     onPressed: () => Navigator.pop(context),
-                    child: Text(context.l10n.later)),
-              ElevatedButton(
-                  onPressed: isDownloading
-                      ? null
-                      : () async {
-                          setDialogState(() {
-                            isDownloading = true;
-                            progress = 0.0;
-                          });
+                    label: context.l10n.later,
+                    color: GlobalThemeData.darkColorScheme.onSurfaceVariant),
+              isDownloading
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : SoftButton(
+                      onPressed: isDownloading
+                          ? null
+                          : () async {
+                              setDialogState(() {
+                                isDownloading = true;
+                                progress = 0.0;
+                              });
 
-                          final success =
-                              await _updateService.downloadAndInstall(
-                            info.downloadUrl,
-                            (p) => setDialogState(() => progress = p),
-                          );
+                              final success =
+                                  await _updateService.downloadAndInstall(
+                                info.downloadUrl,
+                                (p) => setDialogState(() => progress = p),
+                              );
 
-                          if (success) {
-                            if (context.mounted) {
-                              Navigator.pop(context);
-                              showSnackBar(
-                                  context, context.l10n.installing_update,
-                                  color: Colors.orangeAccent);
-                            }
-                          } else {
-                            setDialogState(() => isDownloading = false);
-                            if (context.mounted) {
-                              showSnackBar(context, context.l10n.update_failed,
-                                  color: Colors.redAccent);
-                            }
-                          }
-                        },
-                  child: isDownloading
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Text(context.l10n.update_now)),
+                              if (success) {
+                                if (context.mounted) {
+                                  Navigator.pop(context);
+                                  showSnackBar(
+                                      context, context.l10n.installing_update,
+                                      color: Colors.orangeAccent);
+                                }
+                              } else {
+                                setDialogState(() => isDownloading = false);
+                                if (context.mounted) {
+                                  showSnackBar(
+                                      context, context.l10n.update_failed,
+                                      color: Colors.redAccent);
+                                }
+                              }
+                            },
+                      label: context.l10n.update_now,
+                      color: GlobalThemeData.darkColorScheme.primary),
             ],
           ),
         );

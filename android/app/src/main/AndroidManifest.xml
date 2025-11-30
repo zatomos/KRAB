@@ -24,7 +24,7 @@
             android:resource="@drawable/ic_stat_krab_logo" />
         <receiver
             android:name=".HomeScreenWidget"
-            android:label="Image"
+            android:label="Most recent image"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
@@ -36,17 +36,11 @@
                 android:resource="@xml/home_screen_widget_info" />
         </receiver>
         <receiver
-            android:name=".HomeScreenWidgetWithText"
-            android:label="Image + Description"
-            android:exported="false">
+            android:name=".WidgetPinnedReceiver"
+            android:exported="true">
             <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="fr.zatomos.krab.ACTION_IMAGE_UPDATED" />
+                <action android:name="fr.zatomos.krab.WIDGET_PINNED" />
             </intent-filter>
-
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/home_screen_widget_with_text_info" />
         </receiver>
         <receiver
             android:name="fr.zatomos.krab.WidgetClickReceiver"
@@ -55,8 +49,6 @@
                 <action android:name="fr.zatomos.krab.WIDGET_CLICK" />
             </intent-filter>
         </receiver>
-
-
         <receiver android:name="es.antonborri.home_widget.HomeWidgetBackgroundReceiver"
             android:exported="true">
             <intent-filter>
@@ -68,6 +60,7 @@
             android:exported="true"/>
         <activity
             android:name=".HomeScreenWidgetConfigureActivity"
+            android:theme="@style/WidgetConfigTheme"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
@@ -102,6 +95,13 @@
                 android:name="io.flutter.embedding.android.NormalTheme"
                 android:resource="@style/NormalTheme" />
         </activity>
+        <activity android:name=".HomeWidgetConfigureActivity"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+
         <service android:name=".WidgetUpdateService"/>
         <!--
  Don't delete the meta-data below.

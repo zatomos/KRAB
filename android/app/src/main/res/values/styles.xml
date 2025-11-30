@@ -16,6 +16,23 @@
         <item name="android:windowBackground">?android:colorBackground</item>
     </style>
 
+    <!-- Material Components theme for widget configuration activity -->
+    <style name="WidgetConfigTheme" parent="Theme.MaterialComponents.Light.NoActionBar">
+        <item name="colorPrimary">#DD6B3A</item>
+        <item name="colorPrimaryVariant">#BA5230</item>
+        <item name="colorOnPrimary">#232323</item>
+        <item name="colorSecondary">#CB5625</item>
+        <item name="colorSecondaryVariant">#A43E1A</item>
+        <item name="colorOnSecondary">#232323</item>
+        <item name="android:colorBackground">#181818</item>
+        <item name="colorSurface">#232323</item>
+        <item name="colorError">#FF5252</item>
+        <item name="colorOnBackground">#E1E1E1</item>
+        <item name="colorOnSurface">#E1E1E1</item>
+        <item name="colorOnSurfaceVariant">#303030</item>
+        <item name="colorOnError">#FFFFFF</item>
+    </style>
+
     <style name="Widget.Android.AppWidget.Container" parent="android:Widget">
         <item name="android:id">@android:id/background</item>
         <item name="android:background">?android:attr/colorBackground</item>

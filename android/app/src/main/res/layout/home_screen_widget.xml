@@ -4,8 +4,9 @@
     android:clickable="true"
     android:focusable="true"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
-    
+    android:layout_height="match_parent"
+    android:padding="0dp">
+
     <ImageView
         android:id="@+id/recent_image"
         android:layout_width="match_parent"
@@ -13,5 +14,24 @@
         android:clickable="true"
         android:focusable="true"
         android:scaleType="centerCrop" />
+
+    <TextView
+        android:id="@+id/overlay_text"
+        android:clickable="true"
+        android:focusable="true"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:paddingStart="6dp"
+        android:paddingEnd="6dp"
+        android:paddingTop="3dp"
+        android:paddingBottom="3dp"
+        android:background="#80000000"
+        android:textColor="#FFFFFF"
+        android:textSize="12sp"
+        android:maxLines="2"
+        android:ellipsize="end"
+        android:visibility="gone"
+        />
 </FrameLayout>
 

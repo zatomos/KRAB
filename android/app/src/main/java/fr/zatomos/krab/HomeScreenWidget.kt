@@ -3,150 +3,161 @@ package fr.zatomos.krab
 import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.graphics.Bitmap
-import android.graphics.drawable.BitmapDrawable
+import android.graphics.BitmapFactory
 import android.util.Log
+import android.view.View
 import android.widget.RemoteViews
-import androidx.core.graphics.drawable.toBitmap
-import coil.Coil
-import coil.request.CachePolicy
-import coil.request.ImageRequest
-import coil.request.SuccessResult
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import es.antonborri.home_widget.HomeWidgetPlugin
+import kotlinx.coroutines.*
 import java.io.File
 
 class HomeScreenWidget : AppWidgetProvider() {
 
-    override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
+    override fun onUpdate(
+        context: Context,
+        appWidgetManager: AppWidgetManager,
+        ids: IntArray
+    ) {
         CoroutineScope(Dispatchers.IO).launch {
-            appWidgetIds.forEach { widgetId ->
-                updateAppWidget(context, appWidgetManager, widgetId)
+            ids.forEach { id ->
+                updateAppWidget(context, appWidgetManager, id)
             }
+        }
+    }
+
+    override fun onDeleted(context: Context, appWidgetIds: IntArray) {
+        appWidgetIds.forEach { id ->
+            deletePrefs(context, id)
         }
     }
 
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
+
         if (intent.action == ACTION_IMAGE_UPDATED) {
-            val appWidgetManager = AppWidgetManager.getInstance(context)
-            val appWidgetIds = appWidgetManager.getAppWidgetIds(intent.component ?: return)
-            onUpdate(context, appWidgetManager, appWidgetIds)
+            val manager = AppWidgetManager.getInstance(context)
+            val ids = manager.getAppWidgetIds(
+                ComponentName(context, HomeScreenWidget::class.java)
+            )
+
+            CoroutineScope(Dispatchers.IO).launch {
+                ids.forEach { id ->
+                    updateAppWidget(context, manager, id)
+                }
+            }
         }
     }
 
     companion object {
         const val ACTION_IMAGE_UPDATED = "fr.zatomos.krab.ACTION_IMAGE_UPDATED"
-        private const val PREF_IMAGE_URL_KEY = "recentImageUrl"
         private const val TAG = "HomeScreenWidget"
 
-        // In-memory cache variables
-        private var lastLoadedImageUrl: String? = null
-        private var lastLoadedBitmap: Bitmap? = null
-        private var lastImageTimestamp: Long = 0L
+        private const val PREF_IMAGE_URL_KEY = "recentImageUrl"
+        private const val PREF_IMAGE_DESC_KEY = "recentImageDescription"
+        private const val PREF_IMAGE_SENDER_KEY = "recentImageSender"
 
-        // Suspend function to update the widget
-        suspend fun updateAppWidget(context: Context, appWidgetManager: AppWidgetManager, appWidgetId: Int) {
-            val widgetData = HomeWidgetPlugin.getData(context)
-            val imageUrl = widgetData.getString(PREF_IMAGE_URL_KEY, null)
-            Log.d(TAG, "WidgetID $appWidgetId: Retrieved imageUrl: $imageUrl")
+        private const val PREFS_NAME = "HomeScreenWidgetPrefs"
+        private const val PREF_SHOW_TEXT_PREFIX = "showText_"
 
-            val views = RemoteViews(context.packageName, R.layout.home_screen_widget).apply {
-                setImageViewResource(R.id.recent_image, R.drawable.ic_placeholder)
+        private fun getShowTextPref(context: Context, id: Int): Boolean {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            return prefs.getBoolean(PREF_SHOW_TEXT_PREFIX + id, false)
+        }
+
+        fun setShowTextPref(context: Context, id: Int, show: Boolean) {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            prefs.edit().putBoolean(PREF_SHOW_TEXT_PREFIX + id, show).apply()
+        }
+
+        fun deletePrefs(context: Context, id: Int) {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            prefs.edit().remove(PREF_SHOW_TEXT_PREFIX + id).apply()
+        }
+
+        suspend fun updateAppWidget(
+            context: Context,
+            manager: AppWidgetManager,
+            id: Int
+        ) {
+            val prefs = HomeWidgetPlugin.getData(context)
+
+            val imageUrl = prefs.getString(PREF_IMAGE_URL_KEY, null)
+            val description = prefs.getString(PREF_IMAGE_DESC_KEY, null)
+            val sender = prefs.getString(PREF_IMAGE_SENDER_KEY, null)
+
+            val showText = getShowTextPref(context, id)
+
+            Log.d(TAG, "WidgetID $id update. imageUrl=$imageUrl desc=$description sender=$sender showText=$showText")
+
+            val views = RemoteViews(context.packageName, R.layout.home_screen_widget)
+
+            // Placeholder
+            views.setImageViewResource(R.id.recent_image, R.drawable.ic_placeholder)
+
+            // Overlay text
+            if (showText && !description.isNullOrEmpty() && !sender.isNullOrEmpty()) {
+                views.setViewVisibility(R.id.overlay_text, View.VISIBLE)
+                views.setTextViewText(R.id.overlay_text, "$sender: $description")
+            } else {
+                views.setViewVisibility(R.id.overlay_text, View.GONE)
             }
 
-            // Launch the app from the widget when clicked
+            // Click to open app
             val clickIntent = Intent(context, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
                 addCategory(Intent.CATEGORY_LAUNCHER)
                 action = Intent.ACTION_MAIN
             }
-            val clickPendingIntent = PendingIntent.getActivity(
+
+            val pending = PendingIntent.getActivity(
                 context,
-                appWidgetId,
+                id,
                 clickIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
-            views.setOnClickPendingIntent(R.id.recent_image, clickPendingIntent)
+            views.setOnClickPendingIntent(R.id.recent_image, pending)
 
-            // Update widget immediately with the placeholder on the main thread
+            // Show placeholder first
             withContext(Dispatchers.Main) {
-                appWidgetManager.updateAppWidget(appWidgetId, views)
+                manager.updateAppWidget(id, views)
             }
 
-            if (!imageUrl.isNullOrEmpty()) {
-                // Create a File object to check the last modified time
-                val imageFile = File(imageUrl)
-                val currentTimestamp = if (imageFile.exists()) imageFile.lastModified() else 0L
+            if (imageUrl.isNullOrEmpty()) {
+                Log.d(TAG, "WidgetID $id: no image URL → done")
+                return
+            }
 
-                // Check if we already have the same image loaded (based on URL and file timestamp)
-                if (imageUrl == lastLoadedImageUrl && lastLoadedBitmap != null && currentTimestamp == lastImageTimestamp) {
-                    withContext(Dispatchers.Main) {
-                        views.setImageViewBitmap(R.id.recent_image, lastLoadedBitmap)
-                        appWidgetManager.updateAppWidget(appWidgetId, views)
-                        Log.d(TAG, "WidgetID $appWidgetId: Updated widget with cached image")
-                    }
+            try {
+                val file = File(imageUrl)
+                if (!file.exists()) {
+                    Log.w(TAG, "WidgetID $id: image file does not exist: $imageUrl")
                     return
                 }
 
-                try {
-                    val request = ImageRequest.Builder(context)
-                        .data(imageUrl)
-                        // Force reload the image from the file by disabling Coil's caches
-                        .memoryCachePolicy(CachePolicy.DISABLED)
-                        .diskCachePolicy(CachePolicy.DISABLED)
-                        .build()
-                    Log.d(TAG, "WidgetID $appWidgetId: Sending image request for URL: $imageUrl")
-                    val result = (Coil.imageLoader(context).execute(request) as? SuccessResult)?.drawable
+                val bitmap = BitmapFactory.decodeFile(file.absolutePath)
 
-                    if (result != null) {
-                        Log.d(TAG, "WidgetID $appWidgetId: Image loaded successfully")
-                        val bitmap = (result as? BitmapDrawable)?.bitmap ?: result.toBitmap()
-                        // Update cache with new image, URL, and timestamp
-                        lastLoadedImageUrl = imageUrl
-                        lastLoadedBitmap = bitmap
-                        lastImageTimestamp = currentTimestamp
-                        withContext(Dispatchers.Main) {
-                            views.setImageViewBitmap(R.id.recent_image, bitmap)
-                            appWidgetManager.updateAppWidget(appWidgetId, views)
-                            Log.d(TAG, "WidgetID $appWidgetId: Widget updated with new image")
-                        }
-                    } else {
-                        Log.d(TAG, "WidgetID $appWidgetId: Coil returned null drawable")
+                if (bitmap != null) {
+                    withContext(Dispatchers.Main) {
+                        views.setImageViewBitmap(R.id.recent_image, bitmap)
+                        manager.updateAppWidget(id, views)
                     }
-                } catch (e: Exception) {
-                    Log.e(TAG, "WidgetID $appWidgetId: Error loading image", e)
+                } else {
+                    Log.e(TAG, "WidgetID $id: BitmapFactory.decodeFile returned null")
                     withContext(Dispatchers.Main) {
                         views.setImageViewResource(R.id.recent_image, R.drawable.ic_error)
-                        appWidgetManager.updateAppWidget(appWidgetId, views)
+                        manager.updateAppWidget(id, views)
                     }
                 }
-            } else {
-                Log.d(TAG, "WidgetID $appWidgetId: imageUrl is null or empty, nothing to load")
+            } catch (e: Exception) {
+                Log.e(TAG, "WidgetID $id: error loading image", e)
+                withContext(Dispatchers.Main) {
+                    views.setImageViewResource(R.id.recent_image, R.drawable.ic_error)
+                    manager.updateAppWidget(id, views)
+                }
             }
-        }
-
-        // Save the image URL and invalidate the cache so that a new image is loaded
-        fun saveImageUrl(context: Context, url: String) {
-            val prefs = context.getSharedPreferences("fr.zatomos.krab.WidgetPrefs", Context.MODE_PRIVATE)
-            prefs.edit().putString(PREF_IMAGE_URL_KEY, url).apply()
-            Log.d(TAG, "Saved image URL: $url")
-
-            // Invalidate the in-memory cache to force a reload on next update
-            lastLoadedImageUrl = null
-            lastLoadedBitmap = null
-            lastImageTimestamp = 0L
-            Log.d(TAG, "Invalidated in-memory cache for URL: $url")
-
-            val intent = Intent(context, HomeScreenWidget::class.java).apply {
-                action = ACTION_IMAGE_UPDATED
-            }
-            context.sendBroadcast(intent)
         }
     }
 }
