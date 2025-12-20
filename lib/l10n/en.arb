@@ -147,6 +147,7 @@
   "days_ago": "{count}d",
   "weeks_ago": "{count}w",
   "months_ago": "{count}mo",
+  "time_ago": "{formatted_time} ago",
   "add_krab_widget": "Add KRAB widget",
   "krab_widget_experience_desc": "For the full experience, please add the KRAB home screen widget. \nThis lets you see new images instantly on your home screen.",
   "add_widget": "Add widget",

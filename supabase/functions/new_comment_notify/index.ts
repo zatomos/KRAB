@@ -197,7 +197,7 @@ Deno.serve(async (req) => {
                     token,
                     notification: {
                       title: `New comment in ${groupName}`,
-                      body: `${commenterUsername} commented on a post`,
+                      body: `${commenterUsername} commented on a post from ${uploader}: ${comment.text}`,
                     },
                     data: {
                       type: 'group_comment',

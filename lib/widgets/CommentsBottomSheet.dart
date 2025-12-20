@@ -4,11 +4,12 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/widgets/UserAvatar.dart';
-import 'package:krab/services/supabase.dart';
 import 'package:krab/models/Comment.dart';
 import 'package:krab/models/User.dart' as KRAB_User;
 import 'package:krab/widgets/RoundedInputField.dart';
 import 'package:krab/widgets/FloatingSnackBar.dart';
+import 'package:krab/services/supabase.dart';
+import 'package:krab/services/time_formatting.dart';
 
 class CommentsBottomSheet extends StatefulWidget {
   final String imageId;
@@ -159,7 +160,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
         if (isCurrentUser) {
           return ListTile(
             leading: UserAvatar(postUser, radius: 20),
-            title: Text(postUser.username),
+            title: Text("${postUser.username} • ${timeAgoLong(context, comment.createdAt)}"),
             subtitle: Text(comment.text),
             trailing: PopupMenuButton<String>(
               color: Theme.of(context).colorScheme.surfaceBright,

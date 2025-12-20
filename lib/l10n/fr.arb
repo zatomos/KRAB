@@ -147,6 +147,7 @@
   "days_ago": "{count}j",
   "weeks_ago": "{count}sem",
   "months_ago": "{count}mo",
+  "time_ago": "il y a {formatted_time}",
   "add_krab_widget": "Ajouter le widget KRAB",
   "krab_widget_experience_desc": "Pour profiter de l'expérience complète, ajoutez le widget KRAB à votre écran d'accueil. \nVous pourrez ainsi voir les dernières images postées directement depuis votre écran d'accueil.",
   "add_widget": "Ajouter le widget",

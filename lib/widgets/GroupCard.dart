@@ -8,6 +8,7 @@ import 'package:krab/widgets/FloatingSnackBar.dart';
 import 'package:krab/widgets/GroupAvatar.dart';
 import 'package:krab/UserPreferences.dart';
 import 'package:krab/services/supabase.dart';
+import 'package:krab/services/time_formatting.dart';
 
 class GroupCard extends StatefulWidget {
   final Group group;
@@ -51,21 +52,6 @@ class _GroupCardState extends State<GroupCard> {
     return response.data!;
   }
 
-  String timeAgo(DateTime date) {
-    final now = DateTime.now();
-    final diff = now.difference(date);
-
-    if (diff.inMinutes < 1) return context.l10n.just_now;
-    if (diff.inMinutes < 60) return context.l10n.minutes_ago(diff.inMinutes);
-    if (diff.inHours < 24) return context.l10n.hours_ago(diff.inHours);
-    if (diff.inDays < 7) return context.l10n.days_ago(diff.inDays);
-    if (diff.inDays < 30) {
-      return context.l10n.weeks_ago((diff.inDays / 7).floor());
-    }
-
-    return context.l10n.months_ago((diff.inDays / 30).floor());
-  }
-
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
@@ -107,7 +93,7 @@ class _GroupCardState extends State<GroupCard> {
                 // Last image time
                 if (widget.group.latestImageAt != null)
                   Text(
-                    timeAgo(widget.group.latestImageAt!),
+                    timeAgoShort(context, widget.group.latestImageAt!),
                     style: const TextStyle(fontSize: 12, color: Colors.grey),
                   ),
               ],
