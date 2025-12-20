@@ -68,7 +68,6 @@ class GroupPageState extends State<GroupImagesPage> {
     });
   }
 
-
   @override
   void dispose() {
     _lowResCache.clear();
@@ -144,6 +143,20 @@ class GroupPageState extends State<GroupImagesPage> {
     );
   }
 
+  Future<void> _refreshGroupImages() async {
+    setState(() {
+      _groupImagesFuture = getGroupImages(widget.group.id);
+
+      _lowResCache.clear();
+      _fullResCache.clear();
+      _imageFutureCache.clear();
+      _userCache.clear();
+      _commentCountCache.clear();
+    });
+
+    await _groupImagesFuture;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -177,126 +190,133 @@ class GroupPageState extends State<GroupImagesPage> {
             return Center(child: Text(context.l10n.no_images));
           }
 
-          return Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: GridView.builder(
-              itemCount: images.length,
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                crossAxisSpacing: 4.0,
-                mainAxisSpacing: 4.0,
-                childAspectRatio: 1,
-              ),
-              itemBuilder: (context, index) {
-                final image = images[index];
-                final imageId = image['id'].toString();
+          return RefreshIndicator(
+              onRefresh: _refreshGroupImages,
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 8.0),
+                child: GridView.builder(
+                  itemCount: images.length,
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: 4.0,
+                    mainAxisSpacing: 4.0,
+                    childAspectRatio: 1,
+                  ),
+                  itemBuilder: (context, index) {
+                    final image = images[index];
+                    final imageId = image['id'].toString();
 
-                return FutureBuilder<ImageData>(
-                  future: _getImageDataFuture(imageId),
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return Container(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(10),
-                          color: Colors.grey[350],
-                        ),
-                        child: const Center(child: CircularProgressIndicator()),
-                      );
-                    }
-                    if (!snapshot.hasData) {
-                      return Container(
-                        color: Colors.grey,
-                        child: const Icon(Symbols.error_rounded, size: 50),
-                      );
-                    }
+                    return FutureBuilder<ImageData>(
+                      future: _getImageDataFuture(imageId),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState ==
+                            ConnectionState.waiting) {
+                          return Container(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(10),
+                              color: Colors.grey[350],
+                            ),
+                            child: const Center(
+                                child: CircularProgressIndicator()),
+                          );
+                        }
+                        if (!snapshot.hasData) {
+                          return Container(
+                            color: Colors.grey,
+                            child: const Icon(Symbols.error_rounded, size: 50),
+                          );
+                        }
 
-                    final imageData = snapshot.data!;
-                    final uploader = _userCache[imageData.uploadedBy] ??
-                        KRAB_User.User(
-                          id: imageData.uploadedBy,
-                          username: "",
-                        );
+                        final imageData = snapshot.data!;
+                        final uploader = _userCache[imageData.uploadedBy] ??
+                            KRAB_User.User(
+                              id: imageData.uploadedBy,
+                              username: "",
+                            );
 
-                    return GestureDetector(
-                      onTap: () {
-                        final commentCount = _commentCountCache[imageId] ?? 0;
+                        return GestureDetector(
+                          onTap: () {
+                            final commentCount =
+                                _commentCountCache[imageId] ?? 0;
 
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => FullImagePage(
-                              uploader: uploader,
-                              imageId: imageId,
-                              groupId: widget.group.id,
-                              lowResImageData: imageData,
-                              commentCount: commentCount,
-                              loadFullImage: () =>
-                                  _getCachedImage(imageId, lowRes: false),
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => FullImagePage(
+                                  uploader: uploader,
+                                  imageId: imageId,
+                                  groupId: widget.group.id,
+                                  lowResImageData: imageData,
+                                  commentCount: commentCount,
+                                  loadFullImage: () =>
+                                      _getCachedImage(imageId, lowRes: false),
+                                ),
+                              ),
+                            );
+                          },
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                Hero(
+                                  tag: "image_$imageId",
+                                  child: Image.memory(
+                                    imageData.imageBytes,
+                                    fit: BoxFit.cover,
+                                    gaplessPlayback: true,
+                                  ),
+                                ),
+                                Positioned(
+                                  bottom: 8,
+                                  right: 8,
+                                  child: UserAvatar(uploader, radius: 20),
+                                ),
+                                (_commentCountCache[imageId] ?? 0) > 0
+                                    ? Positioned(
+                                        top: 8,
+                                        right: 8,
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: Colors.black
+                                                .withValues(alpha: 0.6),
+                                            borderRadius:
+                                                BorderRadius.circular(10),
+                                          ),
+                                          child: Row(
+                                            children: [
+                                              const Icon(
+                                                Symbols.comment_rounded,
+                                                size: 12,
+                                                color: Colors.white,
+                                              ),
+                                              const SizedBox(width: 3),
+                                              Text(
+                                                (_commentCountCache[imageId] ??
+                                                        0)
+                                                    .toString(),
+                                                style: const TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.white,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      )
+                                    : const SizedBox.shrink(),
+                              ],
                             ),
                           ),
                         );
                       },
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            Hero(
-                              tag: "image_$imageId",
-                              child: Image.memory(
-                                imageData.imageBytes,
-                                fit: BoxFit.cover,
-                                gaplessPlayback: true,
-                              ),
-                            ),
-                            Positioned(
-                              bottom: 8,
-                              right: 8,
-                              child: UserAvatar(uploader, radius: 20),
-                            ),
-                            (_commentCountCache[imageId] ?? 0) > 0
-                                ? Positioned(
-                                    top: 8,
-                                    right: 8,
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 6, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color:
-                                            Colors.black.withValues(alpha: 0.6),
-                                        borderRadius: BorderRadius.circular(10),
-                                      ),
-                                      child: Row(
-                                        children: [
-                                          const Icon(
-                                            Symbols.comment_rounded,
-                                            size: 12,
-                                            color: Colors.white,
-                                          ),
-                                          const SizedBox(width: 3),
-                                          Text(
-                                            (_commentCountCache[imageId] ?? 0)
-                                                .toString(),
-                                            style: const TextStyle(
-                                              fontSize: 12,
-                                              color: Colors.white,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  )
-                                : const SizedBox.shrink(),
-                          ],
-                        ),
-                      ),
                     );
                   },
-                );
-              },
-            ),
-          );
+                ),
+              ));
         },
       ),
     );

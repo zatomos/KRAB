@@ -10,6 +10,11 @@ class Comment {
     required this.text,
     required this.createdAt,
   });
+
+  @override
+  String toString() {
+    return 'Comment(userId: $userId, text: $text, createdAt: $createdAt)';
+  }
 }
 
 // Convert a JSON Map to a Comment object

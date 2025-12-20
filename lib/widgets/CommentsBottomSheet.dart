@@ -46,10 +46,11 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
 
   Future<void> _fetchComments() async {
     try {
-      final comments = await _fetchCommentsForBottomSheet(
-          widget.imageId, widget.groupId);
+      final comments =
+          await _fetchCommentsForBottomSheet(widget.imageId, widget.groupId);
       setState(() {
         _comments = comments;
+        debugPrint("$comments");
         _loading = false;
       });
     } catch (e) {
@@ -91,9 +92,11 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
         _editingCommentIndex = null;
       });
       _newCommentController.clear();
-      showSnackBar(context, context.l10n.comment_added_success, color: Colors.green);
+      showSnackBar(context, context.l10n.comment_added_success,
+          color: Colors.green);
     } else {
-      showSnackBar(context, context.l10n.error_adding_comment(response.error ?? "Unknown error"),
+      showSnackBar(context,
+          context.l10n.error_adding_comment(response.error ?? "Unknown error"),
           color: Colors.red);
     }
   }
@@ -112,10 +115,14 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
         _editingCommentIndex = null;
       });
       _newCommentController.clear();
-      showSnackBar(context, context.l10n.comment_updated_success, color: Colors.green);
+      showSnackBar(context, context.l10n.comment_updated_success,
+          color: Colors.green);
     } else {
       print(response.error);
-      showSnackBar(context, context.l10n.error_updating_comment(response.error ?? "Unknown error"),
+      showSnackBar(
+          context,
+          context.l10n
+              .error_updating_comment(response.error ?? "Unknown error"),
           color: Colors.red);
     }
   }
@@ -127,9 +134,13 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
         _comments.removeAt(index);
         if (_editingCommentIndex == index) _editingCommentIndex = null;
       });
-      showSnackBar(context, context.l10n.comment_deleted_success, color: Colors.green);
+      showSnackBar(context, context.l10n.comment_deleted_success,
+          color: Colors.green);
     } else {
-      showSnackBar(context, context.l10n.error_deleting_comment(response.error ?? "Unknown error"),
+      showSnackBar(
+          context,
+          context.l10n
+              .error_deleting_comment(response.error ?? "Unknown error"),
           color: Colors.red);
     }
   }
@@ -160,7 +171,25 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
         if (isCurrentUser) {
           return ListTile(
             leading: UserAvatar(postUser, radius: 20),
-            title: Text("${postUser.username} • ${timeAgoLong(context, comment.createdAt)}"),
+            title: Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(
+                    text: postUser.username,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  TextSpan(
+                    text: " • ${timeAgoLong(context, comment.createdAt)}",
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
             subtitle: Text(comment.text),
             trailing: PopupMenuButton<String>(
               color: Theme.of(context).colorScheme.surfaceBright,
@@ -176,7 +205,8 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
               },
               itemBuilder: (context) => [
                 PopupMenuItem(value: 'edit', child: Text(context.l10n.edit)),
-                PopupMenuItem(value: 'delete', child: Text(context.l10n.delete)),
+                PopupMenuItem(
+                    value: 'delete', child: Text(context.l10n.delete)),
               ],
             ),
           );
@@ -184,19 +214,34 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
 
         return ListTile(
           leading: UserAvatar(postUser, radius: 20),
-          title: Text(postUser.username),
+          title: Text.rich(
+            TextSpan(
+              children: [
+                TextSpan(
+                  text: postUser.username,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                TextSpan(
+                  text: " • ${timeAgoLong(context, comment.createdAt)}",
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+          ),
           subtitle: Text(comment.text),
         );
       },
     );
   }
 
-
   @override
   Widget build(BuildContext context) {
     final currentUserId = Supabase.instance.client.auth.currentUser?.id;
     final alreadyCommented =
-    _comments.any((comment) => comment.userId == currentUserId);
+        _comments.any((comment) => comment.userId == currentUserId);
 
     return SafeArea(
       child: Padding(
@@ -262,8 +307,9 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
                     ),
                   ),
                   IconButton(
-                    onPressed:
-                    _editingCommentIndex != null ? _updateComment : _postComment,
+                    onPressed: _editingCommentIndex != null
+                        ? _updateComment
+                        : _postComment,
                     icon: const Icon(Symbols.send_rounded, color: Colors.white),
                   ),
                 ],
