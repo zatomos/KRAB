@@ -154,64 +154,60 @@ Deno.serve(async (req) => {
     }
 
     // Notify group members
-    const { data: groupMembers, error: groupMembersError } = await supabase
-      .from('GroupMembers')
-      .select(`
-        user_id,
-        Users (
-          fcm_token,
-          notify_group_comments
-        )
-      `)
+    const { data: members, error: membersError } = await supabase
+      .from('Members')
+      .select('user_id')
       .eq('group_id', comment.group_id);
 
-    if (groupMembersError || !groupMembers) {
-      console.error('Error fetching group members:', groupMembersError?.message);
+    if (membersError || !members) {
+      console.error('Error fetching group members:', membersError?.message);
     } else {
-      const groupTokens = groupMembers
-        .filter((m) =>
-          m.Users &&
-          m.Users.notify_group_comments === true &&
-          m.Users.fcm_token &&
-          m.user_id !== comment.user_id
-        )
-        .map((m) => m.Users.fcm_token);
+      const userIds = members
+        .map((m) => m.user_id)
+        .filter((id) => id !== comment.user_id);
 
-      if (groupTokens.length === 0) {
-      } else {
-        const groupNotificationTitle = `New comment in ${groupName}`;
-        const groupNotificationBody = `${commenterUsername} commented on a post`;
+      if (userIds.length > 0) {
+        const { data: users, error: usersError } = await supabase
+          .from('Users')
+          .select('id, fcm_token, notify_group_comments')
+          .in('id', userIds);
 
-        for (const token of groupTokens) {
-          const groupRes = await fetch(
-            `https://fcm.googleapis.com/v1/projects/${serviceAccount.project_id}/messages:send`,
-            {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${accessToken}`,
-              },
-              body: JSON.stringify({
-                message: {
-                  token,
-                  notification: {
-                    title: groupNotificationTitle,
-                    body: groupNotificationBody,
-                  },
-                  data: {
-                    type: 'group_comment',
-                    image_id: imageId,
-                    group_id: groupId,
-                  },
+        if (usersError || !users) {
+          console.error('Error fetching users:', usersError?.message);
+        } else {
+          const groupTokens = users
+            .filter(
+              (u) =>
+                u.notify_group_comments === true &&
+                u.fcm_token
+            )
+            .map((u) => u.fcm_token);
+
+          for (const token of groupTokens) {
+            await fetch(
+              `https://fcm.googleapis.com/v1/projects/${serviceAccount.project_id}/messages:send`,
+              {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  Authorization: `Bearer ${accessToken}`,
                 },
-              }),
-            }
-          );
-
-          const groupResData = await groupRes.json();
-
-          if (!groupRes.ok) {
-            console.error('Error sending group notification:', groupResData);
+                body: JSON.stringify({
+                  message: {
+                    token,
+                    notification: {
+                      title: `New comment in ${groupName}`,
+                      body: `${commenterUsername} commented on a post`,
+                    },
+                    data: {
+                      type: 'group_comment',
+                      image_id: imageId,
+                      group_id: groupId,
+                    },
+                  },
+                }),
+              }
+            );
           }
         }
       }
