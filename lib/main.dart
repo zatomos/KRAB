@@ -259,7 +259,7 @@ void main() async {
       }
     });
 
-    // 11. On notification tap when app is in background
+    // On notification tap when app is in background
     FirebaseMessaging.onMessageOpenedApp.listen(handleNotificationNavigation);
 
     runApp(MyApp(navigatorKey: navigatorKey));

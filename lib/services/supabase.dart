@@ -903,3 +903,40 @@ Future<SupabaseResponse<void>> sendPasswordResetEmail(String email) async {
         success: false, error: "Error sending password reset email: $error");
   }
 }
+
+/// Set setting to receive notifications about new comments under other users' images.
+Future<SupabaseResponse<void>> setGroupCommentNotificationSetting(bool enabled) async {
+  try {
+    final response = await supabase.rpc("set_notify_group_comments",
+        params: {"enabled": enabled});
+    if (response['success'] == false) {
+      return SupabaseResponse(
+          success: false,
+          error:
+              "Error updating notification setting: ${response['error']}");
+    }
+    return SupabaseResponse(success: true);
+  } catch (error) {
+    return SupabaseResponse(
+        success: false,
+        error: "Error updating notification setting: $error");
+  }
+}
+
+Future<SupabaseResponse<bool>> getGroupCommentNotificationSetting() async {
+  try {
+    final response = await supabase.rpc("get_notify_group_comments");
+    if (response['success'] == false) {
+      return SupabaseResponse(
+          success: false,
+          error:
+              "Error fetching notification setting: ${response['error']}");
+    }
+    return SupabaseResponse(
+        success: true, data: response['enabled'] as bool);
+  } catch (error) {
+    return SupabaseResponse(
+        success: false,
+        error: "Error fetching notification setting: $error");
+  }
+}

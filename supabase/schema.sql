@@ -909,6 +909,48 @@ $$;
 
 
 --
+-- Name: get_notify_group_comments(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.get_notify_group_comments() RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+DECLARE
+  current_user_id uuid;
+  enabled_value boolean;
+BEGIN
+  current_user_id := auth.uid();
+
+  -- Check authentication
+  IF current_user_id IS NULL THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'User not authenticated'
+    );
+  END IF;
+
+  -- Fetch the setting
+  SELECT notify_group_comments
+  INTO enabled_value
+  FROM "Users"
+  WHERE id = current_user_id;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'User not found'
+    );
+  END IF;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'enabled', COALESCE(enabled_value, false)
+  );
+END;
+$$;
+
+
+--
 -- Name: get_user_groups(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1422,6 +1464,52 @@ exception
   when others then
     return jsonb_build_object('success', false, 'error', sqlerrm);
 end;
+$$;
+
+
+--
+-- Name: set_notify_group_comments(boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.set_notify_group_comments(enabled boolean) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    AS $$
+DECLARE
+    current_user_id UUID;
+BEGIN
+    current_user_id := auth.uid();
+
+    -- Check if user is authenticated
+    IF current_user_id IS NULL THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'error', 'User not authenticated'
+        );
+    END IF;
+
+    UPDATE "Users"
+    SET notify_group_comments = enabled
+    WHERE id = current_user_id;
+
+    IF NOT FOUND THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'error', 'User not found'
+        );
+    END IF;
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'notify_group_comments', enabled
+    );
+
+EXCEPTION
+    WHEN OTHERS THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'error', SQLERRM
+        );
+END;
 $$;
 
 
@@ -2349,6 +2437,7 @@ CREATE TABLE public."Users" (
     username text DEFAULT ''::text,
     id uuid NOT NULL,
     fcm_token text,
+    notify_group_comments boolean DEFAULT false NOT NULL,
     CONSTRAINT "Users_username_check" CHECK ((length(username) < 20))
 );
 
@@ -2358,6 +2447,13 @@ CREATE TABLE public."Users" (
 --
 
 COMMENT ON TABLE public."Users" IS 'contains usernames';
+
+
+--
+-- Name: COLUMN "Users".notify_group_comments; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public."Users".notify_group_comments IS 'Users can choose whether they want to receive notifications about comment posted under other user''s images';
 
 
 --
@@ -3527,6 +3623,16 @@ GRANT ALL ON FUNCTION public.get_latest_image() TO service_role;
 
 
 --
+-- Name: FUNCTION get_notify_group_comments(); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.get_notify_group_comments() TO postgres;
+GRANT ALL ON FUNCTION public.get_notify_group_comments() TO anon;
+GRANT ALL ON FUNCTION public.get_notify_group_comments() TO authenticated;
+GRANT ALL ON FUNCTION public.get_notify_group_comments() TO service_role;
+
+
+--
 -- Name: FUNCTION get_user_groups(); Type: ACL; Schema: public; Owner: -
 --
 
@@ -3627,6 +3733,16 @@ GRANT ALL ON FUNCTION public.request_image_uuid() TO postgres;
 GRANT ALL ON FUNCTION public.request_image_uuid() TO anon;
 GRANT ALL ON FUNCTION public.request_image_uuid() TO authenticated;
 GRANT ALL ON FUNCTION public.request_image_uuid() TO service_role;
+
+
+--
+-- Name: FUNCTION set_notify_group_comments(enabled boolean); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.set_notify_group_comments(enabled boolean) TO postgres;
+GRANT ALL ON FUNCTION public.set_notify_group_comments(enabled boolean) TO anon;
+GRANT ALL ON FUNCTION public.set_notify_group_comments(enabled boolean) TO authenticated;
+GRANT ALL ON FUNCTION public.set_notify_group_comments(enabled boolean) TO service_role;
 
 
 --

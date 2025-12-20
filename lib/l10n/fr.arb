@@ -161,5 +161,7 @@
   "krab_widget_instruction_3": "Selectionnez 'Widgets' dans le menu",
   "krab_widget_instruction_4": "Trouvez et ajoutez le widget KRAB",
   "steps_vary_launcher": "Les étapes peuvent varier selon le lanceur d'applications. Veuillez vous référer aux instructions de votre lanceur si nécessaire.",
-  "got_it": "Compris!"
+  "got_it": "Compris!",
+  "group_comment_notifications": "Notifications de commentaires de groupe",
+  "group_comment_notifications_description": "Soyez notifié lorsqu’un membre commente une image de groupe que vous n’avez pas publiée."
 }

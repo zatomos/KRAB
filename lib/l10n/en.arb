@@ -161,5 +161,7 @@
   "krab_widget_instruction_3": "Select 'Widgets' from the menu",
   "krab_widget_instruction_4": "Find and add KRAB widget",
   "steps_vary_launcher": "Steps may vary by launcher. Please refer to your launcher's instructions if needed.",
-  "got_it": "Got it!"
+  "got_it": "Got it!",
+  "group_comment_notifications": "Group comment notifications",
+  "group_comment_notifications_description": "Get notified when someone comments on a group image you didn’t upload."
 }

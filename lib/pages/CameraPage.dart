@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:krab/widgets/FloatingSnackBar.dart';
+import 'package:krab/widgets/SoftButton.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -423,10 +424,10 @@ class CameraPageState extends State<CameraPage> {
                 ),
               ),
               actions: [
-                TextButton(
+                SoftButton(
                     onPressed: () => Navigator.of(context).pop(),
-                    child: Text(context.l10n.cancel)),
-                TextButton(
+                    label: context.l10n.cancel),
+                SoftButton(
                     onPressed: () async {
                       if (selectedGroups.isEmpty) {
                         await showDialog(
@@ -436,9 +437,11 @@ class CameraPageState extends State<CameraPage> {
                             content:
                                 Text(context.l10n.select_at_least_one_group),
                             actions: [
-                              TextButton(
+                              SoftButton(
                                   onPressed: () => Navigator.of(context).pop(),
-                                  child: const Text("OK")),
+                                  label: "OK",
+                                  color: GlobalThemeData.darkColorScheme.primary
+                              ),
                             ],
                           ),
                         );
@@ -469,7 +472,9 @@ class CameraPageState extends State<CameraPage> {
                         ),
                       );
                     },
-                    child: Text(context.l10n.send)),
+                    label: context.l10n.send,
+                    color: GlobalThemeData.darkColorScheme.primary
+                ),
               ],
             );
           },

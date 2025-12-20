@@ -4,7 +4,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 import { JWT } from 'npm:google-auth-library@9';
 
 interface Comments {
-    id: string;
+  id: string;
   user_id: string;
   image_id: string;
   group_id: string;
@@ -36,6 +36,7 @@ Deno.serve(async (req) => {
 
     // Extract comment details
     const comment = payload.record;
+    console.log('Comment:', comment);
 
     // Fetch the image details to get the uploader's ID and description
     const { data: imageData, error: imageError } = await supabase
@@ -63,6 +64,8 @@ Deno.serve(async (req) => {
       commenterUsername = commenterData.username;
     }
 
+    console.log('Commenter username:', commenterUsername);
+
     // Fetch the uploader's FCM token
     const { data: uploaderData, error: uploaderError } = await supabase
       .from('Users')
@@ -70,13 +73,16 @@ Deno.serve(async (req) => {
       .eq('id', uploaderId)
       .single();
 
-    if (uploaderError || !uploaderData || !uploaderData.fcm_token) {
+    const hasUploaderToken =
+      !uploaderError && uploaderData && uploaderData.fcm_token;
+
+    if (!hasUploaderToken) {
       console.log('Uploader has no FCM token or error fetching uploader info.');
-      return new Response(null, { status: 200 });
     }
 
-    const fcmToken = uploaderData.fcm_token;
+    const fcmToken = hasUploaderToken ? uploaderData.fcm_token : null;
 
+    // Fetch group name
     const { data: groupData, error: groupError } = await supabase
       .from('Groups')
       .select('name')
@@ -88,12 +94,19 @@ Deno.serve(async (req) => {
       groupName = groupData.name;
     }
 
-    // Get FCM access token using a service account
-    const { default: serviceAccount } = await import('../service-account.json', { with: { type: 'json' } });
+    console.log('Group name:', groupName);
+
+    // Load service account
+    const serviceAccount = JSON.parse(
+      Deno.env.get('GOOGLE_SERVICE_ACCOUNT')!
+    );
+
     const accessToken = await getAccessToken({
       clientEmail: serviceAccount.client_email,
       privateKey: serviceAccount.private_key,
     });
+
+    console.log('Firebase access token retrieved');
 
     // Prepare the notification payload
     const notificationTitle = `${commenterUsername} commented on your image in ${groupName}`;
@@ -101,45 +114,116 @@ Deno.serve(async (req) => {
     const imageId = comment.image_id;
     const groupId = comment.group_id;
 
-    // Send a push notification
-    const res = await fetch(
-      `https://fcm.googleapis.com/v1/projects/${serviceAccount.project_id}/messages:send`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({
-          message: {
-            token: fcmToken,
-            notification: {
-              title: notificationTitle,
-              body: notificationBody,
-            },
-            data: {
+    console.log('Notification title:', notificationTitle);
+    console.log('Notification body:', notificationBody);
+
+    // Send a push notification to uploader
+    if (hasUploaderToken) {
+      console.log('Sending notification to uploader');
+
+      const res = await fetch(
+        `https://fcm.googleapis.com/v1/projects/${serviceAccount.project_id}/messages:send`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({
+            message: {
+              token: fcmToken,
+              notification: {
+                title: notificationTitle,
+                body: notificationBody,
+              },
+              data: {
                 type: 'new_comment',
                 image_id: imageId,
                 group_id: groupId,
               },
-          },
-        }),
-      }
-    );
+            },
+          }),
+        }
+      );
 
-    const resData = await res.json();
-    if (!res.ok) {
-      console.error(`Error sending notification:`, resData);
-      return new Response(null, { status: 500 });
-    } else {
-      console.log(`Notification sent successfully:`, resData);
+      const resData = await res.json();
+      if (!res.ok) {
+        console.error('Error sending uploader notification:', resData);
+        return new Response(null, { status: 500 });
+      }
     }
 
-    return new Response(JSON.stringify({ message: "Notification sent" }), {
-      headers: { "Content-Type": "application/json" },
+    // Notify group members
+    const { data: groupMembers, error: groupMembersError } = await supabase
+      .from('GroupMembers')
+      .select(`
+        user_id,
+        Users (
+          fcm_token,
+          notify_group_comments
+        )
+      `)
+      .eq('group_id', comment.group_id);
+
+    if (groupMembersError || !groupMembers) {
+      console.error('Error fetching group members:', groupMembersError?.message);
+    } else {
+      const groupTokens = groupMembers
+        .filter((m) =>
+          m.Users &&
+          m.Users.notify_group_comments === true &&
+          m.Users.fcm_token &&
+          m.user_id !== comment.user_id
+        )
+        .map((m) => m.Users.fcm_token);
+
+      if (groupTokens.length === 0) {
+      } else {
+        const groupNotificationTitle = `New comment in ${groupName}`;
+        const groupNotificationBody = `${commenterUsername} commented on a post`;
+
+        for (const token of groupTokens) {
+          const groupRes = await fetch(
+            `https://fcm.googleapis.com/v1/projects/${serviceAccount.project_id}/messages:send`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${accessToken}`,
+              },
+              body: JSON.stringify({
+                message: {
+                  token,
+                  notification: {
+                    title: groupNotificationTitle,
+                    body: groupNotificationBody,
+                  },
+                  data: {
+                    type: 'group_comment',
+                    image_id: imageId,
+                    group_id: groupId,
+                  },
+                },
+              }),
+            }
+          );
+
+          const groupResData = await groupRes.json();
+
+          if (!groupRes.ok) {
+            console.error('Error sending group notification:', groupResData);
+          }
+        }
+      }
+    }
+
+    console.log('Webhook processing completed');
+
+    return new Response(JSON.stringify({ message: 'Notification sent' }), {
+      headers: { 'Content-Type': 'application/json' },
     });
   } catch (error) {
-    console.error("Error in webhook:", error);
+    console.error('Error in webhook:', error);
     return new Response(null, { status: 500 });
   }
 });

@@ -33,6 +33,7 @@ class AccountPageState extends State<AccountPage> {
   bool _isLoading = false;
 
   bool autoImageSave = false;
+  bool receiveAllGroupComments = false;
 
   String appVersion = "";
 
@@ -62,6 +63,7 @@ class AccountPageState extends State<AccountPage> {
     final userResponse = await getUserDetails(authUser.id);
     final emailResponse = await getEmail();
 
+    // Check auto image save preference
     autoImageSave = await UserPreferences.getAutoImageSave();
 
     if (!userResponse.success) {
@@ -73,6 +75,18 @@ class AccountPageState extends State<AccountPage> {
           color: Colors.red);
     }
 
+    // Load group comment notification setting
+    final groupCommentSettingResponse =
+        await getGroupCommentNotificationSetting();
+
+    if (!groupCommentSettingResponse.success) {
+      showSnackBar(
+        context,
+        "Error loading notification setting: ${groupCommentSettingResponse.error}",
+        color: Colors.red,
+      );
+    }
+
     setState(() {
       // Update user only if data is not null
       if (userResponse.data != null) {
@@ -81,6 +95,12 @@ class AccountPageState extends State<AccountPage> {
 
       _usernameController.text = user.username;
       _emailController.text = emailResponse.data ?? "";
+
+      if (groupCommentSettingResponse.success &&
+          groupCommentSettingResponse.data != null) {
+        receiveAllGroupComments = groupCommentSettingResponse.data!;
+      }
+
       _isLoading = false;
     });
   }
@@ -202,8 +222,7 @@ class AccountPageState extends State<AccountPage> {
                 label: (user.pfpUrl.isEmpty)
                     ? context.l10n.add
                     : context.l10n.edit,
-                color: GlobalThemeData.darkColorScheme.primary
-            ),
+                color: GlobalThemeData.darkColorScheme.primary),
 
             // Delete pfp
             if (user.pfpUrl.isNotEmpty)
@@ -302,9 +321,7 @@ class AccountPageState extends State<AccountPage> {
                       ],
                     ),
                   ),
-
                   const SizedBox(height: 20),
-
                   GestureDetector(
                     onTap: openEditUsernameDialog,
                     child: Stack(
@@ -348,9 +365,7 @@ class AccountPageState extends State<AccountPage> {
                       ],
                     ),
                   ),
-
-                  const SizedBox(height: 40),
-
+                  const SizedBox(height: 20),
                   AbsorbPointer(
                     child: TextField(
                       controller: _emailController,
@@ -361,9 +376,7 @@ class AccountPageState extends State<AccountPage> {
                       readOnly: true,
                     ),
                   ),
-
-                  const SizedBox(height: 50),
-
+                  const SizedBox(height: 35),
                   Padding(
                     padding: const EdgeInsets.only(left: 8.0),
                     child: Text(
@@ -374,9 +387,7 @@ class AccountPageState extends State<AccountPage> {
                       ),
                     ),
                   ),
-
                   const SizedBox(height: 10),
-
                   SwitchListTile(
                     title: Text(context.l10n.auto_save_imgs),
                     subtitle: Text(context.l10n.auto_save_imgs_description),
@@ -386,16 +397,31 @@ class AccountPageState extends State<AccountPage> {
                       setState(() => autoImageSave = value);
                     },
                   ),
-
-                  const SizedBox(height: 80),
-
+                  SwitchListTile(
+                    title: Text(context.l10n.group_comment_notifications),
+                    subtitle: Text(
+                        context.l10n.group_comment_notifications_description),
+                    value: receiveAllGroupComments,
+                    onChanged: (value) {
+                      final response =
+                          setGroupCommentNotificationSetting(value);
+                      response.then((res) {
+                        if (res.success) {
+                          setState(() => receiveAllGroupComments = value);
+                        } else {
+                          showSnackBar(
+                              context, "Error updating setting: ${res.error}",
+                              color: Colors.red);
+                        }
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 40),
                   RectangleButton(
                     label: context.l10n.log_out,
                     onPressed: _logout,
                     backgroundColor: Colors.redAccent,
                   ),
-
-                  const SizedBox(height: 20),
                 ],
               ),
             ),

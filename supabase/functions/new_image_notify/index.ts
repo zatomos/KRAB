@@ -114,7 +114,9 @@ const supabase = createClient(
         with: { type: 'json' },
     })
 
-    const accessToken = await getAccessToken({clientEmail: serviceAccount.client_email, privateKey: serviceAccount.private_key})
+    const serviceAccount = JSON.parse(
+      Deno.env.get('GOOGLE_SERVICE_ACCOUNT')!
+    );
 
     // Send a notification to each user token individually
     for (const token of fcmTokens) {
