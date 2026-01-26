@@ -48,71 +48,84 @@ CREATE TYPE storage.buckettype AS ENUM (
 
 
 --
--- Name: add_comment(uuid, uuid, text); Type: FUNCTION; Schema: public; Owner: -
+-- Name: add_comment(uuid, uuid, text, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.add_comment(group_id uuid, image_id uuid, text text) RETURNS jsonb
-    LANGUAGE plpgsql SECURITY DEFINER
-    SET search_path TO 'public', 'extensions', 'pg_temp'
+CREATE FUNCTION public.add_comment(image_id uuid, group_id uuid, text text, parent_id uuid DEFAULT NULL::uuid) RETURNS jsonb
+    LANGUAGE plpgsql
     AS $$
 DECLARE
-    current_user_id UUID;
+  current_user_id UUID;
+  new_comment_id UUID;
 BEGIN
-    current_user_id := auth.uid();
+  current_user_id := auth.uid();
 
-    -- Check if user is authenticated
-    IF current_user_id IS NULL THEN
-        RETURN jsonb_build_object(
-            'success', false,
-            'error', 'User not authenticated'
-        );
-    END IF;
-
-    -- Validate that the user is a member of the group
-    IF NOT EXISTS (
-        SELECT 1
-        FROM "Members" m
-        WHERE m.user_id = current_user_id
-          AND m.group_id = add_comment.group_id
-    ) THEN
-        RETURN jsonb_build_object(
-            'success', false,
-            'error', 'You are not a member of this group'
-        );
-    END IF;
-
-    -- Validate that the image belongs to the specified group
-    IF NOT EXISTS (
-        SELECT 1
-        FROM "ImageGroups" ig
-        WHERE ig.image_id = add_comment.image_id
-          AND ig.group_id = add_comment.group_id
-    ) THEN
-        RETURN jsonb_build_object(
-            'success', false,
-            'error', 'Image does not belong to the specified group'
-        );
-    END IF;
-
-    -- Insert comment
-    INSERT INTO "public"."Comments" (user_id, image_id, group_id, text)
-    VALUES (current_user_id, add_comment.image_id, add_comment.group_id, add_comment.text);
-
+  -- Check if user is authenticated
+  IF current_user_id IS NULL THEN
     RETURN jsonb_build_object(
-        'success', true,
-        'message', 'Comment added successfully'
+      'success', false,
+      'error', 'User not authenticated'
     );
+  END IF;
+
+  -- Validate that the user is a member of the group
+  IF NOT EXISTS (
+    SELECT 1
+    FROM "Members" m
+    WHERE m.user_id = current_user_id
+      AND m.group_id = add_comment.group_id
+      AND m.role <> 'banned'
+  ) THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'You are not a member of this group'
+    );
+  END IF;
+
+  -- Validate that the image belongs to the specified group
+  IF NOT EXISTS (
+    SELECT 1
+    FROM "ImageGroups" ig
+    WHERE ig.image_id = add_comment.image_id
+      AND ig.group_id = add_comment.group_id
+  ) THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'Image does not belong to the specified group'
+    );
+  END IF;
+
+  -- If replying, validate parent comment exists in same image/group
+  IF add_comment.parent_id IS NOT NULL THEN
+    IF NOT EXISTS (
+      SELECT 1
+      FROM "Comments" c
+      WHERE c.id = add_comment.parent_id
+        AND c.image_id = add_comment.image_id
+        AND c.group_id = add_comment.group_id
+    ) THEN
+      RETURN jsonb_build_object(
+        'success', false,
+        'error', 'Parent comment not found'
+      );
+    END IF;
+  END IF;
+
+  -- Insert comment
+  INSERT INTO "Comments" (user_id, image_id, group_id, text, parent_id)
+  VALUES (current_user_id, add_comment.image_id, add_comment.group_id, add_comment.text, add_comment.parent_id)
+  RETURNING id INTO new_comment_id;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'comment_id', new_comment_id
+  );
 EXCEPTION
-    WHEN UNIQUE_VIOLATION THEN
-        RETURN jsonb_build_object(
-            'success', false,
-            'error', 'You have already commented on this image'
-        );
-    WHEN OTHERS THEN
-        RETURN jsonb_build_object(
-            'success', false,
-            'error', SQLERRM
-        );
+  WHEN OTHERS THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', SQLERRM
+    );
 END;
 $$;
 
@@ -122,7 +135,7 @@ $$;
 --
 
 CREATE FUNCTION public.ban_user(group_id uuid, target_user_id uuid) RETURNS jsonb
-    LANGUAGE plpgsql SECURITY DEFINER
+    LANGUAGE plpgsql
     SET search_path TO 'public'
     AS $$
 DECLARE
@@ -185,8 +198,8 @@ $$;
 --
 
 CREATE FUNCTION public.call_get_group_members_count(p_group_id uuid) RETURNS jsonb
-    LANGUAGE plpgsql SECURITY DEFINER
-    SET search_path TO 'public', 'extensions', 'pg_temp'
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
     AS $$
 BEGIN
   RETURN public.get_group_members_count('1df209bc-6c5b-4624-8f88-d69fdf12f3d6');
@@ -199,8 +212,8 @@ $$;
 --
 
 CREATE FUNCTION public.check_user_in_group(user_uuid uuid, group_uuid uuid) RETURNS boolean
-    LANGUAGE plpgsql SECURITY DEFINER
-    SET search_path TO 'public', 'extensions', 'pg_temp'
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
     AS $$
 BEGIN
   RETURN EXISTS (
@@ -218,7 +231,7 @@ $$;
 
 CREATE FUNCTION public.create_group(group_name text) RETURNS jsonb
     LANGUAGE plpgsql
-    SET search_path TO 'public', 'extensions', 'pg_temp'
+    SET search_path TO 'public'
     AS $$DECLARE
     new_group_id UUID;
 BEGIN
@@ -254,7 +267,7 @@ END;$$;
 
 CREATE FUNCTION public.create_user_profile(username text) RETURNS boolean
     LANGUAGE plpgsql
-    SET search_path TO 'public', 'extensions', 'pg_temp'
+    SET search_path TO 'public'
     AS $$
 BEGIN
     INSERT INTO "public"."Users" (id, username)
@@ -272,6 +285,7 @@ $$;
 
 CREATE FUNCTION public.debug_auth_context(p_group_id uuid) RETURNS jsonb
     LANGUAGE plpgsql
+    SET search_path TO 'public'
     AS $$
 DECLARE
     auth_user_id UUID;
@@ -300,76 +314,43 @@ $$;
 
 
 --
--- Name: delete_comment(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+-- Name: delete_comment(uuid, uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.delete_comment(group_id uuid, image_id uuid) RETURNS jsonb
-    LANGUAGE plpgsql SECURITY DEFINER
-    SET search_path TO 'public', 'extensions', 'pg_temp'
-    AS $$DECLARE
-    current_user_id UUID;
+CREATE FUNCTION public.delete_comment(comment_id uuid, image_id uuid, group_id uuid) RETURNS jsonb
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  current_user_id UUID;
 BEGIN
-    current_user_id := auth.uid();
-
-    -- Check if user is authenticated
-    IF current_user_id IS NULL THEN
-        RETURN jsonb_build_object(
-            'success', false,
-            'error', 'User not authenticated'
-        );
-    END IF;
-
-    -- Validate that the user is a member of the group
-    IF NOT EXISTS (
-        SELECT 1
-        FROM "Members" m
-        WHERE m.user_id = current_user_id
-          AND m.group_id = delete_comment.group_id
-    ) THEN
-        RETURN jsonb_build_object(
-            'success', false,
-            'error', 'You are not a member of this group'
-        );
-    END IF;
-
-    -- Validate that the image belongs to the specified group
-    IF NOT EXISTS (
-        SELECT 1
-        FROM "ImageGroups" ig
-        WHERE ig.image_id = delete_comment.image_id
-          AND ig.group_id = delete_comment.group_id
-    ) THEN
-        RETURN jsonb_build_object(
-            'success', false,
-            'error', 'Image does not belong to the specified group'
-        );
-    END IF;
-
-    -- Delete the comment if it belongs to the current user
-    DELETE FROM "Comments" c
-    WHERE c.image_id = delete_comment.image_id
-      AND c.group_id = delete_comment.group_id
-      AND c.user_id = current_user_id;
-
-    IF FOUND THEN
-        RETURN jsonb_build_object(
-            'success', true,
-            'message', 'Comment deleted successfully'
-        );
-    ELSE
-        RETURN jsonb_build_object(
-            'success', false,
-            'error', 'No comment found to delete or permission denied'
-        );
-    END IF;
-
+  current_user_id := auth.uid();
+  IF current_user_id IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM "Members" m
+    WHERE m.user_id = current_user_id
+      AND m.group_id = delete_comment.group_id
+      AND m.role <> 'banned'
+  ) THEN
+    RETURN jsonb_build_object('success', false, 'error', 'You are not a member of this group');
+  END IF;
+  DELETE FROM "Comments" c
+  WHERE c.id = delete_comment.comment_id
+    AND c.image_id = delete_comment.image_id
+    AND c.group_id = delete_comment.group_id
+    AND c.user_id = current_user_id;
+  IF FOUND THEN
+    RETURN jsonb_build_object('success', true, 'message', 'Comment deleted successfully');
+  ELSE
+    RETURN jsonb_build_object('success', false, 'error', 'No comment found to delete or permission denied');
+  END IF;
 EXCEPTION
-    WHEN OTHERS THEN
-        RETURN jsonb_build_object(
-            'success', false,
-            'error', SQLERRM
-        );
-END;$$;
+  WHEN OTHERS THEN
+    RETURN jsonb_build_object('success', false, 'error', SQLERRM);
+END;
+$$;
 
 
 --
@@ -377,8 +358,8 @@ END;$$;
 --
 
 CREATE FUNCTION public.delete_image(image_id uuid) RETURNS boolean
-    LANGUAGE plpgsql SECURITY DEFINER
-    SET search_path TO 'public', 'extensions', 'pg_temp'
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
     AS $$DECLARE
   storage_path TEXT;
 BEGIN
@@ -404,7 +385,7 @@ END;$$;
 --
 
 CREATE FUNCTION public.edit_username(new_username text) RETURNS void
-    LANGUAGE plpgsql SECURITY DEFINER
+    LANGUAGE plpgsql
     SET search_path TO 'public'
     AS $$
 BEGIN
@@ -436,8 +417,8 @@ $$;
 --
 
 CREATE FUNCTION public.get_all_images() RETURNS jsonb
-    LANGUAGE plpgsql SECURITY DEFINER
-    SET search_path TO 'public', 'extensions', 'pg_temp'
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
     AS $$DECLARE
   current_user_id UUID;
   images_data JSONB;
@@ -494,8 +475,8 @@ END;$$;
 --
 
 CREATE FUNCTION public.get_comment_count(group_id uuid, image_id uuid) RETURNS jsonb
-    LANGUAGE plpgsql SECURITY DEFINER
-    SET search_path TO 'public', 'extensions', 'pg_temp'
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
     AS $$
 DECLARE
     current_user_id UUID;
@@ -559,75 +540,54 @@ $$;
 -- Name: get_comments(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.get_comments(group_id uuid, image_id uuid) RETURNS jsonb
-    LANGUAGE plpgsql SECURITY DEFINER
-    SET search_path TO 'public', 'extensions', 'pg_temp'
-    AS $$
-DECLARE
-    current_user_id UUID;
-    comments JSONB;
+CREATE FUNCTION public.get_comments(image_id uuid, group_id uuid) RETURNS jsonb
+    LANGUAGE plpgsql
+    AS $$DECLARE
+  current_user_id UUID;
+  comments JSONB;
 BEGIN
-    current_user_id := auth.uid();
-
-    -- Check if user is authenticated
-    IF current_user_id IS NULL THEN
-        RETURN jsonb_build_object(
-            'success', false,
-            'error', 'User not authenticated'
-        );
-    END IF;
-
-    -- Validate that the user is a member of the group
-    IF NOT EXISTS (
-        SELECT 1
-        FROM "Members" AS m
-        WHERE m.user_id = current_user_id
-          AND m.group_id = get_comments.group_id
-    ) THEN
-        RETURN jsonb_build_object(
-            'success', false,
-            'error', 'You are not a member of this group'
-        );
-    END IF;
-
-    -- Validate that the image belongs to the specified group
-    IF NOT EXISTS (
-        SELECT 1
-        FROM "ImageGroups" AS ig
-        WHERE ig.image_id = get_comments.image_id
-          AND ig.group_id = get_comments.group_id
-    ) THEN
-        RETURN jsonb_build_object(
-            'success', false,
-            'error', 'Image does not belong to the specified group'
-        );
-    END IF;
-
-    -- Retrieve comments for the image in the specified group
-    SELECT jsonb_agg(comment_obj) INTO comments
-    FROM (
-        SELECT
-            c.user_id,
-            c.text,
-            c.created_at
-        FROM "Comments" AS c
-        WHERE c.image_id = get_comments.image_id
-          AND c.group_id = get_comments.group_id
-        ORDER BY c.created_at DESC
-    ) AS comment_obj;
-
-    RETURN jsonb_build_object(
-        'success', true,
-        'comments', comments
-    );
+  current_user_id := auth.uid();
+  IF current_user_id IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM "Members" AS m
+    WHERE m.user_id = current_user_id
+      AND m.group_id = get_comments.group_id
+  ) THEN
+    RETURN jsonb_build_object('success', false, 'error', 'You are not a member of this group');
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM "ImageGroups" AS ig
+    WHERE ig.image_id = get_comments.image_id
+      AND ig.group_id = get_comments.group_id
+  ) THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Image does not belong to the specified group');
+  END IF;
+  SELECT COALESCE(
+    jsonb_agg(
+      jsonb_build_object(
+        'id', c.id,
+        'user_id', c.user_id,
+        'text', c.text,
+        'created_at', c.created_at,
+        'parent_id', c.parent_id
+      )
+      ORDER BY c.created_at ASC
+    ),
+    '[]'::jsonb
+  )
+  INTO comments
+  FROM "Comments" AS c
+  WHERE c.image_id = get_comments.image_id
+    AND c.group_id = get_comments.group_id;
+  RETURN jsonb_build_object('success', true, 'comments', comments);
 EXCEPTION
-    WHEN OTHERS THEN
-        RETURN jsonb_build_object(
-            'success', false,
-            'error', SQLERRM
-        );
-END;
-$$;
+  WHEN OTHERS THEN
+    RETURN jsonb_build_object('success', false, 'error', SQLERRM);
+END;$$;
 
 
 --
@@ -636,7 +596,7 @@ $$;
 
 CREATE FUNCTION public.get_group_details(group_id uuid) RETURNS jsonb
     LANGUAGE plpgsql
-    SET search_path TO 'public', 'extensions', 'pg_temp'
+    SET search_path TO 'public'
     AS $$DECLARE
     group_record RECORD;
     is_admin BOOLEAN;
@@ -680,8 +640,8 @@ END;$$;
 --
 
 CREATE FUNCTION public.get_group_images(p_group_id uuid) RETURNS jsonb
-    LANGUAGE plpgsql SECURITY DEFINER
-    SET search_path TO 'public', 'extensions', 'pg_temp'
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
     AS $$DECLARE
   current_user_id UUID;
   images_data JSONB;
@@ -722,7 +682,6 @@ BEGIN
   )
   FROM "Images" i
   JOIN "ImageGroups" ig ON i.id = ig.image_id
-  JOIN auth.users u ON i.uploaded_by = u.id
   WHERE ig.group_id = p_group_id
   INTO images_data;
 
@@ -745,7 +704,7 @@ END;$$;
 
 CREATE FUNCTION public.get_group_members(group_id uuid) RETURNS jsonb
     LANGUAGE plpgsql
-    SET search_path TO 'public', 'extensions', 'pg_temp'
+    SET search_path TO 'public'
     AS $$DECLARE
     members JSONB;
 BEGIN
@@ -792,7 +751,7 @@ END;$$;
 
 CREATE FUNCTION public.get_group_members_count(group_id uuid) RETURNS jsonb
     LANGUAGE plpgsql
-    SET search_path TO 'public', 'extensions', 'pg_temp'
+    SET search_path TO 'public'
     AS $$DECLARE
     member_count INTEGER;
     group_exists BOOLEAN;
@@ -837,7 +796,7 @@ END;$$;
 
 CREATE FUNCTION public.get_image_details(image_id uuid) RETURNS TABLE(created_at timestamp with time zone, uploaded_by uuid, description text)
     LANGUAGE plpgsql
-    SET search_path TO 'public', 'extensions', 'pg_temp'
+    SET search_path TO 'public'
     AS $$
 BEGIN
   RETURN QUERY
@@ -860,8 +819,8 @@ $$;
 --
 
 CREATE FUNCTION public.get_latest_image() RETURNS jsonb
-    LANGUAGE plpgsql SECURITY DEFINER
-    SET search_path TO 'public', 'extensions', 'pg_temp'
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
     AS $$
 DECLARE
   current_user_id UUID;
@@ -913,7 +872,8 @@ $$;
 --
 
 CREATE FUNCTION public.get_notify_group_comments() RETURNS jsonb
-    LANGUAGE plpgsql SECURITY DEFINER
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
     AS $$
 DECLARE
   current_user_id uuid;
@@ -955,8 +915,8 @@ $$;
 --
 
 CREATE FUNCTION public.get_user_groups() RETURNS jsonb
-    LANGUAGE plpgsql SECURITY DEFINER
-    SET search_path TO 'public', 'extensions', 'pg_temp'
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
     AS $$DECLARE
   current_user_id UUID;
   user_groups JSONB;
@@ -1019,7 +979,7 @@ END;$$;
 
 CREATE FUNCTION public.get_username(user_id text) RETURNS text
     LANGUAGE plpgsql
-    SET search_path TO 'public', 'extensions', 'pg_temp'
+    SET search_path TO 'public'
     AS $$DECLARE
     username TEXT;
 BEGIN
@@ -1037,39 +997,24 @@ END;$$;
 --
 
 CREATE FUNCTION public.handle_storage_delete() RETURNS trigger
-    LANGUAGE plpgsql SECURITY DEFINER
-    SET search_path TO 'public', 'extensions', 'pg_temp'
-    AS $$
-BEGIN
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $_$BEGIN
   -- Delete the corresponding record from the Images table
   DELETE FROM "Images"
-  WHERE id = (SELECT uuid(REPLACE(OLD.name, '.jpg', '')) FROM regexp_matches(OLD.name, '([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})') AS match);
+  WHERE id = (
+    SELECT uuid(
+      regexp_replace(
+        OLD.name,
+        '^.*?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}).*$',
+        '\1'
+      )
+    )
+  )
+  AND uploaded_by = auth.uid();
 
   RETURN OLD;
-END;
-$$;
-
-
---
--- Name: is_admin(uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.is_admin(group_id uuid) RETURNS boolean
-    LANGUAGE plpgsql
-    SET search_path TO 'public', 'extensions', 'pg_temp'
-    AS $$
-DECLARE
-    is_admin BOOLEAN;
-BEGIN
-    -- Check if the user is an admin of the group
-    SELECT admin INTO is_admin
-    FROM "public"."Members" m
-    WHERE user_id = auth.uid() AND m.group_id = is_admin.group_id;
-
-    -- If no result is found, return FALSE
-    RETURN COALESCE(is_admin, FALSE);
-END;
-$$;
+END;$_$;
 
 
 --
@@ -1077,7 +1022,7 @@ $$;
 --
 
 CREATE FUNCTION public.is_admin_or_owner(p_group_id uuid) RETURNS boolean
-    LANGUAGE plpgsql SECURITY DEFINER
+    LANGUAGE plpgsql
     SET search_path TO 'public'
     AS $$
 BEGIN
@@ -1097,8 +1042,8 @@ $$;
 --
 
 CREATE FUNCTION public.join_group_by_code(group_code text) RETURNS jsonb
-    LANGUAGE plpgsql SECURITY DEFINER
-    SET search_path TO 'public', 'extensions', 'pg_temp'
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
     AS $$DECLARE
   current_user_id UUID;
   found_group_id UUID;
@@ -1176,7 +1121,7 @@ END;$$;
 
 CREATE FUNCTION public.leave_group(group_id uuid) RETURNS jsonb
     LANGUAGE plpgsql
-    SET search_path TO 'public', 'extensions', 'pg_temp'
+    SET search_path TO 'public'
     AS $$DECLARE
     deleted_count INT;
     user_role TEXT;
@@ -1243,6 +1188,7 @@ END;$$;
 
 CREATE FUNCTION public.manage_member_role(group_id uuid, target_user_id uuid, action text) RETURNS jsonb
     LANGUAGE plpgsql
+    SET search_path TO 'public'
     AS $$
 DECLARE
     user_role TEXT;
@@ -1334,7 +1280,7 @@ $$;
 --
 
 CREATE FUNCTION public.register_uploaded_image(image_id uuid, group_ids text[], image_description text) RETURNS jsonb
-    LANGUAGE plpgsql SECURITY DEFINER
+    LANGUAGE plpgsql
     SET search_path TO 'public'
     AS $$declare
   current_user_id uuid;
@@ -1384,7 +1330,7 @@ end;$$;
 
 CREATE FUNCTION public.remove_group(group_id uuid) RETURNS jsonb
     LANGUAGE plpgsql
-    SET search_path TO 'public', 'extensions', 'pg_temp'
+    SET search_path TO 'public'
     AS $$DECLARE
     user_role_check TEXT;
     group_deleted INT;
@@ -1444,7 +1390,7 @@ END;$$;
 --
 
 CREATE FUNCTION public.request_image_uuid() RETURNS jsonb
-    LANGUAGE plpgsql SECURITY DEFINER
+    LANGUAGE plpgsql
     SET search_path TO 'public'
     AS $$
 declare
@@ -1472,7 +1418,8 @@ $$;
 --
 
 CREATE FUNCTION public.set_notify_group_comments(enabled boolean) RETURNS jsonb
-    LANGUAGE plpgsql SECURITY DEFINER
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
     AS $$
 DECLARE
     current_user_id UUID;
@@ -1518,7 +1465,7 @@ $$;
 --
 
 CREATE FUNCTION public.unban_user(group_id uuid, target_user_id uuid) RETURNS jsonb
-    LANGUAGE plpgsql SECURITY DEFINER
+    LANGUAGE plpgsql
     SET search_path TO 'public'
     AS $$DECLARE
   caller_role TEXT;
@@ -1597,8 +1544,8 @@ END;$$;
 --
 
 CREATE FUNCTION public.update_comment(group_id uuid, image_id uuid, text text) RETURNS jsonb
-    LANGUAGE plpgsql SECURITY DEFINER
-    SET search_path TO 'public', 'extensions', 'pg_temp'
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
     AS $$DECLARE
     current_user_id UUID;
 BEGIN
@@ -1667,12 +1614,53 @@ END;$$;
 
 
 --
+-- Name: update_comment(uuid, uuid, uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.update_comment(comment_id uuid, image_id uuid, group_id uuid, text text) RETURNS jsonb
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  current_user_id UUID;
+BEGIN
+  current_user_id := auth.uid();
+  IF current_user_id IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+    FROM "Members" m
+    WHERE m.user_id = current_user_id
+      AND m.group_id = update_comment.group_id
+      AND m.role <> 'banned'
+  ) THEN
+    RETURN jsonb_build_object('success', false, 'error', 'You are not a member of this group');
+  END IF;
+  UPDATE "Comments" c
+  SET text = update_comment.text
+  WHERE c.id = update_comment.comment_id
+    AND c.image_id = update_comment.image_id
+    AND c.group_id = update_comment.group_id
+    AND c.user_id = current_user_id;
+  IF FOUND THEN
+    RETURN jsonb_build_object('success', true, 'message', 'Comment updated successfully');
+  ELSE
+    RETURN jsonb_build_object('success', false, 'error', 'No comment found to update or permission denied');
+  END IF;
+EXCEPTION
+  WHEN OTHERS THEN
+    RETURN jsonb_build_object('success', false, 'error', SQLERRM);
+END;
+$$;
+
+
+--
 -- Name: update_group_name(uuid, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.update_group_name(group_id uuid, new_name text) RETURNS jsonb
     LANGUAGE plpgsql
-    SET search_path TO 'public', 'extensions', 'pg_temp'
+    SET search_path TO 'public'
     AS $$DECLARE
   current_user_id UUID;
 BEGIN
@@ -2363,6 +2351,7 @@ CREATE TABLE public."Comments" (
     image_id uuid NOT NULL,
     text text,
     group_id uuid NOT NULL,
+    parent_id uuid,
     CONSTRAINT "Comments_text_check" CHECK ((length(text) < 200))
 );
 
@@ -2372,6 +2361,13 @@ CREATE TABLE public."Comments" (
 --
 
 COMMENT ON TABLE public."Comments" IS 'Comments left by users about an image';
+
+
+--
+-- Name: COLUMN "Comments".parent_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public."Comments".parent_id IS 'The original comment this comment answers to';
 
 
 --
@@ -2692,14 +2688,6 @@ ALTER TABLE ONLY public."Users"
 
 
 --
--- Name: Comments unique_user_image_comment; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public."Comments"
-    ADD CONSTRAINT unique_user_image_comment UNIQUE (user_id, image_id);
-
-
---
 -- Name: buckets_analytics buckets_analytics_pkey; Type: CONSTRAINT; Schema: storage; Owner: -
 --
 
@@ -2943,6 +2931,14 @@ ALTER TABLE ONLY public."Comments"
 
 
 --
+-- Name: Comments Comments_parent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Comments"
+    ADD CONSTRAINT "Comments_parent_id_fkey" FOREIGN KEY (parent_id) REFERENCES public."Comments"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
 -- Name: Comments Comments_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3109,22 +3105,6 @@ CREATE POLICY "Enable delete for users based on user_id" ON public."Members" FOR
 
 
 --
--- Name: ImageGroups Enable insert for authenticated users only; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Enable insert for authenticated users only" ON public."ImageGroups" FOR INSERT TO authenticated WITH CHECK ((NOT (EXISTS ( SELECT 1
-   FROM public."Members" m
-  WHERE ((m.group_id = m.group_id) AND (m.user_id = auth.uid()) AND (m.role <> 'banned'::text))))));
-
-
---
--- Name: Images Enable insert for authenticated users only; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Enable insert for authenticated users only" ON public."Images" FOR INSERT TO authenticated WITH CHECK (true);
-
-
---
 -- Name: Users Enable insert for users; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -3205,13 +3185,21 @@ ALTER TABLE public."Images" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public."Members" ENABLE ROW LEVEL SECURITY;
 
 --
--- Name: Comments Only group members can insert comments; Type: POLICY; Schema: public; Owner: -
+-- Name: Comments Members can insert comments; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Only group members can insert comments" ON public."Comments" FOR SELECT USING ((EXISTS ( SELECT 1
-   FROM (public."ImageGroups" ig
-     JOIN public."Members" m ON ((ig.group_id = m.group_id)))
-  WHERE ((ig.image_id = "Comments".image_id) AND (m.user_id = auth.uid())))));
+CREATE POLICY "Members can insert comments" ON public."Comments" FOR INSERT WITH CHECK (((user_id = auth.uid()) AND (EXISTS ( SELECT 1
+   FROM public."Members" m
+  WHERE ((m.group_id = "Comments".group_id) AND (m.user_id = auth.uid()) AND (m.role <> 'banned'::text))))));
+
+
+--
+-- Name: ImageGroups Members can insert images to groups; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Members can insert images to groups" ON public."ImageGroups" FOR INSERT WITH CHECK ((EXISTS ( SELECT 1
+   FROM public."Members" m
+  WHERE ((m.group_id = "ImageGroups".group_id) AND (m.user_id = auth.uid()) AND (m.role <> 'banned'::text)))));
 
 
 --
@@ -3241,6 +3229,13 @@ CREATE POLICY "Users can delete their own comments" ON public."Comments" FOR DEL
 
 
 --
+-- Name: Images Users can insert their own images; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Users can insert their own images" ON public."Images" FOR INSERT TO authenticated WITH CHECK ((uploaded_by = auth.uid()));
+
+
+--
 -- Name: Users Users can see members of their groups; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -3248,6 +3243,13 @@ CREATE POLICY "Users can see members of their groups" ON public."Users" FOR SELE
    FROM (public."Members" m1
      JOIN public."Members" m2 ON ((m1.group_id = m2.group_id)))
   WHERE ((m1.user_id = auth.uid()) AND (m2.user_id = "Users".id)))));
+
+
+--
+-- Name: Images Users can see their own images; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Users can see their own images" ON public."Images" FOR SELECT USING ((uploaded_by = auth.uid()));
 
 
 --
@@ -3431,9 +3433,9 @@ ALTER TABLE storage.s3_multipart_uploads_parts ENABLE ROW LEVEL SECURITY;
 --
 
 GRANT USAGE ON SCHEMA public TO postgres;
-GRANT USAGE ON SCHEMA public TO anon;
 GRANT USAGE ON SCHEMA public TO authenticated;
 GRANT USAGE ON SCHEMA public TO service_role;
+GRANT USAGE ON SCHEMA public TO anon;
 
 
 --
@@ -3441,20 +3443,21 @@ GRANT USAGE ON SCHEMA public TO service_role;
 --
 
 GRANT ALL ON SCHEMA storage TO postgres;
-GRANT USAGE ON SCHEMA storage TO anon;
 GRANT USAGE ON SCHEMA storage TO authenticated;
 GRANT USAGE ON SCHEMA storage TO service_role;
 GRANT ALL ON SCHEMA storage TO supabase_storage_admin;
 GRANT ALL ON SCHEMA storage TO dashboard_user;
+GRANT USAGE ON SCHEMA storage TO anon;
 
 
 --
--- Name: FUNCTION add_comment(group_id uuid, image_id uuid, text text); Type: ACL; Schema: public; Owner: -
+-- Name: FUNCTION add_comment(image_id uuid, group_id uuid, text text, parent_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.add_comment(group_id uuid, image_id uuid, text text) TO anon;
-GRANT ALL ON FUNCTION public.add_comment(group_id uuid, image_id uuid, text text) TO authenticated;
-GRANT ALL ON FUNCTION public.add_comment(group_id uuid, image_id uuid, text text) TO service_role;
+GRANT ALL ON FUNCTION public.add_comment(image_id uuid, group_id uuid, text text, parent_id uuid) TO postgres;
+GRANT ALL ON FUNCTION public.add_comment(image_id uuid, group_id uuid, text text, parent_id uuid) TO anon;
+GRANT ALL ON FUNCTION public.add_comment(image_id uuid, group_id uuid, text text, parent_id uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.add_comment(image_id uuid, group_id uuid, text text, parent_id uuid) TO service_role;
 
 
 --
@@ -3462,7 +3465,6 @@ GRANT ALL ON FUNCTION public.add_comment(group_id uuid, image_id uuid, text text
 --
 
 GRANT ALL ON FUNCTION public.ban_user(group_id uuid, target_user_id uuid) TO postgres;
-GRANT ALL ON FUNCTION public.ban_user(group_id uuid, target_user_id uuid) TO anon;
 GRANT ALL ON FUNCTION public.ban_user(group_id uuid, target_user_id uuid) TO authenticated;
 GRANT ALL ON FUNCTION public.ban_user(group_id uuid, target_user_id uuid) TO service_role;
 
@@ -3471,7 +3473,6 @@ GRANT ALL ON FUNCTION public.ban_user(group_id uuid, target_user_id uuid) TO ser
 -- Name: FUNCTION call_get_group_members_count(p_group_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.call_get_group_members_count(p_group_id uuid) TO anon;
 GRANT ALL ON FUNCTION public.call_get_group_members_count(p_group_id uuid) TO authenticated;
 GRANT ALL ON FUNCTION public.call_get_group_members_count(p_group_id uuid) TO service_role;
 
@@ -3480,7 +3481,6 @@ GRANT ALL ON FUNCTION public.call_get_group_members_count(p_group_id uuid) TO se
 -- Name: FUNCTION check_user_in_group(user_uuid uuid, group_uuid uuid); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.check_user_in_group(user_uuid uuid, group_uuid uuid) TO anon;
 GRANT ALL ON FUNCTION public.check_user_in_group(user_uuid uuid, group_uuid uuid) TO authenticated;
 GRANT ALL ON FUNCTION public.check_user_in_group(user_uuid uuid, group_uuid uuid) TO service_role;
 
@@ -3489,7 +3489,6 @@ GRANT ALL ON FUNCTION public.check_user_in_group(user_uuid uuid, group_uuid uuid
 -- Name: FUNCTION create_group(group_name text); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.create_group(group_name text) TO anon;
 GRANT ALL ON FUNCTION public.create_group(group_name text) TO authenticated;
 GRANT ALL ON FUNCTION public.create_group(group_name text) TO service_role;
 
@@ -3498,7 +3497,6 @@ GRANT ALL ON FUNCTION public.create_group(group_name text) TO service_role;
 -- Name: FUNCTION create_user_profile(username text); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.create_user_profile(username text) TO anon;
 GRANT ALL ON FUNCTION public.create_user_profile(username text) TO authenticated;
 GRANT ALL ON FUNCTION public.create_user_profile(username text) TO service_role;
 
@@ -3508,25 +3506,24 @@ GRANT ALL ON FUNCTION public.create_user_profile(username text) TO service_role;
 --
 
 GRANT ALL ON FUNCTION public.debug_auth_context(p_group_id uuid) TO postgres;
-GRANT ALL ON FUNCTION public.debug_auth_context(p_group_id uuid) TO anon;
 GRANT ALL ON FUNCTION public.debug_auth_context(p_group_id uuid) TO authenticated;
 GRANT ALL ON FUNCTION public.debug_auth_context(p_group_id uuid) TO service_role;
 
 
 --
--- Name: FUNCTION delete_comment(group_id uuid, image_id uuid); Type: ACL; Schema: public; Owner: -
+-- Name: FUNCTION delete_comment(comment_id uuid, image_id uuid, group_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.delete_comment(group_id uuid, image_id uuid) TO anon;
-GRANT ALL ON FUNCTION public.delete_comment(group_id uuid, image_id uuid) TO authenticated;
-GRANT ALL ON FUNCTION public.delete_comment(group_id uuid, image_id uuid) TO service_role;
+GRANT ALL ON FUNCTION public.delete_comment(comment_id uuid, image_id uuid, group_id uuid) TO postgres;
+GRANT ALL ON FUNCTION public.delete_comment(comment_id uuid, image_id uuid, group_id uuid) TO anon;
+GRANT ALL ON FUNCTION public.delete_comment(comment_id uuid, image_id uuid, group_id uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.delete_comment(comment_id uuid, image_id uuid, group_id uuid) TO service_role;
 
 
 --
 -- Name: FUNCTION delete_image(image_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.delete_image(image_id uuid) TO anon;
 GRANT ALL ON FUNCTION public.delete_image(image_id uuid) TO authenticated;
 GRANT ALL ON FUNCTION public.delete_image(image_id uuid) TO service_role;
 
@@ -3536,7 +3533,6 @@ GRANT ALL ON FUNCTION public.delete_image(image_id uuid) TO service_role;
 --
 
 GRANT ALL ON FUNCTION public.edit_username(new_username text) TO postgres;
-GRANT ALL ON FUNCTION public.edit_username(new_username text) TO anon;
 GRANT ALL ON FUNCTION public.edit_username(new_username text) TO authenticated;
 GRANT ALL ON FUNCTION public.edit_username(new_username text) TO service_role;
 
@@ -3545,7 +3541,6 @@ GRANT ALL ON FUNCTION public.edit_username(new_username text) TO service_role;
 -- Name: FUNCTION get_all_images(); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.get_all_images() TO anon;
 GRANT ALL ON FUNCTION public.get_all_images() TO authenticated;
 GRANT ALL ON FUNCTION public.get_all_images() TO service_role;
 
@@ -3554,25 +3549,24 @@ GRANT ALL ON FUNCTION public.get_all_images() TO service_role;
 -- Name: FUNCTION get_comment_count(group_id uuid, image_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.get_comment_count(group_id uuid, image_id uuid) TO anon;
 GRANT ALL ON FUNCTION public.get_comment_count(group_id uuid, image_id uuid) TO authenticated;
 GRANT ALL ON FUNCTION public.get_comment_count(group_id uuid, image_id uuid) TO service_role;
 
 
 --
--- Name: FUNCTION get_comments(group_id uuid, image_id uuid); Type: ACL; Schema: public; Owner: -
+-- Name: FUNCTION get_comments(image_id uuid, group_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.get_comments(group_id uuid, image_id uuid) TO anon;
-GRANT ALL ON FUNCTION public.get_comments(group_id uuid, image_id uuid) TO authenticated;
-GRANT ALL ON FUNCTION public.get_comments(group_id uuid, image_id uuid) TO service_role;
+GRANT ALL ON FUNCTION public.get_comments(image_id uuid, group_id uuid) TO postgres;
+GRANT ALL ON FUNCTION public.get_comments(image_id uuid, group_id uuid) TO anon;
+GRANT ALL ON FUNCTION public.get_comments(image_id uuid, group_id uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.get_comments(image_id uuid, group_id uuid) TO service_role;
 
 
 --
 -- Name: FUNCTION get_group_details(group_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.get_group_details(group_id uuid) TO anon;
 GRANT ALL ON FUNCTION public.get_group_details(group_id uuid) TO authenticated;
 GRANT ALL ON FUNCTION public.get_group_details(group_id uuid) TO service_role;
 
@@ -3581,7 +3575,6 @@ GRANT ALL ON FUNCTION public.get_group_details(group_id uuid) TO service_role;
 -- Name: FUNCTION get_group_images(p_group_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.get_group_images(p_group_id uuid) TO anon;
 GRANT ALL ON FUNCTION public.get_group_images(p_group_id uuid) TO authenticated;
 GRANT ALL ON FUNCTION public.get_group_images(p_group_id uuid) TO service_role;
 
@@ -3590,7 +3583,6 @@ GRANT ALL ON FUNCTION public.get_group_images(p_group_id uuid) TO service_role;
 -- Name: FUNCTION get_group_members(group_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.get_group_members(group_id uuid) TO anon;
 GRANT ALL ON FUNCTION public.get_group_members(group_id uuid) TO authenticated;
 GRANT ALL ON FUNCTION public.get_group_members(group_id uuid) TO service_role;
 
@@ -3599,7 +3591,6 @@ GRANT ALL ON FUNCTION public.get_group_members(group_id uuid) TO service_role;
 -- Name: FUNCTION get_group_members_count(group_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.get_group_members_count(group_id uuid) TO anon;
 GRANT ALL ON FUNCTION public.get_group_members_count(group_id uuid) TO authenticated;
 GRANT ALL ON FUNCTION public.get_group_members_count(group_id uuid) TO service_role;
 
@@ -3608,7 +3599,6 @@ GRANT ALL ON FUNCTION public.get_group_members_count(group_id uuid) TO service_r
 -- Name: FUNCTION get_image_details(image_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.get_image_details(image_id uuid) TO anon;
 GRANT ALL ON FUNCTION public.get_image_details(image_id uuid) TO authenticated;
 GRANT ALL ON FUNCTION public.get_image_details(image_id uuid) TO service_role;
 
@@ -3617,7 +3607,6 @@ GRANT ALL ON FUNCTION public.get_image_details(image_id uuid) TO service_role;
 -- Name: FUNCTION get_latest_image(); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.get_latest_image() TO anon;
 GRANT ALL ON FUNCTION public.get_latest_image() TO authenticated;
 GRANT ALL ON FUNCTION public.get_latest_image() TO service_role;
 
@@ -3627,7 +3616,6 @@ GRANT ALL ON FUNCTION public.get_latest_image() TO service_role;
 --
 
 GRANT ALL ON FUNCTION public.get_notify_group_comments() TO postgres;
-GRANT ALL ON FUNCTION public.get_notify_group_comments() TO anon;
 GRANT ALL ON FUNCTION public.get_notify_group_comments() TO authenticated;
 GRANT ALL ON FUNCTION public.get_notify_group_comments() TO service_role;
 
@@ -3636,7 +3624,6 @@ GRANT ALL ON FUNCTION public.get_notify_group_comments() TO service_role;
 -- Name: FUNCTION get_user_groups(); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.get_user_groups() TO anon;
 GRANT ALL ON FUNCTION public.get_user_groups() TO authenticated;
 GRANT ALL ON FUNCTION public.get_user_groups() TO service_role;
 
@@ -3645,7 +3632,6 @@ GRANT ALL ON FUNCTION public.get_user_groups() TO service_role;
 -- Name: FUNCTION get_username(user_id text); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.get_username(user_id text) TO anon;
 GRANT ALL ON FUNCTION public.get_username(user_id text) TO authenticated;
 GRANT ALL ON FUNCTION public.get_username(user_id text) TO service_role;
 
@@ -3654,18 +3640,8 @@ GRANT ALL ON FUNCTION public.get_username(user_id text) TO service_role;
 -- Name: FUNCTION handle_storage_delete(); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.handle_storage_delete() TO anon;
 GRANT ALL ON FUNCTION public.handle_storage_delete() TO authenticated;
 GRANT ALL ON FUNCTION public.handle_storage_delete() TO service_role;
-
-
---
--- Name: FUNCTION is_admin(group_id uuid); Type: ACL; Schema: public; Owner: -
---
-
-GRANT ALL ON FUNCTION public.is_admin(group_id uuid) TO anon;
-GRANT ALL ON FUNCTION public.is_admin(group_id uuid) TO authenticated;
-GRANT ALL ON FUNCTION public.is_admin(group_id uuid) TO service_role;
 
 
 --
@@ -3673,7 +3649,6 @@ GRANT ALL ON FUNCTION public.is_admin(group_id uuid) TO service_role;
 --
 
 GRANT ALL ON FUNCTION public.is_admin_or_owner(p_group_id uuid) TO postgres;
-GRANT ALL ON FUNCTION public.is_admin_or_owner(p_group_id uuid) TO anon;
 GRANT ALL ON FUNCTION public.is_admin_or_owner(p_group_id uuid) TO authenticated;
 GRANT ALL ON FUNCTION public.is_admin_or_owner(p_group_id uuid) TO service_role;
 
@@ -3682,7 +3657,6 @@ GRANT ALL ON FUNCTION public.is_admin_or_owner(p_group_id uuid) TO service_role;
 -- Name: FUNCTION join_group_by_code(group_code text); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.join_group_by_code(group_code text) TO anon;
 GRANT ALL ON FUNCTION public.join_group_by_code(group_code text) TO authenticated;
 GRANT ALL ON FUNCTION public.join_group_by_code(group_code text) TO service_role;
 
@@ -3691,7 +3665,6 @@ GRANT ALL ON FUNCTION public.join_group_by_code(group_code text) TO service_role
 -- Name: FUNCTION leave_group(group_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.leave_group(group_id uuid) TO anon;
 GRANT ALL ON FUNCTION public.leave_group(group_id uuid) TO authenticated;
 GRANT ALL ON FUNCTION public.leave_group(group_id uuid) TO service_role;
 
@@ -3701,7 +3674,6 @@ GRANT ALL ON FUNCTION public.leave_group(group_id uuid) TO service_role;
 --
 
 GRANT ALL ON FUNCTION public.manage_member_role(group_id uuid, target_user_id uuid, action text) TO postgres;
-GRANT ALL ON FUNCTION public.manage_member_role(group_id uuid, target_user_id uuid, action text) TO anon;
 GRANT ALL ON FUNCTION public.manage_member_role(group_id uuid, target_user_id uuid, action text) TO authenticated;
 GRANT ALL ON FUNCTION public.manage_member_role(group_id uuid, target_user_id uuid, action text) TO service_role;
 
@@ -3711,7 +3683,6 @@ GRANT ALL ON FUNCTION public.manage_member_role(group_id uuid, target_user_id uu
 --
 
 GRANT ALL ON FUNCTION public.register_uploaded_image(image_id uuid, group_ids text[], image_description text) TO postgres;
-GRANT ALL ON FUNCTION public.register_uploaded_image(image_id uuid, group_ids text[], image_description text) TO anon;
 GRANT ALL ON FUNCTION public.register_uploaded_image(image_id uuid, group_ids text[], image_description text) TO authenticated;
 GRANT ALL ON FUNCTION public.register_uploaded_image(image_id uuid, group_ids text[], image_description text) TO service_role;
 
@@ -3720,7 +3691,6 @@ GRANT ALL ON FUNCTION public.register_uploaded_image(image_id uuid, group_ids te
 -- Name: FUNCTION remove_group(group_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.remove_group(group_id uuid) TO anon;
 GRANT ALL ON FUNCTION public.remove_group(group_id uuid) TO authenticated;
 GRANT ALL ON FUNCTION public.remove_group(group_id uuid) TO service_role;
 
@@ -3730,7 +3700,6 @@ GRANT ALL ON FUNCTION public.remove_group(group_id uuid) TO service_role;
 --
 
 GRANT ALL ON FUNCTION public.request_image_uuid() TO postgres;
-GRANT ALL ON FUNCTION public.request_image_uuid() TO anon;
 GRANT ALL ON FUNCTION public.request_image_uuid() TO authenticated;
 GRANT ALL ON FUNCTION public.request_image_uuid() TO service_role;
 
@@ -3740,7 +3709,6 @@ GRANT ALL ON FUNCTION public.request_image_uuid() TO service_role;
 --
 
 GRANT ALL ON FUNCTION public.set_notify_group_comments(enabled boolean) TO postgres;
-GRANT ALL ON FUNCTION public.set_notify_group_comments(enabled boolean) TO anon;
 GRANT ALL ON FUNCTION public.set_notify_group_comments(enabled boolean) TO authenticated;
 GRANT ALL ON FUNCTION public.set_notify_group_comments(enabled boolean) TO service_role;
 
@@ -3750,7 +3718,6 @@ GRANT ALL ON FUNCTION public.set_notify_group_comments(enabled boolean) TO servi
 --
 
 GRANT ALL ON FUNCTION public.unban_user(group_id uuid, target_user_id uuid) TO postgres;
-GRANT ALL ON FUNCTION public.unban_user(group_id uuid, target_user_id uuid) TO anon;
 GRANT ALL ON FUNCTION public.unban_user(group_id uuid, target_user_id uuid) TO authenticated;
 GRANT ALL ON FUNCTION public.unban_user(group_id uuid, target_user_id uuid) TO service_role;
 
@@ -3759,16 +3726,24 @@ GRANT ALL ON FUNCTION public.unban_user(group_id uuid, target_user_id uuid) TO s
 -- Name: FUNCTION update_comment(group_id uuid, image_id uuid, text text); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.update_comment(group_id uuid, image_id uuid, text text) TO anon;
 GRANT ALL ON FUNCTION public.update_comment(group_id uuid, image_id uuid, text text) TO authenticated;
 GRANT ALL ON FUNCTION public.update_comment(group_id uuid, image_id uuid, text text) TO service_role;
+
+
+--
+-- Name: FUNCTION update_comment(comment_id uuid, image_id uuid, group_id uuid, text text); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.update_comment(comment_id uuid, image_id uuid, group_id uuid, text text) TO postgres;
+GRANT ALL ON FUNCTION public.update_comment(comment_id uuid, image_id uuid, group_id uuid, text text) TO anon;
+GRANT ALL ON FUNCTION public.update_comment(comment_id uuid, image_id uuid, group_id uuid, text text) TO authenticated;
+GRANT ALL ON FUNCTION public.update_comment(comment_id uuid, image_id uuid, group_id uuid, text text) TO service_role;
 
 
 --
 -- Name: FUNCTION update_group_name(group_id uuid, new_name text); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.update_group_name(group_id uuid, new_name text) TO anon;
 GRANT ALL ON FUNCTION public.update_group_name(group_id uuid, new_name text) TO authenticated;
 GRANT ALL ON FUNCTION public.update_group_name(group_id uuid, new_name text) TO service_role;
 
@@ -3777,7 +3752,6 @@ GRANT ALL ON FUNCTION public.update_group_name(group_id uuid, new_name text) TO 
 -- Name: TABLE "Comments"; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public."Comments" TO anon;
 GRANT ALL ON TABLE public."Comments" TO authenticated;
 GRANT ALL ON TABLE public."Comments" TO service_role;
 
@@ -3786,7 +3760,6 @@ GRANT ALL ON TABLE public."Comments" TO service_role;
 -- Name: TABLE "Groups"; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public."Groups" TO anon;
 GRANT ALL ON TABLE public."Groups" TO authenticated;
 GRANT ALL ON TABLE public."Groups" TO service_role;
 
@@ -3795,7 +3768,6 @@ GRANT ALL ON TABLE public."Groups" TO service_role;
 -- Name: TABLE "ImageGroups"; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public."ImageGroups" TO anon;
 GRANT ALL ON TABLE public."ImageGroups" TO authenticated;
 GRANT ALL ON TABLE public."ImageGroups" TO service_role;
 
@@ -3804,7 +3776,6 @@ GRANT ALL ON TABLE public."ImageGroups" TO service_role;
 -- Name: TABLE "Images"; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public."Images" TO anon;
 GRANT ALL ON TABLE public."Images" TO authenticated;
 GRANT ALL ON TABLE public."Images" TO service_role;
 
@@ -3813,7 +3784,6 @@ GRANT ALL ON TABLE public."Images" TO service_role;
 -- Name: TABLE "Members"; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public."Members" TO anon;
 GRANT ALL ON TABLE public."Members" TO authenticated;
 GRANT ALL ON TABLE public."Members" TO service_role;
 
@@ -3822,7 +3792,6 @@ GRANT ALL ON TABLE public."Members" TO service_role;
 -- Name: TABLE "Users"; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public."Users" TO anon;
 GRANT ALL ON TABLE public."Users" TO authenticated;
 GRANT ALL ON TABLE public."Users" TO service_role;
 
@@ -3831,7 +3800,6 @@ GRANT ALL ON TABLE public."Users" TO service_role;
 -- Name: TABLE buckets; Type: ACL; Schema: storage; Owner: -
 --
 
-GRANT ALL ON TABLE storage.buckets TO anon;
 GRANT ALL ON TABLE storage.buckets TO authenticated;
 GRANT ALL ON TABLE storage.buckets TO service_role;
 GRANT ALL ON TABLE storage.buckets TO postgres;
@@ -3843,7 +3811,6 @@ GRANT ALL ON TABLE storage.buckets TO postgres;
 
 GRANT ALL ON TABLE storage.buckets_analytics TO service_role;
 GRANT ALL ON TABLE storage.buckets_analytics TO authenticated;
-GRANT ALL ON TABLE storage.buckets_analytics TO anon;
 
 
 --
@@ -3852,7 +3819,6 @@ GRANT ALL ON TABLE storage.buckets_analytics TO anon;
 
 GRANT ALL ON TABLE storage.iceberg_namespaces TO service_role;
 GRANT SELECT ON TABLE storage.iceberg_namespaces TO authenticated;
-GRANT SELECT ON TABLE storage.iceberg_namespaces TO anon;
 
 
 --
@@ -3861,14 +3827,12 @@ GRANT SELECT ON TABLE storage.iceberg_namespaces TO anon;
 
 GRANT ALL ON TABLE storage.iceberg_tables TO service_role;
 GRANT SELECT ON TABLE storage.iceberg_tables TO authenticated;
-GRANT SELECT ON TABLE storage.iceberg_tables TO anon;
 
 
 --
 -- Name: TABLE migrations; Type: ACL; Schema: storage; Owner: -
 --
 
-GRANT ALL ON TABLE storage.migrations TO anon;
 GRANT ALL ON TABLE storage.migrations TO authenticated;
 GRANT ALL ON TABLE storage.migrations TO service_role;
 GRANT ALL ON TABLE storage.migrations TO postgres;
@@ -3878,7 +3842,6 @@ GRANT ALL ON TABLE storage.migrations TO postgres;
 -- Name: TABLE objects; Type: ACL; Schema: storage; Owner: -
 --
 
-GRANT ALL ON TABLE storage.objects TO anon;
 GRANT ALL ON TABLE storage.objects TO authenticated;
 GRANT ALL ON TABLE storage.objects TO service_role;
 GRANT ALL ON TABLE storage.objects TO postgres;
@@ -3890,7 +3853,6 @@ GRANT ALL ON TABLE storage.objects TO postgres;
 
 GRANT ALL ON TABLE storage.prefixes TO service_role;
 GRANT ALL ON TABLE storage.prefixes TO authenticated;
-GRANT ALL ON TABLE storage.prefixes TO anon;
 
 
 --
@@ -3899,7 +3861,6 @@ GRANT ALL ON TABLE storage.prefixes TO anon;
 
 GRANT ALL ON TABLE storage.s3_multipart_uploads TO service_role;
 GRANT SELECT ON TABLE storage.s3_multipart_uploads TO authenticated;
-GRANT SELECT ON TABLE storage.s3_multipart_uploads TO anon;
 
 
 --
@@ -3908,7 +3869,6 @@ GRANT SELECT ON TABLE storage.s3_multipart_uploads TO anon;
 
 GRANT ALL ON TABLE storage.s3_multipart_uploads_parts TO service_role;
 GRANT SELECT ON TABLE storage.s3_multipart_uploads_parts TO authenticated;
-GRANT SELECT ON TABLE storage.s3_multipart_uploads_parts TO anon;
 
 
 --

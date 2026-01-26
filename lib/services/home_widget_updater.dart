@@ -106,8 +106,8 @@ Future<void> updateHomeWidget() async {
     final resized = await _downscaleWidgetImage(imageBytes, maxBytes);
     debugPrint("Resized bytes: ${resized.length}");
 
-    // Save file
-    final dir = await getTemporaryDirectory();
+    // Save file to persistent app storage (not temp, which OS can clear)
+    final dir = await getApplicationSupportDirectory();
     final path = "${dir.path}/krab_widget_current.jpg";
     final file = File(path);
 

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'firebase_options.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -24,6 +25,7 @@ import 'UserPreferences.dart';
 
 bool isSupabaseInitialized = false;
 bool isAppInitialized = false;
+Completer<bool>? _supabaseInitCompleter;
 
 final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey =
     GlobalKey<ScaffoldMessengerState>();
@@ -53,13 +55,25 @@ Future<int> _getWidgetBitmapLimitBytes() async {
 }
 
 Future<bool> initializeSupabaseIfNeeded() async {
+  // Already initialized
   if (isSupabaseInitialized) return true;
+
+  // Another call is in progress - wait for it
+  if (_supabaseInitCompleter != null) {
+    debugPrint('Supabase init already in progress, waiting...');
+    return _supabaseInitCompleter!.future;
+  }
+
+  // Start initialization with lock
+  _supabaseInitCompleter = Completer<bool>();
 
   final url = dotenv.env['SUPABASE_URL'] ?? '';
   final anon = dotenv.env['SUPABASE_ANON_KEY'] ?? '';
 
   if (url.isEmpty || anon.isEmpty) {
     debugPrint('Supabase config missing, cannot initialize.');
+    _supabaseInitCompleter!.complete(false);
+    _supabaseInitCompleter = null;
     return false;
   }
 
@@ -67,10 +81,13 @@ Future<bool> initializeSupabaseIfNeeded() async {
     await Supabase.initialize(url: url, anonKey: anon);
     isSupabaseInitialized = true;
     debugPrint('Supabase initialized successfully');
+    _supabaseInitCompleter!.complete(true);
     return true;
   } catch (e) {
     debugPrint('Supabase init failed: $e');
     isSupabaseInitialized = false;
+    _supabaseInitCompleter!.complete(false);
+    _supabaseInitCompleter = null;
     return false;
   }
 }

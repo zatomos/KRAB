@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/cupertino.dart';
 import 'package:krab/services/profile_picture_cache.dart';
+import 'package:krab/services/fcm_helper.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 
@@ -578,12 +579,13 @@ Future<SupabaseResponse<Map<String, dynamic>>> getImageDetails(
 }
 
 Future<SupabaseResponse<void>> postComment(
-    String imageId, String groupId, String comment) async {
+    String imageId, String groupId, String comment, {String? parentId}) async {
   try {
     final response = await supabase.rpc("add_comment", params: {
       "image_id": imageId,
       "group_id": groupId,
       "text": comment,
+      if (parentId != null) "parent_id": parentId,
     });
     if (response['success'] == false) {
       return SupabaseResponse(success: false, error: response['error']);
@@ -596,9 +598,10 @@ Future<SupabaseResponse<void>> postComment(
 }
 
 Future<SupabaseResponse<void>> updateComment(
-    String imageId, String groupId, String text) async {
+    String commentId, String imageId, String groupId, String text) async {
   try {
     final response = await supabase.rpc("update_comment", params: {
+      "comment_id": commentId,
       "image_id": imageId,
       "group_id": groupId,
       "text": text,
@@ -614,9 +617,10 @@ Future<SupabaseResponse<void>> updateComment(
 }
 
 Future<SupabaseResponse<void>> deleteComment(
-    String imageId, String groupId) async {
+    String commentId, String imageId, String groupId) async {
   try {
     final response = await supabase.rpc("delete_comment", params: {
+      "comment_id": commentId,
       "image_id": imageId,
       "group_id": groupId,
     });
@@ -756,6 +760,13 @@ Future<SupabaseResponse<void>> loginUser(String email, String password) async {
 /// Log out the current user.
 Future<SupabaseResponse<void>> logOut() async {
   try {
+    // Clean up FCM listeners
+    await FcmHelper.dispose();
+
+    // Clear profile picture cache
+    await ProfilePictureCache.of(supabase).clear();
+
+    // Sign out
     await supabase.auth.signOut();
     return SupabaseResponse(success: true);
   } catch (error) {

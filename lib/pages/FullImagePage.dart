@@ -34,15 +34,39 @@ class FullImagePage extends StatefulWidget {
   State<FullImagePage> createState() => _FullImagePageState();
 }
 
-class _FullImagePageState extends State<FullImagePage> {
+class _FullImagePageState extends State<FullImagePage>
+    with SingleTickerProviderStateMixin {
   late Uint8List _displayedBytes;
   bool _loadingFull = false;
+
+  final TransformationController _transformationController =
+      TransformationController();
+  TapDownDetails? _doubleTapDetails;
+
+  late AnimationController _animationController;
+  Animation<Matrix4>? _animation;
 
   @override
   void initState() {
     super.initState();
     _displayedBytes = widget.lowResImageData.imageBytes;
     _loadFullRes();
+
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 260),
+    )..addListener(() {
+        if (_animation != null) {
+          _transformationController.value = _animation!.value;
+        }
+      });
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    _transformationController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadFullRes() async {
@@ -72,11 +96,45 @@ class _FullImagePageState extends State<FullImagePage> {
     );
   }
 
+  void _handleDoubleTap() {
+    if (_doubleTapDetails == null) return;
+
+    final position = _doubleTapDetails!.localPosition;
+    final currentScale = _transformationController.value.getMaxScaleOnAxis();
+    final double newScale = currentScale > 1.0 ? 1.0 : 3.0;
+
+    final Matrix4 begin = _transformationController.value;
+
+    final double dx = -position.dx * (newScale - 1);
+    final double dy = -position.dy * (newScale - 1);
+
+    final Matrix4 scaleMatrix =
+    Matrix4.diagonal3Values(newScale, newScale, 1.0);
+
+    final Matrix4 translationMatrix =
+    Matrix4.translationValues(dx, dy, 0.0);
+
+    final Matrix4 end = translationMatrix.multiplied(scaleMatrix);
+
+
+    _animation = Matrix4Tween(
+      begin: begin,
+      end: end,
+    ).animate(
+      CurvedAnimation(
+        parent: _animationController,
+        curve: Curves.easeOutCubic,
+      ),
+    );
+
+    _animationController
+      ..reset()
+      ..forward();
+  }
+
   void _showFullDescriptionDialog() {
     final desc = widget.lowResImageData.description ?? "";
-
     if (desc.isEmpty) return;
-
     showDialog(
       context: context,
       barrierColor: Colors.black.withValues(alpha: 0.4),
@@ -161,32 +219,36 @@ class _FullImagePageState extends State<FullImagePage> {
             ),
           ),
 
-          Container(
-            color: Colors.black.withValues(alpha: 0.7),
-          ),
+          Container(color: Colors.black.withValues(alpha: 0.7)),
 
           // Main Image
-          // Main Image
-          Center(
-            child: Transform.translate(
-              offset: const Offset(0, 10),
-              child: InteractiveViewer(
-                minScale: 0.5,
-                maxScale: 10,
-                clipBehavior: Clip.none,
-                child: Center(
-                  child: SizedBox(
+          Positioned.fill(
+            child: Center(
+              child: Transform.translate(
+                offset: const Offset(0, 10),
+                child: GestureDetector(
+                  onDoubleTapDown: (d) => _doubleTapDetails = d,
+                  onDoubleTap: _handleDoubleTap,
+                  child: InteractiveViewer(
+                    transformationController: _transformationController,
+                    minScale: 0.5,
+                    maxScale: 10,
+                    clipBehavior: Clip.none,
                     child: Hero(
                       tag: "image_${widget.imageId}",
                       child: Stack(
                         children: [
-                          Image.memory(widget.lowResImageData.imageBytes,
-                              fit: BoxFit.contain),
+                          Image.memory(
+                            widget.lowResImageData.imageBytes,
+                            fit: BoxFit.contain,
+                          ),
                           AnimatedOpacity(
                             duration: const Duration(milliseconds: 250),
                             opacity: _loadingFull ? 0 : 1,
-                            child: Image.memory(_displayedBytes,
-                                fit: BoxFit.contain),
+                            child: Image.memory(
+                              _displayedBytes,
+                              fit: BoxFit.contain,
+                            ),
                           ),
                         ],
                       ),

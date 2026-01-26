@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -5,6 +6,18 @@ import '../UserPreferences.dart';
 
 class FcmHelper {
   static bool _listenersWired = false;
+  static StreamSubscription<String>? _tokenRefreshSubscription;
+  static StreamSubscription<AuthState>? _authStateSubscription;
+
+  /// Dispose all subscriptions
+  static Future<void> dispose() async {
+    await _tokenRefreshSubscription?.cancel();
+    await _authStateSubscription?.cancel();
+    _tokenRefreshSubscription = null;
+    _authStateSubscription = null;
+    _listenersWired = false;
+    debugPrint('FCM: disposed');
+  }
 
   /// Call this after Supabase is initialized
   static Future<void> initializeAndSyncToken() async {
@@ -30,16 +43,18 @@ class FcmHelper {
       }
 
       if (!_listenersWired) {
+        // Cancel any existing subscriptions before re-wiring
+        await dispose();
         _listenersWired = true;
 
         // Token refresh
-        FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
+        _tokenRefreshSubscription = FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
           debugPrint('FCM: token refreshed = $newToken');
           await _pushTokenIfLoggedIn(newToken);
         });
 
         // Auth changes
-        Supabase.instance.client.auth.onAuthStateChange.listen((_) async {
+        _authStateSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((_) async {
           final t = await FirebaseMessaging.instance.getToken();
           debugPrint('FCM: auth state changed; pushing latest token = $t');
           if (t != null) {

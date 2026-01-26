@@ -164,5 +164,9 @@
   "steps_vary_launcher": "Les étapes peuvent varier selon le lanceur d'applications. Veuillez vous référer aux instructions de votre lanceur si nécessaire.",
   "got_it": "Compris!",
   "group_comment_notifications": "Notifications de commentaires de groupe",
-  "group_comment_notifications_description": "Soyez notifié lorsqu’un membre commente une image de groupe que vous n’avez pas publiée."
+  "group_comment_notifications_description": "Soyez notifié lorsqu'un membre commente une image de groupe que vous n'avez pas publiée.",
+  "reply": "Répondre",
+  "replying_to": "En réponse à",
+  "write_reply": "Écrire une réponse...",
+  "confirm_delete_comment": "Êtes-vous sûr de vouloir supprimer ce commentaire?"
 }
