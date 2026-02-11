@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 0.8.0+1
+version: 0.8.1-alpha.1+1
 
 environment:
   sdk: ^3.5.0
@@ -43,25 +43,25 @@ dependencies:
   # App-specific dependencies
   supabase_flutter: ^2.8.4
   camera: ^0.11.3
-  home_widget: ^0.7.0
-  firebase_core: ^3.12.1
-  firebase_messaging: ^15.2.4
+  home_widget: ^0.9.0
+  firebase_core: ^4.4.0
+  firebase_messaging: ^16.1.1
   saver_gallery: ^4.0.1
-  device_info_plus: ^11.3.3
-  permission_handler: ^11.4.0
+  device_info_plus: ^12.3.0
+  permission_handler: ^12.0.1
   shared_preferences: ^2.5.2
   image: ^4.5.3
   path_provider: ^2.1.5
-  app_settings: ^5.2.0
+  app_settings: ^7.0.0
   flutter_dotenv: ^6.0.0
-  flutter_local_notifications: ^19.0.0
+  flutter_local_notifications: ^20.0.0
   image_picker: ^1.1.2
   dio: ^5.9.0
   package_info_plus: ^9.0.0
   android_package_installer: ^0.0.3
   image_cropper: ^11.0.0
   cached_network_image: ^3.4.1
-  google_fonts: ^6.3.2
+  google_fonts: ^8.0.1
   material_symbols_icons: ^4.2874.0
 
 dev_dependencies:
@@ -73,7 +73,7 @@ dev_dependencies:
   # activated in the `analysis_options.yaml` file located at the root of your
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
-  flutter_lints: ^4.0.0
+  flutter_lints: ^6.0.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
