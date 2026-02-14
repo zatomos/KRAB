@@ -57,7 +57,7 @@ class _WelcomePageState extends State<WelcomePage> {
 
   Future<void> _continue(BuildContext context) async {
     await UserPreferences.notFirstLaunch();
-    if (!mounted) return;
+    if (!context.mounted) return;
 
     Navigator.pushReplacement(
       context,

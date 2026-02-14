@@ -49,8 +49,8 @@ class UpdateService {
   bool get isEnabled =>
       (dotenv.env['ENABLE_AUTO_UPDATE']?.toLowerCase() == 'true');
 
-  Future<UpdateCheckResult> checkForUpdate() async {
-    if (!isEnabled) {
+  Future<UpdateCheckResult> checkForUpdate({bool requireEnabled = true}) async {
+    if (requireEnabled && !isEnabled) {
       return UpdateCheckResult(success: false, hasUpdate: false);
     }
 
@@ -112,23 +112,62 @@ class UpdateService {
 
   bool _isUpdateAvailable(String current, String latest) {
     try {
-      final currentParts = current.split('.').map(int.parse).toList();
-      final latestParts = latest.split('.').map(int.parse).toList();
+      final currentParsed = _parseVersion(current);
+      final latestParsed = _parseVersion(latest);
 
-      while (currentParts.length < 3) {
-        currentParts.add(0);
-      }
-      while (latestParts.length < 3) {
-        latestParts.add(0);
-      }
+      final currentNumbers = currentParsed[0] as List<int>;
+      final latestNumbers = latestParsed[0] as List<int>;
+
+      final currentStage = currentParsed[1] as int;
+      final latestStage = latestParsed[1] as int;
+
+      final currentStageNumber = currentParsed[2] as int;
+      final latestStageNumber = latestParsed[2] as int;
 
       for (int i = 0; i < 3; i++) {
-        if (latestParts[i] > currentParts[i]) return true;
-        if (latestParts[i] < currentParts[i]) return false;
+        if (latestNumbers[i] > currentNumbers[i]) return true;
+        if (latestNumbers[i] < currentNumbers[i]) return false;
       }
-      return false;
+
+      if (latestStage > currentStage) return true;
+      if (latestStage < currentStage) return false;
+
+      return latestStageNumber > currentStageNumber;
     } catch (_) {
       return false;
     }
+  }
+
+  List<dynamic> _parseVersion(String version) {
+    final stagePriority = {
+      "debug": 0,
+      "alpha": 1,
+      "beta": 2,
+      "rc": 3, // release candidate
+      "": 4, // stable
+    };
+
+    final split = version.split('-');
+    final numbers = split[0].split('.').map(int.parse).toList();
+
+    while (numbers.length < 3) {
+      numbers.add(0);
+    }
+
+    String stageName = "";
+    int stageNumber = 0;
+
+    if (split.length > 1) {
+      final stageParts = split[1].split('.');
+      stageName = stageParts[0].toLowerCase();
+
+      if (stageParts.length > 1) {
+        stageNumber = int.tryParse(stageParts[1]) ?? 0;
+      }
+    }
+
+    final stage = stagePriority[stageName] ?? -1;
+
+    return [numbers, stage, stageNumber];
   }
 }

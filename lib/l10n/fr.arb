@@ -109,6 +109,9 @@
   "update_failed": "Échec de la mise à jour. Veuillez réessayer plus tard.",
   "update_check_failed": "Échec lors de la vérification des mises à jour.",
   "update_now": "Mettre à jour",
+  "check_for_updates": "Vérifier les mises à jour",
+  "checking_for_updates": "Vérification des mises à jour...",
+  "no_update_available": "Aucune mise à jour disponible.",
   "edit_username": "Modifier le nom d'utilisateur",
   "username_updated_success": "Nom d'utilisateur mis à jour avec succès.",
   "error_updating_username": "Erreur lors de la mise à jour du nom d'utilisateur: {errorMsg}",
@@ -168,5 +171,9 @@
   "reply": "Répondre",
   "replying_to": "En réponse à",
   "write_reply": "Écrire une réponse...",
-  "confirm_delete_comment": "Êtes-vous sûr de vouloir supprimer ce commentaire?"
+  "confirm_delete_comment": "Êtes-vous sûr de vouloir supprimer ce commentaire?",
+  "developer": "Développeur",
+  "debug_notifications": "Notifications de débogage",
+  "debug_notifications_description": "Affiche des notifications lors de la mise à jour du widget ou des événement d'authentification.",
+  "group_code_copied": "Code de groupe copié dans le presse-papiers."
 }

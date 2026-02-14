@@ -31,7 +31,6 @@ class CommentsBottomSheet extends StatefulWidget {
 class CommentsBottomSheetState extends State<CommentsBottomSheet> {
   final TextEditingController _newCommentController = TextEditingController();
   List<Comment> _rootComments = [];
-  Map<String, Comment> _allCommentsMap = {};
   bool _loading = true;
   String? _editingCommentId;
   String? _replyingToCommentId;
@@ -65,9 +64,6 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
           );
         }).toList();
 
-        // Build map for easy lookup
-        _allCommentsMap = {for (var c in flatComments) c.id: c};
-
         // Build tree structure
         final rootComments = buildCommentTree(flatComments);
 
@@ -100,13 +96,11 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
       _cancelReply();
       await _fetchComments(); // Refresh to get the new comment with its ID
       if (mounted) {
-        showSnackBar(context, context.l10n.comment_added_success,
-            color: Colors.green);
+        showSnackBar(context.l10n.comment_added_success, color: Colors.green);
       }
     } else {
       if (mounted) {
         showSnackBar(
-            context,
             context.l10n
                 .error_adding_comment(response.error ?? "Unknown error"),
             color: Colors.red);
@@ -118,19 +112,18 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
     final text = _newCommentController.text.trim();
     if (text.isEmpty || _editingCommentId == null) return;
 
-    final response = await updateComment(commentId, widget.imageId, widget.groupId, text);
+    final response =
+        await updateComment(commentId, widget.imageId, widget.groupId, text);
     if (response.success) {
       _newCommentController.clear();
       setState(() => _editingCommentId = null);
       await _fetchComments();
       if (mounted) {
-        showSnackBar(context, context.l10n.comment_updated_success,
-            color: Colors.green);
+        showSnackBar(context.l10n.comment_updated_success, color: Colors.green);
       }
     } else {
       if (mounted) {
         showSnackBar(
-            context,
             context.l10n
                 .error_updating_comment(response.error ?? "Unknown error"),
             color: Colors.red);
@@ -141,42 +134,43 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
   Future<void> _deleteComment(String commentId) async {
     await showDialog(
       context: context,
-      builder: (context) {
+      builder: (dialogContext) {
         return AlertDialog(
-          title: Text(context.l10n.confirm_delete_comment),
+          title: Text(dialogContext.l10n.confirm_delete_comment),
           actions: [
             SoftButton(
-              onPressed: () => Navigator.of(context).pop(),
-              label: context.l10n.cancel,
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              label: dialogContext.l10n.cancel,
               color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
             ),
             SoftButton(
               onPressed: () async {
-                Navigator.of(context).pop();
+                Navigator.of(dialogContext).pop();
 
-        final response = await deleteComment(commentId, widget.imageId, widget.groupId);
-        if (response.success) {
-        if (_editingCommentId == commentId) {
-        setState(() => _editingCommentId = null);
-        _newCommentController.clear();
-        }
-        await _fetchComments();
-        if (mounted) {
-        showSnackBar(context, context.l10n.comment_deleted_success,
-        color: Colors.green);
-        }
-        } else {
-        if (mounted) {
-        showSnackBar(
-        context,
-        context.l10n
-            .error_deleting_comment(response.error ?? "Unknown error"),
-        color: Colors.red);
-        }
-        }
+                final response = await deleteComment(
+                    commentId, widget.imageId, widget.groupId);
+                if (!mounted) return;
 
+                if (response.success) {
+                  if (_editingCommentId == commentId) {
+                    setState(() => _editingCommentId = null);
+                    _newCommentController.clear();
+                  }
+                  await _fetchComments();
+                  if (!mounted) return;
+                  showSnackBar(
+                    context.l10n.comment_deleted_success,
+                    color: Colors.green,
+                  );
+                } else {
+                  showSnackBar(
+                    context.l10n.error_deleting_comment(
+                        response.error ?? "Unknown error"),
+                    color: Colors.red,
+                  );
+                }
               },
-              label: context.l10n.confirm,
+              label: dialogContext.l10n.confirm,
               color: GlobalThemeData.darkColorScheme.primary,
             ),
           ],
@@ -270,30 +264,16 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
                           // Comment text
                           Text(comment.text),
                           // Action buttons
-                          Padding(padding: const EdgeInsets.fromLTRB(0, 8, 0, 12), child:
-                          Row(
-                            spacing: 4,
-                            children: [
-                              // Reply button
-                              GestureDetector(
-                                onTap: () => _startReply(comment, username),
-                                child: Text(
-                                  context.l10n.reply,
-                                  style: TextStyle(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurfaceVariant,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ),
-                              if (isCurrentUser) ...[
-                                const SizedBox(width: 16),
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(0, 8, 0, 12),
+                            child: Row(
+                              spacing: 4,
+                              children: [
+                                // Reply button
                                 GestureDetector(
-                                  onTap: () => _startEdit(comment),
+                                  onTap: () => _startReply(comment, username),
                                   child: Text(
-                                    context.l10n.edit,
+                                    context.l10n.reply,
                                     style: TextStyle(
                                       color: Theme.of(context)
                                           .colorScheme
@@ -303,25 +283,39 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
                                     ),
                                   ),
                                 ),
-                                const SizedBox(width: 16),
-                                GestureDetector(
-                                  onTap: () => _deleteComment(comment.id),
-                                  child: Text(
-                                    context.l10n.delete,
-                                    style: TextStyle(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .error,
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w500,
+                                if (isCurrentUser) ...[
+                                  const SizedBox(width: 16),
+                                  GestureDetector(
+                                    onTap: () => _startEdit(comment),
+                                    child: Text(
+                                      context.l10n.edit,
+                                      style: TextStyle(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onSurfaceVariant,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w500,
+                                      ),
                                     ),
                                   ),
-                                ),
+                                  const SizedBox(width: 16),
+                                  GestureDetector(
+                                    onTap: () => _deleteComment(comment.id),
+                                    child: Text(
+                                      context.l10n.delete,
+                                      style: TextStyle(
+                                        color:
+                                            Theme.of(context).colorScheme.error,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ],
-                            ],
-                          ),
+                            ),
                           )
-                          ],
+                        ],
                       ),
                     ),
                   ],
@@ -331,7 +325,8 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
           ),
         ),
         // Render replies recursively
-        ...comment.replies.map((reply) => _buildCommentItem(reply, depth: depth + 1)),
+        ...comment.replies
+            .map((reply) => _buildCommentItem(reply, depth: depth + 1)),
       ],
     );
   }
@@ -449,7 +444,6 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
                   },
                   icon: const Icon(Symbols.send_rounded, color: Colors.white),
                 ),
-
               ],
             ),
 

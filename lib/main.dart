@@ -13,6 +13,7 @@ import 'package:krab/services/fcm_helper.dart';
 import 'package:krab/services/home_widget_updater.dart';
 import 'package:krab/services/home_widget_status.dart';
 import 'package:krab/services/profile_picture_cache.dart';
+import 'package:krab/services/debug_notifier.dart';
 import 'package:krab/pages/WelcomePage.dart';
 import 'package:krab/pages/LoginPage.dart';
 import 'package:krab/pages/CameraPage.dart';
@@ -112,19 +113,28 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     );
 
     await UserPreferences().initPrefs();
+
+    // Initialize debug notifier for background context
+    await DebugNotifier.instance.initialize();
+    await DebugNotifier.instance.notifyBackgroundTaskStarted();
+
     final supabaseOk = await initializeSupabaseIfNeeded();
     if (!supabaseOk) {
       debugPrint(
           'Skipping widget update, Supabase not initialized (background)');
+      await DebugNotifier.instance
+          .notifySupabaseInitFailed('Background: Supabase init failed');
       return;
     }
 
     await updateHomeWidget();
 
     debugPrint('Background message processed successfully');
+    await DebugNotifier.instance.notifyBackgroundTaskCompleted();
   } catch (e, st) {
     debugPrint('Error in background handler: $e');
     debugPrint(st.toString());
+    await DebugNotifier.instance.notifyBackgroundTaskFailed('$e');
   }
 }
 
@@ -197,6 +207,9 @@ void main() async {
     // Shared Preferences
     await UserPreferences().initPrefs();
 
+    // Initialize Debug Notifier
+    await DebugNotifier.instance.initialize();
+
     // Compute and store widget bitmap limit
     final cachedWidgetLimit = await UserPreferences.getWidgetBitmapLimit();
     if (cachedWidgetLimit != 10 * 1024 * 1024) {
@@ -236,6 +249,36 @@ void main() async {
       await FcmHelper.initializeAndSyncToken();
       final cache = ProfilePictureCache.of(Supabase.instance.client);
       await cache.hydrate();
+
+      // Monitor auth state changes for debugging
+      Supabase.instance.client.auth.onAuthStateChange.listen((data) async {
+        final event = data.event;
+        debugPrint('Auth state changed: $event');
+
+        if (event == AuthChangeEvent.signedOut) {
+          if (DebugNotifier.instance.isIntentionalLogout) {
+            await DebugNotifier.instance.notifyAuthSignedOut(unexpected: false);
+            return;
+          }
+
+          try {
+            final refreshed = await Supabase.instance.client.auth.refreshSession();
+            if (refreshed.session != null) {
+              debugPrint('Auth recovered after signedOut event');
+              await DebugNotifier.instance.notifyAuthStateChanged('Reconnected');
+              return;
+            }
+          } catch (e) {
+            debugPrint('Auth reconnect failed: $e');
+          }
+
+          await DebugNotifier.instance.notifyAuthSignedOut();
+        } else if (event == AuthChangeEvent.tokenRefreshed) {
+          await DebugNotifier.instance.notifyAuthTokenRefreshed();
+        } else {
+          await DebugNotifier.instance.notifyAuthStateChanged(event.name);
+        }
+      });
     } else {
       debugPrint('Skipping FCM/cache init, Supabase not initialized');
     }
@@ -258,7 +301,6 @@ void main() async {
         if (message.notification != null &&
             scaffoldMessengerKey.currentContext != null) {
           showSnackBar(
-            scaffoldMessengerKey.currentContext!,
             message.notification!.title ?? '',
             color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
           );
@@ -268,7 +310,6 @@ void main() async {
         debugPrint(st.toString());
         if (scaffoldMessengerKey.currentContext != null) {
           showSnackBar(
-            scaffoldMessengerKey.currentContext!,
             'Error updating widget',
             color: Colors.red,
           );
@@ -383,7 +424,7 @@ class MyAppState extends State<MyApp> {
 
       if (!isSupabaseInitialized) {
         debugPrint(
-            'Supabase not initialized in _determineHomePage → LoginPage');
+            'Supabase not initialized in determineHomePage, showing LoginPage');
         return const LoginPage();
       }
 

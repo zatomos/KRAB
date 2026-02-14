@@ -109,13 +109,11 @@ class _FullImagePageState extends State<FullImagePage>
     final double dy = -position.dy * (newScale - 1);
 
     final Matrix4 scaleMatrix =
-    Matrix4.diagonal3Values(newScale, newScale, 1.0);
+        Matrix4.diagonal3Values(newScale, newScale, 1.0);
 
-    final Matrix4 translationMatrix =
-    Matrix4.translationValues(dx, dy, 0.0);
+    final Matrix4 translationMatrix = Matrix4.translationValues(dx, dy, 0.0);
 
     final Matrix4 end = translationMatrix.multiplied(scaleMatrix);
-
 
     _animation = Matrix4Tween(
       begin: begin,
@@ -303,7 +301,6 @@ class _FullImagePageState extends State<FullImagePage>
                       widget.lowResImageData.createdAt,
                     );
                     showSnackBar(
-                      context,
                       success ? "Image saved!" : "Failed to save image",
                       color: success ? Colors.green : Colors.red,
                     );

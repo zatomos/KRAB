@@ -46,7 +46,8 @@ class _GroupCardState extends State<GroupCard> {
   Future<int> _fetchGroupMemberCount(String groupId) async {
     final response = await getGroupMemberCount(groupId);
     if (response.error != null) {
-      showSnackBar(context, "${response.error}");
+      if (!mounted) return 0;
+      showSnackBar("${response.error}");
       return 0;
     }
     return response.data!;
@@ -129,18 +130,18 @@ class _GroupCardState extends State<GroupCard> {
                   size: 28,
                 ),
                 onLongPress: () {
-                  showSnackBar(context, context.l10n.starred_groups_long_press);
+                  showSnackBar(context.l10n.starred_groups_long_press);
                 },
                 onPressed: () async {
+                  final l10n = context.l10n;
                   if (isFavorite) {
                     await UserPreferences.removeFavoriteGroup(_group.id);
-                    showSnackBar(context,
-                        context.l10n.removed_group_favorites(_group.name));
+                    showSnackBar(l10n.removed_group_favorites(_group.name));
                   } else {
                     await UserPreferences.addFavoriteGroup(_group.id);
-                    showSnackBar(context,
-                        context.l10n.added_group_favorites(_group.name));
+                    showSnackBar(l10n.added_group_favorites(_group.name));
                   }
+                  if (!mounted) return;
                   setState(() => isFavorite = !isFavorite);
                 },
               ),

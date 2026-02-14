@@ -46,11 +46,12 @@ class LoginPageState extends State<LoginPage> {
     }
 
     final response = await registerUser(username, email, password);
+    if (!mounted) return;
     if (response.success) {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (context) => const CameraPage()),
       );
-      showSnackBar(context, context.l10n.register_user_success);
+      showSnackBar(context.l10n.register_user_success);
     } else {
       setState(() {
         _message = "${response.error}";
@@ -70,6 +71,7 @@ class LoginPageState extends State<LoginPage> {
     }
 
     final response = await loginUser(email, password);
+    if (!mounted) return;
     if (response.success) {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (context) => const CameraPage()),
@@ -110,44 +112,49 @@ class LoginPageState extends State<LoginPage> {
               onPressed: () async {
                 final email = _forgotPasswordController.text.trim();
                 if (email.isEmpty) {
-                  showDialog(context: context, builder: (context) {
-                    return AlertDialog(
-                      title: const Text("Error"),
-                      content: const Text("Please enter an email."),
-                      actions: [
-                        TextButton(
-                          onPressed: () {
-                            Navigator.of(context).pop();
-                          },
-                          child: const Text("OK"),
-                        ),
-                      ],
-                    );
-                  });
+                  showDialog(
+                      context: context,
+                      builder: (context) {
+                        return AlertDialog(
+                          title: const Text("Error"),
+                          content: const Text("Please enter an email."),
+                          actions: [
+                            TextButton(
+                              onPressed: () {
+                                Navigator.of(context).pop();
+                              },
+                              child: const Text("OK"),
+                            ),
+                          ],
+                        );
+                      });
                   return;
                 }
 
                 final response = await sendPasswordResetEmail(email);
+                if (!context.mounted || !mounted) return;
                 if (response.success) {
                   Navigator.of(context).pop();
                   setState(() {
                     _message = "Password reset email sent.";
                   });
                 } else {
-                  showDialog(context: context, builder: (context) {
-                    return AlertDialog(
-                      title: const Text("Error"),
-                      content: Text("${response.error}"),
-                      actions: [
-                        TextButton(
-                          onPressed: () {
-                            Navigator.of(context).pop();
-                          },
-                          child: const Text("OK"),
-                        ),
-                      ],
-                    );
-                  });
+                  showDialog(
+                      context: context,
+                      builder: (context) {
+                        return AlertDialog(
+                          title: const Text("Error"),
+                          content: Text("${response.error}"),
+                          actions: [
+                            TextButton(
+                              onPressed: () {
+                                Navigator.of(context).pop();
+                              },
+                              child: const Text("OK"),
+                            ),
+                          ],
+                        );
+                      });
                 }
               },
               child: const Text("Reset Password"),
@@ -180,17 +187,15 @@ class LoginPageState extends State<LoginPage> {
             Visibility(
               visible: _isSigningUp,
               child: RoundedInputField(
-                controller: _usernameController,
-                hintText: context.l10n.username,
-                icon: const Icon(Icons.person_rounded)
-              ),
+                  controller: _usernameController,
+                  hintText: context.l10n.username,
+                  icon: const Icon(Icons.person_rounded)),
             ),
             // Email field.
             RoundedInputField(
-              controller: _emailController,
-              hintText: context.l10n.email,
-              icon: const Icon(Icons.email_rounded)
-            ),
+                controller: _emailController,
+                hintText: context.l10n.email,
+                icon: const Icon(Icons.email_rounded)),
             // Password field.
             RoundedInputField(
               controller: _passwordController,
@@ -209,10 +214,11 @@ class LoginPageState extends State<LoginPage> {
               ),
             ),
             const SizedBox(height: 20),
-            // Wrap the button in Center to preserve its intrinsic (fixed) width.
+            // Wrap the button in Center to preserve its width
             Center(
               child: RectangleButton(
-                label: _isSigningUp ? context.l10n.sign_up : context.l10n.log_in,
+                label:
+                    _isSigningUp ? context.l10n.sign_up : context.l10n.log_in,
                 onPressed: _isSigningUp ? _signUp : _logIn,
               ),
             ),
@@ -224,25 +230,27 @@ class LoginPageState extends State<LoginPage> {
                     child: const Text("Forgot Password?"))),*/
             const SizedBox(height: 10),
             Center(
-                child:
-                    Text(_message, style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold))),
+                child: Text(_message,
+                    style: const TextStyle(
+                        color: Colors.red, fontWeight: FontWeight.bold))),
             Center(
-              child: TextButton(
-                onPressed: () {
-                  setState(() {
-                    _isSigningUp = !_isSigningUp;
-                    _message = "";
-                    _passwordController.clear();
-                    if (!_isSigningUp) _usernameController.clear(); // leaving sign-up
-                  });
-                },
-                child: Text(
-                  _isSigningUp
-                      ? context.l10n.already_have_account
-                      : context.l10n.dont_have_account,
-                ),
-              )
-            ),
+                child: TextButton(
+              onPressed: () {
+                setState(() {
+                  _isSigningUp = !_isSigningUp;
+                  _message = "";
+                  _passwordController.clear();
+                  if (!_isSigningUp) {
+                    _usernameController.clear(); // leaving sign-up
+                  }
+                });
+              },
+              child: Text(
+                _isSigningUp
+                    ? context.l10n.already_have_account
+                    : context.l10n.dont_have_account,
+              ),
+            )),
           ],
         ),
       ),

@@ -35,10 +35,10 @@ class ImageSentDialog extends StatelessWidget {
           : context.l10n
               .error_image_not_sent_subtitle(errorMsg ?? 'Unknown error')),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text("OK"),
-        ),
+        SoftButton(
+            onPressed: () => Navigator.of(context).pop(),
+            label: "OK",
+            color: GlobalThemeData.darkColorScheme.primary),
       ],
     );
   }
@@ -88,6 +88,33 @@ class CameraPageState extends State<CameraPage> {
     _zoomTimer?.cancel();
     _controller?.dispose();
     super.dispose();
+  }
+
+  /// Dispose camera resources
+  Future<void> _disposeCamera() async {
+    _zoomTimer?.cancel();
+    _zoomTimer = null;
+    await _controller?.dispose();
+    _controller = null;
+    _initializeControllerFuture = null;
+    if (mounted) setState(() {});
+  }
+
+  /// Navigate to another page, disposing camera and reinitializing on return
+  Future<void> _navigateWithCameraDispose(Widget page) async {
+    await _disposeCamera();
+    if (!mounted) return;
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => page),
+    );
+
+    // Reinitialize camera when returning
+    if (mounted) {
+      await _initializeCamera();
+      setState(() {});
+    }
   }
 
   // ===== Initialization ========================================================
@@ -267,7 +294,9 @@ class CameraPageState extends State<CameraPage> {
         }
       }
 
-      ctrl.setExposureOffset(0).catchError((_) {return 0.0;});
+      ctrl.setExposureOffset(0).catchError((_) {
+        return 0.0;
+      });
 
       await ctrl.setFocusPoint(Offset(x, y));
       await ctrl.setExposurePoint(Offset(x, y));
@@ -308,7 +337,7 @@ class CameraPageState extends State<CameraPage> {
       if (mounted) setState(() => _captureInProgress = false);
     } catch (e) {
       debugPrint("Error capturing image: $e");
-      showSnackBar(context, "Error capturing image: $e");
+      showSnackBar("Error capturing image: $e");
       if (mounted) setState(() => _captureInProgress = false);
     }
   }
@@ -326,7 +355,7 @@ class CameraPageState extends State<CameraPage> {
       await _showSendImageDialog(imageFile);
     } catch (e) {
       debugPrint("Error picking image: $e");
-      showSnackBar(context, "Error picking image: $e");
+      showSnackBar("Error picking image: $e");
     }
   }
 
@@ -336,6 +365,7 @@ class CameraPageState extends State<CameraPage> {
     Set<String> selectedGroups = {};
     selectedGroups.addAll(favoriteGroups);
     final groupsFuture = getUserGroups();
+    if (!mounted) return;
 
     await showDialog(
       context: context,
@@ -440,8 +470,8 @@ class CameraPageState extends State<CameraPage> {
                               SoftButton(
                                   onPressed: () => Navigator.of(context).pop(),
                                   label: "OK",
-                                  color: GlobalThemeData.darkColorScheme.primary
-                              ),
+                                  color:
+                                      GlobalThemeData.darkColorScheme.primary),
                             ],
                           ),
                         );
@@ -460,6 +490,7 @@ class CameraPageState extends State<CameraPage> {
                         selectedGroups.toList(),
                         description.text,
                       );
+                      if (!context.mounted) return;
 
                       Navigator.of(context).pop(); // loading
                       Navigator.of(context).pop(); // main dialog
@@ -473,8 +504,7 @@ class CameraPageState extends State<CameraPage> {
                       );
                     },
                     label: context.l10n.send,
-                    color: GlobalThemeData.darkColorScheme.primary
-                ),
+                    color: GlobalThemeData.darkColorScheme.primary),
               ],
             );
           },
@@ -615,12 +645,8 @@ class CameraPageState extends State<CameraPage> {
                     child: IconButton(
                       icon: const Icon(Symbols.group_rounded,
                           color: Colors.white, size: 30),
-                      onPressed: () {
-                        Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) => const GroupsPage()));
-                      },
+                      onPressed: () =>
+                          _navigateWithCameraDispose(const GroupsPage()),
                     ),
                   ),
                 ),
@@ -649,15 +675,9 @@ class CameraPageState extends State<CameraPage> {
                             currentUser!.pfpUrl.isNotEmpty
                         ? GestureDetector(
                             onTap: () async {
-                              await Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                    builder: (_) => const AccountPage()),
-                              );
-
-                              // After returning, reload user data
+                              await _navigateWithCameraDispose(
+                                  const AccountPage());
                               await _loadCurrentUser();
-                              if (mounted) setState(() {});
                             },
                             child: UserAvatar(currentUser!, radius: 24),
                           )
@@ -668,15 +688,9 @@ class CameraPageState extends State<CameraPage> {
                               size: 30,
                             ),
                             onPressed: () async {
-                              await Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                    builder: (_) => const AccountPage()),
-                              );
-
-                              // After returning, reload user data
+                              await _navigateWithCameraDispose(
+                                  const AccountPage());
                               await _loadCurrentUser();
-                              if (mounted) setState(() {});
                             },
                           ),
                   ),
@@ -693,7 +707,9 @@ class CameraPageState extends State<CameraPage> {
                       IconButton(
                         onPressed: _switchFlashLight,
                         icon: Icon(
-                            _isFlashOn ? Symbols.flash_on_rounded : Symbols.flash_off_rounded,
+                            _isFlashOn
+                                ? Symbols.flash_on_rounded
+                                : Symbols.flash_off_rounded,
                             color: Colors.white),
                       ),
                       IconButton(

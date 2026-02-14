@@ -111,7 +111,8 @@ class GroupsPageState extends State<GroupsPage> with WidgetsBindingObserver {
                 }
                 if (snapshot.hasError) {
                   return Center(
-                      child: Text(context.l10n.error_loading_groups(snapshot.error.toString())));
+                      child: Text(context.l10n
+                          .error_loading_groups(snapshot.error.toString())));
                 }
                 if (!snapshot.hasData) {
                   return const Center(child: Text("No groups data available."));
@@ -122,16 +123,15 @@ class GroupsPageState extends State<GroupsPage> with WidgetsBindingObserver {
                 }
                 final groups = response.data ?? [];
                 if (groups.isEmpty) {
-                  return Center(
-                      child: Text(context.l10n.no_group_joined)
-                  );
+                  return Center(child: Text(context.l10n.no_group_joined));
                 }
                 return ListView.builder(
                   itemCount: groups.length,
                   itemBuilder: (context, index) {
                     return GroupCard(
                       group: groups[index],
-                      onReturn: _refreshData, // Refresh when returning from group
+                      onReturn:
+                          _refreshData, // Refresh when returning from group
                     );
                   },
                 );
@@ -169,16 +169,19 @@ class JoinGroupDialogState extends State<JoinGroupDialog> {
     }
     try {
       final response = await joinGroup(code);
+      if (!mounted) return;
       if (!response.success) {
         setState(() {
-          error = context.l10n.group_code_invalid(response.error ?? "Unknown error");
+          error = context.l10n
+              .group_code_invalid(response.error ?? "Unknown error");
         });
         return;
       }
       Navigator.of(context).pop(true);
       setState(() {});
-      showSnackBar(context, context.l10n.group_joined_success, color: Colors.green);
+      showSnackBar(context.l10n.group_joined_success, color: Colors.green);
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         error = e.toString();
       });
@@ -243,16 +246,19 @@ class CreateGroupDialogState extends State<CreateGroupDialog> {
 
     try {
       final response = await createGroup(name);
+      if (!mounted) return;
       if (!response.success) {
         setState(() {
-          error = context.l10n.error_creating_group(response.error ?? "Unknown error");
+          error = context.l10n
+              .error_creating_group(response.error ?? "Unknown error");
         });
         return;
       }
 
       Navigator.of(context).pop(true);
-      showSnackBar(context, context.l10n.group_created_success, color: Colors.green);
+      showSnackBar(context.l10n.group_created_success, color: Colors.green);
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         error = e.toString();
       });
@@ -282,8 +288,7 @@ class CreateGroupDialogState extends State<CreateGroupDialog> {
         SoftButton(
             onPressed: _createGroup,
             label: context.l10n.create,
-            color: GlobalThemeData.darkColorScheme.primary
-        ),
+            color: GlobalThemeData.darkColorScheme.primary),
       ],
     );
   }

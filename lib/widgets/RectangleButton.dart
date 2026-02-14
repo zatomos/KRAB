@@ -4,6 +4,7 @@ import 'package:krab/themes/GlobalThemeData.dart';
 
 class RectangleButton extends StatelessWidget {
   final String label;
+  final IconData? icon;
   final VoidCallback onPressed;
   final Color? backgroundColor;
   final Color textColor;
@@ -13,6 +14,7 @@ class RectangleButton extends StatelessWidget {
   const RectangleButton({
     super.key,
     required this.label,
+    this.icon,
     required this.onPressed,
     this.backgroundColor,
     this.textColor = Colors.white,
@@ -34,12 +36,22 @@ class RectangleButton extends StatelessWidget {
             borderRadius: BorderRadius.circular(10),
           ),
         ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: textColor,
-            fontSize: 16,
-          ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (icon != null) ...[
+              Icon(icon, color: textColor),
+              const SizedBox(width: 8),
+            ],
+            Text(
+              label,
+              style: TextStyle(
+                color: textColor,
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
         ),
       ),
     );

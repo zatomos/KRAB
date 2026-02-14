@@ -38,8 +38,7 @@ class HomeWidgetStatus {
 
         // Show snackbar
         if (_activeContext != null && _activeContext!.mounted) {
-          showSnackBar(
-              _activeContext, _activeContext!.l10n.widget_added_success,
+          showSnackBar(_activeContext!.l10n.widget_added_success,
               color: Colors.green);
         } else {
           debugPrint("Cannot show snackbar");
@@ -68,6 +67,7 @@ class HomeWidgetStatus {
     if (!context.mounted) return;
 
     final hasWidget = await hasKrabWidget();
+    if (!context.mounted) return;
     if (hasWidget) return;
 
     showDialog(
@@ -102,6 +102,7 @@ class HomeWidgetStatus {
     _activeContext = context;
 
     final supported = await HomeWidget.isRequestPinWidgetSupported() ?? false;
+    if (!context.mounted) return;
 
     if (!supported) {
       showManualAddInstructions(context);

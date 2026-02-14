@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/cupertino.dart';
 import 'package:krab/services/profile_picture_cache.dart';
 import 'package:krab/services/fcm_helper.dart';
+import 'package:krab/services/debug_notifier.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 
@@ -760,6 +761,9 @@ Future<SupabaseResponse<void>> loginUser(String email, String password) async {
 /// Log out the current user.
 Future<SupabaseResponse<void>> logOut() async {
   try {
+    // Mark this as an intentional logout to prevent "unexpected signout" notification
+    DebugNotifier.instance.markIntentionalLogout();
+
     // Clean up FCM listeners
     await FcmHelper.dispose();
 
@@ -770,6 +774,8 @@ Future<SupabaseResponse<void>> logOut() async {
     await supabase.auth.signOut();
     return SupabaseResponse(success: true);
   } catch (error) {
+    // Reset the flag if logout fails
+    DebugNotifier.instance.resetIntentionalLogout();
     return SupabaseResponse(success: false, error: "Error signing out: $error");
   }
 }

@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -80,12 +81,12 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
   Future<void> _leaveGroup() async {
     await UserPreferences.removeFavoriteGroup(widget.group.id);
     final response = await leaveGroup(widget.group.id);
+    if (!mounted) return;
     if (response.success) {
-      showSnackBar(context, context.l10n.left_group_success,
-          color: Colors.green);
+      showSnackBar(context.l10n.left_group_success, color: Colors.green);
       Navigator.of(context).popUntil((route) => route.isFirst);
     } else {
-      showSnackBar(context,
+      showSnackBar(
           context.l10n.error_leaving_group(response.error ?? "Unknown error"),
           color: Colors.red);
     }
@@ -135,6 +136,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                   }
 
                   final response = await updateGroupName(_group.id, newName);
+                  if (!context.mounted || !mounted) return;
 
                   if (!response.success) {
                     setDialogState(() {
@@ -145,7 +147,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                   }
 
                   Navigator.of(context).pop();
-                  showSnackBar(context, context.l10n.group_name_updated_success,
+                  showSnackBar(context.l10n.group_name_updated_success,
                       color: Colors.green);
 
                   setState(() {
@@ -165,13 +167,13 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
   Future<void> openEditIconDialog() async {
     await showDialog(
       context: context,
-      builder: (context) {
+      builder: (dialogContext) {
         return AlertDialog(
-          title: Text(context.l10n.edit_icon_title),
+          title: Text(dialogContext.l10n.edit_icon_title),
           actions: [
             SoftButton(
-              onPressed: () => Navigator.of(context).pop(),
-              label: context.l10n.cancel,
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              label: dialogContext.l10n.cancel,
               color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
             ),
 
@@ -180,15 +182,16 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
               onPressed: () {
                 pickCropPfp().then((file) async {
                   if (file == null) return;
+                  if (!dialogContext.mounted) return;
+                  final l10n = dialogContext.l10n;
 
-                  Navigator.of(context).pop();
+                  Navigator.of(dialogContext).pop();
 
                   final res = await editGroupIcon(file, _group.id);
+                  if (!mounted) return;
                   if (!res.success) {
                     showSnackBar(
-                        null,
-                        context.l10n
-                            .error_updating_icon(res.error ?? "Unknown"),
+                        l10n.error_updating_icon(res.error ?? "Unknown"),
                         color: Colors.red);
                     return;
                   }
@@ -200,14 +203,12 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                     });
                   }
 
-                  showSnackBar(null, context.l10n.icon_updated_success,
-                      color: Colors.green);
+                  showSnackBar(l10n.icon_updated_success, color: Colors.green);
                 });
               },
-              label:
-                (_group.iconUrl?.isEmpty ?? true)
-                    ? context.l10n.add
-                    : context.l10n.edit,
+              label: (_group.iconUrl?.isEmpty ?? true)
+                  ? dialogContext.l10n.add
+                  : dialogContext.l10n.edit,
               color: GlobalThemeData.darkColorScheme.primary,
             ),
 
@@ -215,14 +216,14 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
             if (_group.iconUrl != null && _group.iconUrl!.isNotEmpty)
               SoftButton(
                 onPressed: () async {
-                  Navigator.of(context).pop();
+                  final l10n = dialogContext.l10n;
+                  Navigator.of(dialogContext).pop();
 
                   final res = await deleteGroupIcon(_group.id);
+                  if (!mounted) return;
                   if (!res.success) {
                     showSnackBar(
-                        null,
-                        context.l10n
-                            .error_deleting_icon(res.error ?? "Unknown"),
+                        l10n.error_deleting_icon(res.error ?? "Unknown"),
                         color: Colors.red);
                     return;
                   }
@@ -231,10 +232,9 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                     _group = _group.copyWith(iconUrl: '');
                   });
 
-                  showSnackBar(null, context.l10n.icon_deleted_success,
-                      color: Colors.green);
+                  showSnackBar(l10n.icon_deleted_success, color: Colors.green);
                 },
-                label: context.l10n.delete,
+                label: dialogContext.l10n.delete,
                 color: Colors.red,
               ),
           ],
@@ -246,17 +246,18 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
   Future<void> _manageUserRoleDialog(String userId, String action) async {
     await showDialog(
       context: context,
-      builder: (context) {
+      builder: (dialogContext) {
         final title = {
-          "promote_admin": context.l10n.promote_user,
-          "demote": context.l10n.demote_user,
-          "transfer_ownership": context.l10n.transfer_ownership,
+          "promote_admin": dialogContext.l10n.promote_user,
+          "demote": dialogContext.l10n.demote_user,
+          "transfer_ownership": dialogContext.l10n.transfer_ownership,
         }[action]!;
 
         final content = {
-          "promote_admin": context.l10n.promote_user_confirmation,
-          "demote": context.l10n.demote_user_confirmation,
-          "transfer_ownership": context.l10n.transfer_ownership_confirmation,
+          "promote_admin": dialogContext.l10n.promote_user_confirmation,
+          "demote": dialogContext.l10n.demote_user_confirmation,
+          "transfer_ownership":
+              dialogContext.l10n.transfer_ownership_confirmation,
         }[action]!;
 
         return AlertDialog(
@@ -264,32 +265,32 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
           content: Text(content),
           actions: [
             SoftButton(
-              onPressed: () => Navigator.of(context).pop(),
-              label: context.l10n.cancel,
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              label: dialogContext.l10n.cancel,
               color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
             ),
             SoftButton(
               onPressed: () async {
-                Navigator.of(context).pop();
+                final l10n = dialogContext.l10n;
+                Navigator.of(dialogContext).pop();
 
                 final res = await changeMemberRole(_group.id, userId, action);
+                if (!mounted) return;
 
                 if (res.success) {
-                  showSnackBar(null, context.l10n.user_role_updated_success,
+                  showSnackBar(l10n.user_role_updated_success,
                       color: Colors.green);
                   setState(() {
                     _membersFuture = getGroupMembers(_group.id);
                   });
                 } else {
                   showSnackBar(
-                    null,
-                    context.l10n
-                        .error_updating_user_role(res.error ?? "Unknown"),
+                    l10n.error_updating_user_role(res.error ?? "Unknown"),
                     color: Colors.red,
                   );
                 }
               },
-              label: context.l10n.confirm,
+              label: dialogContext.l10n.confirm,
               color: GlobalThemeData.darkColorScheme.primary,
             ),
           ],
@@ -305,7 +306,6 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
         return AlertDialog(
           title: Text(context.l10n.ban_user),
           content: Text(context.l10n.ban_user_confirmation),
-
           actions: [
             SoftButton(
               onPressed: () => Navigator.of(context).pop(),
@@ -328,11 +328,13 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
 
   Future<void> _banUser(String userId) async {
     final res = await banUser(widget.group.id, userId);
+    if (!mounted) return;
     if (res.success) {
-      showSnackBar(null, context.l10n.user_banned_success, color: Colors.green);
+      showSnackBar(context.l10n.user_banned_success, color: Colors.green);
       setState(() => _membersFuture = getGroupMembers(widget.group.id));
     } else {
-      showSnackBar(null, context.l10n.error_banning_user(res.error ?? "Unknown"), color: Colors.red);
+      showSnackBar(context.l10n.error_banning_user(res.error ?? "Unknown"),
+          color: Colors.red);
     }
   }
 
@@ -343,7 +345,6 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
         return AlertDialog(
           title: Text(context.l10n.unban_user),
           content: Text(context.l10n.unban_user_confirmation),
-
           actions: [
             SoftButton(
               onPressed: () => Navigator.of(context).pop(),
@@ -365,14 +366,14 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
 
   Future<void> _unbanUser(String userId) async {
     final res = await unbanUser(widget.group.id, userId);
+    if (!mounted) return;
     if (res.success) {
-      showSnackBar(null, "User unbanned", color: Colors.green);
+      showSnackBar("User unbanned", color: Colors.green);
       setState(() => _membersFuture = getGroupMembers(widget.group.id));
     } else {
-      showSnackBar(null, "Error: ${res.error}", color: Colors.red);
+      showSnackBar("Error: ${res.error}", color: Colors.red);
     }
   }
-
 
   Future<void> _deleteGroup() async {
     final confirm = await showDialog<bool>(
@@ -399,19 +400,19 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
         false;
 
     if (!confirm) return;
+    if (!mounted) return;
 
     await UserPreferences.removeFavoriteGroup(_group.id);
 
     final res = await deleteGroup(_group.id);
+    if (!mounted) return;
     if (!res.success) {
-      showSnackBar(
-          context, context.l10n.error_deleting_group(res.error ?? "Unknown"),
+      showSnackBar(context.l10n.error_deleting_group(res.error ?? "Unknown"),
           color: Colors.red);
       return;
     }
 
-    showSnackBar(context, context.l10n.group_deleted_success,
-        color: Colors.green);
+    showSnackBar(context.l10n.group_deleted_success, color: Colors.green);
     Navigator.of(context).popUntil((r) => r.isFirst);
   }
 
@@ -573,10 +574,14 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                                   },
                                 ),
                               ),
-                            if ((targetRole != 'banned') && ((currentRole == 'owner') || (currentRole == 'admin' && targetRole == 'member')))
+                            if ((targetRole != 'banned') &&
+                                ((currentRole == 'owner') ||
+                                    (currentRole == 'admin' &&
+                                        targetRole == 'member')))
                               PopupMenuItem(
                                 child: ListTile(
-                                  leading: const Icon(Symbols.person_off_rounded),
+                                  leading:
+                                      const Icon(Symbols.person_off_rounded),
                                   title: Text(context.l10n.ban_user),
                                   onTap: () {
                                     Navigator.pop(context);
@@ -584,10 +589,13 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                                   },
                                 ),
                               ),
-                            if ((targetRole == 'banned') && (currentRole == 'owner' || currentRole == 'admin'))
+                            if ((targetRole == 'banned') &&
+                                (currentRole == 'owner' ||
+                                    currentRole == 'admin'))
                               PopupMenuItem(
                                 child: ListTile(
-                                  leading: const Icon(Symbols.person_check_rounded),
+                                  leading:
+                                      const Icon(Symbols.person_check_rounded),
                                   title: Text(context.l10n.unban_user),
                                   onTap: () {
                                     Navigator.pop(context);
@@ -595,12 +603,12 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                                   },
                                 ),
                               ),
-
-                            if (currentRole == 'owner' && targetRole != 'owner' && targetRole != 'banned')
+                            if (currentRole == 'owner' &&
+                                targetRole != 'owner' &&
+                                targetRole != 'banned')
                               PopupMenuItem(
                                 child: ListTile(
-                                  leading: const Icon(
-                                      Symbols.crown_rounded),
+                                  leading: const Icon(Symbols.crown_rounded),
                                   title: Text(context.l10n.transfer_ownership),
                                   onTap: () {
                                     Navigator.pop(context);
@@ -616,22 +624,21 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                         leading: UserAvatar(member.user, radius: 25),
                         title: Text(member.user.username),
                         trailing: Icon(
-                          targetRole == 'owner'
-                              ? Symbols.crown_rounded
-                              : targetRole == 'admin'
-                                  ? Symbols.shield_person_rounded
-                                  : targetRole == 'banned' ?
-                                      Symbols.block_rounded
-                                      : null,
-                          color: targetRole == 'owner'
-                              ? Colors.amber
-                              : targetRole == 'admin'
-                                  ? Colors.blue
-                                  : targetRole == 'banned' ?
-                                      Colors.red
-                                      : null,
-                          fill: 1
-                        ),
+                            targetRole == 'owner'
+                                ? Symbols.crown_rounded
+                                : targetRole == 'admin'
+                                    ? Symbols.shield_person_rounded
+                                    : targetRole == 'banned'
+                                        ? Symbols.block_rounded
+                                        : null,
+                            color: targetRole == 'owner'
+                                ? Colors.amber
+                                : targetRole == 'admin'
+                                    ? Colors.blue
+                                    : targetRole == 'banned'
+                                        ? Colors.red
+                                        : null,
+                            fill: 1),
                       ),
                     );
                   }).toList(),
@@ -645,11 +652,18 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                 height: 64,
                 color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
               ),
-
-              Text(
-                context.l10n.group_code(_group.code!.toUpperCase()),
-                style:
-                    const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              GestureDetector(
+                onTap: () {
+                  Clipboard.setData(
+                      ClipboardData(text: _group.code!.toUpperCase()));
+                  showSnackBar(context.l10n.group_code_copied,
+                      color: Colors.green);
+                },
+                child: Text(
+                  context.l10n.group_code(_group.code!.toUpperCase()),
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.bold),
+                ),
               ),
             ],
 
@@ -665,6 +679,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                 RectangleButton(
                   onPressed: _leaveGroup,
                   label: context.l10n.leave_group,
+                  icon: Symbols.logout_rounded,
                   backgroundColor: Colors.red,
                 ),
               ],
@@ -687,6 +702,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                     RectangleButton(
                       onPressed: _deleteGroup,
                       label: context.l10n.delete_group,
+                      icon: Symbols.delete_rounded,
                       backgroundColor: Colors.red,
                     ),
                   ],

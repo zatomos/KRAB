@@ -12,6 +12,8 @@ class UserPreferences {
   static late bool isFirstLaunch;
   static late List<String> favoriteGroups;
   static late int widgetBitmapLimit;
+  static late bool debugNotifications;
+  static late bool developerOptionsUnlocked;
 
   Future<void> initPrefs() async {
     _preferences = await SharedPreferences.getInstance();
@@ -22,6 +24,9 @@ class UserPreferences {
     isFirstLaunch = _preferences?.getBool('isFirstLaunch') ?? true;
     favoriteGroups = _preferences?.getStringList('favoriteGroups') ?? [];
     widgetBitmapLimit = 10 * 1024 * 1024; // Default 10 MB
+    debugNotifications = _preferences?.getBool('debugNotifications') ?? false;
+    developerOptionsUnlocked =
+        _preferences?.getBool('developerOptionsUnlocked') ?? false;
   }
 
   static Future<int> getWidgetBitmapLimit() async {
@@ -76,5 +81,29 @@ class UserPreferences {
   static Future<void> notFirstLaunch() async {
     await _preferences?.setBool('isFirstLaunch', false);
     isFirstLaunch = false;
+  }
+
+  static Future<bool> getDebugNotifications() async {
+    return _preferences?.getBool('debugNotifications') ?? false;
+  }
+
+  static Future<void> setDebugNotifications(bool value) async {
+    await _preferences?.setBool('debugNotifications', value);
+    debugNotifications = value;
+  }
+
+  static Future<bool> getDeveloperOptionsUnlocked() async {
+    return _preferences?.getBool('developerOptionsUnlocked') ?? false;
+  }
+
+  static Future<void> setDeveloperOptionsUnlocked(bool value) async {
+    await _preferences?.setBool('developerOptionsUnlocked', value);
+    developerOptionsUnlocked = value;
+
+    // Reset all developer options to default when locked
+    if (!value) {
+      print("Resetting developer options to default");
+      await setDebugNotifications(false);
+    }
   }
 }

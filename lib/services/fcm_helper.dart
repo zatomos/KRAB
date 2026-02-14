@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../UserPreferences.dart';
+import 'debug_notifier.dart';
 
 class FcmHelper {
   static bool _listenersWired = false;
@@ -86,9 +87,11 @@ class FcmHelper {
         'fcm_token': token,
       });
       debugPrint('FCM: token pushed to Supabase for user ${user.id}');
+      await DebugNotifier.instance.notifyFcmTokenPushed();
     } catch (e, st) {
       debugPrint('FCM: failed to push token: $e');
       debugPrint('$st');
+      await DebugNotifier.instance.notifyFcmTokenPushFailed('$e');
     }
   }
 }
