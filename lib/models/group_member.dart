@@ -1,6 +1,6 @@
-import 'package:krab/models/User.dart' as KrabUser;
+import 'package:krab/models/user.dart' as krab_user;
 class GroupMember {
-  final KrabUser.User user;
+  final krab_user.User user;
   final String role;
 
   GroupMember({
@@ -11,7 +11,7 @@ class GroupMember {
   // Convert a JSON Map to a GroupMember object
   factory GroupMember.fromJson(Map<String, dynamic> json) {
     return GroupMember(
-      user: KrabUser.User.fromJson(json['user'] as Map<String, dynamic>),
+      user: krab_user.User.fromJson(json['user'] as Map<String, dynamic>),
       role: json['role'] as String,
     );
   }
@@ -19,7 +19,7 @@ class GroupMember {
   // Empty
   factory GroupMember.empty() {
     return GroupMember(
-      user: const KrabUser.User(id: '', username: '', pfpUrl: ''),
+      user: const krab_user.User(id: '', username: '', pfpUrl: ''),
       role: 'member'
     );
   }

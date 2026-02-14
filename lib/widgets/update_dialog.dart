@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/services/update_service.dart';
-import 'package:krab/themes/GlobalThemeData.dart';
-import 'package:krab/widgets/FloatingSnackBar.dart';
-import 'package:krab/widgets/SoftButton.dart';
+import 'package:krab/themes/global_theme_data.dart';
+import 'package:krab/widgets/floating_snack_bar.dart';
+import 'package:krab/widgets/soft_button.dart';
 
 Future<void> showUpdateDialog({
   required BuildContext context,

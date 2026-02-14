@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../UserPreferences.dart';
+import '../user_preferences.dart';
 import 'debug_notifier.dart';
 
 class FcmHelper {

@@ -3,9 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:home_widget/home_widget.dart';
 
-import 'package:krab/themes/GlobalThemeData.dart';
-import 'package:krab/widgets/SoftButton.dart';
-import 'package:krab/widgets/FloatingSnackBar.dart';
+import 'package:krab/themes/global_theme_data.dart';
+import 'package:krab/widgets/soft_button.dart';
+import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/l10n/l10n.dart';
 
 class HomeWidgetStatus {

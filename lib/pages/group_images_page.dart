@@ -5,12 +5,12 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/services/supabase.dart';
-import 'package:krab/models/Group.dart';
-import 'package:krab/models/User.dart' as KRAB_User;
-import 'package:krab/models/ImageData.dart';
-import 'package:krab/pages/FullImagePage.dart';
-import 'package:krab/pages/GroupSettingsPage.dart';
-import 'package:krab/widgets/UserAvatar.dart';
+import 'package:krab/models/group.dart';
+import 'package:krab/models/user.dart' as krab_user;
+import 'package:krab/models/image_data.dart';
+import 'package:krab/pages/full_image_page.dart';
+import 'package:krab/pages/group_settings_page.dart';
+import 'package:krab/widgets/user_avatar.dart';
 
 class GroupImagesPage extends StatefulWidget {
   final Group group;
@@ -29,7 +29,7 @@ class GroupPageState extends State<GroupImagesPage> {
   final Map<String, Uint8List> _lowResCache = {};
   final Map<String, Uint8List> _fullResCache = {};
   final Map<String, Future<ImageData>> _imageFutureCache = {};
-  final Map<String, KRAB_User.User> _userCache = {};
+  final Map<String, krab_user.User> _userCache = {};
   final Map<String, int> _commentCountCache = {};
 
   @override
@@ -123,7 +123,7 @@ class GroupPageState extends State<GroupImagesPage> {
       _userCache[uploaderId] =
           (userResponse.success && userResponse.data != null)
               ? userResponse.data!
-              : KRAB_User.User(id: uploaderId, username: "");
+              : krab_user.User(id: uploaderId, username: "");
     }
 
     // Cache comment count
@@ -229,7 +229,7 @@ class GroupPageState extends State<GroupImagesPage> {
 
                         final imageData = snapshot.data!;
                         final uploader = _userCache[imageData.uploadedBy] ??
-                            KRAB_User.User(
+                            krab_user.User(
                               id: imageData.uploadedBy,
                               username: "",
                             );

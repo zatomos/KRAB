@@ -7,9 +7,9 @@ import 'package:krab/services/debug_notifier.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 
-import 'package:krab/models/Group.dart';
-import 'package:krab/models/GroupMember.dart';
-import 'package:krab/models/User.dart' as KRAB_User;
+import 'package:krab/models/group.dart';
+import 'package:krab/models/group_member.dart';
+import 'package:krab/models/user.dart' as krab_user;
 
 final supabase = Supabase.instance.client;
 
@@ -781,7 +781,7 @@ Future<SupabaseResponse<void>> logOut() async {
 }
 
 /// Get the username for a given user ID.
-Future<SupabaseResponse<KRAB_User.User>> getUserDetails(String userId) async {
+Future<SupabaseResponse<krab_user.User>> getUserDetails(String userId) async {
   try {
     final supabase = Supabase.instance.client;
 
@@ -803,7 +803,7 @@ Future<SupabaseResponse<KRAB_User.User>> getUserDetails(String userId) async {
     debugPrint("Fetched profile picture URL for $userId: $pfpUrl");
 
     // Construct user object
-    final user = KRAB_User.User(
+    final user = krab_user.User(
       id: userId,
       username: username,
       pfpUrl: pfpUrl ?? '',

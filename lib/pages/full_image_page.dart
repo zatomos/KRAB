@@ -3,17 +3,17 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
-import 'package:krab/models/ImageData.dart';
-import 'package:krab/models/User.dart' as KRABUser;
-import 'package:krab/widgets/FloatingSnackBar.dart';
+import 'package:krab/models/image_data.dart';
+import 'package:krab/models/user.dart' as krab_user;
+import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/services/file_saver.dart';
-import 'package:krab/widgets/CommentsBottomSheet.dart';
-import 'package:krab/widgets/SoftButton.dart';
-import 'package:krab/widgets/UserAvatar.dart';
-import 'package:krab/themes/GlobalThemeData.dart';
+import 'package:krab/widgets/comments_bottom_sheet.dart';
+import 'package:krab/widgets/soft_button.dart';
+import 'package:krab/widgets/user_avatar.dart';
+import 'package:krab/themes/global_theme_data.dart';
 
 class FullImagePage extends StatefulWidget {
-  final KRABUser.User uploader;
+  final krab_user.User uploader;
   final String imageId;
   final String groupId;
   final ImageData lowResImageData;

@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:krab/models/CachedUrl.dart';
+import 'package:krab/models/cached_url.dart';
 
 class ProfilePictureCache {
   static const _prefsKey = 'pfp_cache';

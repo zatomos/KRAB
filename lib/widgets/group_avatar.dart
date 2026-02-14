@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:krab/models/Group.dart';
-import 'GroupOrUserAvatar.dart';
+import 'package:krab/models/group.dart';
+import 'group_or_user_avatar.dart';
 
 class GroupAvatar extends StatelessWidget {
   final Group group;

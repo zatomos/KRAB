@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'package:krab/themes/GlobalThemeData.dart';
+import 'package:krab/themes/global_theme_data.dart';
 
 class RectangleButton extends StatelessWidget {
   final String label;

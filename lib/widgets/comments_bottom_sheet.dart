@@ -3,15 +3,15 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:krab/l10n/l10n.dart';
-import 'package:krab/widgets/UserAvatar.dart';
-import 'package:krab/models/Comment.dart';
-import 'package:krab/models/User.dart' as KRAB_User;
-import 'package:krab/widgets/RoundedInputField.dart';
-import 'package:krab/widgets/FloatingSnackBar.dart';
+import 'package:krab/widgets/user_avatar.dart';
+import 'package:krab/models/comment.dart';
+import 'package:krab/models/user.dart' as krab_user;
+import 'package:krab/widgets/rounded_input_field.dart';
+import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/services/supabase.dart';
 import 'package:krab/services/time_formatting.dart';
-import 'package:krab/themes/GlobalThemeData.dart';
-import 'SoftButton.dart';
+import 'package:krab/themes/global_theme_data.dart';
+import 'soft_button.dart';
 
 class CommentsBottomSheet extends StatefulWidget {
   final String imageId;
@@ -215,17 +215,17 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
       children: [
         Padding(
           padding: EdgeInsets.only(left: effectiveDepth * 24.0),
-          child: FutureBuilder<KRAB_User.User>(
+          child: FutureBuilder<krab_user.User>(
             future: getUserDetails(comment.userId).then((response) {
               if (response.success && response.data != null) {
                 return response.data!;
               }
-              return KRAB_User.User(id: comment.userId, username: "Unknown");
+              return krab_user.User(id: comment.userId, username: "Unknown");
             }),
             builder: (context, snapshot) {
               final username = snapshot.data?.username ?? "...";
               final user = snapshot.data ??
-                  KRAB_User.User(id: comment.userId, username: "");
+                  krab_user.User(id: comment.userId, username: "");
 
               return Container(
                 margin: const EdgeInsets.symmetric(vertical: 4),

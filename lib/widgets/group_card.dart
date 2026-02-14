@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:krab/l10n/l10n.dart';
-import 'package:krab/pages/GroupImagesPage.dart';
-import 'package:krab/models/Group.dart';
-import 'package:krab/widgets/FloatingSnackBar.dart';
-import 'package:krab/widgets/GroupAvatar.dart';
-import 'package:krab/UserPreferences.dart';
+import 'package:krab/pages/group_images_page.dart';
+import 'package:krab/models/group.dart';
+import 'package:krab/widgets/floating_snack_bar.dart';
+import 'package:krab/widgets/group_avatar.dart';
+import 'package:krab/user_preferences.dart';
 import 'package:krab/services/supabase.dart';
 import 'package:krab/services/time_formatting.dart';
 

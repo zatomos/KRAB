@@ -6,17 +6,17 @@ import 'package:image_cropper/image_cropper.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
-import 'package:krab/widgets/GroupAvatar.dart';
-import 'package:krab/widgets/UserAvatar.dart';
-import 'package:krab/widgets/FloatingSnackBar.dart';
-import 'package:krab/widgets/RectangleButton.dart';
-import 'package:krab/widgets/SoftButton.dart';
-import 'package:krab/widgets/RoundedInputField.dart';
-import 'package:krab/models/Group.dart';
-import 'package:krab/models/GroupMember.dart';
+import 'package:krab/widgets/group_avatar.dart';
+import 'package:krab/widgets/user_avatar.dart';
+import 'package:krab/widgets/floating_snack_bar.dart';
+import 'package:krab/widgets/rectangle_button.dart';
+import 'package:krab/widgets/soft_button.dart';
+import 'package:krab/widgets/rounded_input_field.dart';
+import 'package:krab/models/group.dart';
+import 'package:krab/models/group_member.dart';
 import 'package:krab/services/supabase.dart';
-import 'package:krab/UserPreferences.dart';
-import 'package:krab/themes/GlobalThemeData.dart';
+import 'package:krab/user_preferences.dart';
+import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/l10n/l10n.dart';
 
 class GroupSettingsPage extends StatefulWidget {

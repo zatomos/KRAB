@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:krab/models/User.dart' as KRAB_User;
-import 'GroupOrUserAvatar.dart';
+import 'package:krab/models/user.dart' as krab_user;
+import 'group_or_user_avatar.dart';
 
 class UserAvatar extends StatelessWidget {
-  final KRAB_User.User user;
+  final krab_user.User user;
   final double radius;
 
   const UserAvatar(

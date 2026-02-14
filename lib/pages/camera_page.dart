@@ -2,21 +2,21 @@ import 'dart:async';
 import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
-import 'package:krab/widgets/FloatingSnackBar.dart';
-import 'package:krab/widgets/SoftButton.dart';
+import 'package:krab/widgets/floating_snack_bar.dart';
+import 'package:krab/widgets/soft_button.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/services/supabase.dart';
-import 'package:krab/themes/GlobalThemeData.dart';
-import 'package:krab/models/User.dart' as KRAB_User;
-import 'package:krab/widgets/RoundedInputField.dart';
-import 'package:krab/widgets/UserAvatar.dart';
-import 'package:krab/UserPreferences.dart';
-import 'GroupsPage.dart';
-import 'AccountPage.dart';
+import 'package:krab/themes/global_theme_data.dart';
+import 'package:krab/models/user.dart' as krab_user;
+import 'package:krab/widgets/rounded_input_field.dart';
+import 'package:krab/widgets/user_avatar.dart';
+import 'package:krab/user_preferences.dart';
+import 'groups_page.dart';
+import 'account_page.dart';
 
 class ImageSentDialog extends StatelessWidget {
   final bool success;
@@ -74,7 +74,7 @@ class CameraPageState extends State<CameraPage> {
   Offset? _focusPoint;
 
   // User
-  KRAB_User.User? currentUser;
+  krab_user.User? currentUser;
 
   @override
   void initState() {
@@ -120,7 +120,7 @@ class CameraPageState extends State<CameraPage> {
   // ===== Initialization ========================================================
 
   Future<void> _loadCurrentUser() async {
-    currentUser = await KRAB_User.getCurrentUser();
+    currentUser = await krab_user.getCurrentUser();
     debugPrint("Loaded current user: $currentUser");
   }
 

@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import 'package:krab/l10n/l10n.dart';
-import 'package:krab/themes/GlobalThemeData.dart';
-import 'package:krab/UserPreferences.dart';
-import 'package:krab/pages/LoginPage.dart';
-import 'package:krab/widgets/SoftButton.dart';
+import 'package:krab/themes/global_theme_data.dart';
+import 'package:krab/user_preferences.dart';
+import 'package:krab/pages/login_page.dart';
+import 'package:krab/widgets/soft_button.dart';
 import 'package:krab/services/home_widget_status.dart';
 
 class WelcomePage extends StatefulWidget {

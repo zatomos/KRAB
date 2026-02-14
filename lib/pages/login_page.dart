@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/services/supabase.dart';
-import 'package:krab/themes/GlobalThemeData.dart';
-import 'package:krab/widgets/FloatingSnackBar.dart';
-import 'package:krab/widgets/RoundedInputField.dart';
-import 'package:krab/widgets/RectangleButton.dart';
-import 'package:krab/pages/CameraPage.dart';
+import 'package:krab/themes/global_theme_data.dart';
+import 'package:krab/widgets/floating_snack_bar.dart';
+import 'package:krab/widgets/rounded_input_field.dart';
+import 'package:krab/widgets/rectangle_button.dart';
+import 'package:krab/pages/camera_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});

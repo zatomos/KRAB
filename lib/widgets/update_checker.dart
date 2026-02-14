@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:krab/l10n/l10n.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
-import 'package:krab/widgets/FloatingSnackBar.dart';
+import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/services/update_service.dart';
-import 'package:krab/widgets/UpdateDialog.dart';
+import 'package:krab/widgets/update_dialog.dart';
 
 class UpdateChecker extends StatefulWidget {
   final Widget child;

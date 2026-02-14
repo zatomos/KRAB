@@ -102,7 +102,6 @@ class UserPreferences {
 
     // Reset all developer options to default when locked
     if (!value) {
-      print("Resetting developer options to default");
       await setDebugNotifications(false);
     }
   }

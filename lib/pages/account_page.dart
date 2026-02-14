@@ -7,19 +7,19 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import 'package:krab/l10n/l10n.dart';
-import 'package:krab/themes/GlobalThemeData.dart';
-import 'package:krab/models/User.dart' as KRAB_User;
+import 'package:krab/themes/global_theme_data.dart';
+import 'package:krab/models/user.dart' as krab_user;
 import 'package:krab/services/supabase.dart';
-import 'package:krab/UserPreferences.dart';
+import 'package:krab/user_preferences.dart';
 import 'package:krab/services/debug_notifier.dart';
 import 'package:krab/services/update_service.dart';
-import 'package:krab/widgets/RectangleButton.dart';
-import 'package:krab/widgets/UserAvatar.dart';
-import 'package:krab/widgets/FloatingSnackBar.dart';
-import 'package:krab/widgets/RoundedInputField.dart';
-import 'package:krab/widgets/SoftButton.dart';
-import 'package:krab/widgets/UpdateDialog.dart';
-import 'LoginPage.dart';
+import 'package:krab/widgets/rectangle_button.dart';
+import 'package:krab/widgets/user_avatar.dart';
+import 'package:krab/widgets/floating_snack_bar.dart';
+import 'package:krab/widgets/rounded_input_field.dart';
+import 'package:krab/widgets/soft_button.dart';
+import 'package:krab/widgets/update_dialog.dart';
+import 'login_page.dart';
 
 class AccountPage extends StatefulWidget {
   const AccountPage({super.key});
@@ -33,7 +33,7 @@ class AccountPageState extends State<AccountPage> {
   final _emailController = TextEditingController();
   final _updateService = UpdateService();
 
-  KRAB_User.User user = const KRAB_User.User(id: '', username: '');
+  krab_user.User user = const krab_user.User(id: '', username: '');
   bool _isLoading = false;
 
   bool autoImageSave = false;
