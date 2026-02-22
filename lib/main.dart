@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:isolate';
+import 'dart:ui' show IsolateNameServer;
 import 'firebase_options.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -27,6 +29,14 @@ import 'user_preferences.dart';
 bool isSupabaseInitialized = false;
 bool isAppInitialized = false;
 Completer<bool>? _supabaseInitCompleter;
+
+// Port name used by the background FCM handler to signal the main isolate
+// that its Supabase work is complete.
+const String _backgroundPortName = 'krab_bg_done';
+
+// True while a signedOut event has occurred and session recovery is still
+// pending confirmation.
+bool _pendingUnexpectedSignOut = false;
 
 final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey =
     GlobalKey<ScaffoldMessengerState>();
@@ -135,6 +145,9 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     debugPrint('Error in background handler: $e');
     debugPrint(st.toString());
     await DebugNotifier.instance.notifyBackgroundTaskFailed('$e');
+  } finally {
+    // Signal the main isolate that background Supabase work is done
+    IsolateNameServer.lookupPortByName(_backgroundPortName)?.send(null);
   }
 }
 
@@ -269,15 +282,37 @@ void main() async {
               return;
             }
           } catch (e) {
-            debugPrint('Auth reconnect failed: $e');
+            debugPrint('Auth reconnect failed [${e.runtimeType}]: $e');
           }
 
-          await DebugNotifier.instance.notifyAuthSignedOut();
+          // Immediate recovery failed
+          _pendingUnexpectedSignOut = true;
         } else if (event == AuthChangeEvent.tokenRefreshed) {
+          _pendingUnexpectedSignOut = false;
           await DebugNotifier.instance.notifyAuthTokenRefreshed();
         } else {
           await DebugNotifier.instance.notifyAuthStateChanged(event.name);
         }
+      });
+
+      // When the background FCM handler rotates the Supabase refresh token,
+      // signals this port so the main isolate can restore the session.
+      final bgPort = ReceivePort();
+      IsolateNameServer.removePortNameMapping(_backgroundPortName);
+      IsolateNameServer.registerPortWithName(bgPort.sendPort, _backgroundPortName);
+      bgPort.listen((_) {
+        if (!isSupabaseInitialized) return;
+        if (Supabase.instance.client.auth.currentSession != null) return;
+        Supabase.instance.client.auth.refreshSession().then((_) {
+          debugPrint('Session restored after background handler signal');
+        }).catchError((dynamic e) {
+          debugPrint('Post-background session restore failed [${e.runtimeType}]: $e');
+          // Both recovery paths failed, session is genuinely gone.
+          if (_pendingUnexpectedSignOut) {
+            _pendingUnexpectedSignOut = false;
+            DebugNotifier.instance.notifyAuthSignedOut();
+          }
+        });
       });
     } else {
       debugPrint('Skipping FCM/cache init, Supabase not initialized');
@@ -337,10 +372,11 @@ class MyApp extends StatefulWidget {
   MyAppState createState() => MyAppState();
 }
 
-class MyAppState extends State<MyApp> {
+class MyAppState extends State<MyApp> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       // Handle pending notification
@@ -357,6 +393,37 @@ class MyAppState extends State<MyApp> {
             .showWidgetPromptIfNeeded(navigatorKey.currentContext!);
       }
     });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    if (!isSupabaseInitialized) return;
+
+    // If the session is null after resuming, the background FCM handler may
+    // have rotated the refresh token and written the new one to storage while
+    // the main app's in-memory token was already invalidated.
+    // By this point, the background work is guaranteed to be complete,
+    // so we read the persisted token and silently restore the session.
+    final session = Supabase.instance.client.auth.currentSession;
+    if (session == null) {
+      Supabase.instance.client.auth.refreshSession().then((_) {
+        debugPrint('Session restored on app resume');
+      }).catchError((dynamic e) {
+        debugPrint('Session restore on resume failed [${e.runtimeType}]: $e');
+        // Session is still gone after the user opened the app
+        if (_pendingUnexpectedSignOut) {
+          _pendingUnexpectedSignOut = false;
+          DebugNotifier.instance.notifyAuthSignedOut();
+        }
+      });
+    }
   }
 
   @override
