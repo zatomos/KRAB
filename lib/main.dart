@@ -36,7 +36,12 @@ const String _backgroundPortName = 'krab_bg_done';
 
 // True while a signedOut event has occurred and session recovery is still
 // pending confirmation.
-bool _pendingUnexpectedSignOut = false;
+bool pendingUnexpectedSignOut = false;
+
+// Latest refresh token received from the background isolate. Kept as a backup
+// so that if the main isolate's JWT expires after the port signal was already
+// processed, the signedOut handler can still recover using this token.
+String? backupRefreshToken;
 
 final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey =
     GlobalKey<ScaffoldMessengerState>();
@@ -146,8 +151,15 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     debugPrint(st.toString());
     await DebugNotifier.instance.notifyBackgroundTaskFailed('$e');
   } finally {
-    // Signal the main isolate that background Supabase work is done
-    IsolateNameServer.lookupPortByName(_backgroundPortName)?.send(null);
+    // Send the background isolate's current refresh token to the main isolate.
+    String? refreshToken;
+    try {
+      if (isSupabaseInitialized) {
+        refreshToken =
+            Supabase.instance.client.auth.currentSession?.refreshToken;
+      }
+    } catch (_) {}
+    IsolateNameServer.lookupPortByName(_backgroundPortName)?.send(refreshToken);
   }
 }
 
@@ -270,25 +282,28 @@ void main() async {
 
         if (event == AuthChangeEvent.signedOut) {
           if (DebugNotifier.instance.isIntentionalLogout) {
+            backupRefreshToken = null;
             await DebugNotifier.instance.notifyAuthSignedOut(unexpected: false);
             return;
           }
-
-          try {
-            final refreshed = await Supabase.instance.client.auth.refreshSession();
-            if (refreshed.session != null) {
-              debugPrint('Auth recovered after signedOut event');
+          // Try the backup token saved from the most recent background
+          // port signal. If no backup, defer to the port listener or app resume
+          final backup = backupRefreshToken;
+          backupRefreshToken = null;
+          if (backup != null) {
+            try {
+              await Supabase.instance.client.auth.refreshSession(backup);
+              debugPrint('Auth recovered using backup token from background isolate');
               await DebugNotifier.instance.notifyAuthStateChanged('Reconnected');
               return;
+            } catch (e) {
+              debugPrint('Backup token recovery failed [${e.runtimeType}]: $e');
             }
-          } catch (e) {
-            debugPrint('Auth reconnect failed [${e.runtimeType}]: $e');
           }
-
-          // Immediate recovery failed
-          _pendingUnexpectedSignOut = true;
+          pendingUnexpectedSignOut = true;
         } else if (event == AuthChangeEvent.tokenRefreshed) {
-          _pendingUnexpectedSignOut = false;
+          pendingUnexpectedSignOut = false;
+          backupRefreshToken = null;
           await DebugNotifier.instance.notifyAuthTokenRefreshed();
         } else {
           await DebugNotifier.instance.notifyAuthStateChanged(event.name);
@@ -300,16 +315,24 @@ void main() async {
       final bgPort = ReceivePort();
       IsolateNameServer.removePortNameMapping(_backgroundPortName);
       IsolateNameServer.registerPortWithName(bgPort.sendPort, _backgroundPortName);
-      bgPort.listen((_) {
+      bgPort.listen((dynamic data) {
         if (!isSupabaseInitialized) return;
+        final refreshToken = data as String?;
+        // Always persist the latest token as a backup. Even if the session is
+        // currently valid, the main isolate's in-memory token may be stale and
+        // could trigger signedOut later when the JWT expires.
+        if (refreshToken != null) {
+          backupRefreshToken = refreshToken;
+        }
         if (Supabase.instance.client.auth.currentSession != null) return;
-        Supabase.instance.client.auth.refreshSession().then((_) {
+        // Session is already gone: recover immediately
+        Supabase.instance.client.auth.refreshSession(refreshToken).then((_) {
+          backupRefreshToken = null;
           debugPrint('Session restored after background handler signal');
         }).catchError((dynamic e) {
           debugPrint('Post-background session restore failed [${e.runtimeType}]: $e');
-          // Both recovery paths failed, session is genuinely gone.
-          if (_pendingUnexpectedSignOut) {
-            _pendingUnexpectedSignOut = false;
+          if (pendingUnexpectedSignOut) {
+            pendingUnexpectedSignOut = false;
             DebugNotifier.instance.notifyAuthSignedOut();
           }
         });
@@ -413,13 +436,14 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
     // so we read the persisted token and silently restore the session.
     final session = Supabase.instance.client.auth.currentSession;
     if (session == null) {
-      Supabase.instance.client.auth.refreshSession().then((_) {
+      final token = backupRefreshToken;
+      backupRefreshToken = null;
+      Supabase.instance.client.auth.refreshSession(token).then((_) {
         debugPrint('Session restored on app resume');
       }).catchError((dynamic e) {
         debugPrint('Session restore on resume failed [${e.runtimeType}]: $e');
-        // Session is still gone after the user opened the app
-        if (_pendingUnexpectedSignOut) {
-          _pendingUnexpectedSignOut = false;
+        if (pendingUnexpectedSignOut) {
+          pendingUnexpectedSignOut = false;
           DebugNotifier.instance.notifyAuthSignedOut();
         }
       });

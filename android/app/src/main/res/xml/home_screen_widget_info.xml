@@ -4,7 +4,7 @@
     android:initialKeyguardLayout="@layout/home_screen_widget"
     android:initialLayout="@layout/home_screen_widget"
     android:minWidth="110dp"
-    android:minHeight="180dp"
+    android:minHeight="110dp"
     android:previewImage="@drawable/default_img_widget"
     android:previewLayout="@layout/home_screen_widget"
     android:resizeMode="horizontal|vertical"
