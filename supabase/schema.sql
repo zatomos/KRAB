@@ -194,20 +194,6 @@ $$;
 
 
 --
--- Name: call_get_group_members_count(uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.call_get_group_members_count(p_group_id uuid) RETURNS jsonb
-    LANGUAGE plpgsql
-    SET search_path TO 'public'
-    AS $$
-BEGIN
-  RETURN public.get_group_members_count('1df209bc-6c5b-4624-8f88-d69fdf12f3d6');
-END;
-$$;
-
-
---
 -- Name: check_user_in_group(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -280,53 +266,21 @@ $$;
 
 
 --
--- Name: debug_auth_context(uuid); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.debug_auth_context(p_group_id uuid) RETURNS jsonb
-    LANGUAGE plpgsql
-    SET search_path TO 'public'
-    AS $$
-DECLARE
-    auth_user_id UUID;
-    current_db_user TEXT;
-    member_role TEXT;
-BEGIN
-    -- Get auth.uid()
-    auth_user_id := auth.uid();
-
-    -- Get current database user
-    current_db_user := current_user;
-
-    -- Try to get member role
-    SELECT role INTO member_role
-    FROM "Members"
-    WHERE group_id = p_group_id AND user_id = auth_user_id;
-
-    RETURN jsonb_build_object(
-        'auth_uid', auth_user_id,
-        'current_user', current_db_user,
-        'member_role', member_role,
-        'member_exists', (member_role IS NOT NULL)
-    );
-END;
-$$;
-
-
---
 -- Name: delete_comment(uuid, uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.delete_comment(comment_id uuid, image_id uuid, group_id uuid) RETURNS jsonb
     LANGUAGE plpgsql
-    AS $$
-DECLARE
+    AS $$DECLARE
   current_user_id UUID;
+  has_children BOOLEAN;
 BEGIN
   current_user_id := auth.uid();
+
   IF current_user_id IS NULL THEN
     RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
   END IF;
+
   IF NOT EXISTS (
     SELECT 1
     FROM "Members" m
@@ -334,23 +288,61 @@ BEGIN
       AND m.group_id = delete_comment.group_id
       AND m.role <> 'banned'
   ) THEN
-    RETURN jsonb_build_object('success', false, 'error', 'You are not a member of this group');
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'You are not a member of this group'
+    );
   END IF;
-  DELETE FROM "Comments" c
-  WHERE c.id = delete_comment.comment_id
-    AND c.image_id = delete_comment.image_id
-    AND c.group_id = delete_comment.group_id
-    AND c.user_id = current_user_id;
-  IF FOUND THEN
-    RETURN jsonb_build_object('success', true, 'message', 'Comment deleted successfully');
+
+  -- Check if the comment has children
+  SELECT EXISTS (
+    SELECT 1
+    FROM "Comments"
+    WHERE parent_id = delete_comment.comment_id
+  )
+  INTO has_children;
+
+  IF has_children THEN
+    -- Soft delete: replace content
+    UPDATE "Comments" c
+    SET text = '[deleted by user]'
+    WHERE id = delete_comment.comment_id
+      AND c.image_id = delete_comment.image_id
+      AND c.group_id = delete_comment.group_id
+      AND c.user_id = current_user_id;
+
   ELSE
-    RETURN jsonb_build_object('success', false, 'error', 'No comment found to delete or permission denied');
+    -- Hard delete
+    DELETE FROM "Comments" c
+    WHERE id = delete_comment.comment_id
+      AND c.image_id = delete_comment.image_id
+      AND c.group_id = delete_comment.group_id
+      AND c.user_id = current_user_id;
   END IF;
+
+  IF FOUND THEN
+    RETURN jsonb_build_object(
+      'success', true,
+      'message',
+      CASE
+        WHEN has_children THEN 'Comment replaced by deletion marker'
+        ELSE 'Comment deleted successfully'
+      END
+    );
+  ELSE
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'No comment found to delete or permission denied'
+    );
+  END IF;
+
 EXCEPTION
   WHEN OTHERS THEN
-    RETURN jsonb_build_object('success', false, 'error', SQLERRM);
-END;
-$$;
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', SQLERRM
+    );
+END;$$;
 
 
 --
@@ -612,7 +604,7 @@ BEGIN
     END IF;
 
     -- Check if current user is admin in this group
-    SELECT admin
+    SELECT role IN ('owner', 'admin')
     INTO is_admin
     FROM "Members"
     WHERE "Members".group_id = get_group_details.group_id
@@ -1042,7 +1034,7 @@ $$;
 --
 
 CREATE FUNCTION public.join_group_by_code(group_code text) RETURNS jsonb
-    LANGUAGE plpgsql
+    LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public'
     AS $$DECLARE
   current_user_id UUID;
@@ -1536,80 +1528,6 @@ EXCEPTION WHEN OTHERS THEN
     'success', false,
     'error', SQLERRM
   );
-END;$$;
-
-
---
--- Name: update_comment(uuid, uuid, text); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.update_comment(group_id uuid, image_id uuid, text text) RETURNS jsonb
-    LANGUAGE plpgsql
-    SET search_path TO 'public'
-    AS $$DECLARE
-    current_user_id UUID;
-BEGIN
-    current_user_id := auth.uid();
-
-    -- Check if user is authenticated
-    IF current_user_id IS NULL THEN
-        RETURN jsonb_build_object(
-            'success', false,
-            'error', 'User not authenticated'
-        );
-    END IF;
-
-    -- Validate that the user is a member of the group
-    IF NOT EXISTS (
-        SELECT 1
-        FROM "Members" m
-        WHERE m.user_id = current_user_id
-          AND m.group_id = update_comment.group_id
-    ) THEN
-        RETURN jsonb_build_object(
-            'success', false,
-            'error', 'You are not a member of this group'
-        );
-    END IF;
-
-    -- Validate that the image belongs to the specified group
-    IF NOT EXISTS (
-        SELECT 1
-        FROM "ImageGroups" ig
-        WHERE ig.image_id = update_comment.image_id
-          AND ig.group_id = update_comment.group_id
-    ) THEN
-        RETURN jsonb_build_object(
-            'success', false,
-            'error', 'Image does not belong to the specified group'
-        );
-    END IF;
-
-    -- Update the comment if it belongs to the current user
-    UPDATE "Comments" c
-    SET text = update_comment.text
-    WHERE c.image_id = update_comment.image_id
-      AND c.group_id = update_comment.group_id
-      AND c.user_id = current_user_id;
-
-    IF FOUND THEN
-        RETURN jsonb_build_object(
-            'success', true,
-            'message', 'Comment updated successfully'
-        );
-    ELSE
-        RETURN jsonb_build_object(
-            'success', false,
-            'error', 'No comment found to update or permission denied'
-        );
-    END IF;
-
-EXCEPTION
-    WHEN OTHERS THEN
-        RETURN jsonb_build_object(
-            'success', false,
-            'error', SQLERRM
-        );
 END;$$;
 
 
@@ -2418,9 +2336,7 @@ CREATE TABLE public."Members" (
     user_id uuid NOT NULL,
     group_id uuid NOT NULL,
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    admin boolean DEFAULT false NOT NULL,
     role text DEFAULT 'member'::text,
-    CONSTRAINT "Members_admin_check" CHECK ((admin = ANY (ARRAY[true, false]))),
     CONSTRAINT "Members_role_check" CHECK ((role = ANY (ARRAY['owner'::text, 'admin'::text, 'member'::text, 'banned'::text])))
 );
 
@@ -3070,9 +2986,7 @@ ALTER TABLE ONLY storage.s3_multipart_uploads_parts
 -- Name: Groups Admins can update the group name; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Admins can update the group name" ON public."Groups" FOR UPDATE TO authenticated USING ((EXISTS ( SELECT 1
-   FROM public."Members"
-  WHERE (("Members".group_id = "Groups".id) AND ("Members".user_id = auth.uid()) AND ("Members".admin = true)))));
+CREATE POLICY "Admins can update the group name" ON public."Groups" FOR UPDATE TO authenticated USING (public.is_admin_or_owner(id));
 
 
 --
@@ -3296,27 +3210,21 @@ CREATE POLICY "Give users authenticated access to insert" ON storage.objects FOR
 -- Name: objects Group admins can update the group icon 1tf5vm4_0; Type: POLICY; Schema: storage; Owner: -
 --
 
-CREATE POLICY "Group admins can update the group icon 1tf5vm4_0" ON storage.objects FOR INSERT TO authenticated WITH CHECK (((bucket_id = 'group-icons'::text) AND (EXISTS ( SELECT 1
-   FROM public."Members" m
-  WHERE (((m.group_id)::text = objects.name) AND (m.user_id = auth.uid()) AND (m.admin = true))))));
+CREATE POLICY "Group admins can update the group icon 1tf5vm4_0" ON storage.objects FOR INSERT TO authenticated WITH CHECK (((bucket_id = 'group-icons'::text) AND public.is_admin_or_owner((name)::uuid)));
 
 
 --
 -- Name: objects Group admins can update the group icon 1tf5vm4_1; Type: POLICY; Schema: storage; Owner: -
 --
 
-CREATE POLICY "Group admins can update the group icon 1tf5vm4_1" ON storage.objects FOR UPDATE TO authenticated USING (((bucket_id = 'group-icons'::text) AND (EXISTS ( SELECT 1
-   FROM public."Members" m
-  WHERE (((m.group_id)::text = objects.name) AND (m.user_id = auth.uid()) AND (m.admin = true))))));
+CREATE POLICY "Group admins can update the group icon 1tf5vm4_1" ON storage.objects FOR UPDATE TO authenticated USING (((bucket_id = 'group-icons'::text) AND public.is_admin_or_owner((name)::uuid)));
 
 
 --
 -- Name: objects Group admins can update the group icon 1tf5vm4_2; Type: POLICY; Schema: storage; Owner: -
 --
 
-CREATE POLICY "Group admins can update the group icon 1tf5vm4_2" ON storage.objects FOR DELETE TO authenticated USING (((bucket_id = 'group-icons'::text) AND (EXISTS ( SELECT 1
-   FROM public."Members" m
-  WHERE (((m.group_id)::text = objects.name) AND (m.user_id = auth.uid()) AND (m.admin = true))))));
+CREATE POLICY "Group admins can update the group icon 1tf5vm4_2" ON storage.objects FOR DELETE TO authenticated USING (((bucket_id = 'group-icons'::text) AND public.is_admin_or_owner((name)::uuid)));
 
 
 --
@@ -3470,14 +3378,6 @@ GRANT ALL ON FUNCTION public.ban_user(group_id uuid, target_user_id uuid) TO ser
 
 
 --
--- Name: FUNCTION call_get_group_members_count(p_group_id uuid); Type: ACL; Schema: public; Owner: -
---
-
-GRANT ALL ON FUNCTION public.call_get_group_members_count(p_group_id uuid) TO authenticated;
-GRANT ALL ON FUNCTION public.call_get_group_members_count(p_group_id uuid) TO service_role;
-
-
---
 -- Name: FUNCTION check_user_in_group(user_uuid uuid, group_uuid uuid); Type: ACL; Schema: public; Owner: -
 --
 
@@ -3499,15 +3399,6 @@ GRANT ALL ON FUNCTION public.create_group(group_name text) TO service_role;
 
 GRANT ALL ON FUNCTION public.create_user_profile(username text) TO authenticated;
 GRANT ALL ON FUNCTION public.create_user_profile(username text) TO service_role;
-
-
---
--- Name: FUNCTION debug_auth_context(p_group_id uuid); Type: ACL; Schema: public; Owner: -
---
-
-GRANT ALL ON FUNCTION public.debug_auth_context(p_group_id uuid) TO postgres;
-GRANT ALL ON FUNCTION public.debug_auth_context(p_group_id uuid) TO authenticated;
-GRANT ALL ON FUNCTION public.debug_auth_context(p_group_id uuid) TO service_role;
 
 
 --
@@ -3720,14 +3611,6 @@ GRANT ALL ON FUNCTION public.set_notify_group_comments(enabled boolean) TO servi
 GRANT ALL ON FUNCTION public.unban_user(group_id uuid, target_user_id uuid) TO postgres;
 GRANT ALL ON FUNCTION public.unban_user(group_id uuid, target_user_id uuid) TO authenticated;
 GRANT ALL ON FUNCTION public.unban_user(group_id uuid, target_user_id uuid) TO service_role;
-
-
---
--- Name: FUNCTION update_comment(group_id uuid, image_id uuid, text text); Type: ACL; Schema: public; Owner: -
---
-
-GRANT ALL ON FUNCTION public.update_comment(group_id uuid, image_id uuid, text text) TO authenticated;
-GRANT ALL ON FUNCTION public.update_comment(group_id uuid, image_id uuid, text text) TO service_role;
 
 
 --
