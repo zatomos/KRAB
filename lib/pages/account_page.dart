@@ -502,14 +502,13 @@ class AccountPageState extends State<AccountPage> {
                           trailing: DropdownButton<int>(
                             value: _widgetRefreshInterval,
                             underline: const SizedBox.shrink(),
-                            items: const [
-                              DropdownMenuItem(value: 0,   child: Text('Off')),
-                              DropdownMenuItem(value: 15,  child: Text('15 min')),
-                              DropdownMenuItem(value: 30,  child: Text('30 min')),
-                              DropdownMenuItem(value: 60,  child: Text('1 hour')),
-                              DropdownMenuItem(value: 120, child: Text('2 hours')),
-                              DropdownMenuItem(value: 360, child: Text('6 hours')),
-
+                            items: [
+                              DropdownMenuItem(value: 0,   child: Text(context.l10n.off)),
+                              DropdownMenuItem(value: 15,  child: Text(context.l10n.x_min(15))),
+                              DropdownMenuItem(value: 30,  child: Text(context.l10n.x_min(30))),
+                              DropdownMenuItem(value: 60,  child: Text(context.l10n.x_hour(1))),
+                              DropdownMenuItem(value: 120, child: Text(context.l10n.x_hours(2))),
+                              DropdownMenuItem(value: 360, child: Text(context.l10n.x_hours(6))),
                             ],
                             onChanged: (value) async {
                               if (value == null) return;

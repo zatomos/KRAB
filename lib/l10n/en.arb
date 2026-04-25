@@ -150,6 +150,9 @@
   "days_ago": "{count}d",
   "weeks_ago": "{count}w",
   "months_ago": "{count}mo",
+  "x_min": "{count} min",
+  "x_hour": "{count} hour",
+  "x_hours": "{count} hours",
   "time_ago": "{formatted_time} ago",
   "add_krab_widget": "Add KRAB widget",
   "krab_widget_experience_desc": "For the full experience, please add the KRAB home screen widget. \nThis lets you see new images instantly on your home screen.",
@@ -178,5 +181,6 @@
   "group_code_copied": "Group code copied to clipboard.",
   "widget_refresh_interval": "Widget refresh interval",
   "widget_refresh_interval_description": "How often to check for new photos in the background.",
-  "no_description": "No description"
+  "no_description": "No description",
+  "off": "Off"
 }
