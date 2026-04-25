@@ -14,6 +14,7 @@ class UserPreferences {
   static late int widgetBitmapLimit;
   static late bool debugNotifications;
   static late bool developerOptionsUnlocked;
+  static late int widgetRefreshIntervalMinutes;
 
   Future<void> initPrefs() async {
     _preferences = await SharedPreferences.getInstance();
@@ -27,6 +28,8 @@ class UserPreferences {
     debugNotifications = _preferences?.getBool('debugNotifications') ?? false;
     developerOptionsUnlocked =
         _preferences?.getBool('developerOptionsUnlocked') ?? false;
+    widgetRefreshIntervalMinutes =
+        _preferences?.getInt('widgetRefreshIntervalMinutes') ?? 30;
   }
 
   static Future<int> getWidgetBitmapLimit() async {
@@ -42,14 +45,10 @@ class UserPreferences {
   }
 
   static Future<void> setAutoImageSave(bool value) async {
-    // Check permissions
     if (value) {
       final permission = await checkAndRequestPermissions(skipIfExists: true);
-      if (!permission) {
-        return;
-      }
+      if (!permission) return;
     }
-
     await _preferences?.setBool('autoImageSave', value);
   }
 
@@ -100,9 +99,25 @@ class UserPreferences {
     await _preferences?.setBool('developerOptionsUnlocked', value);
     developerOptionsUnlocked = value;
 
-    // Reset all developer options to default when locked
     if (!value) {
       await setDebugNotifications(false);
     }
+  }
+
+  static Future<int> getWidgetRefreshInterval() async {
+    return _preferences?.getInt('widgetRefreshIntervalMinutes') ?? 30;
+  }
+
+  static Future<void> setWidgetRefreshInterval(int minutes) async {
+    await _preferences?.setInt('widgetRefreshIntervalMinutes', minutes);
+    widgetRefreshIntervalMinutes = minutes;
+  }
+
+  static Future<String?> getLastWidgetImageId() async {
+    return _preferences?.getString('lastWidgetImageId');
+  }
+
+  static Future<void> setLastWidgetImageId(String id) async {
+    await _preferences?.setString('lastWidgetImageId', id);
   }
 }

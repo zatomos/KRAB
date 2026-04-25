@@ -14,6 +14,7 @@ import 'package:krab/services/supabase.dart';
 import 'package:krab/services/fcm_helper.dart';
 import 'package:krab/services/home_widget_updater.dart';
 import 'package:krab/services/home_widget_status.dart';
+import 'package:workmanager/workmanager.dart';
 import 'package:krab/services/profile_picture_cache.dart';
 import 'package:krab/services/debug_notifier.dart';
 import 'package:krab/pages/welcome_page.dart';
@@ -109,6 +110,31 @@ Future<bool> initializeSupabaseIfNeeded() async {
 }
 
 @pragma('vm:entry-point')
+void workmanagerCallbackDispatcher() {
+  Workmanager().executeTask((taskName, inputData) async {
+    try {
+      WidgetsFlutterBinding.ensureInitialized();
+      await dotenv.load(fileName: ".env");
+      await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+      await UserPreferences().initPrefs();
+      await DebugNotifier.instance.initialize();
+
+      final supabaseOk = await initializeSupabaseIfNeeded();
+      if (!supabaseOk) {
+        debugPrint('WorkManager: Supabase init failed, skipping widget update');
+        return Future.value(false);
+      }
+
+      await updateHomeWidget();
+      return Future.value(true);
+    } catch (e, st) {
+      debugPrint('WorkManager task failed: $e\n$st');
+      return Future.value(false);
+    }
+  });
+}
+
+@pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   debugPrint('Handling background message: ${message.messageId}');
   debugPrint('Background data: ${message.data}');
@@ -168,7 +194,7 @@ Future<void> handleNotificationNavigation(RemoteMessage message) async {
   debugPrint('Notification data: ${message.data}');
 
   if (!isSupabaseInitialized) {
-    debugPrint('Supabase not initialized → skipping navigation');
+    debugPrint('Supabase not initialized, skipping navigation');
     return;
   }
 
@@ -252,6 +278,10 @@ void main() async {
 
     // Home Widget Status
     HomeWidgetStatus.instance.initialize();
+
+    // WorkManager periodic widget refresh
+    await Workmanager().initialize(workmanagerCallbackDispatcher);
+    await scheduleWidgetRefresh(UserPreferences.widgetRefreshIntervalMinutes);
 
     // Background FCM
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
@@ -349,8 +379,7 @@ void main() async {
         debugPrint(
             "Foreground FCM: ${message.messageId}, data=${message.data}");
         if (message.data['type'] == 'new_image') {
-          debugPrint(
-              'Foreground new image notification received, updating widget...');
+          debugPrint('Foreground new image notification received, updating widget...');
           await updateHomeWidget();
         } else {
           debugPrint('Foreground notification not image-related');
@@ -396,6 +425,8 @@ class MyApp extends StatefulWidget {
 }
 
 class MyAppState extends State<MyApp> with WidgetsBindingObserver {
+  DateTime? _lastWidgetRefresh;
+
   @override
   void initState() {
     super.initState();
@@ -434,12 +465,20 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
     // the main app's in-memory token was already invalidated.
     // By this point, the background work is guaranteed to be complete,
     // so we read the persisted token and silently restore the session.
+    final now = DateTime.now();
+    final canRefresh = _lastWidgetRefresh == null ||
+        now.difference(_lastWidgetRefresh!) >= const Duration(minutes: 5);
+
     final session = Supabase.instance.client.auth.currentSession;
     if (session == null) {
       final token = backupRefreshToken;
       backupRefreshToken = null;
       Supabase.instance.client.auth.refreshSession(token).then((_) {
         debugPrint('Session restored on app resume');
+        if (canRefresh) {
+          _lastWidgetRefresh = now;
+          updateHomeWidget();
+        }
       }).catchError((dynamic e) {
         debugPrint('Session restore on resume failed [${e.runtimeType}]: $e');
         if (pendingUnexpectedSignOut) {
@@ -447,6 +486,9 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
           DebugNotifier.instance.notifyAuthSignedOut();
         }
       });
+    } else if (canRefresh) {
+      _lastWidgetRefresh = now;
+      updateHomeWidget();
     }
   }
 

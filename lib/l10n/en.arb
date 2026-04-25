@@ -175,5 +175,8 @@
   "developer": "Developer",
   "debug_notifications": "Debug Notifications",
   "debug_notifications_description": "Show notifications for widget updates and auth events.",
-  "group_code_copied": "Group code copied to clipboard."
+  "group_code_copied": "Group code copied to clipboard.",
+  "widget_refresh_interval": "Widget refresh interval",
+  "widget_refresh_interval_description": "How often to check for new photos in the background.",
+  "no_description": "No description"
 }

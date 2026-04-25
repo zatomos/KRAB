@@ -800,7 +800,8 @@ BEGIN
     FROM "ImageGroups" ig
     JOIN "Members" m ON ig.group_id = m.group_id
     WHERE ig.image_id = i.id
-      AND m.user_id = auth.uid() -- Ensures only group members can access
+      AND m.user_id = auth.uid()
+      AND m.role != 'banned'
   );
 END;
 $$;
@@ -840,6 +841,7 @@ BEGIN
   JOIN "ImageGroups" ig ON i.id = ig.image_id
   JOIN "Members" m ON ig.group_id = m.group_id
   WHERE m.user_id = current_user_id
+  AND m.role != 'banned'
   ORDER BY i.created_at DESC
   LIMIT 1
   INTO latest_image;

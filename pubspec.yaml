@@ -63,6 +63,7 @@ dependencies:
   cached_network_image: ^3.4.1
   google_fonts: ^8.0.1
   material_symbols_icons: ^4.2874.0
+  workmanager: ^0.9.0
 
 dev_dependencies:
   flutter_test:

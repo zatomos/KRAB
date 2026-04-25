@@ -126,7 +126,7 @@ class HomeScreenWidget : AppWidgetProvider() {
             }
 
             if (imageUrl.isNullOrEmpty()) {
-                Log.d(TAG, "WidgetID $id: no image URL → done")
+                Log.d(TAG, "WidgetID $id: no image URL, done")
                 return
             }
 

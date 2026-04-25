@@ -12,6 +12,7 @@ import 'package:krab/models/user.dart' as krab_user;
 import 'package:krab/services/supabase.dart';
 import 'package:krab/user_preferences.dart';
 import 'package:krab/services/debug_notifier.dart';
+import 'package:krab/services/home_widget_updater.dart';
 import 'package:krab/services/update_service.dart';
 import 'package:krab/widgets/rectangle_button.dart';
 import 'package:krab/widgets/user_avatar.dart';
@@ -41,6 +42,7 @@ class AccountPageState extends State<AccountPage> {
   bool debugNotificationsEnabled = false;
   bool _isCheckingForUpdates = false;
   bool _developerOptionsUnlocked = false;
+  int _widgetRefreshInterval = 30;
   int _pfpTapCount = 0;
 
   String appVersion = "";
@@ -78,7 +80,9 @@ class AccountPageState extends State<AccountPage> {
     debugNotificationsEnabled = await UserPreferences.getDebugNotifications();
     _developerOptionsUnlocked =
         await UserPreferences.getDeveloperOptionsUnlocked();
+    final interval = await UserPreferences.getWidgetRefreshInterval();
     if (!mounted) return;
+    setState(() => _widgetRefreshInterval = interval);
 
     if (!userResponse.success) {
       showSnackBar("Error loading user: ${userResponse.error}",
@@ -491,6 +495,29 @@ class AccountPageState extends State<AccountPage> {
                               }
                             });
                           },
+                        ),
+                        ListTile(
+                          title: Text(context.l10n.widget_refresh_interval),
+                          subtitle: Text(context.l10n.widget_refresh_interval_description),
+                          trailing: DropdownButton<int>(
+                            value: _widgetRefreshInterval,
+                            underline: const SizedBox.shrink(),
+                            items: const [
+                              DropdownMenuItem(value: 0,   child: Text('Off')),
+                              DropdownMenuItem(value: 15,  child: Text('15 min')),
+                              DropdownMenuItem(value: 30,  child: Text('30 min')),
+                              DropdownMenuItem(value: 60,  child: Text('1 hour')),
+                              DropdownMenuItem(value: 120, child: Text('2 hours')),
+                              DropdownMenuItem(value: 360, child: Text('6 hours')),
+
+                            ],
+                            onChanged: (value) async {
+                              if (value == null) return;
+                              await UserPreferences.setWidgetRefreshInterval(value);
+                              await scheduleWidgetRefresh(value);
+                              setState(() => _widgetRefreshInterval = value);
+                            },
+                          ),
                         ),
                         if (_developerOptionsUnlocked) ...[
                           const SizedBox(height: 35),

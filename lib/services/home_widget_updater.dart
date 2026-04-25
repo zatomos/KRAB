@@ -4,11 +4,25 @@ import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 import 'package:home_widget/home_widget.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:workmanager/workmanager.dart';
 
 import 'package:krab/user_preferences.dart';
 import 'package:krab/services/supabase.dart';
 import 'package:krab/services/debug_notifier.dart';
 import 'file_saver.dart';
+
+Future<void> scheduleWidgetRefresh(int minutes) async {
+  await Workmanager().cancelByUniqueName('widget_periodic_refresh');
+  if (minutes > 0) {
+    await Workmanager().registerPeriodicTask(
+      'widget_periodic_refresh',
+      'widgetPeriodicRefresh',
+      frequency: Duration(minutes: minutes),
+      constraints: Constraints(networkType: NetworkType.connected),
+      existingWorkPolicy: ExistingPeriodicWorkPolicy.replace,
+    );
+  }
+}
 
 /// Result of image resize operation
 class _ResizeResult {
@@ -100,6 +114,15 @@ Future<void> updateHomeWidget() async {
       return;
     }
     debugPrint("Latest image ID: $imageId");
+
+    // Skip if the widget already shows this image
+    final lastId = await UserPreferences.getLastWidgetImageId();
+    if (imageId == lastId) {
+      debugPrint("Widget image unchanged ($imageId), skipping update.");
+      await DebugNotifier.instance.notifyWidgetStep(2, 7, "No new image");
+      return;
+    }
+
     await DebugNotifier.instance.notifyWidgetStep(2, 7, "Got image ID");
 
     // Step 3: Download image bytes
@@ -107,7 +130,7 @@ Future<void> updateHomeWidget() async {
     final Uint8List? imageBytes = imgResult.data;
 
     if (imageBytes == null) {
-      debugPrint("Image bytes null → abort.");
+      debugPrint("Image bytes null, abort.");
       await DebugNotifier.instance
           .notifyWidgetUpdateFailed("Image download failed: bytes null");
       return;
@@ -174,7 +197,7 @@ Future<void> updateHomeWidget() async {
 
     await file.writeAsBytes(resizedBytes, flush: true);
 
-    debugPrint("Saved resized image → ${file.path} (${await file.length()} bytes)");
+    debugPrint("Saved resized image: ${file.path} (${await file.length()} bytes)");
     await DebugNotifier.instance.notifyWidgetStep(6, 7, "Saved to storage");
 
     // Save metadata to widget
@@ -191,6 +214,8 @@ Future<void> updateHomeWidget() async {
           .notifyWidgetUpdateFailed("HomeWidget.updateWidget returned false");
       return;
     }
+
+    await UserPreferences.setLastWidgetImageId(imageId);
 
     // Auto-save original image if enabled
     if (await UserPreferences.getAutoImageSave()) {
