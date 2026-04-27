@@ -58,6 +58,8 @@ class _FullImagePageState extends State<FullImagePage>
     with SingleTickerProviderStateMixin {
   late Uint8List _displayedBytes;
   Uint8List? _blurredBackgroundBytes;
+  // Drives a guaranteed 0->1 opacity transition for the precomputed layer.
+  bool _showPrecomputedBlur = false;
   bool _heroFlightActive = true;
   Timer? _heroFlightTimer;
 
@@ -86,6 +88,7 @@ class _FullImagePageState extends State<FullImagePage>
     super.initState();
     _displayedBytes = widget.lowResImageData.imageBytes;
     _blurredBackgroundBytes = null;
+    _showPrecomputedBlur = false;
 
     _animationController = AnimationController(
       vsync: this,
@@ -112,7 +115,13 @@ class _FullImagePageState extends State<FullImagePage>
       if (!mounted) return;
       _heroFlightTimer = Timer(const Duration(milliseconds: 300), () {
         if (mounted) {
-          setState(() => _heroFlightActive = false);
+          setState(() {
+            _heroFlightActive = false;
+            // Start fade-in immediately if precomputed bytes are ready
+            if (_blurredBackgroundBytes != null) {
+              _showPrecomputedBlur = true;
+            }
+          });
         }
       });
       _prepareBlurredBackground();
@@ -300,7 +309,19 @@ class _FullImagePageState extends State<FullImagePage>
       widget.lowResImageData.imageBytes,
     );
     if (!mounted || blurred == null) return;
-    setState(() => _blurredBackgroundBytes = blurred);
+    setState(() {
+      _blurredBackgroundBytes = blurred;
+      // Insert hidden first so opacity change can animate next frame
+      _showPrecomputedBlur = false;
+    });
+
+    if (!_heroFlightActive) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _blurredBackgroundBytes == null) return;
+        // Flip after one frame to force AnimatedOpacity to run
+        setState(() => _showPrecomputedBlur = true);
+      });
+    }
   }
 
   Widget _frostedSurface({
@@ -498,22 +519,32 @@ class _FullImagePageState extends State<FullImagePage>
             child: RepaintBoundary(
               child: Transform.scale(
                 scale: 1.2,
-                child: (_heroFlightActive || _blurredBackgroundBytes == null)
-                    ? ImageFiltered(
-                        imageFilter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
-                        child: Image.memory(
-                          widget.lowResImageData.imageBytes,
-                          fit: BoxFit.cover,
-                          filterQuality: FilterQuality.low,
-                          gaplessPlayback: true,
-                        ),
-                      )
-                    : Image.memory(
-                        _blurredBackgroundBytes!,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    ImageFiltered(
+                      imageFilter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+                      child: Image.memory(
+                        widget.lowResImageData.imageBytes,
                         fit: BoxFit.cover,
                         filterQuality: FilterQuality.low,
                         gaplessPlayback: true,
                       ),
+                    ),
+                    if (_blurredBackgroundBytes != null)
+                      AnimatedOpacity(
+                        duration: const Duration(seconds: 1),
+                        curve: Curves.easeOut,
+                        opacity: _showPrecomputedBlur ? 1.0 : 0.0,
+                        child: Image.memory(
+                          _blurredBackgroundBytes!,
+                          fit: BoxFit.cover,
+                          filterQuality: FilterQuality.low,
+                          gaplessPlayback: true,
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
           ),
