@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:math';
-import 'dart:typed_data';
 import 'dart:ui';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:image/image.dart' as img;
 import 'package:intl/intl.dart';
 import 'package:krab/l10n/l10n.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -15,6 +17,19 @@ import 'package:krab/widgets/soft_button.dart';
 import 'package:krab/widgets/user_avatar.dart';
 import 'package:krab/themes/global_theme_data.dart';
 
+Uint8List? _createBlurredBackgroundBytes(Uint8List sourceBytes) {
+  final decoded = img.decodeImage(sourceBytes);
+  if (decoded == null) return null;
+
+  final resized = img.copyResize(
+    decoded,
+    width: 128,
+    interpolation: img.Interpolation.average,
+  );
+  final blurred = img.gaussianBlur(resized, radius: 16);
+  return Uint8List.fromList(img.encodeJpg(blurred, quality: 75));
+}
+
 class FullImagePage extends StatefulWidget {
   final krab_user.User uploader;
   final String imageId;
@@ -22,6 +37,7 @@ class FullImagePage extends StatefulWidget {
   final ImageData lowResImageData;
   final int commentCount;
   final Future<Uint8List?> Function() loadFullImage;
+  final Future<Uint8List?>? preloadedFullImage;
 
   const FullImagePage({
     super.key,
@@ -31,6 +47,7 @@ class FullImagePage extends StatefulWidget {
     required this.lowResImageData,
     required this.commentCount,
     required this.loadFullImage,
+    this.preloadedFullImage,
   });
 
   @override
@@ -40,7 +57,9 @@ class FullImagePage extends StatefulWidget {
 class _FullImagePageState extends State<FullImagePage>
     with SingleTickerProviderStateMixin {
   late Uint8List _displayedBytes;
-  bool _loadingFull = false;
+  Uint8List? _blurredBackgroundBytes;
+  bool _heroFlightActive = true;
+  Timer? _heroFlightTimer;
 
   final TransformationController _transformationController =
       TransformationController();
@@ -60,11 +79,13 @@ class _FullImagePageState extends State<FullImagePage>
   bool _suspendAutoClampUntilInteraction = false;
   Size _screenSize = const Size(1, 1);
 
+  String get _description => widget.lowResImageData.description ?? '';
+
   @override
   void initState() {
     super.initState();
     _displayedBytes = widget.lowResImageData.imageBytes;
-    _loadFullRes();
+    _blurredBackgroundBytes = null;
 
     _animationController = AnimationController(
       vsync: this,
@@ -86,6 +107,19 @@ class _FullImagePageState extends State<FullImagePage>
 
     _transformationController.addListener(_onTransformChanged);
     _loadNaturalImageSize();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _heroFlightTimer = Timer(const Duration(milliseconds: 300), () {
+        if (mounted) {
+          setState(() => _heroFlightActive = false);
+        }
+      });
+      _prepareBlurredBackground();
+      Future<void>.delayed(const Duration(milliseconds: 120), () {
+        if (mounted) _loadFullRes();
+      });
+    });
   }
 
   @override
@@ -100,6 +134,7 @@ class _FullImagePageState extends State<FullImagePage>
 
   @override
   void dispose() {
+    _heroFlightTimer?.cancel();
     _transformationController.removeListener(_onTransformChanged);
     _animationController.dispose();
     _transformationController.dispose();
@@ -157,10 +192,10 @@ class _FullImagePageState extends State<FullImagePage>
     return Size(nW * fitScale, nH * fitScale);
   }
 
-  Matrix4 _clampMatrixToImageBounds(Matrix4 source) {
-    if (_screenSize.width < 2 || _screenSize.height < 2) {
-      return source.clone();
-    }
+  // onlyOverflowing=true: only clamp axes whose scaled content exceeds the
+  // viewport — used for double-tap targets so content isn't snapped needlessly.
+  Matrix4 _clampMatrix(Matrix4 source, {bool onlyOverflowing = false}) {
+    if (_screenSize.width < 2 || _screenSize.height < 2) return source.clone();
 
     final sW = _screenSize.width;
     final sH = _screenSize.height;
@@ -174,37 +209,11 @@ class _FullImagePageState extends State<FullImagePage>
     double tx = source[12];
     double ty = source[13];
 
-    final (minTx, maxTx) = _translationLimits(sW, padX, iW, z);
-    final (minTy, maxTy) = _translationLimits(sH, padY, iH, z);
-    tx = tx.clamp(minTx, maxTx).toDouble();
-    ty = ty.clamp(minTy, maxTy).toDouble();
-
-    return _matrixWithScaleAndTranslation(z, tx, ty);
-  }
-
-  Matrix4 _clampMatrixForDoubleTap(Matrix4 source) {
-    if (_screenSize.width < 2 || _screenSize.height < 2) {
-      return source.clone();
-    }
-
-    final sW = _screenSize.width;
-    final sH = _screenSize.height;
-    final imageSize = _imageDisplaySize();
-    final iW = imageSize.width;
-    final iH = imageSize.height;
-    final padX = (sW - iW) / 2;
-    final padY = (sH - iH) / 2;
-
-    final z = source.getMaxScaleOnAxis();
-    double tx = source[12];
-    double ty = source[13];
-
-    // For double-tap targets, only clamp axes that can actually overrun
-    if (z * iW > sW) {
+    if (!onlyOverflowing || z * iW > sW) {
       final (minTx, maxTx) = _translationLimits(sW, padX, iW, z);
       tx = tx.clamp(minTx, maxTx).toDouble();
     }
-    if (z * iH > sH) {
+    if (!onlyOverflowing || z * iH > sH) {
       final (minTy, maxTy) = _translationLimits(sH, padY, iH, z);
       ty = ty.clamp(minTy, maxTy).toDouble();
     }
@@ -222,10 +231,8 @@ class _FullImagePageState extends State<FullImagePage>
   }
 
   void _applyClampNow() {
-    // Prevent user from going out of bounds
     if (_isClamping) return;
-    final current = _transformationController.value;
-    final clamped = _clampMatrixToImageBounds(current);
+    final clamped = _clampMatrix(_transformationController.value);
     _setTransformIfChanged(clamped, epsilon: 0.5);
   }
 
@@ -259,10 +266,8 @@ class _FullImagePageState extends State<FullImagePage>
     if (!_isUserInteracting || _isZoomAnimating || _isClamping) return;
     if (_screenSize.width < 2 || _screenSize.height < 2) return;
     _interactionHadTransform = true;
-
-    final current = _transformationController.value;
-    final clamped = _clampMatrixToImageBounds(current);
-    _setTransformIfChanged(clamped, epsilon: 0.01);
+    _setTransformIfChanged(_clampMatrix(_transformationController.value),
+        epsilon: 0.01);
   }
 
   void _setTransformIfChanged(Matrix4 next, {required double epsilon}) {
@@ -277,22 +282,53 @@ class _FullImagePageState extends State<FullImagePage>
   }
 
   Future<void> _loadFullRes() async {
-    setState(() => _loadingFull = true);
-    final full = await widget.loadFullImage();
+    final full = await (widget.preloadedFullImage ?? widget.loadFullImage());
     if (!mounted) return;
 
     if (full != null) {
+      await precacheImage(MemoryImage(full), context);
+      if (!mounted) return;
       setState(() {
         _displayedBytes = full;
-        _loadingFull = false;
       });
-    } else {
-      setState(() => _loadingFull = false);
     }
   }
 
+  Future<void> _prepareBlurredBackground() async {
+    final blurred = await compute(
+      _createBlurredBackgroundBytes,
+      widget.lowResImageData.imageBytes,
+    );
+    if (!mounted || blurred == null) return;
+    setState(() => _blurredBackgroundBytes = blurred);
+  }
+
+  Widget _frostedSurface({
+    required BorderRadius borderRadius,
+    required Color tint,
+    required Widget child,
+    double sigma = 8,
+  }) {
+    final decorated = Container(
+      decoration: BoxDecoration(color: tint, borderRadius: borderRadius),
+      child: child,
+    );
+    if (_heroFlightActive) {
+      return ClipRRect(borderRadius: borderRadius, child: decorated);
+    }
+    return ClipRRect(
+      borderRadius: borderRadius,
+      child: ClipRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+          child: decorated,
+        ),
+      ),
+    );
+  }
+
   void _openComments() {
-    final maxSheetHeight = MediaQuery.of(context).size.height * (3/4);
+    final maxSheetHeight = MediaQuery.of(context).size.height * (3 / 4);
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -321,10 +357,7 @@ class _FullImagePageState extends State<FullImagePage>
     final Matrix4 begin = _transformationController.value.clone();
     final Matrix4 end;
     if (!zoomIn) {
-      // Zoom-out should be centered
-      end = _clampMatrixToImageBounds(
-        _matrixWithScaleAndTranslation(1.0, 0, 0),
-      );
+      end = _clampMatrix(_matrixWithScaleAndTranslation(1.0, 0, 0));
     } else {
       final imageSize = _imageDisplaySize();
       final sW = _screenSize.width;
@@ -338,8 +371,9 @@ class _FullImagePageState extends State<FullImagePage>
           scenePoint.dy.clamp(padY, padY + imageSize.height).toDouble();
       final targetTx = position.dx - desiredAnchorX * newScale;
       final targetTy = position.dy - desiredAnchorY * newScale;
-      end = _clampMatrixForDoubleTap(
+      end = _clampMatrix(
         _matrixWithScaleAndTranslation(newScale, targetTx, targetTy),
+        onlyOverflowing: true,
       );
     }
     _doubleTapZoomedIn = zoomIn;
@@ -361,7 +395,6 @@ class _FullImagePageState extends State<FullImagePage>
   }
 
   void _showFullDescriptionDialog() {
-    final desc = widget.lowResImageData.description ?? "";
     final locale = Localizations.localeOf(context).toLanguageTag();
     final uploadDate = DateFormat.yMMMMd(locale).add_jm().format(
           DateTime.parse(widget.lowResImageData.createdAt).toLocal(),
@@ -392,6 +425,7 @@ class _FullImagePageState extends State<FullImagePage>
                   children: [
                     Row(
                       children: [
+                        // Metadata
                         UserAvatar(widget.uploader, radius: 22),
                         const SizedBox(width: 12),
                         Expanded(
@@ -424,7 +458,9 @@ class _FullImagePageState extends State<FullImagePage>
                       ],
                     ),
                     const SizedBox(height: 16),
-                    desc.isEmpty
+
+                    // Description text
+                    _description.isEmpty
                         ? Text(
                             context.l10n.no_description,
                             style: TextStyle(
@@ -435,7 +471,7 @@ class _FullImagePageState extends State<FullImagePage>
                             ),
                           )
                         : Text(
-                            desc,
+                            _description,
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 15,
@@ -458,60 +494,72 @@ class _FullImagePageState extends State<FullImagePage>
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // Blurred Background
           Positioned.fill(
-            child: ImageFiltered(
-              imageFilter: ImageFilter.blur(sigmaX: 50, sigmaY: 50),
+            child: RepaintBoundary(
               child: Transform.scale(
                 scale: 1.2,
-                child: Image.memory(
-                  widget.lowResImageData.imageBytes,
-                  fit: BoxFit.cover,
-                ),
+                child: (_heroFlightActive || _blurredBackgroundBytes == null)
+                    ? ImageFiltered(
+                        imageFilter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+                        child: Image.memory(
+                          widget.lowResImageData.imageBytes,
+                          fit: BoxFit.cover,
+                          filterQuality: FilterQuality.low,
+                          gaplessPlayback: true,
+                        ),
+                      )
+                    : Image.memory(
+                        _blurredBackgroundBytes!,
+                        fit: BoxFit.cover,
+                        filterQuality: FilterQuality.low,
+                        gaplessPlayback: true,
+                      ),
               ),
             ),
           ),
 
-          Container(color: Colors.black.withValues(alpha: 0.7)),
+          Positioned.fill(
+            child: RepaintBoundary(
+              child: Container(color: Colors.black.withValues(alpha: 0.7)),
+            ),
+          ),
 
           // Main Image
           Positioned.fill(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onDoubleTapDown: (d) => _doubleTapDetails = d,
-              onDoubleTap: _handleDoubleTap,
-              child: InteractiveViewer(
-                transformationController: _transformationController,
-                minScale: 1.0,
-                maxScale: 10,
-                clipBehavior: Clip.none,
-                onInteractionStart: _onInteractionStart,
-                onInteractionUpdate: _onInteractionUpdate,
-                onInteractionEnd: _onInteractionEnd,
-                child: Hero(
-                  tag: "image_${widget.imageId}",
-                  child: SizedBox(
-                    width: _screenSize.width,
-                    height: _screenSize.height,
-                    child: Stack(
-                      children: [
-                        Image.memory(
-                          widget.lowResImageData.imageBytes,
+            child: RepaintBoundary(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onDoubleTapDown: (d) => _doubleTapDetails = d,
+                onDoubleTap: _handleDoubleTap,
+                child: InteractiveViewer(
+                  transformationController: _transformationController,
+                  minScale: 1.0,
+                  maxScale: 10,
+                  clipBehavior: Clip.none,
+                  onInteractionStart: _onInteractionStart,
+                  onInteractionUpdate: _onInteractionUpdate,
+                  onInteractionEnd: _onInteractionEnd,
+                  child: Hero(
+                    tag: "image_${widget.imageId}",
+                    child: SizedBox(
+                      width: _screenSize.width,
+                      height: _screenSize.height,
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 250),
+                        switchInCurve: Curves.easeOut,
+                        switchOutCurve: Curves.easeOut,
+                        transitionBuilder: (child, animation) =>
+                            FadeTransition(opacity: animation, child: child),
+                        child: Image.memory(
+                          _displayedBytes,
+                          key: ValueKey<int>(_displayedBytes.hashCode),
                           fit: BoxFit.contain,
                           width: _screenSize.width,
                           height: _screenSize.height,
+                          gaplessPlayback: true,
+                          filterQuality: FilterQuality.medium,
                         ),
-                        AnimatedOpacity(
-                          duration: const Duration(milliseconds: 250),
-                          opacity: _loadingFull ? 0 : 1,
-                          child: Image.memory(
-                            _displayedBytes,
-                            fit: BoxFit.contain,
-                            width: _screenSize.width,
-                            height: _screenSize.height,
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
@@ -525,21 +573,20 @@ class _FullImagePageState extends State<FullImagePage>
             left: 16,
             child: ClipOval(
               child: Material(
-                color: Colors.transparent, // required for ripple + blur
+                color: Colors.transparent,
                 child: InkWell(
                   onTap: () => Navigator.pop(context),
                   customBorder: const CircleBorder(),
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.15),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Symbols.close_rounded,
-                        color: Colors.white,
+                  child: RepaintBoundary(
+                    child: _frostedSurface(
+                      borderRadius: BorderRadius.circular(999),
+                      tint: Colors.white.withValues(alpha: 0.15),
+                      child: const Padding(
+                        padding: EdgeInsets.all(8),
+                        child: Icon(
+                          Symbols.close_rounded,
+                          color: Colors.white,
+                        ),
                       ),
                     ),
                   ),
@@ -552,8 +599,7 @@ class _FullImagePageState extends State<FullImagePage>
             top: 40,
             right: 16,
             child: ClipOval(
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+              child: RepaintBoundary(
                 child: InkWell(
                   borderRadius: BorderRadius.circular(32),
                   onTap: () async {
@@ -567,14 +613,14 @@ class _FullImagePageState extends State<FullImagePage>
                       color: success ? Colors.green : Colors.red,
                     );
                   },
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.15),
-                      shape: BoxShape.circle,
+                  child: _frostedSurface(
+                    borderRadius: BorderRadius.circular(999),
+                    tint: Colors.white.withValues(alpha: 0.15),
+                    child: const Padding(
+                      padding: EdgeInsets.all(8),
+                      child:
+                          Icon(Symbols.download_rounded, color: Colors.white),
                     ),
-                    child: const Icon(Symbols.download_rounded,
-                        color: Colors.white),
                   ),
                 ),
               ),
@@ -593,25 +639,19 @@ class _FullImagePageState extends State<FullImagePage>
               // Background
               child: SizedBox(
                 height: 44,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(14),
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                    child: Container(
+                child: RepaintBoundary(
+                  child: _frostedSurface(
+                    borderRadius: BorderRadius.circular(14),
+                    tint: Colors.black.withValues(alpha: 0.35),
+                    sigma: 10,
+                    child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.35),
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      // Content
                       child: Row(
                         children: [
                           UserAvatar(widget.uploader, radius: 18),
                           const SizedBox(width: 10),
                           Expanded(
-                            child: (widget.lowResImageData.description ==
-                                        null ||
-                                    widget.lowResImageData.description!.isEmpty)
+                            child: _description.isEmpty
                                 ? Text(
                                     context.l10n.no_description,
                                     maxLines: 1,
@@ -624,7 +664,7 @@ class _FullImagePageState extends State<FullImagePage>
                                     ),
                                   )
                                 : Text(
-                                    widget.lowResImageData.description!,
+                                    _description,
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(
@@ -653,7 +693,7 @@ class _FullImagePageState extends State<FullImagePage>
               icon: Symbols.comment_rounded,
               color: GlobalThemeData.darkColorScheme.primary,
               opacity: 0.3,
-              blurBackground: true,
+              blurBackground: !_heroFlightActive,
             ),
           ),
         ],

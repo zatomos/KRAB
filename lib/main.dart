@@ -316,8 +316,16 @@ void main() async {
             await DebugNotifier.instance.notifyAuthSignedOut(unexpected: false);
             return;
           }
+          // Unexpected signout -> navigate to login immediately.
+          // If backup recovery succeeds below, the tokenRefreshed handler will
+          // navigate back to the app.
+          pendingUnexpectedSignOut = true;
+          navigatorKey.currentState?.pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const LoginPage()),
+            (route) => false,
+          );
           // Try the backup token saved from the most recent background
-          // port signal. If no backup, defer to the port listener or app resume
+          // port signal. On success, tokenRefreshed fires and handles navigation.
           final backup = backupRefreshToken;
           backupRefreshToken = null;
           if (backup != null) {
@@ -325,16 +333,25 @@ void main() async {
               await Supabase.instance.client.auth.refreshSession(backup);
               debugPrint('Auth recovered using backup token from background isolate');
               await DebugNotifier.instance.notifyAuthStateChanged('Reconnected');
-              return;
             } catch (e) {
               debugPrint('Backup token recovery failed [${e.runtimeType}]: $e');
             }
           }
-          pendingUnexpectedSignOut = true;
+        } else if (event == AuthChangeEvent.signedIn) {
+          pendingUnexpectedSignOut = false;
+          await DebugNotifier.instance.notifyAuthStateChanged(event.name);
         } else if (event == AuthChangeEvent.tokenRefreshed) {
+          final wasUnexpectedlyLoggedOut = pendingUnexpectedSignOut;
           pendingUnexpectedSignOut = false;
           backupRefreshToken = null;
           await DebugNotifier.instance.notifyAuthTokenRefreshed();
+          if (wasUnexpectedlyLoggedOut) {
+            // Session silently recovered — navigate back to the app.
+            navigatorKey.currentState?.pushAndRemoveUntil(
+              MaterialPageRoute(builder: (_) => const CameraPage()),
+              (route) => false,
+            );
+          }
         } else {
           await DebugNotifier.instance.notifyAuthStateChanged(event.name);
         }
@@ -361,9 +378,16 @@ void main() async {
           debugPrint('Session restored after background handler signal');
         }).catchError((dynamic e) {
           debugPrint('Post-background session restore failed [${e.runtimeType}]: $e');
-          if (pendingUnexpectedSignOut) {
+          if (pendingUnexpectedSignOut &&
+              Supabase.instance.client.auth.currentSession == null) {
             pendingUnexpectedSignOut = false;
             DebugNotifier.instance.notifyAuthSignedOut();
+            navigatorKey.currentState?.pushAndRemoveUntil(
+              MaterialPageRoute(builder: (_) => const LoginPage()),
+              (route) => false,
+            );
+          } else {
+            pendingUnexpectedSignOut = false;
           }
         });
       });
@@ -481,9 +505,16 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
         }
       }).catchError((dynamic e) {
         debugPrint('Session restore on resume failed [${e.runtimeType}]: $e');
-        if (pendingUnexpectedSignOut) {
+        if (pendingUnexpectedSignOut &&
+            Supabase.instance.client.auth.currentSession == null) {
           pendingUnexpectedSignOut = false;
           DebugNotifier.instance.notifyAuthSignedOut();
+          navigatorKey.currentState?.pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const LoginPage()),
+            (route) => false,
+          );
+        } else {
+          pendingUnexpectedSignOut = false;
         }
       });
     } else if (canRefresh) {

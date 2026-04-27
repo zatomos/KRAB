@@ -28,6 +28,7 @@ class GroupPageState extends State<GroupImagesPage> {
   /// Caches
   final Map<String, Uint8List> _lowResCache = {};
   final Map<String, Uint8List> _fullResCache = {};
+  final Map<String, Future<Uint8List?>> _fullResFutureCache = {};
   final Map<String, Future<ImageData>> _imageFutureCache = {};
   final Map<String, krab_user.User> _userCache = {};
   final Map<String, int> _commentCountCache = {};
@@ -45,6 +46,7 @@ class GroupPageState extends State<GroupImagesPage> {
         final imageData = await _getImageDataFuture(widget.imageId!);
         final commentCount = _commentCountCache[widget.imageId!] ?? 0;
         final uploader = _userCache[imageData.uploadedBy]!;
+        final preloadedFullImage = _getOrStartFullResFuture(widget.imageId!);
 
         if (!mounted) return;
 
@@ -59,6 +61,7 @@ class GroupPageState extends State<GroupImagesPage> {
               commentCount: commentCount,
               loadFullImage: () =>
                   _getCachedImage(widget.imageId!, lowRes: false),
+              preloadedFullImage: preloadedFullImage,
             ),
           ),
         );
@@ -72,6 +75,7 @@ class GroupPageState extends State<GroupImagesPage> {
   void dispose() {
     _lowResCache.clear();
     _fullResCache.clear();
+    _fullResFutureCache.clear();
     _imageFutureCache.clear();
     _userCache.clear();
     _commentCountCache.clear();
@@ -101,6 +105,15 @@ class GroupPageState extends State<GroupImagesPage> {
     }
     final future = _fetchImageData(imageId);
     _imageFutureCache[imageId] = future;
+    return future;
+  }
+
+  Future<Uint8List?> _getOrStartFullResFuture(String imageId) {
+    if (_fullResFutureCache.containsKey(imageId)) {
+      return _fullResFutureCache[imageId]!;
+    }
+    final future = _getCachedImage(imageId, lowRes: false);
+    _fullResFutureCache[imageId] = future;
     return future;
   }
 
@@ -149,6 +162,7 @@ class GroupPageState extends State<GroupImagesPage> {
 
       _lowResCache.clear();
       _fullResCache.clear();
+      _fullResFutureCache.clear();
       _imageFutureCache.clear();
       _userCache.clear();
       _commentCountCache.clear();
@@ -238,6 +252,8 @@ class GroupPageState extends State<GroupImagesPage> {
                           onTap: () {
                             final commentCount =
                                 _commentCountCache[imageId] ?? 0;
+                            final preloadedFullImage =
+                                _getOrStartFullResFuture(imageId);
 
                             Navigator.push(
                               context,
@@ -250,6 +266,7 @@ class GroupPageState extends State<GroupImagesPage> {
                                   commentCount: commentCount,
                                   loadFullImage: () =>
                                       _getCachedImage(imageId, lowRes: false),
+                                  preloadedFullImage: preloadedFullImage,
                                 ),
                               ),
                             );
@@ -265,6 +282,7 @@ class GroupPageState extends State<GroupImagesPage> {
                                     imageData.imageBytes,
                                     fit: BoxFit.cover,
                                     gaplessPlayback: true,
+                                    filterQuality: FilterQuality.low,
                                   ),
                                 ),
                                 Positioned(

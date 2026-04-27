@@ -2,47 +2,24 @@ import 'dart:async';
 import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/widgets/soft_button.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import 'package:native_device_orientation/native_device_orientation.dart';
 
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/services/supabase.dart';
 import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/models/user.dart' as krab_user;
+import 'package:krab/widgets/image_sent_dialog.dart';
 import 'package:krab/widgets/rounded_input_field.dart';
 import 'package:krab/widgets/user_avatar.dart';
 import 'package:krab/user_preferences.dart';
 import 'groups_page.dart';
 import 'account_page.dart';
-
-class ImageSentDialog extends StatelessWidget {
-  final bool success;
-  final String? errorMsg;
-
-  const ImageSentDialog({super.key, required this.success, this.errorMsg});
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(success
-          ? context.l10n.image_sent_title
-          : context.l10n.error_image_not_sent_title),
-      content: Text(success
-          ? context.l10n.image_sent_subtitle
-          : context.l10n
-              .error_image_not_sent_subtitle(errorMsg ?? 'Unknown error')),
-      actions: [
-        SoftButton(
-            onPressed: () => Navigator.of(context).pop(),
-            label: "OK",
-            color: GlobalThemeData.darkColorScheme.primary),
-      ],
-    );
-  }
-}
 
 class CameraPage extends StatefulWidget {
   const CameraPage({super.key});
@@ -59,13 +36,14 @@ class CameraPageState extends State<CameraPage> {
   int _selectedCameraIndex = 0;
   bool _isFlashOn = false;
   bool _captureInProgress = false;
+  bool _dialogOpen = false;
+  SystemUiMode? _lastSystemUiMode;
 
   // Zoom state
   double _currentZoom = 1.0;
   double _baseZoom = 1.0;
   double _minZoom = 1.0;
   double _maxZoom = 1.0;
-  double _desiredZoom = 1.0;
   Timer? _zoomTimer;
   bool _zoomApplying = false;
   final Duration _zoomPeriod = const Duration(milliseconds: 16); // ~60fps
@@ -79,12 +57,23 @@ class CameraPageState extends State<CameraPage> {
   @override
   void initState() {
     super.initState();
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
     _initializeCamera();
     _loadCurrentUser();
   }
 
   @override
   void dispose() {
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     _zoomTimer?.cancel();
     _controller?.dispose();
     super.dispose();
@@ -105,13 +94,28 @@ class CameraPageState extends State<CameraPage> {
     await _disposeCamera();
     if (!mounted) return;
 
+    // Reset orientation to portrait
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    _lastSystemUiMode = SystemUiMode.edgeToEdge;
+
     await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => page),
     );
 
-    // Reinitialize camera when returning
     if (mounted) {
+      // Allow landscape mode
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+      _lastSystemUiMode = null;
       await _initializeCamera();
       setState(() {});
     }
@@ -193,7 +197,6 @@ class CameraPageState extends State<CameraPage> {
     _minZoom = await _controller!.getMinZoomLevel();
     _maxZoom = await _controller!.getMaxZoomLevel();
     _currentZoom = 1.0;
-    _desiredZoom = 1.0;
 
     debugPrint("Zoom caps: min=$_minZoom max=$_maxZoom");
   }
@@ -242,21 +245,20 @@ class CameraPageState extends State<CameraPage> {
       }
 
       _zoomApplying = true;
-      final double toApply = _desiredZoom;
+      final double toApply = _currentZoom;
       try {
         await ctrl.setZoomLevel(toApply);
       } catch (e) {
         debugPrint("setZoomLevel failed: $e");
       } finally {
         _zoomApplying = false;
-        if ((toApply - _desiredZoom).abs() > 1e-3) _scheduleZoomApply();
+        if ((toApply - _currentZoom).abs() > 1e-3) _scheduleZoomApply();
       }
     });
   }
 
   Future<void> _onZoomChanged(double zoom) async {
-    _desiredZoom = zoom.clamp(_minZoom, _maxZoom).toDouble();
-    if (mounted) setState(() => _currentZoom = _desiredZoom);
+    if (mounted) setState(() => _currentZoom = zoom.clamp(_minZoom, _maxZoom).toDouble());
     _scheduleZoomApply();
   }
 
@@ -367,23 +369,96 @@ class CameraPageState extends State<CameraPage> {
     final groupsFuture = getUserGroups();
     if (!mounted) return;
 
-    await showDialog(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (BuildContext context, StateSetter setState) {
-            return AlertDialog(
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
-              title: Text(context.l10n.select_groups),
-              content: Container(
-                width: MediaQuery.of(context).size.width * 0.9,
-                constraints: BoxConstraints(
-                    maxHeight: MediaQuery.of(context).size.height * 0.8),
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
+    // Capture the CameraPage context before entering any dialog builder so
+    // nested showDialog calls always use a live context
+    final outerContext = context;
+
+    setState(() => _dialogOpen = true);
+    try {
+      await showDialog(
+        context: context,
+        builder: (context) {
+          return StatefulBuilder(
+            builder: (BuildContext context, StateSetter setState) {
+              final isLandscape =
+                  MediaQuery.of(context).orientation == Orientation.landscape;
+              final screenWidth = MediaQuery.of(context).size.width;
+              final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
+              final keyboardOpen = keyboardHeight > 0;
+
+              final insetV = isLandscape ? 4.0 : 24.0;
+              // Zero spacer in landscape with keyboard to reclaim every pixel
+              final spacerH = (isLandscape && keyboardOpen) ? 0.0 : 8.0;
+
+              final groupsWidget = FutureBuilder(
+                future: groupsFuture,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Padding(
+                      padding: EdgeInsets.all(30),
+                      child: CircularProgressIndicator(),
+                    );
+                  } else if (snapshot.hasError ||
+                      !snapshot.hasData ||
+                      !(snapshot.data?.success ?? false)) {
+                    final errorMsg = snapshot.hasError
+                        ? snapshot.error.toString()
+                        : (snapshot.data?.error ??
+                            context.l10n.failed_to_load_groups);
+                    return Center(child: Text("Error: $errorMsg"));
+                  } else {
+                    final groups = snapshot.data!.data ?? [];
+                    if (groups.isEmpty) {
+                      return Center(child: Text(context.l10n.join_group_first));
+                    }
+                    return ListView.builder(
+                      itemCount: groups.length,
+                      itemBuilder: (context, index) {
+                        final group = groups[index];
+                        return CheckboxListTile(
+                          title: Text(group.name),
+                          value: selectedGroups.contains(group.id),
+                          onChanged: (bool? value) {
+                            setState(() {
+                              if (value == true) {
+                                selectedGroups.add(group.id);
+                              } else {
+                                selectedGroups.remove(group.id);
+                              }
+                            });
+                          },
+                        );
+                      },
+                    );
+                  }
+                },
+              );
+
+              final Widget dialogContent;
+              if (isLandscape) {
+                dialogContent = Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: Image.file(imageFile, fit: BoxFit.cover),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        children: [
+                          Flexible(child: groupsWidget),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              } else {
+                dialogContent = Column(
+                  children: [
+                    if (!keyboardOpen) ...[
                       Container(
                         width: double.infinity,
                         height: 200,
@@ -394,147 +469,226 @@ class CameraPageState extends State<CameraPage> {
                         ),
                       ),
                       const SizedBox(height: 10),
-                      FutureBuilder(
-                        future: groupsFuture,
-                        builder: (context, snapshot) {
-                          if (snapshot.connectionState ==
-                              ConnectionState.waiting) {
-                            return const Padding(
-                              padding: EdgeInsets.all(30),
-                              child: CircularProgressIndicator(),
-                            );
-                          } else if (snapshot.hasError ||
-                              !snapshot.hasData ||
-                              !(snapshot.data?.success ?? false)) {
-                            final errorMsg = snapshot.hasError
-                                ? snapshot.error.toString()
-                                : (snapshot.data?.error ??
-                                    context.l10n.failed_to_load_groups);
-                            return Center(child: Text("Error: $errorMsg"));
-                          } else {
-                            final groups = snapshot.data!.data ?? [];
-                            if (groups.isEmpty) {
-                              return Center(
-                                  child: Text(context.l10n.join_group_first));
-                            } else {
-                              return SizedBox(
-                                height: 200,
-                                child: ListView.builder(
-                                  shrinkWrap: true,
-                                  itemCount: groups.length,
-                                  itemBuilder: (context, index) {
-                                    final group = groups[index];
-                                    return CheckboxListTile(
-                                      title: Text(group.name),
-                                      value: selectedGroups.contains(group.id),
-                                      onChanged: (bool? value) {
-                                        setState(() {
-                                          if (value == true) {
-                                            selectedGroups.add(group.id);
-                                          } else {
-                                            selectedGroups.remove(group.id);
-                                          }
-                                        });
-                                      },
-                                    );
-                                  },
-                                ),
-                              );
-                            }
-                          }
-                        },
-                      ),
-                      const SizedBox(height: 10),
-                      RoundedInputField(
-                          hintText: context.l10n.add_description,
-                          capitalizeSentences: true,
-                          controller: description),
                     ],
-                  ),
+                    Flexible(child: groupsWidget),
+                  ],
+                );
+              }
+
+              return AlertDialog(
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8)),
+                insetPadding: EdgeInsets.symmetric(
+                  horizontal: isLandscape ? 16 : 40,
+                  vertical: insetV,
                 ),
-              ),
-              actions: [
-                SoftButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    label: context.l10n.cancel),
-                SoftButton(
-                    onPressed: () async {
-                      if (selectedGroups.isEmpty) {
-                        await showDialog(
-                          context: context,
-                          builder: (context) => AlertDialog(
-                            title: Text(context.l10n.error),
-                            content:
-                                Text(context.l10n.select_at_least_one_group),
-                            actions: [
-                              SoftButton(
-                                  onPressed: () => Navigator.of(context).pop(),
-                                  label: "OK",
-                                  color:
-                                      GlobalThemeData.darkColorScheme.primary),
-                            ],
+                title: isLandscape ? null : Text(context.l10n.select_groups),
+                contentPadding: (isLandscape && keyboardOpen)
+                    ? EdgeInsets.zero
+                    : isLandscape
+                        ? const EdgeInsets.fromLTRB(16, 16, 16, 0)
+                        : null,
+                actionsPadding: isLandscape
+                    ? const EdgeInsets.fromLTRB(16, 4, 16, 8)
+                    : null,
+                content: SizedBox(
+                  width: screenWidth,
+                  child: LayoutBuilder(
+                    builder: (_, cst) {
+                      // Reserve room for description + spacer +  safety margin.
+                      final gh = cst.maxHeight.isFinite
+                          ? (cst.maxHeight - spacerH - 88).clamp(0.0, 400.0)
+                          : (MediaQuery.of(context).size.height * 0.40)
+                              .clamp(60.0, 400.0);
+                      return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Visibility(
+                            visible: !(isLandscape && keyboardOpen),
+                            child: ConstrainedBox(
+                              constraints: BoxConstraints(maxHeight: gh),
+                              child: dialogContent,
+                            ),
                           ),
-                        );
-                        return;
-                      }
-
-                      showDialog(
-                        context: context,
-                        barrierDismissible: false,
-                        builder: (context) =>
-                            const Center(child: CircularProgressIndicator()),
-                      );
-
-                      final response = await sendImageToGroups(
-                        imageFile,
-                        selectedGroups.toList(),
-                        description.text,
-                      );
-                      if (!context.mounted) return;
-
-                      Navigator.of(context).pop(); // loading
-                      Navigator.of(context).pop(); // main dialog
-
-                      await showDialog(
-                        context: context,
-                        builder: (context) => ImageSentDialog(
-                          success: response.success,
-                          errorMsg: response.error,
-                        ),
+                          SizedBox(height: spacerH),
+                          RoundedInputField(
+                            hintText: context.l10n.add_description,
+                            capitalizeSentences: true,
+                            controller: description,
+                          ),
+                        ],
                       );
                     },
-                    label: context.l10n.send,
-                    color: GlobalThemeData.darkColorScheme.primary),
-              ],
-            );
-          },
-        );
-      },
-    );
+                  ),
+                ),
+                actions: keyboardOpen
+                    ? null
+                    : [
+                        SoftButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            label: context.l10n.cancel),
+                        SoftButton(
+                            onPressed: () async {
+                              if (selectedGroups.isEmpty) {
+                                await showDialog(
+                                  context: context,
+                                  builder: (context) => AlertDialog(
+                                    title: Text(context.l10n.error),
+                                    content: Text(
+                                        context.l10n.select_at_least_one_group),
+                                    actions: [
+                                      SoftButton(
+                                          onPressed: () =>
+                                              Navigator.of(context).pop(),
+                                          label: "OK",
+                                          color: GlobalThemeData
+                                              .darkColorScheme.primary),
+                                    ],
+                                  ),
+                                );
+                                return;
+                              }
+
+                              showDialog(
+                                context: context,
+                                barrierDismissible: false,
+                                builder: (context) => const Center(
+                                    child: CircularProgressIndicator()),
+                              );
+
+                              final response = await sendImageToGroups(
+                                imageFile,
+                                selectedGroups.toList(),
+                                description.text,
+                              );
+                              if (!context.mounted) return;
+
+                              Navigator.of(context).pop(); // loading
+                              Navigator.of(context).pop(); // main dialog
+
+                              if (!outerContext.mounted) return;
+                              await showDialog(
+                                context: outerContext,
+                                builder: (context) => ImageSentDialog(
+                                  success: response.success,
+                                  errorMsg: response.error,
+                                ),
+                              );
+                            },
+                            label: context.l10n.send,
+                            color: GlobalThemeData.darkColorScheme.primary),
+                      ],
+              );
+            },
+          );
+        },
+      );
+    } finally {
+      if (mounted) setState(() => _dialogOpen = false);
+    }
   }
 
   // ===== UI ====================================================================
 
+  Widget _navButton({required Widget child}) => Container(
+        padding: const EdgeInsets.all(2),
+        decoration:
+            const BoxDecoration(shape: BoxShape.circle, color: Colors.white12),
+        child: child,
+      );
+
+  Widget _accountButton() {
+    Future<void> onTap() async {
+      await _navigateWithCameraDispose(const AccountPage());
+      await _loadCurrentUser();
+    }
+
+    final hasPfp =
+        currentUser?.pfpUrl != null && currentUser!.pfpUrl.isNotEmpty;
+    return hasPfp
+        ? GestureDetector(
+            onTap: onTap, child: UserAvatar(currentUser!, radius: 24))
+        : IconButton(
+            icon: const Icon(Symbols.account_circle_rounded,
+                color: Colors.white, size: 30),
+            onPressed: onTap,
+          );
+  }
+
+  Widget _shutterButton() => IconButton(
+        onPressed: _takePicture,
+        icon: Icon(
+          Icons.circle_outlined,
+          color: _captureInProgress
+              ? GlobalThemeData.darkColorScheme.primary
+              : Colors.white,
+          size: 70,
+        ),
+      );
+
+  Widget _flashButton() => IconButton(
+        onPressed: _switchFlashLight,
+        icon: Icon(
+          _isFlashOn ? Symbols.flash_on_rounded : Symbols.flash_off_rounded,
+          color: Colors.white,
+        ),
+      );
+
+  Widget _flipButton() => IconButton(
+        onPressed: _flipFrontBack,
+        icon: const Icon(Symbols.flip_camera_android_rounded,
+            color: Colors.white),
+      );
+
   @override
   Widget build(BuildContext context) {
-    final maxPreviewHeight = MediaQuery.of(context).size.height * 0.7;
-    final maxPreviewWidth = MediaQuery.of(context).size.width * 0.9;
-    final aspectRatio = _controller?.value.aspectRatio ?? 16 / 9;
-    final portraitAspectRatio = 1 / aspectRatio;
+    return NativeDeviceOrientationReader(
+      useSensor: false,
+      builder: _buildContent,
+    );
+  }
+
+  Widget _buildContent(BuildContext context) {
+    final nativeOrientation = NativeDeviceOrientationReader.orientation(context);
+    debugPrint("Native orientation: $nativeOrientation");
+
+    final isLandscape =
+        MediaQuery.of(context).orientation == Orientation.landscape;
+    final keyboardVisible = MediaQuery.of(context).viewInsets.bottom > 0;
+    if (!_dialogOpen || (isLandscape && !keyboardVisible)) {
+      final targetMode =
+          isLandscape ? SystemUiMode.immersiveSticky : SystemUiMode.edgeToEdge;
+      if (targetMode != _lastSystemUiMode) {
+        _lastSystemUiMode = targetMode;
+        SystemChrome.setEnabledSystemUIMode(targetMode);
+      }
+    }
+    final maxPreviewHeight =
+        MediaQuery.of(context).size.height * (isLandscape ? 0.9 : 0.7);
+    final maxPreviewWidth =
+        MediaQuery.of(context).size.width * (isLandscape ? 0.85 : 0.9);
+    // The camera sensor reports a landscape aspect ratio regardless of device
+    // orientation. In portrait we invert it; in landscape we use it as-is.
+    final sensorAspectRatio = (_controller?.value.previewSize != null)
+        ? _controller!.value.aspectRatio
+        : 16 / 9;
+    final displayAspectRatio =
+        isLandscape ? sensorAspectRatio : (1 / sensorAspectRatio);
 
     double previewWidth;
     double previewHeight;
 
-    if (maxPreviewHeight * portraitAspectRatio <= maxPreviewWidth) {
+    if (maxPreviewHeight * displayAspectRatio <= maxPreviewWidth) {
       previewHeight = maxPreviewHeight;
-      previewWidth = maxPreviewHeight * portraitAspectRatio;
+      previewWidth = maxPreviewHeight * displayAspectRatio;
     } else {
       previewWidth = maxPreviewWidth;
-      previewHeight = maxPreviewWidth / portraitAspectRatio;
+      previewHeight = maxPreviewWidth / displayAspectRatio;
     }
 
     return Scaffold(
       backgroundColor: Colors.black,
+      resizeToAvoidBottomInset: false,
       body: FutureBuilder<void>(
         future: _initializeControllerFuture,
         builder: (context, snapshot) {
@@ -627,110 +781,104 @@ class CameraPageState extends State<CameraPage> {
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(
-                        '${_currentZoom.toStringAsFixed(_currentZoom < 1 ? 1 : 1)}x',
+                        '${_currentZoom.toStringAsFixed(1)}x',
                         style:
                             const TextStyle(color: Colors.white, fontSize: 16),
                       ),
                     ),
                   ),
 
-                // Top buttons
-                Positioned(
-                  top: 50,
-                  left: 25,
-                  child: Container(
-                    padding: const EdgeInsets.all(2),
-                    decoration: const BoxDecoration(
-                        shape: BoxShape.circle, color: Colors.white12),
-                    child: IconButton(
+                // Nav buttons: physical top of phone
+                if (isLandscape)
+                  Positioned(
+                    left: nativeOrientation == NativeDeviceOrientation.landscapeLeft ? 10 : null,
+                    right: nativeOrientation == NativeDeviceOrientation.landscapeLeft ? null : 10,
+                    top: 40,
+                    bottom: 40,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _navButton(child: _accountButton()),
+                        const SizedBox(height: 8),
+                        _navButton(
+                            child: IconButton(
+                          icon: const Icon(Symbols.upload_rounded,
+                              color: Colors.white, size: 30),
+                          onPressed: _sendPictureFromStorage,
+                        )),
+                        const SizedBox(height: 8),
+                        _navButton(
+                            child: IconButton(
+                          icon: const Icon(Symbols.group_rounded,
+                              color: Colors.white, size: 30),
+                          onPressed: () =>
+                              _navigateWithCameraDispose(const GroupsPage()),
+                        )),
+                      ],
+                    ),
+                  )
+                else ...[
+                  Positioned(
+                    top: 50,
+                    left: 25,
+                    child: _navButton(
+                        child: IconButton(
                       icon: const Icon(Symbols.group_rounded,
                           color: Colors.white, size: 30),
                       onPressed: () =>
                           _navigateWithCameraDispose(const GroupsPage()),
+                    )),
+                  ),
+                  Positioned(
+                    top: 50,
+                    left: 0,
+                    right: 0,
+                    child: Center(
+                      child: _navButton(
+                          child: IconButton(
+                        icon: const Icon(Symbols.upload_rounded,
+                            color: Colors.white, size: 30),
+                        onPressed: _sendPictureFromStorage,
+                      )),
                     ),
                   ),
-                ),
-                Positioned(
-                  top: 50,
-                  right: MediaQuery.of(context).size.width / 2 - 30,
-                  child: Container(
-                    padding: const EdgeInsets.all(2),
-                    decoration: const BoxDecoration(
-                        shape: BoxShape.circle, color: Colors.white12),
-                    child: IconButton(
-                      icon: const Icon(Symbols.upload_rounded,
-                          color: Colors.white, size: 30),
-                      onPressed: _sendPictureFromStorage,
-                    ),
+                  Positioned(
+                    top: 50,
+                    right: 25,
+                    child: _navButton(child: _accountButton()),
                   ),
-                ),
-                Positioned(
-                  top: 50,
-                  right: 25,
-                  child: Container(
-                    padding: const EdgeInsets.all(2),
-                    decoration: const BoxDecoration(
-                        shape: BoxShape.circle, color: Colors.white12),
-                    child: currentUser?.pfpUrl != null &&
-                            currentUser!.pfpUrl.isNotEmpty
-                        ? GestureDetector(
-                            onTap: () async {
-                              await _navigateWithCameraDispose(
-                                  const AccountPage());
-                              await _loadCurrentUser();
-                            },
-                            child: UserAvatar(currentUser!, radius: 24),
-                          )
-                        : IconButton(
-                            icon: const Icon(
-                              Symbols.account_circle_rounded,
-                              color: Colors.white,
-                              size: 30,
-                            ),
-                            onPressed: () async {
-                              await _navigateWithCameraDispose(
-                                  const AccountPage());
-                              await _loadCurrentUser();
-                            },
-                          ),
-                  ),
-                ),
+                ],
 
-                // Shutter row
-                Positioned(
-                  bottom: 20,
-                  left: 0,
-                  right: 0,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      IconButton(
-                        onPressed: _switchFlashLight,
-                        icon: Icon(
-                            _isFlashOn
-                                ? Symbols.flash_on_rounded
-                                : Symbols.flash_off_rounded,
-                            color: Colors.white),
-                      ),
-                      IconButton(
-                        onPressed: _takePicture,
-                        icon: Icon(
-                          Icons.circle_outlined,
-                          color: (_captureInProgress
-                              ? GlobalThemeData.darkColorScheme.primary
-                              : Colors.white),
-                          size: 70,
-                        ),
-                      ),
-                      // Flip front/back
-                      IconButton(
-                        onPressed: _flipFrontBack,
-                        icon: const Icon(Symbols.flip_camera_android_rounded,
-                            color: Colors.white),
-                      ),
-                    ],
+                // Shutter buttons: physical bottom of phone
+                if (isLandscape)
+                  Positioned(
+                    left: nativeOrientation == NativeDeviceOrientation.landscapeLeft ? null : 10,
+                    right: nativeOrientation == NativeDeviceOrientation.landscapeLeft ? 10 : null,
+                    top: 0,
+                    bottom: 0,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _flipButton(),
+                        _shutterButton(),
+                        _flashButton()
+                      ],
+                    ),
+                  )
+                else
+                  Positioned(
+                    bottom: 20,
+                    left: 0,
+                    right: 0,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _flashButton(),
+                        _shutterButton(),
+                        _flipButton()
+                      ],
+                    ),
                   ),
-                ),
               ],
             );
           } else if (snapshot.hasError) {
@@ -746,3 +894,4 @@ class CameraPageState extends State<CameraPage> {
     );
   }
 }
+
