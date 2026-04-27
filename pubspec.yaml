@@ -62,7 +62,7 @@ dependencies:
   image_cropper: ^12.2.1
   cached_network_image: ^3.4.1
   google_fonts: ^8.0.1
-  material_symbols_icons: ^4.2874.0
+  material_symbols_icons: 4.2906.0
   workmanager: ^0.9.0
   native_device_orientation: ^2.0.0
 
