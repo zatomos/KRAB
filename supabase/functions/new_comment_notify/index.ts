@@ -1,5 +1,3 @@
-// Follow the setup guide for Deno: https://deno.land/manual/getting_started/setup_your_environment
-
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import { JWT } from 'npm:google-auth-library@9';
 
@@ -69,7 +67,7 @@ Deno.serve(async (req) => {
     // Fetch the uploader's FCM token
     const { data: uploaderData, error: uploaderError } = await supabase
       .from('Users')
-      .select('fcm_token')
+      .select('fcm_token, username')
       .eq('id', uploaderId)
       .single();
 
@@ -81,20 +79,6 @@ Deno.serve(async (req) => {
     }
 
     const fcmToken = hasUploaderToken ? uploaderData.fcm_token : null;
-
-    // Fetch group name
-    const { data: groupData, error: groupError } = await supabase
-      .from('Groups')
-      .select('name')
-      .eq('id', comment.group_id)
-      .single();
-
-    let groupName = 'your group';
-    if (!groupError && groupData) {
-      groupName = groupData.name;
-    }
-
-    console.log('Group name:', groupName);
 
     // Load service account
     const serviceAccount = JSON.parse(
@@ -108,17 +92,11 @@ Deno.serve(async (req) => {
 
     console.log('Firebase access token retrieved');
 
-    // Prepare the notification payload
-    const notificationTitle = `${commenterUsername} commented on your image in ${groupName}`;
-    const notificationBody = comment.text;
     const imageId = comment.image_id;
     const groupId = comment.group_id;
 
-    console.log('Notification title:', notificationTitle);
-    console.log('Notification body:', notificationBody);
-
     // Send a push notification to uploader
-    if (hasUploaderToken) {
+    if (hasUploaderToken && uploaderId !== comment.user_id) {
       console.log('Sending notification to uploader');
 
       const res = await fetch(
@@ -132,14 +110,14 @@ Deno.serve(async (req) => {
           body: JSON.stringify({
             message: {
               token: fcmToken,
-              notification: {
-                title: notificationTitle,
-                body: notificationBody,
-              },
+              android: { priority: 'HIGH' },
               data: {
                 type: 'new_comment',
                 image_id: imageId,
                 group_id: groupId,
+                commenter_id: comment.user_id,
+                commenter_username: commenterUsername,
+                comment_text: comment.text,
               },
             },
           }),
@@ -151,6 +129,7 @@ Deno.serve(async (req) => {
         console.error('Error sending uploader notification:', resData);
         return new Response(null, { status: 500 });
       }
+      console.log('FCM uploader response:', JSON.stringify(resData));
     }
 
     // Notify group members
@@ -164,7 +143,7 @@ Deno.serve(async (req) => {
     } else {
       const userIds = members
         .map((m) => m.user_id)
-        .filter((id) => id !== comment.user_id);
+        .filter((id) => id !== comment.user_id && id !== uploaderId);
 
       if (userIds.length > 0) {
         const { data: users, error: usersError } = await supabase
@@ -195,14 +174,15 @@ Deno.serve(async (req) => {
                 body: JSON.stringify({
                   message: {
                     token,
-                    notification: {
-                      title: `New comment in ${groupName}`,
-                      body: `${commenterUsername} commented on a post from ${uploader}: ${comment.text}`,
-                    },
+                    android: { priority: 'HIGH' },
                     data: {
                       type: 'group_comment',
                       image_id: imageId,
                       group_id: groupId,
+                      commenter_id: comment.user_id,
+                      commenter_username: commenterUsername,
+                      comment_text: comment.text,
+                      uploader_username: uploaderData?.username ?? '',
                     },
                   },
                 }),

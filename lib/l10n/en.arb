@@ -182,5 +182,8 @@
   "widget_refresh_interval": "Widget refresh interval",
   "widget_refresh_interval_description": "How often to check for new photos in the background.",
   "no_description": "No description",
-  "off": "Off"
+  "off": "Off",
+  "new_image_notification": "sent a new image",
+  "new_comment_on_someone_notification": "commented on {uploader_username}'s image",
+  "new_comment_on_your_image_notification": "commented on your image"
 }

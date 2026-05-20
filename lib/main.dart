@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:isolate';
 import 'dart:ui' show IsolateNameServer;
 import 'firebase_options.dart';
@@ -14,6 +15,7 @@ import 'package:krab/services/supabase.dart';
 import 'package:krab/services/fcm_helper.dart';
 import 'package:krab/services/home_widget_updater.dart';
 import 'package:krab/services/home_widget_status.dart';
+import 'package:krab/services/notification_channels.dart';
 import 'package:workmanager/workmanager.dart';
 import 'package:krab/services/profile_picture_cache.dart';
 import 'package:krab/services/debug_notifier.dart';
@@ -49,6 +51,37 @@ final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey =
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 RemoteMessage? pendingNotificationMessage;
+String? pendingLocalNotificationPayload;
+
+Future<void> _handleLocalNotificationTap(String payload) async {
+  try {
+    final data = jsonDecode(payload) as Map<String, dynamic>;
+    final groupId = data['group_id'] as String? ?? '';
+    final imageId = data['image_id'] as String? ?? '';
+    if (groupId.isEmpty) return;
+
+    final groupResponse = await getGroupDetails(groupId);
+    if (!groupResponse.success || groupResponse.data == null) return;
+
+    int attempts = 0;
+    while (navigatorKey.currentState == null && attempts < 20) {
+      await Future.delayed(const Duration(milliseconds: 100));
+      attempts++;
+    }
+    if (navigatorKey.currentState == null) return;
+
+    navigatorKey.currentState!.push(
+      MaterialPageRoute(
+        builder: (_) => GroupImagesPage(
+          group: groupResponse.data!,
+          imageId: imageId,
+        ),
+      ),
+    );
+  } catch (e) {
+    debugPrint('Error handling local notification tap: $e');
+  }
+}
 
 Future<int> _getWidgetBitmapLimitBytes() async {
   final views = WidgetsBinding.instance.platformDispatcher.views;
@@ -139,8 +172,9 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   debugPrint('Handling background message: ${message.messageId}');
   debugPrint('Background data: ${message.data}');
 
-  if (message.data['type'] != 'new_image') {
-    debugPrint('Background message is not about a new image, skipping');
+  final type = message.data['type'];
+  if (type != 'new_image' && type != 'new_comment' && type != 'group_comment') {
+    debugPrint('Background message type "$type" not handled, skipping');
     return;
   }
 
@@ -161,14 +195,18 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
     final supabaseOk = await initializeSupabaseIfNeeded();
     if (!supabaseOk) {
-      debugPrint(
-          'Skipping widget update, Supabase not initialized (background)');
+      debugPrint('Supabase not initialized (background)');
       await DebugNotifier.instance
           .notifySupabaseInitFailed('Background: Supabase init failed');
       return;
     }
 
-    await updateHomeWidget();
+    if (type == 'new_image') {
+      await dispatchImageNotification(message.data);
+      await updateHomeWidget();
+    } else {
+      await dispatchCommentNotification(message.data, type);
+    }
 
     debugPrint('Background message processed successfully');
     await DebugNotifier.instance.notifyBackgroundTaskCompleted();
@@ -260,6 +298,15 @@ void main() async {
 
     // Initialize Debug Notifier
     await DebugNotifier.instance.initialize();
+
+    // Initialize local notification tap handler
+    await initCommentNotifications(
+      onTap: (payload) => _handleLocalNotificationTap(payload),
+    );
+    final localLaunchPayload = await getLocalNotificationLaunchPayload();
+    if (localLaunchPayload != null) {
+      pendingLocalNotificationPayload = localLaunchPayload;
+    }
 
     // Compute and store widget bitmap limit
     final cachedWidgetLimit = await UserPreferences.getWidgetBitmapLimit();
@@ -402,11 +449,12 @@ void main() async {
       try {
         debugPrint(
             "Foreground FCM: ${message.messageId}, data=${message.data}");
-        if (message.data['type'] == 'new_image') {
-          debugPrint('Foreground new image notification received, updating widget...');
+        final msgType = message.data['type'];
+        if (msgType == 'new_image') {
+          await dispatchImageNotification(message.data);
           await updateHomeWidget();
-        } else {
-          debugPrint('Foreground notification not image-related');
+        } else if (msgType == 'new_comment' || msgType == 'group_comment') {
+          await dispatchCommentNotification(message.data, msgType);
         }
 
         if (message.notification != null &&
@@ -457,11 +505,18 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      // Handle pending notification
+      // Handle pending FCM notification (app launched from FCM tap)
       if (pendingNotificationMessage != null) {
         debugPrint('Processing pending notification message');
         await handleNotificationNavigation(pendingNotificationMessage!);
         pendingNotificationMessage = null;
+      }
+
+      // Handle pending local notification (app launched from local notification tap)
+      if (pendingLocalNotificationPayload != null) {
+        debugPrint('Processing pending local notification');
+        await _handleLocalNotificationTap(pendingLocalNotificationPayload!);
+        pendingLocalNotificationPayload = null;
       }
 
       // Show widget prompt if not first launch

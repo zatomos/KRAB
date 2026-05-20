@@ -182,5 +182,8 @@
   "widget_refresh_interval": "Intervalle d'actualisation du widget",
   "widget_refresh_interval_description": "Fréquence de vérification en arrière-plan de nouvelles photos.",
   "no_description": "Aucune description",
-  "off": "Désactivé"
+  "off": "Désactivé",
+  "new_image_notification": "a envoyé une nouvelle image",
+  "new_comment_on_someone_notification": "a commenté l'image de {uploader_username}",
+  "new_comment_on_your_image_notification": "a commenté votre image"
 }

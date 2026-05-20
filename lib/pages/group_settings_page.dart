@@ -520,126 +520,153 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                 return Column(
                   children: members.map((member) {
                     final targetRole = member.role;
-                    Offset? tapPos;
+                    final itemKey = GlobalKey();
+                    bool isHighlighted = false;
+                    final canManage =
+                        (currentRole == 'owner' || currentRole == 'admin') &&
+                            member.user.id != _currentUserId;
 
-                    return GestureDetector(
-                      onLongPressDown: (details) {
-                        tapPos = details.globalPosition;
-                      },
-                      onLongPress: () {
-                        final isAdmin =
-                            currentRole == 'owner' || currentRole == 'admin';
+                    return StatefulBuilder(
+                      builder: (context, setItemState) {
+                        return GestureDetector(
+                          onLongPressDown: canManage
+                              ? (_) => setItemState(() => isHighlighted = true)
+                              : null,
+                          onLongPressCancel: canManage
+                              ? () => setItemState(() => isHighlighted = false)
+                              : null,
+                          onLongPress: canManage
+                              ? () async {
+                                  final overlay = Overlay.of(context)
+                                      .context
+                                      .findRenderObject() as RenderBox;
+                                  final box = itemKey.currentContext
+                                      ?.findRenderObject() as RenderBox?;
+                                  final pos = box?.localToGlobal(Offset.zero) ??
+                                      Offset.zero;
+                                  final size = box?.size ?? const Size(300, 56);
 
-                        if (!isAdmin ||
-                            member.user.id == _currentUserId ||
-                            tapPos == null) {
-                          return;
-                        }
-
-                        final overlay = Overlay.of(context)
-                            .context
-                            .findRenderObject() as RenderBox;
-
-                        showMenu(
-                          context: context,
-                          color: GlobalThemeData.darkColorScheme.surfaceBright,
-                          position: RelativeRect.fromRect(
-                            Rect.fromLTWH(tapPos!.dx, tapPos!.dy, 0, 0),
-                            Offset.zero & overlay.size,
+                                  await showMenu<void>(
+                                    context: context,
+                                    color: GlobalThemeData
+                                        .darkColorScheme.surfaceBright,
+                                    position: RelativeRect.fromRect(
+                                      Rect.fromLTWH(pos.dx,
+                                          pos.dy + size.height, size.width, 0),
+                                      Offset.zero & overlay.size,
+                                    ),
+                                    items: [
+                                      if (targetRole == 'member')
+                                        PopupMenuItem(
+                                          child: ListTile(
+                                            leading: const Icon(
+                                                Symbols.add_moderator_rounded),
+                                            title:
+                                                Text(context.l10n.promote_user),
+                                            onTap: () {
+                                              Navigator.pop(context);
+                                              _manageUserRoleDialog(
+                                                  member.user.id,
+                                                  'promote_admin');
+                                            },
+                                          ),
+                                        ),
+                                      if (targetRole == 'admin')
+                                        PopupMenuItem(
+                                          child: ListTile(
+                                            leading: const Icon(Symbols
+                                                .remove_moderator_rounded),
+                                            title:
+                                                Text(context.l10n.demote_user),
+                                            onTap: () {
+                                              Navigator.pop(context);
+                                              _manageUserRoleDialog(
+                                                  member.user.id, 'demote');
+                                            },
+                                          ),
+                                        ),
+                                      if (targetRole != 'banned' &&
+                                          (currentRole == 'owner' ||
+                                              (currentRole == 'admin' &&
+                                                  targetRole == 'member')))
+                                        PopupMenuItem(
+                                          child: ListTile(
+                                            leading: const Icon(
+                                                Symbols.person_off_rounded),
+                                            title: Text(context.l10n.ban_user),
+                                            onTap: () {
+                                              Navigator.pop(context);
+                                              _manageUserBanDialog(
+                                                  member.user.id);
+                                            },
+                                          ),
+                                        ),
+                                      if (targetRole == 'banned' &&
+                                          (currentRole == 'owner' ||
+                                              currentRole == 'admin'))
+                                        PopupMenuItem(
+                                          child: ListTile(
+                                            leading: const Icon(
+                                                Symbols.person_check_rounded),
+                                            title:
+                                                Text(context.l10n.unban_user),
+                                            onTap: () {
+                                              Navigator.pop(context);
+                                              _manageUserUnbanDialog(
+                                                  member.user.id);
+                                            },
+                                          ),
+                                        ),
+                                      if (currentRole == 'owner' &&
+                                          targetRole != 'owner' &&
+                                          targetRole != 'banned')
+                                        PopupMenuItem(
+                                          child: ListTile(
+                                            leading: const Icon(
+                                                Symbols.crown_rounded),
+                                            title: Text(context
+                                                .l10n.transfer_ownership),
+                                            onTap: () {
+                                              Navigator.pop(context);
+                                              _manageUserRoleDialog(
+                                                  member.user.id,
+                                                  'transfer_ownership');
+                                            },
+                                          ),
+                                        ),
+                                    ],
+                                  );
+                                  setItemState(() => isHighlighted = false);
+                                }
+                              : null,
+                          child: Container(
+                            key: itemKey,
+                            color: isHighlighted
+                                ? Colors.white.withValues(alpha: 0.08)
+                                : null,
+                            child: ListTile(
+                              leading: UserAvatar(member.user, radius: 25),
+                              title: Text(member.user.username),
+                              trailing: Icon(
+                                  targetRole == 'owner'
+                                      ? Symbols.crown_rounded
+                                      : targetRole == 'admin'
+                                          ? Symbols.shield_person_rounded
+                                          : targetRole == 'banned'
+                                              ? Symbols.block_rounded
+                                              : null,
+                                  color: targetRole == 'owner'
+                                      ? Colors.amber
+                                      : targetRole == 'admin'
+                                          ? Colors.blue
+                                          : targetRole == 'banned'
+                                              ? Colors.red
+                                              : null,
+                                  fill: 1),
+                            ),
                           ),
-                          items: [
-                            if (targetRole == 'member')
-                              PopupMenuItem(
-                                child: ListTile(
-                                  leading:
-                                      const Icon(Symbols.add_moderator_rounded),
-                                  title: Text(context.l10n.promote_user),
-                                  onTap: () {
-                                    Navigator.pop(context);
-                                    _manageUserRoleDialog(
-                                        member.user.id, 'promote_admin');
-                                  },
-                                ),
-                              ),
-                            if (targetRole == 'admin')
-                              PopupMenuItem(
-                                child: ListTile(
-                                  leading: const Icon(
-                                      Symbols.remove_moderator_rounded),
-                                  title: Text(context.l10n.demote_user),
-                                  onTap: () {
-                                    Navigator.pop(context);
-                                    _manageUserRoleDialog(
-                                        member.user.id, 'demote');
-                                  },
-                                ),
-                              ),
-                            if ((targetRole != 'banned') &&
-                                ((currentRole == 'owner') ||
-                                    (currentRole == 'admin' &&
-                                        targetRole == 'member')))
-                              PopupMenuItem(
-                                child: ListTile(
-                                  leading:
-                                      const Icon(Symbols.person_off_rounded),
-                                  title: Text(context.l10n.ban_user),
-                                  onTap: () {
-                                    Navigator.pop(context);
-                                    _manageUserBanDialog(member.user.id);
-                                  },
-                                ),
-                              ),
-                            if ((targetRole == 'banned') &&
-                                (currentRole == 'owner' ||
-                                    currentRole == 'admin'))
-                              PopupMenuItem(
-                                child: ListTile(
-                                  leading:
-                                      const Icon(Symbols.person_check_rounded),
-                                  title: Text(context.l10n.unban_user),
-                                  onTap: () {
-                                    Navigator.pop(context);
-                                    _manageUserUnbanDialog(member.user.id);
-                                  },
-                                ),
-                              ),
-                            if (currentRole == 'owner' &&
-                                targetRole != 'owner' &&
-                                targetRole != 'banned')
-                              PopupMenuItem(
-                                child: ListTile(
-                                  leading: const Icon(Symbols.crown_rounded),
-                                  title: Text(context.l10n.transfer_ownership),
-                                  onTap: () {
-                                    Navigator.pop(context);
-                                    _manageUserRoleDialog(
-                                        member.user.id, 'transfer_ownership');
-                                  },
-                                ),
-                              ),
-                          ],
                         );
                       },
-                      child: ListTile(
-                        leading: UserAvatar(member.user, radius: 25),
-                        title: Text(member.user.username),
-                        trailing: Icon(
-                            targetRole == 'owner'
-                                ? Symbols.crown_rounded
-                                : targetRole == 'admin'
-                                    ? Symbols.shield_person_rounded
-                                    : targetRole == 'banned'
-                                        ? Symbols.block_rounded
-                                        : null,
-                            color: targetRole == 'owner'
-                                ? Colors.amber
-                                : targetRole == 'admin'
-                                    ? Colors.blue
-                                    : targetRole == 'banned'
-                                        ? Colors.red
-                                        : null,
-                            fill: 1),
-                      ),
                     );
                   }).toList(),
                 );

@@ -206,9 +206,10 @@ class GroupPageState extends State<GroupImagesPage> {
 
           return RefreshIndicator(
               onRefresh: _refreshGroupImages,
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 8.0),
-                child: GridView.builder(
+              child: GridView.builder(
+                  padding: const EdgeInsets.only(bottom: 8.0),
+                  physics: const BouncingScrollPhysics(
+                      parent: AlwaysScrollableScrollPhysics()),
                   itemCount: images.length,
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 2,
@@ -286,8 +287,14 @@ class GroupPageState extends State<GroupImagesPage> {
                                   ),
                                 ),
                                 Positioned(
-                                  bottom: 8,
-                                  right: 8,
+                                  bottom: (imageData.description != null &&
+                                          imageData.description!.isNotEmpty)
+                                      ? 12
+                                      : 8,
+                                  right: (imageData.description != null &&
+                                          imageData.description!.isNotEmpty)
+                                      ? 12
+                                      : 8,
                                   child: UserAvatar(uploader, radius: 20),
                                 ),
                                 (_commentCountCache[imageId] ?? 0) > 0
@@ -326,6 +333,25 @@ class GroupPageState extends State<GroupImagesPage> {
                                         ),
                                       )
                                     : const SizedBox.shrink(),
+                                if (imageData.description != null &&
+                                    imageData.description!.isNotEmpty)
+                                  Positioned(
+                                    bottom: 6,
+                                    right: 6,
+                                    child: Container(
+                                      padding: const EdgeInsets.all(4),
+                                      decoration: BoxDecoration(
+                                        color:
+                                            Colors.black.withValues(alpha: 0.6),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: const Icon(
+                                        Symbols.notes_rounded,
+                                        size: 12,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
                               ],
                             ),
                           ),
@@ -333,8 +359,7 @@ class GroupPageState extends State<GroupImagesPage> {
                       },
                     );
                   },
-                ),
-              ));
+                ));
         },
       ),
     );

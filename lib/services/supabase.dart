@@ -562,6 +562,22 @@ Future<SupabaseResponse<Uint8List>> getImage(String imageId,
   }
 }
 
+/// Download a profile picture from storage.
+Future<SupabaseResponse<Uint8List>> getProfilePictureBytes(String userId) async {
+  try {
+    final data = await supabase.storage.from('profile-pictures').download(userId);
+    if (data.isEmpty) {
+      return SupabaseResponse(success: false, error: 'Profile picture is empty');
+    }
+    return SupabaseResponse(success: true, data: data);
+  } catch (error) {
+    return SupabaseResponse(
+      success: false,
+      error: 'Error downloading profile picture: $error',
+    );
+  }
+}
+
 /// Get detailed information about an image.
 Future<SupabaseResponse<Map<String, dynamic>>> getImageDetails(
     String imageId) async {

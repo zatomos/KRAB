@@ -1,8 +1,8 @@
-import 'dart:async';
 import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:krab/services/home_widget_updater.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/widgets/soft_button.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -40,13 +40,10 @@ class CameraPageState extends State<CameraPage> {
   SystemUiMode? _lastSystemUiMode;
 
   // Zoom state
-  double _currentZoom = 1.0;
+  final ValueNotifier<double> _zoomNotifier = ValueNotifier(1.0);
   double _baseZoom = 1.0;
   double _minZoom = 1.0;
   double _maxZoom = 1.0;
-  Timer? _zoomTimer;
-  bool _zoomApplying = false;
-  final Duration _zoomPeriod = const Duration(milliseconds: 16); // ~60fps
 
   // Tap focus UI
   Offset? _focusPoint;
@@ -74,15 +71,13 @@ class CameraPageState extends State<CameraPage> {
       DeviceOrientation.portraitDown,
     ]);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-    _zoomTimer?.cancel();
+    _zoomNotifier.dispose();
     _controller?.dispose();
     super.dispose();
   }
 
   /// Dispose camera resources
   Future<void> _disposeCamera() async {
-    _zoomTimer?.cancel();
-    _zoomTimer = null;
     await _controller?.dispose();
     _controller = null;
     _initializeControllerFuture = null;
@@ -196,7 +191,7 @@ class CameraPageState extends State<CameraPage> {
 
     _minZoom = await _controller!.getMinZoomLevel();
     _maxZoom = await _controller!.getMaxZoomLevel();
-    _currentZoom = 1.0;
+    _zoomNotifier.value = 1.0;
 
     debugPrint("Zoom caps: min=$_minZoom max=$_maxZoom");
   }
@@ -233,33 +228,9 @@ class CameraPageState extends State<CameraPage> {
     if (mounted) setState(() {});
   }
 
-  void _scheduleZoomApply() {
-    _zoomTimer ??= Timer(_zoomPeriod, () async {
-      _zoomTimer = null;
-      final ctrl = _controller;
-      if (ctrl == null || !ctrl.value.isInitialized) return;
-
-      if (_zoomApplying) {
-        _scheduleZoomApply();
-        return;
-      }
-
-      _zoomApplying = true;
-      final double toApply = _currentZoom;
-      try {
-        await ctrl.setZoomLevel(toApply);
-      } catch (e) {
-        debugPrint("setZoomLevel failed: $e");
-      } finally {
-        _zoomApplying = false;
-        if ((toApply - _currentZoom).abs() > 1e-3) _scheduleZoomApply();
-      }
-    });
-  }
-
-  Future<void> _onZoomChanged(double zoom) async {
-    if (mounted) setState(() => _currentZoom = zoom.clamp(_minZoom, _maxZoom).toDouble());
-    _scheduleZoomApply();
+  void _onZoomChanged(double zoom) {
+    _zoomNotifier.value = zoom.clamp(_minZoom, _maxZoom).toDouble();
+    _controller?.setZoomLevel(_zoomNotifier.value).catchError((_) {});
   }
 
   Future<void> _setFocusPoint(Offset point, Size previewSize) async {
@@ -566,6 +537,8 @@ class CameraPageState extends State<CameraPage> {
                               Navigator.of(context).pop(); // loading
                               Navigator.of(context).pop(); // main dialog
 
+                              if (response.success) updateHomeWidget();
+
                               if (!outerContext.mounted) return;
                               await showDialog(
                                 context: outerContext,
@@ -649,7 +622,8 @@ class CameraPageState extends State<CameraPage> {
   }
 
   Widget _buildContent(BuildContext context) {
-    final nativeOrientation = NativeDeviceOrientationReader.orientation(context);
+    final nativeOrientation =
+        NativeDeviceOrientationReader.orientation(context);
     debugPrint("Native orientation: $nativeOrientation");
 
     final isLandscape =
@@ -663,10 +637,11 @@ class CameraPageState extends State<CameraPage> {
         SystemChrome.setEnabledSystemUIMode(targetMode);
       }
     }
-    final maxPreviewHeight =
-        MediaQuery.of(context).size.height * (isLandscape ? 0.9 : 0.7);
-    final maxPreviewWidth =
-        MediaQuery.of(context).size.width * (isLandscape ? 0.85 : 0.9);
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
+    final maxPreviewHeight = screenHeight * (isLandscape ? 0.95 : 0.7);
+    final maxPreviewWidth = screenWidth * (isLandscape ? 0.7 : 0.95);
+
     // The camera sensor reports a landscape aspect ratio regardless of device
     // orientation. In portrait we invert it; in landscape we use it as-is.
     final sensorAspectRatio = (_controller?.value.previewSize != null)
@@ -724,7 +699,7 @@ class CameraPageState extends State<CameraPage> {
                               Size(previewWidth, previewHeight));
                         }
                       },
-                      onScaleStart: (_) => _baseZoom = _currentZoom,
+                      onScaleStart: (_) => _baseZoom = _zoomNotifier.value,
                       onScaleUpdate: (details) {
                         if (details.scale == 1.0) return;
                         final target = (_baseZoom * details.scale)
@@ -732,7 +707,7 @@ class CameraPageState extends State<CameraPage> {
                             .toDouble();
                         _onZoomChanged(target);
                       },
-                      onScaleEnd: (_) => _onZoomChanged(_currentZoom),
+                      onScaleEnd: (_) => _onZoomChanged(_zoomNotifier.value),
                       child: Stack(
                         children: [
                           ClipRRect(
@@ -769,32 +744,43 @@ class CameraPageState extends State<CameraPage> {
                 ),
 
                 // Zoom HUD
-                if (_currentZoom > 1.01)
-                  Positioned(
-                    top: MediaQuery.of(context).size.height * 0.15,
-                    left: MediaQuery.of(context).size.width / 2 - 30,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: Colors.black54,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        '${_currentZoom.toStringAsFixed(1)}x',
-                        style:
-                            const TextStyle(color: Colors.white, fontSize: 16),
-                      ),
-                    ),
+                Positioned(
+                  top: MediaQuery.of(context).size.height * 0.15,
+                  left: MediaQuery.of(context).size.width / 2 - 30,
+                  child: ValueListenableBuilder<double>(
+                    valueListenable: _zoomNotifier,
+                    builder: (context, zoom, _) {
+                      if (zoom <= 1.01) return const SizedBox.shrink();
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          '${zoom.toStringAsFixed(1)}x',
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 16),
+                        ),
+                      );
+                    },
                   ),
+                ),
 
                 // Nav buttons: physical top of phone
                 if (isLandscape)
                   Positioned(
-                    left: nativeOrientation == NativeDeviceOrientation.landscapeLeft ? 10 : null,
-                    right: nativeOrientation == NativeDeviceOrientation.landscapeLeft ? null : 10,
-                    top: 40,
-                    bottom: 40,
+                    left: nativeOrientation ==
+                            NativeDeviceOrientation.landscapeLeft
+                        ? 10
+                        : null,
+                    right: nativeOrientation ==
+                            NativeDeviceOrientation.landscapeLeft
+                        ? null
+                        : 10,
+                    top: 0,
+                    bottom: 0,
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
@@ -852,8 +838,14 @@ class CameraPageState extends State<CameraPage> {
                 // Shutter buttons: physical bottom of phone
                 if (isLandscape)
                   Positioned(
-                    left: nativeOrientation == NativeDeviceOrientation.landscapeLeft ? null : 10,
-                    right: nativeOrientation == NativeDeviceOrientation.landscapeLeft ? 10 : null,
+                    left: nativeOrientation ==
+                            NativeDeviceOrientation.landscapeLeft
+                        ? null
+                        : 10,
+                    right: nativeOrientation ==
+                            NativeDeviceOrientation.landscapeLeft
+                        ? 10
+                        : null,
                     top: 0,
                     bottom: 0,
                     child: Column(
@@ -894,4 +886,3 @@ class CameraPageState extends State<CameraPage> {
     );
   }
 }
-
