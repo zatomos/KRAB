@@ -17,11 +17,15 @@ class CommentsBottomSheet extends StatefulWidget {
   final String imageId;
   final String groupId;
   final String uploaderId;
+  final VoidCallback? onClose;
+  final void Function(int delta)? onCommentCountChanged;
   const CommentsBottomSheet({
     super.key,
     required this.imageId,
     required this.groupId,
     required this.uploaderId,
+    this.onClose,
+    this.onCommentCountChanged,
   });
 
   @override
@@ -35,6 +39,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
   String? _editingCommentId;
   String? _replyingToCommentId;
   String? _replyingToUsername;
+  final Map<String, Future<krab_user.User>> _userCache = {};
 
   @override
   void initState() {
@@ -94,6 +99,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
     if (response.success) {
       _newCommentController.clear();
       _cancelReply();
+      widget.onCommentCountChanged?.call(1);
       await _fetchComments(); // Refresh to get the new comment with its ID
       if (mounted) {
         showSnackBar(context.l10n.comment_added_success, color: Colors.green);
@@ -156,6 +162,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
                     setState(() => _editingCommentId = null);
                     _newCommentController.clear();
                   }
+                  widget.onCommentCountChanged?.call(-1);
                   await _fetchComments();
                   if (!mounted) return;
                   showSnackBar(
@@ -216,12 +223,15 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
         Padding(
           padding: EdgeInsets.only(left: effectiveDepth * 24.0),
           child: FutureBuilder<krab_user.User>(
-            future: getUserDetails(comment.userId).then((response) {
-              if (response.success && response.data != null) {
-                return response.data!;
-              }
-              return krab_user.User(id: comment.userId, username: "Unknown");
-            }),
+            future: _userCache.putIfAbsent(
+              comment.userId,
+              () => getUserDetails(comment.userId).then((response) {
+                if (response.success && response.data != null) {
+                  return response.data!;
+                }
+                return krab_user.User(id: comment.userId, username: "Unknown");
+              }),
+            ),
             builder: (context, snapshot) {
               final username = snapshot.data?.username ?? "...";
               final user = snapshot.data ??
@@ -333,10 +343,11 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom +
+        MediaQuery.of(context).padding.bottom;
+    return Padding(
         padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom,
+          bottom: bottomInset,
           top: 16,
           left: 16,
           right: 16,
@@ -353,7 +364,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
                         fontSize: 18, fontWeight: FontWeight.bold)),
                 IconButton(
                   icon: const Icon(Symbols.close_rounded, color: Colors.white),
-                  onPressed: () => Navigator.of(context).pop(),
+                  onPressed: widget.onClose ?? () => Navigator.of(context).pop(),
                 ),
               ],
             ),
@@ -375,6 +386,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
               Flexible(
                 child: ListView.builder(
                   shrinkWrap: true,
+                  padding: const EdgeInsets.only(top: 6),
                   itemCount: _rootComments.length,
                   itemBuilder: (context, index) =>
                       _buildCommentItem(_rootComments[index]),
@@ -450,7 +462,6 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
             const SizedBox(height: 8),
           ],
         ),
-      ),
     );
   }
 }

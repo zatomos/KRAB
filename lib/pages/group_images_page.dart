@@ -1,5 +1,6 @@
 import 'dart:async';
-import 'dart:typed_data';
+import 'dart:ui' as ui;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
@@ -43,27 +44,31 @@ class GroupPageState extends State<GroupImagesPage> {
       if (widget.imageId == null) return;
 
       try {
-        final imageData = await _getImageDataFuture(widget.imageId!);
-        final commentCount = _commentCountCache[widget.imageId!] ?? 0;
-        final uploader = _userCache[imageData.uploadedBy]!;
-        final preloadedFullImage = _getOrStartFullResFuture(widget.imageId!);
-
+        final imagesResponse = await _groupImagesFuture;
         if (!mounted) return;
+        final images = imagesResponse.data ?? [];
+        final initialIndex = images.indexWhere(
+            (img) => img['id'].toString() == widget.imageId!);
+        final initialData = await _getImageDataFuture(widget.imageId!);
+        if (!mounted) return;
+        final idx = initialIndex >= 0 ? initialIndex : 0;
 
         Navigator.push(
           context,
-          MaterialPageRoute(
-            builder: (_) => FullImagePage(
-              imageId: widget.imageId!,
-              groupId: widget.group.id,
-              uploader: uploader,
-              lowResImageData: imageData,
-              commentCount: commentCount,
-              loadFullImage: () =>
-                  _getCachedImage(widget.imageId!, lowRes: false),
-              preloadedFullImage: preloadedFullImage,
-            ),
-          ),
+          _galleryRoute(_ImageGalleryPage(
+            images: images,
+            initialIndex: idx,
+            initialImageData: initialData,
+            initialUploader: _userCache[initialData.uploadedBy] ??
+                krab_user.User(id: initialData.uploadedBy, username: ''),
+            groupId: widget.group.id,
+            getImageData: _getImageDataFuture,
+            getOrStartFullResFuture: _getOrStartFullResFuture,
+            getCachedImage: _getCachedImage,
+            commentCountCache: _commentCountCache,
+            userCache: _userCache,
+            onCommentCountChanged: _onCommentCountChanged,
+          )),
         );
       } catch (err) {
         debugPrint("Failed to preload image: $err");
@@ -154,6 +159,12 @@ class GroupPageState extends State<GroupImagesPage> {
       createdAt: imageDetails['created_at'],
       description: imageDetails['description'],
     );
+  }
+
+  void _onCommentCountChanged(String imageId, int delta) {
+    setState(() {
+      _commentCountCache[imageId] = (_commentCountCache[imageId] ?? 0) + delta;
+    });
   }
 
   Future<void> _refreshGroupImages() async {
@@ -251,25 +262,23 @@ class GroupPageState extends State<GroupImagesPage> {
 
                         return GestureDetector(
                           onTap: () {
-                            final commentCount =
-                                _commentCountCache[imageId] ?? 0;
-                            final preloadedFullImage =
-                                _getOrStartFullResFuture(imageId);
-
+                            _getOrStartFullResFuture(imageId);
                             Navigator.push(
                               context,
-                              MaterialPageRoute(
-                                builder: (_) => FullImagePage(
-                                  uploader: uploader,
-                                  imageId: imageId,
-                                  groupId: widget.group.id,
-                                  lowResImageData: imageData,
-                                  commentCount: commentCount,
-                                  loadFullImage: () =>
-                                      _getCachedImage(imageId, lowRes: false),
-                                  preloadedFullImage: preloadedFullImage,
-                                ),
-                              ),
+                              _galleryRoute(_ImageGalleryPage(
+                                images: images,
+                                initialIndex: index,
+                                initialImageData: imageData,
+                                initialUploader: uploader,
+                                groupId: widget.group.id,
+                                getImageData: _getImageDataFuture,
+                                getOrStartFullResFuture:
+                                    _getOrStartFullResFuture,
+                                getCachedImage: _getCachedImage,
+                                commentCountCache: _commentCountCache,
+                                userCache: _userCache,
+                                onCommentCountChanged: _onCommentCountChanged,
+                              )),
                             );
                           },
                           child: ClipRRect(
@@ -361,6 +370,244 @@ class GroupPageState extends State<GroupImagesPage> {
                   },
                 ));
         },
+      ),
+    );
+  }
+}
+
+PageRoute<void> _galleryRoute(Widget page) => PageRouteBuilder<void>(
+      transitionDuration: const Duration(milliseconds: 280),
+      reverseTransitionDuration: const Duration(milliseconds: 280),
+      pageBuilder: (_, __, ___) => page,
+      transitionsBuilder: (_, animation, __, child) => FadeTransition(
+        opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
+        child: child,
+      ),
+    );
+
+class _ImageGalleryPage extends StatefulWidget {
+  final List<dynamic> images;
+  final int initialIndex;
+  final ImageData initialImageData;
+  final krab_user.User initialUploader;
+  final String groupId;
+  final Future<ImageData> Function(String) getImageData;
+  final Future<Uint8List?> Function(String) getOrStartFullResFuture;
+  final Future<Uint8List?> Function(String, {bool lowRes}) getCachedImage;
+  final Map<String, int> commentCountCache;
+  final Map<String, krab_user.User> userCache;
+  final void Function(String imageId, int delta)? onCommentCountChanged;
+
+  const _ImageGalleryPage({
+    required this.images,
+    required this.initialIndex,
+    required this.initialImageData,
+    required this.initialUploader,
+    required this.groupId,
+    required this.getImageData,
+    required this.getOrStartFullResFuture,
+    required this.getCachedImage,
+    required this.commentCountCache,
+    required this.userCache,
+    this.onCommentCountChanged,
+  });
+
+  @override
+  State<_ImageGalleryPage> createState() => _ImageGalleryPageState();
+}
+
+class _ImageGalleryPageState extends State<_ImageGalleryPage> {
+  late final PageController _pageController;
+  final ValueNotifier<bool> _isZoomed = ValueNotifier(false);
+  late int _currentIndex;
+  // Bytes cached here as pages load so background never needs an async lookup.
+  final Map<int, Uint8List> _pageBytes = {};
+  final ValueNotifier<int> _pointerCount = ValueNotifier(0);
+
+  @override
+  void initState() {
+    super.initState();
+    _currentIndex = widget.initialIndex;
+    _pageController = PageController(initialPage: widget.initialIndex);
+    _pageController.addListener(_onPageScroll);
+    _pageBytes[widget.initialIndex] = widget.initialImageData.imageBytes;
+  }
+
+  void _onPageScroll() {
+    final page = _pageController.page;
+    if (page == null) return;
+    final nearest = page.round();
+    if (nearest != _currentIndex) {
+      setState(() => _currentIndex = nearest);
+    }
+  }
+
+  void _cachePageBytes(int index, Uint8List bytes) {
+    if (_pageBytes.containsKey(index)) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !_pageBytes.containsKey(index)) {
+        setState(() => _pageBytes[index] = bytes);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _pageController.removeListener(_onPageScroll);
+    _pageController.dispose();
+    _isZoomed.dispose();
+    _pointerCount.dispose();
+    super.dispose();
+  }
+
+  Widget _buildPage(
+      String imageId, int index, ImageData imageData, krab_user.User uploader) {
+    _cachePageBytes(index, imageData.imageBytes);
+    return FullImagePage(
+      key: ValueKey(imageId),
+      uploader: uploader,
+      imageId: imageId,
+      groupId: widget.groupId,
+      lowResImageData: imageData,
+      commentCount: widget.commentCountCache[imageId] ?? 0,
+      loadFullImage: () => widget.getCachedImage(imageId, lowRes: false),
+      preloadedFullImage: widget.getOrStartFullResFuture(imageId),
+      zoomNotifier: _isZoomed,
+      inGallery: true,
+      onCommentCountChanged: (delta) =>
+          widget.onCommentCountChanged?.call(imageId, delta),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Listener(
+        onPointerDown: (_) => _pointerCount.value++,
+        onPointerUp: (_) =>
+            _pointerCount.value = (_pointerCount.value - 1).clamp(0, 10),
+        onPointerCancel: (_) =>
+            _pointerCount.value = (_pointerCount.value - 1).clamp(0, 10),
+        child: Stack(
+        children: [
+          Positioned.fill(
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 200),
+              child: _pageBytes.containsKey(_currentIndex)
+                  ? _GalleryBackground(
+                      key: ValueKey(_currentIndex),
+                      imageBytes: _pageBytes[_currentIndex]!,
+                    )
+                  : const SizedBox.shrink(),
+            ),
+          ),
+          Positioned.fill(
+            child: ColoredBox(color: Colors.black.withValues(alpha: 0.7)),
+          ),
+          Positioned.fill(
+            child: ListenableBuilder(
+              listenable: Listenable.merge([_isZoomed, _pointerCount]),
+              builder: (context, _) {
+                return PageView.builder(
+                  controller: _pageController,
+                  physics: (_isZoomed.value || _pointerCount.value > 1)
+                      ? const NeverScrollableScrollPhysics()
+                      : const PageScrollPhysics(),
+                  onPageChanged: (_) => _isZoomed.value = false,
+                  itemCount: widget.images.length,
+                  itemBuilder: (context, index) {
+                    final imageId = widget.images[index]['id'].toString();
+                    if (index == widget.initialIndex) {
+                      return _buildPage(
+                          imageId, index, widget.initialImageData, widget.initialUploader);
+                    }
+                    return FutureBuilder<ImageData>(
+                      future: widget.getImageData(imageId),
+                      builder: (context, snapshot) {
+                        if (!snapshot.hasData) {
+                          return const Center(
+                              child: CircularProgressIndicator());
+                        }
+                        final imageData = snapshot.data!;
+                        final uploader =
+                            widget.userCache[imageData.uploadedBy] ??
+                                krab_user.User(
+                                    id: imageData.uploadedBy, username: '');
+                        return _buildPage(imageId, index, imageData, uploader);
+                      },
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GalleryBackground extends StatefulWidget {
+  final Uint8List imageBytes;
+  const _GalleryBackground({super.key, required this.imageBytes});
+
+  @override
+  State<_GalleryBackground> createState() => _GalleryBackgroundState();
+}
+
+class _GalleryBackgroundState extends State<_GalleryBackground> {
+  Uint8List? _computedBytes;
+  bool _showComputed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _computeBlur();
+  }
+
+  Future<void> _computeBlur() async {
+    final bytes =
+        await compute(createBlurredBackgroundBytes, widget.imageBytes);
+    if (!mounted || bytes == null) return;
+    setState(() => _computedBytes = bytes);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() => _showComputed = true);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return RepaintBoundary(
+      child: Transform.scale(
+        scale: 1.2,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            ImageFiltered(
+              imageFilter: ui.ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+              child: Image.memory(
+                widget.imageBytes,
+                fit: BoxFit.cover,
+                filterQuality: FilterQuality.low,
+                gaplessPlayback: true,
+              ),
+            ),
+            if (_computedBytes != null)
+              AnimatedOpacity(
+                duration: const Duration(seconds: 1),
+                curve: Curves.easeOut,
+                opacity: _showComputed ? 1.0 : 0.0,
+                child: Image.memory(
+                  _computedBytes!,
+                  fit: BoxFit.cover,
+                  filterQuality: FilterQuality.low,
+                  gaplessPlayback: true,
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }

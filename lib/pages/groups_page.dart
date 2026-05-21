@@ -17,32 +17,18 @@ class GroupsPage extends StatefulWidget {
   GroupsPageState createState() => GroupsPageState();
 }
 
-class GroupsPageState extends State<GroupsPage> with WidgetsBindingObserver {
-  // Add a unique key that changes whenever we want to refresh
-  Key _refreshKey = UniqueKey();
+class GroupsPageState extends State<GroupsPage> {
+  late Future<SupabaseResponse<List<Group>>> _groupsFuture;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      _refreshData();
-    }
+    _groupsFuture = getUserGroups();
   }
 
   void _refreshData() {
     setState(() {
-      _refreshKey = UniqueKey();
+      _groupsFuture = getUserGroups();
     });
   }
 
@@ -103,8 +89,7 @@ class GroupsPageState extends State<GroupsPage> with WidgetsBindingObserver {
         children: [
           Expanded(
             child: FutureBuilder<SupabaseResponse<List<Group>>>(
-              key: _refreshKey, // Forces rebuild on refresh
-              future: getUserGroups(),
+              future: _groupsFuture,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
@@ -130,8 +115,6 @@ class GroupsPageState extends State<GroupsPage> with WidgetsBindingObserver {
                   itemBuilder: (context, index) {
                     return GroupCard(
                       group: groups[index],
-                      onReturn:
-                          _refreshData, // Refresh when returning from group
                     );
                   },
                 );

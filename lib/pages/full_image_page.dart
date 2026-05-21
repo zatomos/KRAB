@@ -17,7 +17,7 @@ import 'package:krab/widgets/soft_button.dart';
 import 'package:krab/widgets/user_avatar.dart';
 import 'package:krab/themes/global_theme_data.dart';
 
-Uint8List? _createBlurredBackgroundBytes(Uint8List sourceBytes) {
+Uint8List? createBlurredBackgroundBytes(Uint8List sourceBytes) {
   final decoded = img.decodeImage(sourceBytes);
   if (decoded == null) return null;
 
@@ -38,6 +38,9 @@ class FullImagePage extends StatefulWidget {
   final int commentCount;
   final Future<Uint8List?> Function() loadFullImage;
   final Future<Uint8List?>? preloadedFullImage;
+  final ValueNotifier<bool>? zoomNotifier;
+  final bool inGallery;
+  final void Function(int delta)? onCommentCountChanged;
 
   const FullImagePage({
     super.key,
@@ -48,6 +51,9 @@ class FullImagePage extends StatefulWidget {
     required this.commentCount,
     required this.loadFullImage,
     this.preloadedFullImage,
+    this.zoomNotifier,
+    this.inGallery = false,
+    this.onCommentCountChanged,
   });
 
   @override
@@ -55,7 +61,7 @@ class FullImagePage extends StatefulWidget {
 }
 
 class _FullImagePageState extends State<FullImagePage>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late Uint8List _displayedBytes;
   Uint8List? _blurredBackgroundBytes;
   // Drives a guaranteed 0->1 opacity transition for the precomputed layer.
@@ -81,11 +87,25 @@ class _FullImagePageState extends State<FullImagePage>
   bool _suspendAutoClampUntilInteraction = false;
   Size _screenSize = const Size(1, 1);
 
+  late int _commentCount;
+  late AnimationController _commentsController;
+  double _commentsDragAccum = 0.0;
+  bool _commentsOpen = false;
+  bool _commentsEverOpened = false;
+  bool _gestureInCommentZone = false;
+  double _maxSheetHeight = 0.0;
+  double _actualSheetHeight = 0.0;
+  final GlobalKey _sheetKey = GlobalKey();
+
+  double get _travelDistance =>
+      _actualSheetHeight > 0 ? _actualSheetHeight : _maxSheetHeight;
+
   String get _description => widget.lowResImageData.description ?? '';
 
   @override
   void initState() {
     super.initState();
+    _commentCount = widget.commentCount;
     _displayedBytes = widget.lowResImageData.imageBytes;
     _blurredBackgroundBytes = null;
     _showPrecomputedBlur = false;
@@ -108,6 +128,11 @@ class _FullImagePageState extends State<FullImagePage>
         }
       });
 
+    _commentsController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
+
     _transformationController.addListener(_onTransformChanged);
     _loadNaturalImageSize();
 
@@ -124,7 +149,7 @@ class _FullImagePageState extends State<FullImagePage>
           });
         }
       });
-      _prepareBlurredBackground();
+      if (!widget.inGallery) _prepareBlurredBackground();
       Future<void>.delayed(const Duration(milliseconds: 120), () {
         if (mounted) _loadFullRes();
       });
@@ -135,6 +160,7 @@ class _FullImagePageState extends State<FullImagePage>
   void didChangeDependencies() {
     super.didChangeDependencies();
     _screenSize = MediaQuery.of(context).size;
+    _maxSheetHeight = _screenSize.height * (3 / 4);
     final currentScale = _transformationController.value.getMaxScaleOnAxis();
     if (currentScale <= 1.0) {
       _applyClampNow();
@@ -146,7 +172,9 @@ class _FullImagePageState extends State<FullImagePage>
     _heroFlightTimer?.cancel();
     _transformationController.removeListener(_onTransformChanged);
     _animationController.dispose();
+    _commentsController.dispose();
     _transformationController.dispose();
+    widget.zoomNotifier?.value = false;
     super.dispose();
   }
 
@@ -245,25 +273,46 @@ class _FullImagePageState extends State<FullImagePage>
     _setTransformIfChanged(clamped, epsilon: 0.5);
   }
 
-  void _onInteractionStart(ScaleStartDetails _) {
+  void _onInteractionStart(ScaleStartDetails details) {
     _isUserInteracting = true;
     _interactionHadTransform = false;
     _suspendAutoClampUntilInteraction = false;
+    _gestureInCommentZone =
+        details.localFocalPoint.dy > _screenSize.height * 0.8;
+    if (_gestureInCommentZone && !_commentsEverOpened) {
+      setState(() => _commentsEverOpened = true);
+    }
+    // Carry over sheet position so a new gesture continues from where it is.
+    _commentsDragAccum = _commentsController.value * _travelDistance;
     if (_isZoomAnimating) {
       _animationController.stop();
       _isZoomAnimating = false;
     }
   }
 
-  void _onInteractionEnd(ScaleEndDetails _) {
+  void _onInteractionEnd(ScaleEndDetails details) {
     _isUserInteracting = false;
     if (_interactionHadTransform) {
       _applyClampNow();
       _syncDoubleTapStateFromScale();
     }
+    if (_commentsOpen) return;
+    final scale = _transformationController.value.getMaxScaleOnAxis();
+    if (scale <= 1.05) {
+      if (_commentsController.value > 0.3) {
+        _snapCommentsOpen();
+      } else if (_commentsController.value > 0) {
+        _snapCommentsClosed();
+      }
+    }
   }
 
   void _onTransformChanged() {
+    final scale = _transformationController.value.getMaxScaleOnAxis();
+    final isZoomed = scale > 1.05;
+    if (widget.zoomNotifier?.value != isZoomed) {
+      widget.zoomNotifier?.value = isZoomed;
+    }
     if (_isClamping || _isUserInteracting || _isZoomAnimating) return;
     // Let double-tap settle at its precomputed end matrix before automatic
     // clamping resumes on the next user interaction
@@ -271,12 +320,22 @@ class _FullImagePageState extends State<FullImagePage>
     _applyClampNow();
   }
 
-  void _onInteractionUpdate(ScaleUpdateDetails _) {
+  void _onInteractionUpdate(ScaleUpdateDetails details) {
     if (!_isUserInteracting || _isZoomAnimating || _isClamping) return;
     if (_screenSize.width < 2 || _screenSize.height < 2) return;
     _interactionHadTransform = true;
     _setTransformIfChanged(_clampMatrix(_transformationController.value),
         epsilon: 0.01);
+
+    if (!_commentsOpen && _maxSheetHeight > 0 && _gestureInCommentZone) {
+      final scale = _transformationController.value.getMaxScaleOnAxis();
+      if (scale <= 1.05) {
+        _commentsDragAccum =
+            (_commentsDragAccum - details.focalPointDelta.dy)
+                .clamp(0.0, _travelDistance);
+        _commentsController.value = _commentsDragAccum / _travelDistance;
+      }
+    }
   }
 
   void _setTransformIfChanged(Matrix4 next, {required double epsilon}) {
@@ -305,7 +364,7 @@ class _FullImagePageState extends State<FullImagePage>
 
   Future<void> _prepareBlurredBackground() async {
     final blurred = await compute(
-      _createBlurredBackgroundBytes,
+      createBlurredBackgroundBytes,
       widget.lowResImageData.imageBytes,
     );
     if (!mounted || blurred == null) return;
@@ -349,19 +408,30 @@ class _FullImagePageState extends State<FullImagePage>
   }
 
   void _openComments() {
-    final maxSheetHeight = MediaQuery.of(context).size.height * (3 / 4);
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (_) => ConstrainedBox(
-        constraints: BoxConstraints(maxHeight: maxSheetHeight),
-        child: CommentsBottomSheet(
-          uploaderId: widget.lowResImageData.uploadedBy,
-          imageId: widget.imageId,
-          groupId: widget.groupId,
-        ),
-      ),
-    );
+    if (_commentsOpen) return;
+    _snapCommentsOpen();
+  }
+
+  void _snapCommentsOpen() {
+    setState(() {
+      _commentsOpen = true;
+      _commentsEverOpened = true;
+    });
+    _commentsController.animateTo(1.0,
+        duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final ro = _sheetKey.currentContext?.findRenderObject() as RenderBox?;
+      if (ro != null && ro.hasSize && ro.size.height > 0) {
+        setState(() => _actualSheetHeight = ro.size.height);
+      }
+    });
+  }
+
+  void _snapCommentsClosed() {
+    setState(() => _commentsOpen = false);
+    _commentsController.animateTo(0.0,
+        duration: const Duration(milliseconds: 250), curve: Curves.easeIn);
   }
 
   void _handleDoubleTap() {
@@ -511,84 +581,95 @@ class _FullImagePageState extends State<FullImagePage>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: RepaintBoundary(
-              child: Transform.scale(
-                scale: 1.2,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    ImageFiltered(
-                      imageFilter: ImageFilter.blur(sigmaX: 28, sigmaY: 28),
-                      child: Image.memory(
-                        widget.lowResImageData.imageBytes,
-                        fit: BoxFit.cover,
-                        filterQuality: FilterQuality.low,
-                        gaplessPlayback: true,
-                      ),
-                    ),
-                    if (_blurredBackgroundBytes != null)
-                      AnimatedOpacity(
-                        duration: const Duration(seconds: 1),
-                        curve: Curves.easeOut,
-                        opacity: _showPrecomputedBlur ? 1.0 : 0.0,
-                        child: Image.memory(
-                          _blurredBackgroundBytes!,
-                          fit: BoxFit.cover,
-                          filterQuality: FilterQuality.low,
-                          gaplessPlayback: true,
+    return PopScope(
+      canPop: !_commentsOpen,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _snapCommentsClosed();
+      },
+      child: Scaffold(
+        backgroundColor:
+            widget.inGallery ? Colors.transparent : Colors.black,
+        body: Stack(
+          children: [
+            if (!widget.inGallery) ...[
+              Positioned.fill(
+                child: RepaintBoundary(
+                  child: Transform.scale(
+                    scale: 1.2,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        ImageFiltered(
+                          imageFilter:
+                              ImageFilter.blur(sigmaX: 28, sigmaY: 28),
+                          child: Image.memory(
+                            widget.lowResImageData.imageBytes,
+                            fit: BoxFit.cover,
+                            filterQuality: FilterQuality.low,
+                            gaplessPlayback: true,
+                          ),
                         ),
-                      ),
-                  ],
+                        if (_blurredBackgroundBytes != null)
+                          AnimatedOpacity(
+                            duration: const Duration(seconds: 1),
+                            curve: Curves.easeOut,
+                            opacity: _showPrecomputedBlur ? 1.0 : 0.0,
+                            child: Image.memory(
+                              _blurredBackgroundBytes!,
+                              fit: BoxFit.cover,
+                              filterQuality: FilterQuality.low,
+                              gaplessPlayback: true,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ),
 
-          Positioned.fill(
-            child: RepaintBoundary(
-              child: Container(color: Colors.black.withValues(alpha: 0.7)),
-            ),
-          ),
+              Positioned.fill(
+                child: RepaintBoundary(
+                  child:
+                      Container(color: Colors.black.withValues(alpha: 0.7)),
+                ),
+              ),
+            ],
 
-          // Main Image
-          Positioned.fill(
-            child: RepaintBoundary(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onDoubleTapDown: (d) => _doubleTapDetails = d,
-                onDoubleTap: _handleDoubleTap,
-                child: InteractiveViewer(
-                  transformationController: _transformationController,
-                  minScale: 1.0,
-                  maxScale: 10,
-                  clipBehavior: Clip.none,
-                  onInteractionStart: _onInteractionStart,
-                  onInteractionUpdate: _onInteractionUpdate,
-                  onInteractionEnd: _onInteractionEnd,
-                  child: Hero(
-                    tag: "image_${widget.imageId}",
-                    child: SizedBox(
-                      width: _screenSize.width,
-                      height: _screenSize.height,
-                      child: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 250),
-                        switchInCurve: Curves.easeOut,
-                        switchOutCurve: Curves.easeOut,
-                        transitionBuilder: (child, animation) =>
-                            FadeTransition(opacity: animation, child: child),
-                        child: Image.memory(
-                          _displayedBytes,
-                          key: ValueKey<int>(_displayedBytes.hashCode),
-                          fit: BoxFit.contain,
-                          width: _screenSize.width,
-                          height: _screenSize.height,
-                          gaplessPlayback: true,
-                          filterQuality: FilterQuality.medium,
+            // Main Image
+            Positioned.fill(
+              child: RepaintBoundary(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onDoubleTapDown: (d) => _doubleTapDetails = d,
+                  onDoubleTap: _handleDoubleTap,
+                  child: InteractiveViewer(
+                    transformationController: _transformationController,
+                    minScale: 1.0,
+                    maxScale: 10,
+                    clipBehavior: Clip.none,
+                    onInteractionStart: _onInteractionStart,
+                    onInteractionUpdate: _onInteractionUpdate,
+                    onInteractionEnd: _onInteractionEnd,
+                    child: Hero(
+                      tag: "image_${widget.imageId}",
+                      child: SizedBox(
+                        width: _screenSize.width,
+                        height: _screenSize.height,
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 250),
+                          switchInCurve: Curves.easeOut,
+                          switchOutCurve: Curves.easeOut,
+                          transitionBuilder: (child, animation) =>
+                              FadeTransition(opacity: animation, child: child),
+                          child: Image.memory(
+                            _displayedBytes,
+                            key: ValueKey<int>(_displayedBytes.hashCode),
+                            fit: BoxFit.contain,
+                            width: _screenSize.width,
+                            height: _screenSize.height,
+                            gaplessPlayback: true,
+                            filterQuality: FilterQuality.medium,
+                          ),
                         ),
                       ),
                     ),
@@ -596,27 +677,115 @@ class _FullImagePageState extends State<FullImagePage>
                 ),
               ),
             ),
-          ),
 
-          // Top Buttons
-          Positioned(
-            top: 40,
-            left: 16,
-            child: ClipOval(
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: () => Navigator.pop(context),
-                  customBorder: const CircleBorder(),
-                  child: RepaintBoundary(
+            // Top Buttons
+            Positioned(
+              top: 40,
+              left: 16,
+              child: ClipOval(
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: () => Navigator.pop(context),
+                    customBorder: const CircleBorder(),
+                    child: RepaintBoundary(
+                      child: _frostedSurface(
+                        borderRadius: BorderRadius.circular(999),
+                        tint: Colors.white.withValues(alpha: 0.15),
+                        child: const Padding(
+                          padding: EdgeInsets.all(8),
+                          child: Icon(
+                            Symbols.close_rounded,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+            Positioned(
+              top: 40,
+              right: 16,
+              child: ClipOval(
+                child: RepaintBoundary(
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(32),
+                    onTap: () async {
+                      final success = await downloadImage(
+                        _displayedBytes,
+                        widget.lowResImageData.uploadedBy,
+                        widget.lowResImageData.createdAt,
+                      );
+                      showSnackBar(
+                        success ? "Image saved!" : "Failed to save image",
+                        color: success ? Colors.green : Colors.red,
+                      );
+                    },
                     child: _frostedSurface(
                       borderRadius: BorderRadius.circular(999),
                       tint: Colors.white.withValues(alpha: 0.15),
                       child: const Padding(
                         padding: EdgeInsets.all(8),
-                        child: Icon(
-                          Symbols.close_rounded,
-                          color: Colors.white,
+                        child:
+                            Icon(Symbols.download_rounded, color: Colors.white),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+            // Image description
+            Positioned(
+              bottom: 15,
+              left: 10,
+              right: 90,
+              // Pill
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: _showFullDescriptionDialog,
+                // Background
+                child: SizedBox(
+                  height: 44,
+                  child: RepaintBoundary(
+                    child: _frostedSurface(
+                      borderRadius: BorderRadius.circular(14),
+                      tint: Colors.black.withValues(alpha: 0.35),
+                      sigma: 10,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Row(
+                          children: [
+                            UserAvatar(widget.uploader, radius: 18),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: _description.isEmpty
+                                  ? Text(
+                                      context.l10n.no_description,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: Colors.white
+                                            .withValues(alpha: 0.5),
+                                        fontSize: 14,
+                                        fontStyle: FontStyle.italic,
+                                      ),
+                                    )
+                                  : Text(
+                                      _description,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -624,110 +793,83 @@ class _FullImagePageState extends State<FullImagePage>
                 ),
               ),
             ),
-          ),
 
-          Positioned(
-            top: 40,
-            right: 16,
-            child: ClipOval(
-              child: RepaintBoundary(
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(32),
-                  onTap: () async {
-                    final success = await downloadImage(
-                      _displayedBytes,
-                      widget.lowResImageData.uploadedBy,
-                      widget.lowResImageData.createdAt,
-                    );
-                    showSnackBar(
-                      success ? "Image saved!" : "Failed to save image",
-                      color: success ? Colors.green : Colors.red,
-                    );
-                  },
-                  child: _frostedSurface(
-                    borderRadius: BorderRadius.circular(999),
-                    tint: Colors.white.withValues(alpha: 0.15),
-                    child: const Padding(
-                      padding: EdgeInsets.all(8),
-                      child:
-                          Icon(Symbols.download_rounded, color: Colors.white),
-                    ),
-                  ),
-                ),
+            // Comments button
+            Positioned(
+              bottom: 15,
+              right: 10,
+              child: SoftButton(
+                onPressed: _openComments,
+                label: _commentCount.toString(),
+                icon: Symbols.comment_rounded,
+                color: GlobalThemeData.darkColorScheme.primary,
+                opacity: 0.3,
+                blurBackground: !_heroFlightActive,
               ),
             ),
-          ),
 
-          // Image description
-          Positioned(
-            bottom: 15,
-            left: 10,
-            right: 90,
-            // Pill
-            child: InkWell(
-              borderRadius: BorderRadius.circular(14),
-              onTap: _showFullDescriptionDialog,
-              // Background
-              child: SizedBox(
-                height: 44,
-                child: RepaintBoundary(
-                  child: _frostedSurface(
-                    borderRadius: BorderRadius.circular(14),
-                    tint: Colors.black.withValues(alpha: 0.35),
-                    sigma: 10,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: Row(
-                        children: [
-                          UserAvatar(widget.uploader, radius: 18),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: _description.isEmpty
-                                ? Text(
-                                    context.l10n.no_description,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      color:
-                                          Colors.white.withValues(alpha: 0.5),
-                                      fontSize: 14,
-                                      fontStyle: FontStyle.italic,
-                                    ),
-                                  )
-                                : Text(
-                                    _description,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
+            // Comments sheet
+            if (_commentsEverOpened)
+              Positioned.fill(
+                child: AnimatedBuilder(
+                  animation: _commentsController,
+                  builder: (context, child) {
+                    final t = _commentsController.value;
+                    return Stack(
+                      children: [
+                        // Backdrop
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            ignoring: t <= 0,
+                            child: GestureDetector(
+                              onTap: _snapCommentsClosed,
+                              child: ColoredBox(
+                                color:
+                                    Colors.black.withValues(alpha: 0.5 * t),
+                              ),
+                            ),
                           ),
-                        ],
+                        ),
+                        // Sheet
+                        Align(
+                          alignment: Alignment.bottomCenter,
+                          child: IgnorePointer(
+                            ignoring: t <= 0,
+                            child: FractionalTranslation(
+                              translation: Offset(0, 1.0 - t),
+                              child: child!,
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxHeight: _maxSheetHeight),
+                    child: ClipRRect(
+                      key: _sheetKey,
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(20),
+                      ),
+                      child: Material(
+                        color: Theme.of(context).colorScheme.surface,
+                        child: CommentsBottomSheet(
+                          uploaderId: widget.lowResImageData.uploadedBy,
+                          imageId: widget.imageId,
+                          groupId: widget.groupId,
+                          onClose: _snapCommentsClosed,
+                          onCommentCountChanged: (delta) {
+                            setState(() => _commentCount += delta);
+                            widget.onCommentCountChanged?.call(delta);
+                          },
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ),
-
-          // Comments button
-          Positioned(
-            bottom: 15,
-            right: 10,
-            child: SoftButton(
-              onPressed: _openComments,
-              label: widget.commentCount.toString(),
-              icon: Symbols.comment_rounded,
-              color: GlobalThemeData.darkColorScheme.primary,
-              opacity: 0.3,
-              blurBackground: !_heroFlightActive,
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

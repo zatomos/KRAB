@@ -613,6 +613,7 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
       ),
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
+      builder: (context, child) => SafeArea(top: false, child: child!),
       home: FutureBuilder(
         future: _determineHomePage(),
         builder: (context, snapshot) {

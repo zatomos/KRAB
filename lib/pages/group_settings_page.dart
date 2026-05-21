@@ -522,9 +522,11 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                     final targetRole = member.role;
                     final itemKey = GlobalKey();
                     bool isHighlighted = false;
-                    final canManage =
-                        (currentRole == 'owner' || currentRole == 'admin') &&
-                            member.user.id != _currentUserId;
+                    final canManage = member.user.id != _currentUserId &&
+                        (currentRole == 'owner' ||
+                            (currentRole == 'admin' &&
+                                targetRole != 'admin' &&
+                                targetRole != 'owner'));
 
                     return StatefulBuilder(
                       builder: (context, setItemState) {
@@ -571,7 +573,8 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                                             },
                                           ),
                                         ),
-                                      if (targetRole == 'admin')
+                                      if (targetRole == 'admin' &&
+                                          currentRole == 'owner')
                                         PopupMenuItem(
                                           child: ListTile(
                                             leading: const Icon(Symbols

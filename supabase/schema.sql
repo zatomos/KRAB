@@ -1257,6 +1257,11 @@ BEGIN
             RETURN jsonb_build_object('success', false, 'error', 'Cannot demote the owner');
         END IF;
 
+        -- Admins cannot demote other admins
+        IF user_role = 'admin' AND target_role = 'admin' THEN
+            RETURN jsonb_build_object('success', false, 'error', 'Admins cannot demote other admins');
+        END IF;
+
         UPDATE "Members" m
         SET role = 'member'
         WHERE m.group_id = manage_member_role.group_id AND m.user_id = manage_member_role.target_user_id;
