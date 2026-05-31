@@ -138,16 +138,14 @@ class JoinGroupDialog extends StatefulWidget {
 class JoinGroupDialogState extends State<JoinGroupDialog> {
   final TextEditingController _controller = TextEditingController();
   String? error;
+  bool _loading = false;
 
   Future<void> _joinGroup() async {
-    setState(() {
-      error = null;
-    });
+    if (_loading) return;
+    setState(() { error = null; _loading = true; });
     final code = _controller.text.trim();
     if (code.length != 8) {
-      setState(() {
-        error = context.l10n.group_code_eight_chars;
-      });
+      setState(() { error = context.l10n.group_code_eight_chars; _loading = false; });
       return;
     }
     try {
@@ -155,19 +153,16 @@ class JoinGroupDialogState extends State<JoinGroupDialog> {
       if (!mounted) return;
       if (!response.success) {
         setState(() {
-          error = context.l10n
-              .group_code_invalid(response.error ?? "Unknown error");
+          error = context.l10n.group_code_invalid(response.error ?? "Unknown error");
+          _loading = false;
         });
         return;
       }
       Navigator.of(context).pop(true);
-      setState(() {});
       showSnackBar(context.l10n.group_joined_success, color: Colors.green);
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        error = e.toString();
-      });
+      setState(() { error = e.toString(); _loading = false; });
     }
   }
 
@@ -192,11 +187,14 @@ class JoinGroupDialogState extends State<JoinGroupDialog> {
           label: context.l10n.cancel,
           color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
         ),
-        SoftButton(
-          onPressed: _joinGroup,
-          label: context.l10n.join,
-          color: GlobalThemeData.darkColorScheme.primary,
-        ),
+        if (_loading)
+          const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+        else
+          SoftButton(
+            onPressed: _joinGroup,
+            label: context.l10n.join,
+            color: GlobalThemeData.darkColorScheme.primary,
+          ),
       ],
     );
   }
@@ -213,17 +211,15 @@ class CreateGroupDialog extends StatefulWidget {
 class CreateGroupDialogState extends State<CreateGroupDialog> {
   final TextEditingController _controller = TextEditingController();
   String? error;
+  bool _loading = false;
 
   Future<void> _createGroup() async {
-    setState(() {
-      error = null;
-    });
+    if (_loading) return;
+    setState(() { error = null; _loading = true; });
 
     final name = _controller.text.trim();
     if (name.isEmpty) {
-      setState(() {
-        error = context.l10n.group_name_empty_error;
-      });
+      setState(() { error = context.l10n.group_name_empty_error; _loading = false; });
       return;
     }
 
@@ -232,8 +228,8 @@ class CreateGroupDialogState extends State<CreateGroupDialog> {
       if (!mounted) return;
       if (!response.success) {
         setState(() {
-          error = context.l10n
-              .error_creating_group(response.error ?? "Unknown error");
+          error = context.l10n.error_creating_group(response.error ?? "Unknown error");
+          _loading = false;
         });
         return;
       }
@@ -242,9 +238,7 @@ class CreateGroupDialogState extends State<CreateGroupDialog> {
       showSnackBar(context.l10n.group_created_success, color: Colors.green);
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        error = e.toString();
-      });
+      setState(() { error = e.toString(); _loading = false; });
     }
   }
 
@@ -268,10 +262,14 @@ class CreateGroupDialogState extends State<CreateGroupDialog> {
           label: context.l10n.cancel,
           color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
         ),
-        SoftButton(
+        if (_loading)
+          const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+        else
+          SoftButton(
             onPressed: _createGroup,
             label: context.l10n.create,
-            color: GlobalThemeData.darkColorScheme.primary),
+            color: GlobalThemeData.darkColorScheme.primary,
+          ),
       ],
     );
   }

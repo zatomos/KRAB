@@ -96,6 +96,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
     TextEditingController controller = TextEditingController(text: _group.name);
     bool error = false;
     String errorMessage = "";
+    bool saving = false;
 
     await showDialog(
       context: context,
@@ -124,39 +125,38 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                 label: context.l10n.cancel,
                 color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
               ),
-              SoftButton(
-                onPressed: () async {
-                  final newName = controller.text.trim();
-                  if (newName.isEmpty) {
-                    setDialogState(() {
-                      error = true;
-                      errorMessage = context.l10n.group_name_empty;
-                    });
-                    return;
-                  }
+              if (saving)
+                const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+              else
+                SoftButton(
+                  onPressed: () async {
+                    if (saving) return;
+                    final newName = controller.text.trim();
+                    if (newName.isEmpty) {
+                      setDialogState(() { error = true; errorMessage = context.l10n.group_name_empty; });
+                      return;
+                    }
+                    setDialogState(() => saving = true);
 
-                  final response = await updateGroupName(_group.id, newName);
-                  if (!context.mounted || !mounted) return;
+                    final response = await updateGroupName(_group.id, newName);
+                    if (!context.mounted || !mounted) return;
 
-                  if (!response.success) {
-                    setDialogState(() {
-                      error = true;
-                      errorMessage = response.error.toString();
-                    });
-                    return;
-                  }
+                    if (!response.success) {
+                      setDialogState(() {
+                        error = true;
+                        errorMessage = response.error.toString();
+                        saving = false;
+                      });
+                      return;
+                    }
 
-                  Navigator.of(context).pop();
-                  showSnackBar(context.l10n.group_name_updated_success,
-                      color: Colors.green);
-
-                  setState(() {
-                    _group = _group.copyWith(name: newName);
-                  });
-                },
-                label: context.l10n.save,
-                color: GlobalThemeData.darkColorScheme.primary,
-              ),
+                    Navigator.of(context).pop();
+                    showSnackBar(context.l10n.group_name_updated_success, color: Colors.green);
+                    setState(() { _group = _group.copyWith(name: newName); });
+                  },
+                  label: context.l10n.save,
+                  color: GlobalThemeData.darkColorScheme.primary,
+                ),
             ],
           );
         },

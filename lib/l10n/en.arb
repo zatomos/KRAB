@@ -185,5 +185,17 @@
   "off": "Off",
   "new_image_notification": "sent a new image",
   "new_comment_on_someone_notification": "commented on {uploader_username}'s image",
-  "new_comment_on_your_image_notification": "commented on your image"
+  "new_comment_on_your_image_notification": "commented on your image",
+  "change_password": "Change password",
+  "current_password": "Current password",
+  "new_password": "New password",
+  "confirm_new_password": "Confirm new password",
+  "password_updated_success": "Password updated successfully!",
+  "forgot_password":"Forgot Password",
+  "forgot_password_question": "Forgot password?",
+  "password_email_sent": "Password reset email sent!",
+  "invalid_email_or_password": "Invalid email or password.",
+  "email_already_exists": "An account with this email already exists.",
+  "password_too_weak": "Password is too weak.",
+  "enter_email_account": "Enter your account email and we'll send you a reset link."
 }

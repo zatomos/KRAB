@@ -36,6 +36,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
   final TextEditingController _newCommentController = TextEditingController();
   List<Comment> _rootComments = [];
   bool _loading = true;
+  bool _isSending = false;
   String? _editingCommentId;
   String? _replyingToCommentId;
   String? _replyingToUsername;
@@ -87,7 +88,8 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
 
   Future<void> _postComment() async {
     final text = _newCommentController.text.trim();
-    if (text.isEmpty) return;
+    if (text.isEmpty || _isSending) return;
+    setState(() => _isSending = true);
 
     final response = await postComment(
       widget.imageId,
@@ -100,15 +102,16 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
       _newCommentController.clear();
       _cancelReply();
       widget.onCommentCountChanged?.call(1);
-      await _fetchComments(); // Refresh to get the new comment with its ID
+      await _fetchComments();
       if (mounted) {
+        setState(() => _isSending = false);
         showSnackBar(context.l10n.comment_added_success, color: Colors.green);
       }
     } else {
       if (mounted) {
+        setState(() => _isSending = false);
         showSnackBar(
-            context.l10n
-                .error_adding_comment(response.error ?? "Unknown error"),
+            context.l10n.error_adding_comment(response.error ?? "Unknown error"),
             color: Colors.red);
       }
     }
@@ -116,22 +119,23 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
 
   Future<void> _updateComment(String commentId) async {
     final text = _newCommentController.text.trim();
-    if (text.isEmpty || _editingCommentId == null) return;
+    if (text.isEmpty || _editingCommentId == null || _isSending) return;
+    setState(() => _isSending = true);
 
     final response =
         await updateComment(commentId, widget.imageId, widget.groupId, text);
     if (response.success) {
       _newCommentController.clear();
-      setState(() => _editingCommentId = null);
+      setState(() { _editingCommentId = null; _isSending = false; });
       await _fetchComments();
       if (mounted) {
         showSnackBar(context.l10n.comment_updated_success, color: Colors.green);
       }
     } else {
       if (mounted) {
+        setState(() => _isSending = false);
         showSnackBar(
-            context.l10n
-                .error_updating_comment(response.error ?? "Unknown error"),
+            context.l10n.error_updating_comment(response.error ?? "Unknown error"),
             color: Colors.red);
       }
     }
@@ -446,16 +450,22 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
                             : context.l10n.post_comment,
                   ),
                 ),
-                IconButton(
-                  onPressed: () {
-                    if (_editingCommentId != null) {
-                      _updateComment(_editingCommentId!);
-                    } else {
-                      _postComment();
-                    }
-                  },
-                  icon: const Icon(Symbols.send_rounded, color: Colors.white),
-                ),
+                _isSending
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : IconButton(
+                        onPressed: () {
+                          if (_editingCommentId != null) {
+                            _updateComment(_editingCommentId!);
+                          } else {
+                            _postComment();
+                          }
+                        },
+                        icon: const Icon(Symbols.send_rounded, color: Colors.white),
+                      ),
               ],
             ),
 

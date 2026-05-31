@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
@@ -32,9 +33,25 @@ class AccountPage extends StatefulWidget {
 class AccountPageState extends State<AccountPage> {
   final _usernameController = TextEditingController();
   final _emailController = TextEditingController();
+  final _currentPasswordController = TextEditingController();
+  final _newPasswordController = TextEditingController();
+  final _confirmNewPasswordController = TextEditingController();
   final _updateService = UpdateService();
 
   krab_user.User user = const krab_user.User(id: '', username: '');
+  String _localizeAuthError(String? error) {
+    switch (error) {
+      case 'invalid_email_or_password':
+        return context.l10n.invalid_email_or_password;
+      case 'email_already_exists':
+        return context.l10n.email_already_exists;
+      case 'password_too_weak':
+        return context.l10n.password_too_weak;
+      default:
+        return error ?? '';
+    }
+  }
+
   bool _isLoading = false;
 
   bool autoImageSave = false;
@@ -330,6 +347,161 @@ class AccountPageState extends State<AccountPage> {
     );
   }
 
+  Future<void> openChangePasswordDialog() async {
+    _currentPasswordController.clear();
+    _newPasswordController.clear();
+    _confirmNewPasswordController.clear();
+
+    await showDialog(
+      context: context,
+      builder: (dialogContext) {
+        String? dialogError;
+        bool saving = false;
+        bool showCurrent = false;
+        bool showNew = false;
+        bool showConfirm = false;
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return Dialog(
+              insetPadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(context.l10n.change_password,
+                        style: TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 16),
+                    RoundedInputField(
+                      controller: _currentPasswordController,
+                      hintText: context.l10n.current_password,
+                      obscureText: !showCurrent,
+                      icon: const Icon(Icons.lock_rounded),
+                      suffixIcon: IconButton(
+                        icon: Icon(showCurrent
+                            ? Icons.visibility_off_rounded
+                            : Icons.visibility_rounded),
+                        onPressed: () =>
+                            setDialogState(() => showCurrent = !showCurrent),
+                      ),
+                    ),
+                    AutofillGroup(
+                      onDisposeAction: AutofillContextAction.cancel,
+                      child: Column(
+                        children: [
+                          RoundedInputField(
+                            controller: _newPasswordController,
+                            hintText: context.l10n.new_password,
+                            obscureText: !showNew,
+                            icon: const Icon(Icons.key_rounded),
+                            autofillHints: const [AutofillHints.newPassword],
+                            suffixIcon: IconButton(
+                              icon: Icon(showNew
+                                  ? Icons.visibility_off_rounded
+                                  : Icons.visibility_rounded),
+                              onPressed: () =>
+                                  setDialogState(() => showNew = !showNew),
+                            ),
+                          ),
+                          RoundedInputField(
+                            controller: _confirmNewPasswordController,
+                            hintText: context.l10n.confirm_new_password,
+                            obscureText: !showConfirm,
+                            errorText: dialogError,
+                            icon: const Icon(Icons.check_rounded),
+                            autofillHints: const [AutofillHints.newPassword],
+                            suffixIcon: IconButton(
+                              icon: Icon(showConfirm
+                                  ? Icons.visibility_off_rounded
+                                  : Icons.visibility_rounded),
+                              onPressed: () => setDialogState(
+                                  () => showConfirm = !showConfirm),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        SoftButton(
+                          onPressed: () => Navigator.pop(dialogContext),
+                          label: context.l10n.cancel,
+                          color:
+                              GlobalThemeData.darkColorScheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 8),
+                        if (saving)
+                          const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        else
+                          SoftButton(
+                            label: context.l10n.save,
+                            onPressed: () async {
+                              final current = _currentPasswordController.text;
+                              final next = _newPasswordController.text;
+                              final confirm =
+                                  _confirmNewPasswordController.text;
+
+                              if (current.isEmpty ||
+                                  next.isEmpty ||
+                                  confirm.isEmpty) {
+                                setDialogState(() => dialogError =
+                                    context.l10n.fill_in_all_fields);
+                                return;
+                              }
+                              if (next != confirm) {
+                                setDialogState(() => dialogError =
+                                    context.l10n.passwords_do_not_match);
+                                return;
+                              }
+
+                              setDialogState(() {
+                                saving = true;
+                                dialogError = null;
+                              });
+                              final response =
+                                  await changePassword(current, next);
+                              if (!dialogContext.mounted) return;
+
+                              if (response.success) {
+                                TextInput.finishAutofillContext(
+                                    shouldSave: true);
+                                Navigator.pop(dialogContext);
+                                showSnackBar(
+                                    context.l10n.password_updated_success,
+                                    color: Colors.green);
+                              } else {
+                                setDialogState(() {
+                                  saving = false;
+                                  dialogError = _localizeAuthError(response.error);
+                                });
+                              }
+                            },
+                            color: GlobalThemeData.darkColorScheme.primary,
+                            icon: Icons.check_rounded,
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   Future<File?> pickCropPfp() async {
     final pfpPicked =
         await ImagePicker().pickImage(source: ImageSource.gallery);
@@ -454,7 +626,14 @@ class AccountPageState extends State<AccountPage> {
                             readOnly: true,
                           ),
                         ),
-                        const SizedBox(height: 35),
+                        const SizedBox(height: 8),
+                        ListTile(
+                          leading: const Icon(Icons.lock_rounded),
+                          title: Text(context.l10n.change_password),
+                          trailing: const Icon(Icons.chevron_right_rounded),
+                          onTap: openChangePasswordDialog,
+                        ),
+                        const SizedBox(height: 27),
                         Padding(
                           padding: const EdgeInsets.only(left: 8.0),
                           child: Text(
@@ -498,21 +677,34 @@ class AccountPageState extends State<AccountPage> {
                         ),
                         ListTile(
                           title: Text(context.l10n.widget_refresh_interval),
-                          subtitle: Text(context.l10n.widget_refresh_interval_description),
+                          subtitle: Text(
+                              context.l10n.widget_refresh_interval_description),
                           trailing: DropdownButton<int>(
                             value: _widgetRefreshInterval,
                             underline: const SizedBox.shrink(),
                             items: [
-                              DropdownMenuItem(value: 0,   child: Text(context.l10n.off)),
-                              DropdownMenuItem(value: 15,  child: Text(context.l10n.x_min(15))),
-                              DropdownMenuItem(value: 30,  child: Text(context.l10n.x_min(30))),
-                              DropdownMenuItem(value: 60,  child: Text(context.l10n.x_hour(1))),
-                              DropdownMenuItem(value: 120, child: Text(context.l10n.x_hours(2))),
-                              DropdownMenuItem(value: 360, child: Text(context.l10n.x_hours(6))),
+                              DropdownMenuItem(
+                                  value: 0, child: Text(context.l10n.off)),
+                              DropdownMenuItem(
+                                  value: 15,
+                                  child: Text(context.l10n.x_min(15))),
+                              DropdownMenuItem(
+                                  value: 30,
+                                  child: Text(context.l10n.x_min(30))),
+                              DropdownMenuItem(
+                                  value: 60,
+                                  child: Text(context.l10n.x_hour(1))),
+                              DropdownMenuItem(
+                                  value: 120,
+                                  child: Text(context.l10n.x_hours(2))),
+                              DropdownMenuItem(
+                                  value: 360,
+                                  child: Text(context.l10n.x_hours(6))),
                             ],
                             onChanged: (value) async {
                               if (value == null) return;
-                              await UserPreferences.setWidgetRefreshInterval(value);
+                              await UserPreferences.setWidgetRefreshInterval(
+                                  value);
                               await scheduleWidgetRefresh(value);
                               setState(() => _widgetRefreshInterval = value);
                             },
@@ -537,7 +729,8 @@ class AccountPageState extends State<AccountPage> {
                                 'Show notifications for widget updates and auth events'),
                             value: debugNotificationsEnabled,
                             onChanged: (value) async {
-                              await UserPreferences.setDebugNotifications(value);
+                              await UserPreferences.setDebugNotifications(
+                                  value);
                               await DebugNotifier.instance.setEnabled(value);
                               setState(() => debugNotificationsEnabled = value);
                             },
@@ -557,7 +750,7 @@ class AccountPageState extends State<AccountPage> {
                           label: context.l10n.log_out,
                           icon: Symbols.logout_rounded,
                           onPressed: _logout,
-                          backgroundColor: Colors.redAccent,
+                          backgroundColor: Colors.red,
                         ),
                       ],
                     ),
@@ -582,6 +775,9 @@ class AccountPageState extends State<AccountPage> {
   void dispose() {
     _usernameController.dispose();
     _emailController.dispose();
+    _currentPasswordController.dispose();
+    _newPasswordController.dispose();
+    _confirmNewPasswordController.dispose();
     super.dispose();
   }
 }

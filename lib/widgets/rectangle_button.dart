@@ -8,7 +8,7 @@ class RectangleButton extends StatelessWidget {
   final VoidCallback onPressed;
   final Color? backgroundColor;
   final Color textColor;
-  final double width;
+  final double? width;
   final double height;
 
   const RectangleButton({
@@ -18,42 +18,45 @@ class RectangleButton extends StatelessWidget {
     required this.onPressed,
     this.backgroundColor,
     this.textColor = Colors.white,
-    this.width = 200.0,
+    this.width,
     this.height = 50.0,
   });
 
   @override
   Widget build(BuildContext context) {
     final effectiveBackgroundColor = backgroundColor ?? GlobalThemeData.darkColorScheme.primary;
-    return SizedBox(
-      width: width,
-      height: height,
-      child: ElevatedButton(
-        onPressed: onPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: effectiveBackgroundColor,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            if (icon != null) ...[
-              Icon(icon, color: textColor),
-              const SizedBox(width: 8),
-            ],
-            Text(
-              label,
-              style: TextStyle(
-                color: textColor,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
+    final button = ElevatedButton(
+      onPressed: onPressed,
+      style: ElevatedButton.styleFrom(
+        backgroundColor: effectiveBackgroundColor,
+        minimumSize: Size(width ?? 160, height),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
         ),
       ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, color: textColor),
+            const SizedBox(width: 8),
+          ],
+          Text(
+            label,
+            style: TextStyle(
+              color: textColor,
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
     );
+
+    if (width != null) {
+      return SizedBox(width: width, height: height, child: button);
+    }
+    return SizedBox(height: height, child: button);
   }
 }

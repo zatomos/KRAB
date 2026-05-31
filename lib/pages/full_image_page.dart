@@ -680,7 +680,7 @@ class _FullImagePageState extends State<FullImagePage>
 
             // Top Buttons
             Positioned(
-              top: 40,
+              top: 60,
               left: 16,
               child: ClipOval(
                 child: Material(
@@ -697,6 +697,7 @@ class _FullImagePageState extends State<FullImagePage>
                           child: Icon(
                             Symbols.close_rounded,
                             color: Colors.white,
+                            size: 30,
                           ),
                         ),
                       ),
@@ -707,7 +708,7 @@ class _FullImagePageState extends State<FullImagePage>
             ),
 
             Positioned(
-              top: 40,
+              top: 60,
               right: 16,
               child: ClipOval(
                 child: RepaintBoundary(
@@ -730,7 +731,10 @@ class _FullImagePageState extends State<FullImagePage>
                       child: const Padding(
                         padding: EdgeInsets.all(8),
                         child:
-                            Icon(Symbols.download_rounded, color: Colors.white),
+                            Icon(Symbols.download_rounded,
+                                color: Colors.white,
+                              size: 30
+                            ),
                       ),
                     ),
                   ),

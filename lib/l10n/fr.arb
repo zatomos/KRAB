@@ -185,5 +185,17 @@
   "off": "Désactivé",
   "new_image_notification": "a envoyé une nouvelle image",
   "new_comment_on_someone_notification": "a commenté l'image de {uploader_username}",
-  "new_comment_on_your_image_notification": "a commenté votre image"
+  "new_comment_on_your_image_notification": "a commenté votre image",
+  "change_password": "Changer le mot de passe",
+  "current_password": "Mot de passe actuel",
+  "new_password": "Nouveau mot de passe",
+  "confirm_new_password": "Confirmer le nouveau mot de passe",
+  "password_updated_success": "Mot de passe mis à jour avec succès!",
+  "forgot_password":"Mot de passe oublié",
+  "forgot_password_question": "Mot de passe oublié?",
+  "password_email_sent": "Email de réinitialisation de mot de passe envoyé!",
+  "invalid_email_or_password": "Email ou mot de passe invalide.",
+  "email_already_exists": "Un compte avec cet email existe déjà.",
+  "password_too_weak": "Le mot de passe est trop faible.",
+  "enter_email_account": "Entrez l'email de votre compte et nous vous enverrons un lien de réinitialisation."
 }

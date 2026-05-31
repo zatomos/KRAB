@@ -11,7 +11,9 @@ class RoundedInputField extends StatelessWidget {
   final int? maxLength;
   final double borderRadius;
   final Icon? icon;
+  final Widget? suffixIcon;
   final EdgeInsetsGeometry contentPadding;
+  final Iterable<String>? autofillHints;
 
   const RoundedInputField({
     super.key,
@@ -23,8 +25,10 @@ class RoundedInputField extends StatelessWidget {
     this.maxLength,
     this.borderRadius = 12.0,
     this.icon,
+    this.suffixIcon,
     this.contentPadding =
         const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+    this.autofillHints,
   });
 
   @override
@@ -34,6 +38,7 @@ class RoundedInputField extends StatelessWidget {
       child: TextField(
         controller: controller,
         obscureText: obscureText,
+        autofillHints: autofillHints,
         textCapitalization: capitalizeSentences
             ? TextCapitalization.sentences
             : TextCapitalization.none,
@@ -42,6 +47,7 @@ class RoundedInputField extends StatelessWidget {
           icon: icon,
           labelText: hintText,
           errorText: errorText,
+          suffixIcon: suffixIcon,
           contentPadding: contentPadding,
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(borderRadius),

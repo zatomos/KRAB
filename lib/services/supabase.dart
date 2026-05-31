@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:krab/services/profile_picture_cache.dart';
 import 'package:krab/services/fcm_helper.dart';
 import 'package:krab/services/debug_notifier.dart';
@@ -696,7 +697,6 @@ Future<SupabaseResponse<int>> getCommentCount(
 /// Handles FCM token registration.
 Future<SupabaseResponse<void>> fcmTokenHandler({String? username}) async {
   try {
-    // Ask permission (don’t fail if denied here; you can decide policy)
     await FirebaseMessaging.instance.requestPermission();
 
     final fcmToken = await FirebaseMessaging.instance.getToken();
@@ -704,25 +704,38 @@ Future<SupabaseResponse<void>> fcmTokenHandler({String? username}) async {
       return SupabaseResponse(success: false, error: "Error getting FCM token");
     }
 
-    final user = supabase.auth.currentUser;
-    if (user == null) {
+    if (supabase.auth.currentUser == null) {
       return SupabaseResponse(success: false, error: "No authenticated user");
     }
 
-    final payload = <String, dynamic>{
-      'id': user.id,
-      'fcm_token': fcmToken,
-      if (username != null) 'username': username,
-    };
+    final response = await supabase.rpc("register_fcm_token", params: {
+      "p_fcm_token": fcmToken,
+      if (username != null) "p_username": username,
+    });
 
-    await supabase.from('Users').upsert(payload);
-
+    if (response["success"] == false) {
+      return SupabaseResponse(success: false, error: response["error"]?.toString());
+    }
     return SupabaseResponse(success: true);
   } catch (error) {
     return SupabaseResponse(
       success: false,
       error: "Error handling FCM token: $error",
     );
+  }
+}
+
+String _authError(AuthException e) {
+  switch (e.code) {
+    case 'invalid_credentials':
+      return 'invalid_email_or_password';
+    case 'user_already_exists':
+    case 'email_exists':
+      return 'email_already_exists';
+    case 'weak_password':
+      return 'password_too_weak';
+    default:
+      return e.message;
   }
 }
 
@@ -753,8 +766,10 @@ Future<SupabaseResponse<void>> registerUser(
 
     return SupabaseResponse(success: true);
   } catch (error) {
-    return SupabaseResponse(
-        success: false, error: "Error registering user: ${error.toString()}");
+    final message = error is AuthException
+        ? _authError(error)
+        : 'Error registering user: $error';
+    return SupabaseResponse(success: false, error: message);
   }
 }
 
@@ -770,7 +785,10 @@ Future<SupabaseResponse<void>> loginUser(String email, String password) async {
     await fcmTokenHandler();
     return SupabaseResponse(success: true);
   } catch (error) {
-    return SupabaseResponse(success: false, error: "Error logging in: $error");
+    final message = error is AuthException
+        ? _authError(error)
+        : 'Error logging in: $error';
+    return SupabaseResponse(success: false, error: message);
   }
 }
 
@@ -926,14 +944,36 @@ Future<SupabaseResponse<String>> getEmail() async {
   }
 }
 
+/// Change the password of the current user, verifying the current password first.
+Future<SupabaseResponse<void>> changePassword(
+    String currentPassword, String newPassword) async {
+  try {
+    final email = supabase.auth.currentUser?.email;
+    if (email == null) {
+      return SupabaseResponse(success: false, error: 'No authenticated user.');
+    }
+    await supabase.auth.signInWithPassword(email: email, password: currentPassword);
+    await supabase.auth.updateUser(UserAttributes(password: newPassword));
+    return SupabaseResponse(success: true);
+  } catch (error) {
+    final message = error is AuthException
+        ? _authError(error)
+        : 'Error changing password: $error';
+    return SupabaseResponse(success: false, error: message);
+  }
+}
+
 /// Send a password reset email.
 Future<SupabaseResponse<void>> sendPasswordResetEmail(String email) async {
   try {
-    await supabase.auth.resetPasswordForEmail(email);
+    final redirectUrl = dotenv.env['PASSWORD_RESET_URL'] ?? 'https://your-domain.com/reset-password.html';
+    await supabase.auth.resetPasswordForEmail(email, redirectTo: redirectUrl);
     return SupabaseResponse(success: true);
   } catch (error) {
-    return SupabaseResponse(
-        success: false, error: "Error sending password reset email: $error");
+    final message = error is AuthException
+        ? _authError(error)
+        : 'Error sending password reset email: $error';
+    return SupabaseResponse(success: false, error: message);
   }
 }
 

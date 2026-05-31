@@ -128,7 +128,13 @@ Future<bool> initializeSupabaseIfNeeded() async {
   }
 
   try {
-    await Supabase.initialize(url: url, anonKey: anon);
+    await Supabase.initialize(
+      url: url,
+      anonKey: anon,
+      authOptions: const FlutterAuthClientOptions(
+        authFlowType: AuthFlowType.implicit,
+      ),
+    );
     isSupabaseInitialized = true;
     debugPrint('Supabase initialized successfully');
     _supabaseInitCompleter!.complete(true);
@@ -518,6 +524,7 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
         await _handleLocalNotificationTap(pendingLocalNotificationPayload!);
         pendingLocalNotificationPayload = null;
       }
+
 
       // Show widget prompt if not first launch
       if (!UserPreferences.isFirstLaunch &&
