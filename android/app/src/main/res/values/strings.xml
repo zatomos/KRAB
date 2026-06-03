@@ -3,4 +3,30 @@
     <string name="appwidget_text">EXAMPLE</string>
     <string name="configure">Configure</string>
     <string name="add_widget">Add widget</string>
-    <string name="app_widget_description">View your friends\' pictures at a glance.</string></resources>
+    <string name="widget_single_label">Most recent image</string>
+    <string name="widget_multi_label">Recent images</string>
+    <string name="widget_single_description">View the latest photo shared by your friends at a glance.</string>
+    <string name="widget_multi_description">View the most recent photos shared by your friends in one place.</string>
+
+    <!-- Widget configure activity -->
+    <string name="widget_settings_title">Widget Settings</string>
+    <string name="widget_confirm_content_description">Confirm</string>
+
+    <string name="widget_section_style">Style</string>
+    <string name="widget_show_text_title">Text overlay</string>
+    <string name="widget_show_text_subtitle">Display sender name and description</string>
+    <string name="widget_sender_name_title">Sender name</string>
+    <string name="widget_sender_name_subtitle">Display the username of the user who sent the image</string>
+    <string name="widget_gradient_title">Gradient background</string>
+    <string name="widget_gradient_subtitle">Fade effect behind the text</string>
+    <string name="widget_pfp_title">Profile picture</string>
+    <string name="widget_pfp_subtitle">Display the sender\'s profile picture</string>
+    <string name="widget_prev_pfps_title">Profile picture on previous images</string>
+    <string name="widget_prev_pfps_subtitle">Display the senders\' profile picture on each previous image</string>
+    <string name="widget_desc_lines_title">Description lines</string>
+    <string name="widget_desc_lines_subtitle">Max lines of description shown</string>
+
+    <string name="widget_section_groups">Groups</string>
+    <string name="widget_groups_hint">Only show images from these groups. If none are selected, images from all groups are shown.</string>
+    <string name="widget_groups_empty">Open the app while signed in to load your groups.</string>
+</resources>

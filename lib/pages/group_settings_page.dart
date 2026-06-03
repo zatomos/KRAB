@@ -6,6 +6,7 @@ import 'package:image_cropper/image_cropper.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
+import 'package:krab/services/home_widget_updater.dart';
 import 'package:krab/widgets/group_avatar.dart';
 import 'package:krab/widgets/user_avatar.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
@@ -83,6 +84,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
     final response = await leaveGroup(widget.group.id);
     if (!mounted) return;
     if (response.success) {
+      cacheUserGroupsForWidget();
       showSnackBar(context.l10n.left_group_success, color: Colors.green);
       Navigator.of(context).popUntil((route) => route.isFirst);
     } else {
@@ -412,6 +414,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
       return;
     }
 
+    cacheUserGroupsForWidget();
     showSnackBar(context.l10n.group_deleted_success, color: Colors.green);
     Navigator.of(context).popUntil((r) => r.isFirst);
   }
@@ -514,8 +517,10 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                   return Center(child: Text(context.l10n.no_members));
                 }
 
-                final currentRole =
-                    members.firstWhere((m) => m.user.id == _currentUserId).role;
+                final currentRole = members
+                    .firstWhere((m) => m.user.id == _currentUserId,
+                        orElse: () => GroupMember.empty())
+                    .role;
 
                 return Column(
                   children: members.map((member) {

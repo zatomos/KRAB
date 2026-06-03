@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:krab/l10n/l10n.dart';
+import 'package:krab/services/home_widget_updater.dart';
 import 'package:krab/services/supabase.dart';
 import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/widgets/soft_button.dart';
@@ -158,6 +159,7 @@ class JoinGroupDialogState extends State<JoinGroupDialog> {
         });
         return;
       }
+      cacheUserGroupsForWidget();
       Navigator.of(context).pop(true);
       showSnackBar(context.l10n.group_joined_success, color: Colors.green);
     } catch (e) {
@@ -234,6 +236,7 @@ class CreateGroupDialogState extends State<CreateGroupDialog> {
         return;
       }
 
+      cacheUserGroupsForWidget();
       Navigator.of(context).pop(true);
       showSnackBar(context.l10n.group_created_success, color: Colors.green);
     } catch (e) {

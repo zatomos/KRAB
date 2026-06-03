@@ -31,6 +31,8 @@
         <item name="colorOnSurface">#E1E1E1</item>
         <item name="colorOnSurfaceVariant">#303030</item>
         <item name="colorOnError">#FFFFFF</item>
+        <item name="android:textColorPrimary">#E1E1E1</item>
+        <item name="android:textColorSecondary">#99E1E1E1</item>
     </style>
 
     <style name="Widget.Android.AppWidget.Container" parent="android:Widget">

@@ -113,7 +113,7 @@ class DebugNotifier {
   // --- Widget Update Events ---
 
   Future<void> notifyWidgetUpdateStarted() async {
-    await _notify('Widget', '1/7 Starting update...');
+    await _notify('Widget', '1/3 Starting update...');
   }
 
   Future<void> notifyWidgetStep(int step, int total, String message) async {
@@ -121,7 +121,7 @@ class DebugNotifier {
   }
 
   Future<void> notifyWidgetUpdateSuccess(String? imageId) async {
-    await _notify('Widget', '7/7 Done: ${imageId ?? "unknown"}');
+    await _notify('Widget', '3/3 Done: ${imageId ?? "unknown"}');
   }
 
   Future<void> notifyWidgetUpdateFailed(String reason) async {

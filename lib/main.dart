@@ -29,6 +29,7 @@ import 'package:krab/widgets/update_checker.dart';
 import 'package:krab/l10n/l10n.dart';
 import 'user_preferences.dart';
 
+
 bool isSupabaseInitialized = false;
 bool isAppInitialized = false;
 Completer<bool>? _supabaseInitCompleter;
@@ -357,6 +358,9 @@ void main() async {
       await FcmHelper.initializeAndSyncToken();
       final cache = ProfilePictureCache.of(Supabase.instance.client);
       await cache.hydrate();
+
+      // Cache groups so the widget configure screen can offer a group filter
+      await cacheUserGroupsForWidget();
 
       // Monitor auth state changes for debugging
       Supabase.instance.client.auth.onAuthStateChange.listen((data) async {

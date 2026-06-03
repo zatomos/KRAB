@@ -500,22 +500,27 @@ Future<SupabaseResponse<List<dynamic>>> getAllImages() async {
   }
 }
 
-/// Get the ID of the latest image the user has access to.
-Future<SupabaseResponse<String>> getLatestImage() async {
+/// Get the n most recent images accessible to the user, deduplicated
+/// across groups.
+/// If groupIds is provided and non-empty, only images from those groups are
+/// returned; otherwise images from all accessible groups are included.
+Future<SupabaseResponse<List<dynamic>>> getLatestImages(int count,
+    {List<String>? groupIds}) async {
   try {
-    final response = await supabase.rpc("get_latest_image");
-    if (response['success'] == false) {
-      return SupabaseResponse(
-          success: false,
-          error: "Error loading latest image: ${response['error']}");
+    final params = <String, dynamic>{"p_count": count};
+    if (groupIds != null && groupIds.isNotEmpty) {
+      params["p_group_ids"] = groupIds;
     }
-    final latestImageId = response['latest_image']['id'] as String;
-    return SupabaseResponse(success: true, data: latestImageId);
+    final response = await supabase.rpc("get_latest_images", params: params);
+    if (response['success'] == false) {
+      return SupabaseResponse(success: false, error: "Error: ${response['error']}");
+    }
+    return SupabaseResponse(success: true, data: response['images'] as List);
   } catch (error) {
-    return SupabaseResponse(
-        success: false, error: "Error loading latest image: $error");
+    return SupabaseResponse(success: false, error: "Error loading latest images: $error");
   }
 }
+
 
 /// Download an image from storage.
 Future<SupabaseResponse<Uint8List>> getImage(String imageId,
@@ -575,6 +580,21 @@ Future<SupabaseResponse<Uint8List>> getProfilePictureBytes(String userId) async 
     return SupabaseResponse(
       success: false,
       error: 'Error downloading profile picture: $error',
+    );
+  }
+}
+
+Future<SupabaseResponse<Uint8List>> getGroupIconBytes(String groupId) async {
+  try {
+    final data = await supabase.storage.from('group-icons').download(groupId);
+    if (data.isEmpty) {
+      return SupabaseResponse(success: false, error: 'Group icon is empty');
+    }
+    return SupabaseResponse(success: true, data: data);
+  } catch (error) {
+    return SupabaseResponse(
+      success: false,
+      error: 'Error downloading group icon: $error',
     );
   }
 }

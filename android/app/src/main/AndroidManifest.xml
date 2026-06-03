@@ -25,7 +25,7 @@
             android:resource="@drawable/ic_stat_krab_logo" />
         <receiver
             android:name=".HomeScreenWidget"
-            android:label="Most recent image"
+            android:label="@string/widget_single_label"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
@@ -36,6 +36,19 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/home_screen_widget_info" />
         </receiver>
+        <receiver
+            android:name=".HomeScreenWidgetMulti"
+            android:label="@string/widget_multi_label"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="fr.zatomos.krab.ACTION_IMAGE_UPDATED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/home_screen_widget_multi_info" />
+        </receiver>
+
         <receiver
             android:name=".WidgetPinnedReceiver"
             android:exported="true">

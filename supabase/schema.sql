@@ -491,6 +491,53 @@ END;$$;
 
 
 --
+-- Name: get_latest_images(integer, uuid[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.get_latest_images(p_count integer DEFAULT 1, p_group_ids text DEFAULT NULL) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$DECLARE
+  current_user_id UUID;
+  images_data JSONB;
+BEGIN
+  current_user_id := auth.uid();
+
+  IF current_user_id IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
+  END IF;
+
+  SELECT jsonb_agg(
+    jsonb_build_object(
+      'id', id,
+      'uploaded_by', uploaded_by,
+      'uploaded_at', created_at
+    )
+  )
+  FROM (
+    SELECT i.id, i.uploaded_by, i.created_at
+    FROM "Images" i
+    JOIN "ImageGroups" ig ON i.id = ig.image_id
+    JOIN "Members" m ON ig.group_id = m.group_id
+    WHERE m.user_id = current_user_id
+    AND m.role != 'banned'
+    AND (p_group_ids IS NULL OR ig.group_id::text = ANY(string_to_array(p_group_ids, ',')))
+    GROUP BY i.id, i.uploaded_by, i.created_at
+    ORDER BY i.created_at DESC
+    LIMIT p_count
+  ) AS unique_images
+  INTO images_data;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'images', COALESCE(images_data, '[]'::jsonb)
+  );
+EXCEPTION WHEN OTHERS THEN
+  RETURN jsonb_build_object('success', false, 'error', SQLERRM);
+END;$$;
+
+
+--
 -- Name: get_comment_count(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -829,58 +876,6 @@ CREATE FUNCTION public.get_image_details(image_id uuid) RETURNS TABLE(created_at
     WHERE ig.image_id = i.id
       AND m.user_id = auth.uid()
       AND m.role != 'banned'
-  );
-END;$$;
-
-
---
--- Name: get_latest_image(); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.get_latest_image() RETURNS jsonb
-    LANGUAGE plpgsql
-    SET search_path TO 'public'
-    AS $$DECLARE
-  current_user_id UUID;
-  latest_image JSONB;
-BEGIN
-  -- Get the user ID from the current request
-  current_user_id := auth.uid();
-
-  -- Check if user is authenticated
-  IF current_user_id IS NULL THEN
-    RETURN jsonb_build_object(
-      'success', false,
-      'error', 'User not authenticated'
-    );
-  END IF;
-
-  -- Get the most recent image the user has access to
-  SELECT jsonb_build_object(
-    'id', i.id,
-    'uploaded_by', i.uploaded_by,
-    'uploaded_at', i.created_at,
-    'group_id', ig.group_id
-  )
-  FROM "Images" i
-  JOIN "ImageGroups" ig ON i.id = ig.image_id
-  JOIN "Members" m ON ig.group_id = m.group_id
-  WHERE m.user_id = current_user_id
-  AND m.role != 'banned'
-  ORDER BY i.created_at DESC
-  LIMIT 1
-  INTO latest_image;
-
-  -- Return the result
-  RETURN jsonb_build_object(
-    'success', true,
-    'latest_image', COALESCE(latest_image, 'null'::jsonb)
-  );
-EXCEPTION WHEN OTHERS THEN
-  -- Handle any errors
-  RETURN jsonb_build_object(
-    'success', false,
-    'error', SQLERRM
   );
 END;$$;
 
@@ -3769,6 +3764,14 @@ GRANT ALL ON FUNCTION public.get_all_images() TO service_role;
 
 
 --
+-- Name: FUNCTION get_latest_images(p_count integer, p_group_ids uuid[]); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.get_latest_images(p_count integer, p_group_ids uuid[]) TO authenticated;
+GRANT ALL ON FUNCTION public.get_latest_images(p_count integer, p_group_ids uuid[]) TO service_role;
+
+
+--
 -- Name: FUNCTION get_comment_count(group_id uuid, image_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
@@ -3824,14 +3827,6 @@ GRANT ALL ON FUNCTION public.get_group_members_count(group_id uuid) TO service_r
 
 GRANT ALL ON FUNCTION public.get_image_details(image_id uuid) TO authenticated;
 GRANT ALL ON FUNCTION public.get_image_details(image_id uuid) TO service_role;
-
-
---
--- Name: FUNCTION get_latest_image(); Type: ACL; Schema: public; Owner: -
---
-
-GRANT ALL ON FUNCTION public.get_latest_image() TO authenticated;
-GRANT ALL ON FUNCTION public.get_latest_image() TO service_role;
 
 
 --

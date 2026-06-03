@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_single_label">Dernière image</string>
+    <string name="widget_multi_label">Images récentes</string>
+    <string name="widget_single_description">Consultez la dernière photo partagée par vos amis en un coup d\'œil.</string>
+    <string name="widget_multi_description">Affichez les photos les plus récentes partagées par vos amis en un seul endroit.</string>
+
+    <!-- Widget configure activity -->
+    <string name="widget_settings_title">Paramètres du widget</string>
+    <string name="widget_confirm_content_description">Confirmer</string>
+
+    <string name="widget_section_style">Apparence</string>
+    <string name="widget_show_text_title">Légende de l\'image</string>
+    <string name="widget_show_text_subtitle">Afficher le nom de l\'expéditeur et la description</string>
+    <string name="widget_sender_name_title">Nom de l\'expéditeur</string>
+    <string name="widget_sender_name_subtitle">Afficher le nom d\'utilisateur de la personne qui a envoyé la photo</string>
+    <string name="widget_gradient_title">Fond dégradé</string>
+    <string name="widget_gradient_subtitle">Effet de fondu derrière le texte</string>
+    <string name="widget_pfp_title">Image de profil</string>
+    <string name="widget_pfp_subtitle">Afficher l\'image de profil de l\'expéditeur</string>
+    <string name="widget_prev_pfps_title">Images de profil sur les images précédentes</string>
+    <string name="widget_prev_pfps_subtitle">Afficher l\'image de profil de chaque expéditeur sur les images précédentes</string>
+    <string name="widget_desc_lines_title">Lignes de description</string>
+    <string name="widget_desc_lines_subtitle">Nombre maximum de lignes de description affichées</string>
+
+    <string name="widget_section_groups">Groupes</string>
+    <string name="widget_groups_hint">Afficher uniquement les images de ces groupes. Si aucun n\'est sélectionné, les images de tous les groupes sont affichées.</string>
+    <string name="widget_groups_empty">Ouvrez l\'application en étant connecté pour charger vos groupes.</string>
+</resources>
