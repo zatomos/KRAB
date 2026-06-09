@@ -57,6 +57,7 @@ class AccountPageState extends State<AccountPage> {
   bool autoImageSave = false;
   bool receiveAllGroupComments = false;
   bool debugNotificationsEnabled = false;
+  bool updateNotificationsEnabled = true;
   bool _isCheckingForUpdates = false;
   bool _developerOptionsUnlocked = false;
   int _widgetRefreshInterval = 30;
@@ -95,6 +96,7 @@ class AccountPageState extends State<AccountPage> {
 
     // Check debug notifications preference
     debugNotificationsEnabled = await UserPreferences.getDebugNotifications();
+    updateNotificationsEnabled = UserPreferences.updateNotifications;
     _developerOptionsUnlocked =
         await UserPreferences.getDeveloperOptionsUnlocked();
     final interval = await UserPreferences.getWidgetRefreshInterval();
@@ -710,6 +712,19 @@ class AccountPageState extends State<AccountPage> {
                             },
                           ),
                         ),
+                        if (UpdateService().isEnabled)
+                          SwitchListTile(
+                            title: Text(context.l10n.app_update_notifications),
+                            subtitle: Text(context
+                                .l10n.app_update_notifications_description),
+                            value: updateNotificationsEnabled,
+                            onChanged: (value) async {
+                              await UserPreferences.setUpdateNotifications(
+                                  value);
+                              setState(
+                                  () => updateNotificationsEnabled = value);
+                            },
+                          ),
                         if (_developerOptionsUnlocked) ...[
                           const SizedBox(height: 35),
                           const Padding(

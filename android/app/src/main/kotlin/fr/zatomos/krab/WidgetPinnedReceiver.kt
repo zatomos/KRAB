@@ -22,8 +22,14 @@ class WidgetPinnedReceiver : BroadcastReceiver() {
         Log.d("WidgetPinnedReceiver", "Received widget pinned callback")
 
         val mgr = AppWidgetManager.getInstance(context)
-        val widget = ComponentName(context, HomeScreenWidget::class.java)
         val prefs = context.getSharedPreferences("HomeScreenWidgetPrefs", Context.MODE_PRIVATE)
+
+        // Which provider was requested (single image vs most-recent-images)
+        val multi = prefs.getBoolean("pending_multi", false)
+        val widget = if (multi)
+            ComponentName(context, HomeScreenWidgetMulti::class.java)
+        else
+            ComponentName(context, HomeScreenWidget::class.java)
 
         // Try to get widget ID from intent extras first
         var appWidgetId = intent.getIntExtra(
@@ -53,16 +59,18 @@ class WidgetPinnedReceiver : BroadcastReceiver() {
             return
         }
 
-        Log.d("WidgetPinnedReceiver", "Processing widget ID = $appWidgetId")
+        Log.d("WidgetPinnedReceiver", "Processing widget ID = $appWidgetId (multi=$multi)")
 
-        val showText = prefs.getBoolean("pending_showText", false)
+        // Register the pinned widget so the Dart updater enumerates it
+        HomeScreenWidget.addToRegistry(context, appWidgetId, multi)
 
-        // Apply showText preference
-        HomeScreenWidget.setShowTextPref(context, appWidgetId, showText)
-
-        // Update widget UI
+        // Update the matching provider's UI
         CoroutineScope(Dispatchers.IO).launch {
-            HomeScreenWidget.updateAppWidget(context, mgr, appWidgetId)
+            if (multi) {
+                HomeScreenWidgetMulti.updateAppWidget(context, mgr, appWidgetId)
+            } else {
+                HomeScreenWidget.updateAppWidget(context, mgr, appWidgetId)
+            }
         }
 
         // Notify Flutter

@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/services/supabase.dart';
+import 'package:krab/services/home_widget_updater.dart';
 import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/widgets/rounded_input_field.dart';
@@ -72,6 +75,8 @@ class LoginPageState extends State<LoginPage> {
     final response = await registerUser(username, email, password);
     if (!mounted) return;
     if (response.success) {
+      // Cache groups so the widget configure screen can offer a group filter
+      unawaited(cacheUserGroupsForWidget());
       TextInput.finishAutofillContext(shouldSave: true);
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (context) => const CameraPage()),
@@ -96,6 +101,8 @@ class LoginPageState extends State<LoginPage> {
     final response = await loginUser(email, password);
     if (!mounted) return;
     if (response.success) {
+      // Cache groups so the widget configure screen can offer a group filter
+      unawaited(cacheUserGroupsForWidget());
       TextInput.finishAutofillContext(shouldSave: true);
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (context) => const CameraPage()),

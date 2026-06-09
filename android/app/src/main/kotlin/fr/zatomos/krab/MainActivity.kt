@@ -27,8 +27,8 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "pinWidget" -> {
-                        val showText = call.argument<Boolean>("showText") ?: false
-                        handleWidgetPin(showText)
+                        val multi = call.argument<Boolean>("multi") ?: false
+                        handleWidgetPin(multi)
                         result.success(null)
                     }
                     else -> result.notImplemented()
@@ -36,15 +36,24 @@ class MainActivity : FlutterActivity() {
             }
     }
 
-    private fun handleWidgetPin(showText: Boolean) {
+    private fun handleWidgetPin(multi: Boolean) {
         val context = this
         val mgr = AppWidgetManager.getInstance(context)
-        val widget = ComponentName(context, HomeScreenWidget::class.java)
+        val widget = if (multi)
+            ComponentName(context, HomeScreenWidgetMulti::class.java)
+        else
+            ComponentName(context, HomeScreenWidget::class.java)
 
-        // Save user choice
+        // Remember which provider we requested and its existing ids, so the
+        // pinned callback can identify the newly added widget and update the
+        // matching provider
         context.getSharedPreferences("HomeScreenWidgetPrefs", MODE_PRIVATE)
             .edit()
-            .putBoolean("pending_showText", showText)
+            .putBoolean("pending_multi", multi)
+            .putStringSet(
+                "old_widget_ids",
+                mgr.getAppWidgetIds(widget).map { it.toString() }.toSet()
+            )
             .apply()
 
         // Create bundle with widget configuration

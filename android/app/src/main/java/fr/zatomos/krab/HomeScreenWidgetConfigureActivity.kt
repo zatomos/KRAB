@@ -212,10 +212,18 @@ class HomeScreenWidgetConfigureActivity : Activity() {
         }
     }
 
-    /// Persist the group selection and force the Dart updater to re-fetch
+    /// Persist the group selection and, only if it actually changed, force the
+    /// Dart updater to re-fetch
     private fun persistGroups() {
+        val data = HomeWidgetPlugin.getData(this)
+
+        val oldSet = (data.getString("widgetGroups_$widgetId", null) ?: "")
+            .split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+        val newSet = selectedGroupIds.toSet()
+        if (oldSet == newSet) return
+
         val csv = selectedGroupIds.joinToString(",")
-        val editor = HomeWidgetPlugin.getData(this).edit()
+        val editor = data.edit()
         if (csv.isEmpty()) {
             editor.remove("widgetGroups_$widgetId")
         } else {

@@ -43,7 +43,6 @@ Deno.serve(async (req) => {
         }
 
         const senderId = imageData.uploaded_by
-        const imageDescription = imageData.description ?? ''
 
         const { data: senderData, error: senderError } = await supabase
             .from('Users')
@@ -110,9 +109,6 @@ Deno.serve(async (req) => {
                                 type: 'new_image',
                                 image_id: imageId,
                                 group_id: groupId,
-                                sender_id: senderId,
-                                sender_username: senderUsername,
-                                image_description: imageDescription,
                             },
                         },
                     }),

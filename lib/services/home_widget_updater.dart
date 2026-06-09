@@ -90,8 +90,10 @@ Future<void> updateHomeWidget() async {
     }
 
     if (entries.isEmpty) {
-      debugPrint("Registry empty, skipping update.");
-      await DebugNotifier.instance.notifyWidgetStep(2, 3, "Registry empty");
+      debugPrint("Registry empty, triggering onUpdate to force syncRegistry.");
+      await DebugNotifier.instance.notifyWidgetStep(2, 3, "Registry empty, syncing");
+      await HomeWidget.updateWidget(name: "HomeScreenWidget");
+      await HomeWidget.updateWidget(name: "HomeScreenWidgetMulti");
       return;
     }
     debugPrint("Updating ${entries.length} widget(s) "
@@ -105,6 +107,7 @@ Future<void> updateHomeWidget() async {
 
     bool singleChanged = false;
     bool multiChanged = false;
+    bool anyNewImage = false;
 
     for (final entry in entries) {
       // A multi widget needs 3 images, single needs 1
@@ -123,8 +126,9 @@ Future<void> updateHomeWidget() async {
         fetchCache[cacheKey] = images;
       }
 
-      final changed = await _syncWidget(entry, images, dir);
-      if (changed) {
+      final result = await _syncWidget(entry, images, dir);
+      if (result.newImage) anyNewImage = true;
+      if (result.changed) {
         if (entry.isMulti) {
           multiChanged = true;
         } else {
@@ -134,7 +138,15 @@ Future<void> updateHomeWidget() async {
     }
 
     final anyChanged = singleChanged || multiChanged;
-    await DebugNotifier.instance.notifyWidgetStep(2, 3, anyChanged ? "New images found" : "No new images");
+    final String step2Message;
+    if (anyNewImage) {
+      step2Message = "New images found";
+    } else if (anyChanged) {
+      step2Message = "Reloaded (new group filter or repaired missing thumbnail)";
+    } else {
+      step2Message = "No new images";
+    }
+    await DebugNotifier.instance.notifyWidgetStep(2, 3, step2Message);
 
     if (singleChanged) await HomeWidget.updateWidget(name: "HomeScreenWidget");
     if (multiChanged) await HomeWidget.updateWidget(name: "HomeScreenWidgetMulti");
@@ -154,16 +166,18 @@ String _prevPath(Directory dir, int id, int i) => "${dir.path}/krab_widget_${id}
 String _pfpPath(Directory dir, int id) => "${dir.path}/krab_widget_${id}_pfp.jpg";
 String _prevPfpPath(Directory dir, int id, int i) => "${dir.path}/krab_widget_${id}_prev${i}_pfp.jpg";
 
-/// Sync a single widget instance. Returns true if anything changed
-Future<bool> _syncWidget(_WidgetEntry entry, List<dynamic> images, Directory dir) async {
-  if (images.isEmpty) return false;
+/// Sync a single widget instance.
+Future<({bool changed, bool newImage})> _syncWidget(
+    _WidgetEntry entry, List<dynamic> images, Directory dir) async {
+  if (images.isEmpty) return (changed: false, newImage: false);
 
   final id = entry.id;
   final latestId = images[0]['id']?.toString();
-  if (latestId == null) return false;
+  if (latestId == null) return (changed: false, newImage: false);
 
   final lastId = await HomeWidget.getWidgetData<String>('lastImageId_$id');
   bool changed = false;
+  bool newImage = false;
 
   if (latestId != lastId) {
     // New main image for this widget.
@@ -181,7 +195,7 @@ Future<bool> _syncWidget(_WidgetEntry entry, List<dynamic> images, Directory dir
     final bytes = imgResult.data;
     if (bytes == null) {
       debugPrint("Widget $id: main image download failed");
-      return false;
+      return (changed: false, newImage: false);
     }
     final mainPath = _mainPath(dir, id);
     await File(mainPath).writeAsBytes(bytes, flush: true);
@@ -210,6 +224,7 @@ Future<bool> _syncWidget(_WidgetEntry entry, List<dynamic> images, Directory dir
 
     await HomeWidget.saveWidgetData('lastImageId_$id', latestId);
     changed = true;
+    newImage = lastId != null;
 
     // Auto-save the original image to the gallery
     await _maybeAutoSave(latestId, bytes, uploaderName);
@@ -221,7 +236,7 @@ Future<bool> _syncWidget(_WidgetEntry entry, List<dynamic> images, Directory dir
     changed = changed || repaired;
   }
 
-  return changed;
+  return (changed: changed, newImage: newImage);
 }
 
 /// Delete prev image/pfp files for a multi widget so that we re-download them

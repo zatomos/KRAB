@@ -92,9 +92,6 @@ Deno.serve(async (req) => {
 
     console.log('Firebase access token retrieved');
 
-    const imageId = comment.image_id;
-    const groupId = comment.group_id;
-
     // Send a push notification to uploader
     if (hasUploaderToken && uploaderId !== comment.user_id) {
       console.log('Sending notification to uploader');
@@ -113,11 +110,7 @@ Deno.serve(async (req) => {
               android: { priority: 'HIGH' },
               data: {
                 type: 'new_comment',
-                image_id: imageId,
-                group_id: groupId,
-                commenter_id: comment.user_id,
-                commenter_username: commenterUsername,
-                comment_text: comment.text,
+                comment_id: comment.id,
               },
             },
           }),
@@ -175,14 +168,11 @@ Deno.serve(async (req) => {
                   message: {
                     token,
                     android: { priority: 'HIGH' },
+                    // UUID-only payload: comment_id alone; the client resolves
+                    // group/image/commenter and all text by id.
                     data: {
                       type: 'group_comment',
-                      image_id: imageId,
-                      group_id: groupId,
-                      commenter_id: comment.user_id,
-                      commenter_username: commenterUsername,
-                      comment_text: comment.text,
-                      uploader_username: uploaderData?.username ?? '',
+                      comment_id: comment.id,
                     },
                   },
                 }),

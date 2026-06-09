@@ -377,33 +377,6 @@ END;$$;
 -- Name: edit_username(text); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.register_fcm_token(p_fcm_token text, p_username text DEFAULT NULL) RETURNS jsonb
-    LANGUAGE plpgsql
-    SECURITY DEFINER
-    SET search_path TO 'public'
-    AS $$
-BEGIN
-  IF auth.uid() IS NULL THEN
-    RETURN jsonb_build_object('success', false, 'error', 'Not authenticated');
-  END IF;
-
-  INSERT INTO public."Users" (id, fcm_token, username)
-  VALUES (auth.uid(), p_fcm_token, COALESCE(p_username, ''))
-  ON CONFLICT (id) DO UPDATE
-    SET fcm_token = EXCLUDED.fcm_token,
-        username = CASE WHEN p_username IS NOT NULL THEN EXCLUDED.username ELSE "Users".username END;
-
-  RETURN jsonb_build_object('success', true);
-EXCEPTION WHEN OTHERS THEN
-  RETURN jsonb_build_object('success', false, 'error', SQLERRM);
-END;
-$$;
-
-
---
--- Name: edit_username(text); Type: FUNCTION; Schema: public; Owner: -
---
-
 CREATE FUNCTION public.edit_username(new_username text) RETURNS void
     LANGUAGE plpgsql
     SET search_path TO 'public'
@@ -491,53 +464,6 @@ END;$$;
 
 
 --
--- Name: get_latest_images(integer, uuid[]); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.get_latest_images(p_count integer DEFAULT 1, p_group_ids text DEFAULT NULL) RETURNS jsonb
-    LANGUAGE plpgsql
-    SET search_path TO 'public'
-    AS $$DECLARE
-  current_user_id UUID;
-  images_data JSONB;
-BEGIN
-  current_user_id := auth.uid();
-
-  IF current_user_id IS NULL THEN
-    RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
-  END IF;
-
-  SELECT jsonb_agg(
-    jsonb_build_object(
-      'id', id,
-      'uploaded_by', uploaded_by,
-      'uploaded_at', created_at
-    )
-  )
-  FROM (
-    SELECT i.id, i.uploaded_by, i.created_at
-    FROM "Images" i
-    JOIN "ImageGroups" ig ON i.id = ig.image_id
-    JOIN "Members" m ON ig.group_id = m.group_id
-    WHERE m.user_id = current_user_id
-    AND m.role != 'banned'
-    AND (p_group_ids IS NULL OR ig.group_id::text = ANY(string_to_array(p_group_ids, ',')))
-    GROUP BY i.id, i.uploaded_by, i.created_at
-    ORDER BY i.created_at DESC
-    LIMIT p_count
-  ) AS unique_images
-  INTO images_data;
-
-  RETURN jsonb_build_object(
-    'success', true,
-    'images', COALESCE(images_data, '[]'::jsonb)
-  );
-EXCEPTION WHEN OTHERS THEN
-  RETURN jsonb_build_object('success', false, 'error', SQLERRM);
-END;$$;
-
-
---
 -- Name: get_comment_count(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -599,6 +525,65 @@ EXCEPTION
             'success', false,
             'error', SQLERRM
         );
+END;
+$$;
+
+
+--
+-- Name: get_comment_notification(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.get_comment_notification(p_comment_id uuid) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  uid UUID;
+  r RECORD;
+BEGIN
+  uid := auth.uid();
+  IF uid IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
+  END IF;
+
+  SELECT c.group_id    AS group_id,
+         c.image_id    AS image_id,
+         g.name        AS group_name,
+         c.user_id     AS commenter_id,
+         cu.username   AS commenter_username,
+         c.text        AS comment_text,
+         i.uploaded_by AS uploader_id,
+         uu.username   AS uploader_username
+  INTO r
+  FROM "Comments" c
+  JOIN "Groups" g      ON g.id = c.group_id
+  JOIN "Images" i      ON i.id = c.image_id
+  LEFT JOIN "Users" cu ON cu.id = c.user_id
+  LEFT JOIN "Users" uu ON uu.id = i.uploaded_by
+  WHERE c.id = p_comment_id
+    AND EXISTS (
+      SELECT 1 FROM "Members" m
+      WHERE m.group_id = c.group_id AND m.user_id = uid AND m.role != 'banned'
+    );
+
+  IF r IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Not found or not a member');
+  END IF;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'group_id', r.group_id,
+    'image_id', r.image_id,
+    'group_name', r.group_name,
+    'commenter_id', r.commenter_id,
+    'commenter_username', COALESCE(r.commenter_username, ''),
+    'comment_text', COALESCE(r.comment_text, ''),
+    'uploader_id', r.uploader_id,
+    'uploader_username', COALESCE(r.uploader_username, '')
+  );
+EXCEPTION
+  WHEN OTHERS THEN
+    RETURN jsonb_build_object('success', false, 'error', SQLERRM);
 END;
 $$;
 
@@ -878,6 +863,157 @@ CREATE FUNCTION public.get_image_details(image_id uuid) RETURNS TABLE(created_at
       AND m.role != 'banned'
   );
 END;$$;
+
+
+--
+-- Name: get_image_notification(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.get_image_notification(p_image_id uuid, p_group_id uuid) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  uid UUID;
+  r RECORD;
+BEGIN
+  uid := auth.uid();
+  IF uid IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
+  END IF;
+
+  SELECT g.name        AS group_name,
+         i.uploaded_by AS sender_id,
+         u.username    AS sender_username,
+         i.description AS description
+  INTO r
+  FROM "Groups" g
+  JOIN "ImageGroups" ig ON ig.group_id = g.id AND ig.image_id = p_image_id
+  JOIN "Images" i       ON i.id = p_image_id
+  LEFT JOIN "Users" u   ON u.id = i.uploaded_by
+  WHERE g.id = p_group_id
+    AND EXISTS (
+      SELECT 1 FROM "Members" m
+      WHERE m.group_id = g.id AND m.user_id = uid AND m.role != 'banned'
+    );
+
+  IF r IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Not found or not a member');
+  END IF;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'group_name', r.group_name,
+    'sender_id', r.sender_id,
+    'sender_username', COALESCE(r.sender_username, ''),
+    'description', COALESCE(r.description, '')
+  );
+EXCEPTION
+  WHEN OTHERS THEN
+    RETURN jsonb_build_object('success', false, 'error', SQLERRM);
+END;
+$$;
+
+
+--
+-- Name: get_latest_image(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.get_latest_image() RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$DECLARE
+  current_user_id UUID;
+  latest_image JSONB;
+BEGIN
+  -- Get the user ID from the current request
+  current_user_id := auth.uid();
+
+  -- Check if user is authenticated
+  IF current_user_id IS NULL THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'User not authenticated'
+    );
+  END IF;
+
+  -- Get the most recent image the user has access to
+  SELECT jsonb_build_object(
+    'id', i.id,
+    'uploaded_by', i.uploaded_by,
+    'uploaded_at', i.created_at,
+    'group_id', ig.group_id
+  )
+  FROM "Images" i
+  JOIN "ImageGroups" ig ON i.id = ig.image_id
+  JOIN "Members" m ON ig.group_id = m.group_id
+  WHERE m.user_id = current_user_id
+  AND m.role != 'banned'
+  ORDER BY i.created_at DESC
+  LIMIT 1
+  INTO latest_image;
+
+  -- Return the result
+  RETURN jsonb_build_object(
+    'success', true,
+    'latest_image', COALESCE(latest_image, 'null'::jsonb)
+  );
+EXCEPTION WHEN OTHERS THEN
+  -- Handle any errors
+  RETURN jsonb_build_object(
+    'success', false,
+    'error', SQLERRM
+  );
+END;$$;
+
+
+--
+-- Name: get_latest_images(integer, text[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.get_latest_images(p_count integer DEFAULT 1, p_group_ids text[] DEFAULT NULL::text[]) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  current_user_id UUID;
+  images_data JSONB;
+BEGIN
+  current_user_id := auth.uid();
+
+  IF current_user_id IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
+  END IF;
+
+  SELECT jsonb_agg(
+    jsonb_build_object(
+      'id', id,
+      'uploaded_by', uploaded_by,
+      'uploaded_at', created_at
+    )
+  )
+  FROM (
+    SELECT i.id, i.uploaded_by, i.created_at
+    FROM "Images" i
+    JOIN "ImageGroups" ig ON i.id = ig.image_id
+    JOIN "Members" m ON ig.group_id = m.group_id
+    WHERE m.user_id = current_user_id
+    AND m.role != 'banned'
+    AND (p_group_ids IS NULL OR ig.group_id = ANY(p_group_ids::uuid[]))
+    GROUP BY i.id, i.uploaded_by, i.created_at
+    ORDER BY i.created_at DESC
+    LIMIT p_count
+  ) AS unique_images
+  INTO images_data;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'images', COALESCE(images_data, '[]'::jsonb)
+  );
+EXCEPTION WHEN OTHERS THEN
+  RETURN jsonb_build_object('success', false, 'error', SQLERRM);
+END;
+$$;
 
 
 --
@@ -1288,6 +1424,30 @@ BEGIN
     END IF;
 
     RETURN jsonb_build_object('success', false, 'error', 'Unknown error');
+END;$$;
+
+
+--
+-- Name: register_fcm_token(text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.register_fcm_token(p_fcm_token text, p_username text DEFAULT NULL::text) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$BEGIN
+  IF auth.uid() IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Not authenticated');
+  END IF;
+
+  INSERT INTO public."Users" (id, fcm_token, username)
+  VALUES (auth.uid(), p_fcm_token, COALESCE(p_username, ''))
+  ON CONFLICT (id) DO UPDATE
+    SET fcm_token = EXCLUDED.fcm_token,
+        username = CASE WHEN p_username IS NOT NULL THEN EXCLUDED.username ELSE "Users".username END;
+
+  RETURN jsonb_build_object('success', true);
+EXCEPTION WHEN OTHERS THEN
+  RETURN jsonb_build_object('success', false, 'error', SQLERRM);
 END;$$;
 
 
@@ -3743,13 +3903,6 @@ GRANT ALL ON FUNCTION public.delete_image(image_id uuid) TO service_role;
 -- Name: FUNCTION edit_username(new_username text); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.register_fcm_token(p_fcm_token text, p_username text) TO postgres;
-GRANT ALL ON FUNCTION public.register_fcm_token(p_fcm_token text, p_username text) TO authenticated;
-GRANT ALL ON FUNCTION public.register_fcm_token(p_fcm_token text, p_username text) TO service_role;
-
-
---
-
 GRANT ALL ON FUNCTION public.edit_username(new_username text) TO postgres;
 GRANT ALL ON FUNCTION public.edit_username(new_username text) TO authenticated;
 GRANT ALL ON FUNCTION public.edit_username(new_username text) TO service_role;
@@ -3764,19 +3917,21 @@ GRANT ALL ON FUNCTION public.get_all_images() TO service_role;
 
 
 --
--- Name: FUNCTION get_latest_images(p_count integer, p_group_ids uuid[]); Type: ACL; Schema: public; Owner: -
---
-
-GRANT ALL ON FUNCTION public.get_latest_images(p_count integer, p_group_ids uuid[]) TO authenticated;
-GRANT ALL ON FUNCTION public.get_latest_images(p_count integer, p_group_ids uuid[]) TO service_role;
-
-
---
 -- Name: FUNCTION get_comment_count(group_id uuid, image_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
 GRANT ALL ON FUNCTION public.get_comment_count(group_id uuid, image_id uuid) TO authenticated;
 GRANT ALL ON FUNCTION public.get_comment_count(group_id uuid, image_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION get_comment_notification(p_comment_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.get_comment_notification(p_comment_id uuid) TO postgres;
+GRANT ALL ON FUNCTION public.get_comment_notification(p_comment_id uuid) TO anon;
+GRANT ALL ON FUNCTION public.get_comment_notification(p_comment_id uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.get_comment_notification(p_comment_id uuid) TO service_role;
 
 
 --
@@ -3827,6 +3982,34 @@ GRANT ALL ON FUNCTION public.get_group_members_count(group_id uuid) TO service_r
 
 GRANT ALL ON FUNCTION public.get_image_details(image_id uuid) TO authenticated;
 GRANT ALL ON FUNCTION public.get_image_details(image_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION get_image_notification(p_image_id uuid, p_group_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.get_image_notification(p_image_id uuid, p_group_id uuid) TO postgres;
+GRANT ALL ON FUNCTION public.get_image_notification(p_image_id uuid, p_group_id uuid) TO anon;
+GRANT ALL ON FUNCTION public.get_image_notification(p_image_id uuid, p_group_id uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.get_image_notification(p_image_id uuid, p_group_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION get_latest_image(); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.get_latest_image() TO authenticated;
+GRANT ALL ON FUNCTION public.get_latest_image() TO service_role;
+
+
+--
+-- Name: FUNCTION get_latest_images(p_count integer, p_group_ids text[]); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.get_latest_images(p_count integer, p_group_ids text[]) TO postgres;
+GRANT ALL ON FUNCTION public.get_latest_images(p_count integer, p_group_ids text[]) TO anon;
+GRANT ALL ON FUNCTION public.get_latest_images(p_count integer, p_group_ids text[]) TO authenticated;
+GRANT ALL ON FUNCTION public.get_latest_images(p_count integer, p_group_ids text[]) TO service_role;
 
 
 --
@@ -3894,6 +4077,16 @@ GRANT ALL ON FUNCTION public.leave_group(group_id uuid) TO service_role;
 GRANT ALL ON FUNCTION public.manage_member_role(group_id uuid, target_user_id uuid, action text) TO postgres;
 GRANT ALL ON FUNCTION public.manage_member_role(group_id uuid, target_user_id uuid, action text) TO authenticated;
 GRANT ALL ON FUNCTION public.manage_member_role(group_id uuid, target_user_id uuid, action text) TO service_role;
+
+
+--
+-- Name: FUNCTION register_fcm_token(p_fcm_token text, p_username text); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.register_fcm_token(p_fcm_token text, p_username text) TO postgres;
+GRANT ALL ON FUNCTION public.register_fcm_token(p_fcm_token text, p_username text) TO anon;
+GRANT ALL ON FUNCTION public.register_fcm_token(p_fcm_token text, p_username text) TO authenticated;
+GRANT ALL ON FUNCTION public.register_fcm_token(p_fcm_token text, p_username text) TO service_role;
 
 
 --

@@ -109,19 +109,19 @@ class HomeWidgetStatus {
       return;
     }
 
-    final showText = await showDialog<bool>(
+    final isMulti = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: Text(context.l10n.widget_configuration),
         content: Text(context.l10n.widget_configuration_desc),
         actions: [
           SoftButton(
-            label: context.l10n.image_only,
+            label: context.l10n.widget_single_image,
             color: GlobalThemeData.darkColorScheme.primary,
             onPressed: () => Navigator.pop(dialogContext, false),
           ),
           SoftButton(
-            label: context.l10n.image_with_description,
+            label: context.l10n.widget_most_recent,
             color: GlobalThemeData.darkColorScheme.primary,
             onPressed: () => Navigator.pop(dialogContext, true),
           ),
@@ -129,18 +129,19 @@ class HomeWidgetStatus {
       ),
     );
 
-    if (showText == null) return;
+    if (isMulti == null) return;
 
-    await requestWidgetPin(showText);
+    await requestWidgetPin(isMulti);
   }
 
-  // Trigger the pin request
-  Future<void> requestWidgetPin(bool showText) async {
+  // Trigger the pin request for the chosen widget type
+  // false: single image, true = multi
+  Future<void> requestWidgetPin(bool multi) async {
     if (!Platform.isAndroid) return;
 
     try {
       await _pinChannel.invokeMethod("pinWidget", {
-        "showText": showText,
+        "multi": multi,
       });
     } catch (e) {
       debugPrint("Error pinning widget: $e");

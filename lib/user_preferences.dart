@@ -15,6 +15,7 @@ class UserPreferences {
   static late bool debugNotifications;
   static late bool developerOptionsUnlocked;
   static late int widgetRefreshIntervalMinutes;
+  static late bool updateNotifications;
 
   Future<void> initPrefs() async {
     _preferences = await SharedPreferences.getInstance();
@@ -30,6 +31,7 @@ class UserPreferences {
         _preferences?.getBool('developerOptionsUnlocked') ?? false;
     widgetRefreshIntervalMinutes =
         _preferences?.getInt('widgetRefreshIntervalMinutes') ?? 30;
+    updateNotifications = _preferences?.getBool('updateNotifications') ?? true;
   }
 
   static Future<int> getWidgetBitmapLimit() async {
@@ -119,5 +121,21 @@ class UserPreferences {
 
   static Future<void> setLastWidgetImageId(String id) async {
     await _preferences?.setString('lastWidgetImageId', id);
+  }
+
+  // ---- App-update notifications ----------------------------------------
+
+  static Future<void> setUpdateNotifications(bool value) async {
+    await _preferences?.setBool('updateNotifications', value);
+    updateNotifications = value;
+  }
+
+  /// Epoch ms of the last background update check.
+  static int getLastUpdateCheckMillis() {
+    return _preferences?.getInt('lastUpdateCheckMillis') ?? 0;
+  }
+
+  static Future<void> setLastUpdateCheckMillis(int millis) async {
+    await _preferences?.setInt('lastUpdateCheckMillis', millis);
   }
 }

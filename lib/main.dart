@@ -1,7 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:isolate';
-import 'dart:ui' show IsolateNameServer;
 import 'firebase_options.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -12,10 +10,12 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'package:krab/services/supabase.dart';
+import 'package:krab/services/background_session.dart';
 import 'package:krab/services/fcm_helper.dart';
 import 'package:krab/services/home_widget_updater.dart';
 import 'package:krab/services/home_widget_status.dart';
 import 'package:krab/services/notification_channels.dart';
+import 'package:krab/services/update_service.dart';
 import 'package:workmanager/workmanager.dart';
 import 'package:krab/services/profile_picture_cache.dart';
 import 'package:krab/services/debug_notifier.dart';
@@ -25,6 +25,7 @@ import 'package:krab/pages/camera_page.dart';
 import 'package:krab/pages/group_images_page.dart';
 import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
+import 'package:krab/widgets/reauth_prompt.dart';
 import 'package:krab/widgets/update_checker.dart';
 import 'package:krab/l10n/l10n.dart';
 import 'user_preferences.dart';
@@ -33,19 +34,6 @@ import 'user_preferences.dart';
 bool isSupabaseInitialized = false;
 bool isAppInitialized = false;
 Completer<bool>? _supabaseInitCompleter;
-
-// Port name used by the background FCM handler to signal the main isolate
-// that its Supabase work is complete.
-const String _backgroundPortName = 'krab_bg_done';
-
-// True while a signedOut event has occurred and session recovery is still
-// pending confirmation.
-bool pendingUnexpectedSignOut = false;
-
-// Latest refresh token received from the background isolate. Kept as a backup
-// so that if the main isolate's JWT expires after the port signal was already
-// processed, the signedOut handler can still recover using this token.
-String? backupRefreshToken;
 
 final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey =
     GlobalKey<ScaffoldMessengerState>();
@@ -149,6 +137,37 @@ Future<bool> initializeSupabaseIfNeeded() async {
   }
 }
 
+/// Initialize Supabase for a background isolate
+Future<bool> initializeBackgroundSupabase(LocalStorage storage) async {
+  if (isSupabaseInitialized) return true;
+
+  final url = UserPreferences.supabaseUrl;
+  final anon = UserPreferences.supabaseAnonKey;
+
+  if (url.isEmpty || anon.isEmpty) {
+    debugPrint('Background Supabase config missing, cannot initialize.');
+    return false;
+  }
+
+  try {
+    await Supabase.initialize(
+      url: url,
+      anonKey: anon,
+      authOptions: FlutterAuthClientOptions(
+        authFlowType: AuthFlowType.implicit,
+        localStorage: storage,
+      ),
+    );
+    isSupabaseInitialized = true;
+    debugPrint('Background Supabase initialized (isolated session)');
+    return true;
+  } catch (e) {
+    debugPrint('Background Supabase init failed: $e');
+    isSupabaseInitialized = false;
+    return false;
+  }
+}
+
 @pragma('vm:entry-point')
 void workmanagerCallbackDispatcher() {
   Workmanager().executeTask((taskName, inputData) async {
@@ -159,10 +178,19 @@ void workmanagerCallbackDispatcher() {
       await UserPreferences().initPrefs();
       await DebugNotifier.instance.initialize();
 
-      final supabaseOk = await initializeSupabaseIfNeeded();
+      // Piggyback a throttled app-update check on this wakeup
+      await UpdateService.maybeCheckAndNotifyUpdate();
+
+      // This isolate owns its own background session and refreshes it itself
+      final supabaseOk =
+          await initializeBackgroundSupabase(BackgroundSession.workmanagerStorage);
       if (!supabaseOk) {
         debugPrint('WorkManager: Supabase init failed, skipping widget update');
         return Future.value(false);
+      }
+      if (!await BackgroundSession.recoverOrClear(
+          BackgroundSession.workmanagerStorage)) {
+        return Future.value(true);
       }
 
       await updateHomeWidget();
@@ -200,11 +228,18 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     await DebugNotifier.instance.initialize();
     await DebugNotifier.instance.notifyBackgroundTaskStarted();
 
-    final supabaseOk = await initializeSupabaseIfNeeded();
+    final supabaseOk =
+        await initializeBackgroundSupabase(BackgroundSession.fcmStorage);
     if (!supabaseOk) {
       debugPrint('Supabase not initialized (background)');
       await DebugNotifier.instance
           .notifySupabaseInitFailed('Background: Supabase init failed');
+      return;
+    }
+
+    if (!await BackgroundSession.recoverOrClear(BackgroundSession.fcmStorage)) {
+      await DebugNotifier.instance.notifyBackgroundTaskFailed(
+          'Background session expired, reopen the app to re-authenticate');
       return;
     }
 
@@ -221,16 +256,6 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     debugPrint('Error in background handler: $e');
     debugPrint(st.toString());
     await DebugNotifier.instance.notifyBackgroundTaskFailed('$e');
-  } finally {
-    // Send the background isolate's current refresh token to the main isolate.
-    String? refreshToken;
-    try {
-      if (isSupabaseInitialized) {
-        refreshToken =
-            Supabase.instance.client.auth.currentSession?.refreshToken;
-      }
-    } catch (_) {}
-    IsolateNameServer.lookupPortByName(_backgroundPortName)?.send(refreshToken);
   }
 }
 
@@ -362,91 +387,30 @@ void main() async {
       // Cache groups so the widget configure screen can offer a group filter
       await cacheUserGroupsForWidget();
 
-      // Monitor auth state changes for debugging
+      // Monitor auth state changes
       Supabase.instance.client.auth.onAuthStateChange.listen((data) async {
         final event = data.event;
         debugPrint('Auth state changed: $event');
 
-        if (event == AuthChangeEvent.signedOut) {
-          if (DebugNotifier.instance.isIntentionalLogout) {
-            backupRefreshToken = null;
-            await DebugNotifier.instance.notifyAuthSignedOut(unexpected: false);
-            return;
-          }
-          // Unexpected signout -> navigate to login immediately.
-          // If backup recovery succeeds below, the tokenRefreshed handler will
-          // navigate back to the app.
-          pendingUnexpectedSignOut = true;
-          navigatorKey.currentState?.pushAndRemoveUntil(
-            MaterialPageRoute(builder: (_) => const LoginPage()),
-            (route) => false,
-          );
-          // Try the backup token saved from the most recent background
-          // port signal. On success, tokenRefreshed fires and handles navigation.
-          final backup = backupRefreshToken;
-          backupRefreshToken = null;
-          if (backup != null) {
-            try {
-              await Supabase.instance.client.auth.refreshSession(backup);
-              debugPrint('Auth recovered using backup token from background isolate');
-              await DebugNotifier.instance.notifyAuthStateChanged('Reconnected');
-            } catch (e) {
-              debugPrint('Backup token recovery failed [${e.runtimeType}]: $e');
+        switch (event) {
+          case AuthChangeEvent.signedOut:
+            if (DebugNotifier.instance.isIntentionalLogout) {
+              await DebugNotifier.instance
+                  .notifyAuthSignedOut(unexpected: false);
+            } else {
+              await DebugNotifier.instance.notifyAuthSignedOut();
+              navigatorKey.currentState?.pushAndRemoveUntil(
+                MaterialPageRoute(builder: (_) => const LoginPage()),
+                (route) => false,
+              );
             }
-          }
-        } else if (event == AuthChangeEvent.signedIn) {
-          pendingUnexpectedSignOut = false;
-          await DebugNotifier.instance.notifyAuthStateChanged(event.name);
-        } else if (event == AuthChangeEvent.tokenRefreshed) {
-          final wasUnexpectedlyLoggedOut = pendingUnexpectedSignOut;
-          pendingUnexpectedSignOut = false;
-          backupRefreshToken = null;
-          await DebugNotifier.instance.notifyAuthTokenRefreshed();
-          if (wasUnexpectedlyLoggedOut) {
-            // Session silently recovered — navigate back to the app.
-            navigatorKey.currentState?.pushAndRemoveUntil(
-              MaterialPageRoute(builder: (_) => const CameraPage()),
-              (route) => false,
-            );
-          }
-        } else {
-          await DebugNotifier.instance.notifyAuthStateChanged(event.name);
+            break;
+          case AuthChangeEvent.tokenRefreshed:
+            await DebugNotifier.instance.notifyAuthTokenRefreshed();
+            break;
+          default:
+            await DebugNotifier.instance.notifyAuthStateChanged(event.name);
         }
-      });
-
-      // When the background FCM handler rotates the Supabase refresh token,
-      // signals this port so the main isolate can restore the session.
-      final bgPort = ReceivePort();
-      IsolateNameServer.removePortNameMapping(_backgroundPortName);
-      IsolateNameServer.registerPortWithName(bgPort.sendPort, _backgroundPortName);
-      bgPort.listen((dynamic data) {
-        if (!isSupabaseInitialized) return;
-        final refreshToken = data as String?;
-        // Always persist the latest token as a backup. Even if the session is
-        // currently valid, the main isolate's in-memory token may be stale and
-        // could trigger signedOut later when the JWT expires.
-        if (refreshToken != null) {
-          backupRefreshToken = refreshToken;
-        }
-        if (Supabase.instance.client.auth.currentSession != null) return;
-        // Session is already gone: recover immediately
-        Supabase.instance.client.auth.refreshSession(refreshToken).then((_) {
-          backupRefreshToken = null;
-          debugPrint('Session restored after background handler signal');
-        }).catchError((dynamic e) {
-          debugPrint('Post-background session restore failed [${e.runtimeType}]: $e');
-          if (pendingUnexpectedSignOut &&
-              Supabase.instance.client.auth.currentSession == null) {
-            pendingUnexpectedSignOut = false;
-            DebugNotifier.instance.notifyAuthSignedOut();
-            navigatorKey.currentState?.pushAndRemoveUntil(
-              MaterialPageRoute(builder: (_) => const LoginPage()),
-              (route) => false,
-            );
-          } else {
-            pendingUnexpectedSignOut = false;
-          }
-        });
       });
     } else {
       debugPrint('Skipping FCM/cache init, Supabase not initialized');
@@ -530,6 +494,12 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
       }
 
 
+      // One-time prompt to establish the background session for users who were
+      // already logged in before it existed
+      if (isSupabaseInitialized && navigatorKey.currentContext != null) {
+        await showReauthPromptIfNeeded(navigatorKey.currentContext!);
+      }
+
       // Show widget prompt if not first launch
       if (!UserPreferences.isFirstLaunch &&
           navigatorKey.currentContext != null) {
@@ -550,40 +520,17 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
     if (state != AppLifecycleState.resumed) return;
     if (!isSupabaseInitialized) return;
 
-    // If the session is null after resuming, the background FCM handler may
-    // have rotated the refresh token and written the new one to storage while
-    // the main app's in-memory token was already invalidated.
-    // By this point, the background work is guaranteed to be complete,
-    // so we read the persisted token and silently restore the session.
+    // Re-establish the background session if it was dropped while we were away
+    final ctx = navigatorKey.currentContext;
+    if (ctx != null) {
+      showReauthPromptIfNeeded(ctx);
+    }
+
     final now = DateTime.now();
     final canRefresh = _lastWidgetRefresh == null ||
         now.difference(_lastWidgetRefresh!) >= const Duration(minutes: 5);
 
-    final session = Supabase.instance.client.auth.currentSession;
-    if (session == null) {
-      final token = backupRefreshToken;
-      backupRefreshToken = null;
-      Supabase.instance.client.auth.refreshSession(token).then((_) {
-        debugPrint('Session restored on app resume');
-        if (canRefresh) {
-          _lastWidgetRefresh = now;
-          updateHomeWidget();
-        }
-      }).catchError((dynamic e) {
-        debugPrint('Session restore on resume failed [${e.runtimeType}]: $e');
-        if (pendingUnexpectedSignOut &&
-            Supabase.instance.client.auth.currentSession == null) {
-          pendingUnexpectedSignOut = false;
-          DebugNotifier.instance.notifyAuthSignedOut();
-          navigatorKey.currentState?.pushAndRemoveUntil(
-            MaterialPageRoute(builder: (_) => const LoginPage()),
-            (route) => false,
-          );
-        } else {
-          pendingUnexpectedSignOut = false;
-        }
-      });
-    } else if (canRefresh) {
+    if (canRefresh) {
       _lastWidgetRefresh = now;
       updateHomeWidget();
     }

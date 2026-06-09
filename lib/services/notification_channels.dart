@@ -108,18 +108,45 @@ Uint8List? _buildImageLargeIcon(Uint8List? imageBytes, Uint8List? pfpBytes,
 
 Future<void> dispatchCommentNotification(
     Map<String, dynamic> data, String type) async {
-  final groupId = data['group_id'] ?? '';
-  final imageId = data['image_id'] ?? '';
-  final commenterId = data['commenter_id'] ?? '';
-  final commenterUsername = data['commenter_username'] ?? 'Someone';
-  final commentText = data['comment_text'] ?? '';
+  final commentId = data['comment_id'] ?? '';
 
-  final groupResponse = await getGroupDetails(groupId);
-  final groupName = (groupResponse.success && groupResponse.data != null)
-      ? groupResponse.data!.name
-      : '';
+  String groupId;
+  String imageId;
+  String commenterId;
+  String groupName;
+  String commenterUsername;
+  String commentText;
+  String? uploaderUsername;
+
+  if (commentId.isNotEmpty) {
+    final ctx = await getCommentNotificationContext(commentId);
+    if (!ctx.success || ctx.data == null) return;
+    final d = ctx.data!;
+    groupId = (d['group_id'] as String?) ?? '';
+    imageId = (d['image_id'] as String?) ?? '';
+    commenterId = (d['commenter_id'] as String?) ?? '';
+    groupName = (d['group_name'] as String?) ?? '';
+    commenterUsername = (d['commenter_username'] as String?) ?? '';
+    commentText = (d['comment_text'] as String?) ?? '';
+    // Only group_comment renders the uploader's name in the body.
+    uploaderUsername =
+        type == 'group_comment' ? d['uploader_username'] as String? : null;
+  } else {
+    // Legacy plaintext payload
+    groupId = data['group_id'] ?? '';
+    imageId = data['image_id'] ?? '';
+    commenterId = data['commenter_id'] ?? '';
+    final groupResponse = await getGroupDetails(groupId);
+    groupName = (groupResponse.success && groupResponse.data != null)
+        ? groupResponse.data!.name
+        : '';
+    commenterUsername = (data['commenter_username'] as String?) ?? '';
+    commentText = (data['comment_text'] as String?) ?? '';
+    uploaderUsername = data['uploader_username'] as String?;
+  }
 
   if (groupId.isEmpty || groupName.isEmpty) return;
+  if (commenterUsername.isEmpty) commenterUsername = 'Someone';
 
   final results = await Future.wait([
     commenterId.isNotEmpty
@@ -139,7 +166,7 @@ Future<void> dispatchCommentNotification(
     imageId: imageId,
     type: type,
     commenterAvatarBytes: results[0].data,
-    uploaderUsername: data['uploader_username'],
+    uploaderUsername: uploaderUsername,
     imageBytes: results[1].data,
   );
 }
@@ -147,24 +174,25 @@ Future<void> dispatchCommentNotification(
 Future<void> dispatchImageNotification(Map<String, dynamic> data) async {
   final groupId = data['group_id'] ?? '';
   final imageId = data['image_id'] ?? '';
-  final senderId = data['sender_id'] ?? '';
-  final senderUsername = data['sender_username'] ?? 'Someone';
-  final imageDescription = data['image_description'] ?? '';
 
-  final groupResponse = await getGroupDetails(groupId);
-  final groupName = (groupResponse.success && groupResponse.data != null)
-      ? groupResponse.data!.name
-      : '';
+  if (groupId.isEmpty || imageId.isEmpty) return;
 
-  if (groupId.isEmpty || groupName.isEmpty) return;
+  final ctx = await getImageNotificationContext(imageId, groupId);
+  if (!ctx.success || ctx.data == null) return;
+
+  final groupName = (ctx.data!['group_name'] as String?) ?? '';
+  if (groupName.isEmpty) return;
+
+  final senderId = (ctx.data!['sender_id'] as String?) ?? '';
+  var senderUsername = (ctx.data!['sender_username'] as String?) ?? '';
+  if (senderUsername.isEmpty) senderUsername = 'Someone';
+  final imageDescription = (ctx.data!['description'] as String?) ?? '';
 
   final results = await Future.wait([
     senderId.isNotEmpty
         ? getProfilePictureBytes(senderId)
         : Future.value(SupabaseResponse<Uint8List>(success: false)),
-    imageId.isNotEmpty
-        ? getImage(imageId, lowRes: true)
-        : Future.value(SupabaseResponse<Uint8List>(success: false)),
+    getImage(imageId, lowRes: true),
   ]);
 
   await initCommentNotifications();
@@ -279,5 +307,29 @@ Future<void> showCommentNotification({
     ),
     payload:
         jsonEncode({'type': type, 'image_id': imageId, 'group_id': groupId}),
+  );
+}
+
+/// Notify the user that a newer app version is available
+Future<void> showUpdateNotification(String version) async {
+  const channelId = 'app_updates';
+  const channelName = 'App updates';
+  await _ensureFlnpInitialized();
+  await _createFlnpChannel(channelId, channelName);
+
+  await _flnp.show(
+    id: 0x4B524142, // stable id ("KRAB") so a newer notification replaces it
+    title: _l10n().update_available,
+    body: _l10n().version(version),
+    notificationDetails: const NotificationDetails(
+      android: AndroidNotificationDetails(
+        channelId,
+        channelName,
+        icon: '@drawable/ic_stat_krab_logo',
+        importance: Importance.high,
+        priority: Priority.high,
+      ),
+    ),
+    payload: jsonEncode({'type': 'app_update'}),
   );
 }

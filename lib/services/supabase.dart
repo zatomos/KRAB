@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:krab/services/profile_picture_cache.dart';
+import 'package:krab/services/background_session.dart';
 import 'package:krab/services/fcm_helper.dart';
 import 'package:krab/services/debug_notifier.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -781,6 +782,10 @@ Future<SupabaseResponse<void>> registerUser(
           success: false, error: "Failed to sign in after sign up");
     }
 
+    // Mint the independent background session so they never rotate the
+    // interactive session's token
+    await BackgroundSession.mintAndStore(email, password);
+
     // Handle FCM token registration
     await fcmTokenHandler(username: username);
 
@@ -802,6 +807,9 @@ Future<SupabaseResponse<void>> loginUser(String email, String password) async {
       return SupabaseResponse(
           success: false, error: "No user returned during login");
     }
+    // Mint the independent background session so they never rotate the
+    // interactive session's token
+    await BackgroundSession.mintAndStore(email, password);
     await fcmTokenHandler();
     return SupabaseResponse(success: true);
   } catch (error) {
@@ -820,6 +828,9 @@ Future<SupabaseResponse<void>> logOut() async {
 
     // Clean up FCM listeners
     await FcmHelper.dispose();
+
+    // Clear the independent background session
+    await BackgroundSession.clear();
 
     // Clear profile picture cache
     await ProfilePictureCache.of(supabase).clear();
@@ -869,6 +880,38 @@ Future<SupabaseResponse<krab_user.User>> getUserDetails(String userId) async {
       success: false,
       error: 'Error fetching user details: $error',
     );
+  }
+}
+
+/// Resolve everything an image notification needs in a single RPC call
+Future<SupabaseResponse<Map<String, dynamic>>> getImageNotificationContext(
+    String imageId, String groupId) async {
+  try {
+    final res = await supabase.rpc('get_image_notification',
+        params: {'p_image_id': imageId, 'p_group_id': groupId});
+    if (res == null || res['success'] != true) {
+      return SupabaseResponse(success: false, error: res?['error']?.toString());
+    }
+    return SupabaseResponse(success: true, data: res as Map<String, dynamic>);
+  } catch (error) {
+    return SupabaseResponse(
+        success: false, error: 'Error fetching image notification: $error');
+  }
+}
+
+/// Resolve everything a comment notification needs in a single RPC call
+Future<SupabaseResponse<Map<String, dynamic>>> getCommentNotificationContext(
+    String commentId) async {
+  try {
+    final res = await supabase
+        .rpc('get_comment_notification', params: {'p_comment_id': commentId});
+    if (res == null || res['success'] != true) {
+      return SupabaseResponse(success: false, error: res?['error']?.toString());
+    }
+    return SupabaseResponse(success: true, data: res as Map<String, dynamic>);
+  } catch (error) {
+    return SupabaseResponse(
+        success: false, error: 'Error fetching comment notification: $error');
   }
 }
 
@@ -974,6 +1017,10 @@ Future<SupabaseResponse<void>> changePassword(
     }
     await supabase.auth.signInWithPassword(email: email, password: currentPassword);
     await supabase.auth.updateUser(UserAttributes(password: newPassword));
+    // Revoke the old background sessions server-side, then re-mint with the new
+    // password so no stale background tokens linger after a password change.
+    await BackgroundSession.clear();
+    await BackgroundSession.mintAndStore(email, newPassword);
     return SupabaseResponse(success: true);
   } catch (error) {
     final message = error is AuthException

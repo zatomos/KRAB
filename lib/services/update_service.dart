@@ -7,6 +7,9 @@ import 'package:path_provider/path_provider.dart';
 import 'package:android_package_installer/android_package_installer.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
+import 'package:krab/user_preferences.dart';
+import 'package:krab/services/notification_channels.dart';
+
 class UpdateInfo {
   final String version;
   final String downloadUrl;
@@ -136,6 +139,27 @@ class UpdateService {
     } catch (_) {
       return false;
     }
+  }
+
+  static const _checkThrottle = Duration(hours: 24);
+
+  /// Background update check, meant to piggyback on the periodic widget-refresh
+  /// wakeup so it adds no extra alarms. Throttled to at most once per
+  /// checkThrottle
+  static Future<void> maybeCheckAndNotifyUpdate() async {
+    final service = UpdateService();
+    if (!service.isEnabled) return;
+    if (!UserPreferences.updateNotifications) return;
+
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final last = UserPreferences.getLastUpdateCheckMillis();
+    if (now - last < _checkThrottle.inMilliseconds) return;
+    await UserPreferences.setLastUpdateCheckMillis(now);
+
+    final result = await service.checkForUpdate();
+    if (!result.success || !result.hasUpdate || result.info == null) return;
+
+    await showUpdateNotification(result.info!.version);
   }
 
   List<dynamic> _parseVersion(String version) {
