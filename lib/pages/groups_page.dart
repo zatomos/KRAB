@@ -3,7 +3,7 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/services/home_widget_updater.dart';
-import 'package:krab/services/supabase.dart';
+import 'package:krab/services/api/supabase.dart';
 import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/widgets/soft_button.dart';
 import 'package:krab/widgets/rounded_input_field.dart';
@@ -143,10 +143,16 @@ class JoinGroupDialogState extends State<JoinGroupDialog> {
 
   Future<void> _joinGroup() async {
     if (_loading) return;
-    setState(() { error = null; _loading = true; });
+    setState(() {
+      error = null;
+      _loading = true;
+    });
     final token = _controller.text.trim();
     if (token.isEmpty) {
-      setState(() { error = context.l10n.invite_empty; _loading = false; });
+      setState(() {
+        error = context.l10n.invite_empty;
+        _loading = false;
+      });
       return;
     }
     try {
@@ -154,7 +160,8 @@ class JoinGroupDialogState extends State<JoinGroupDialog> {
       if (!mounted) return;
       if (!response.success) {
         setState(() {
-          error = context.l10n.group_code_invalid(response.error ?? "Unknown error");
+          error = context.l10n
+              .group_code_invalid(response.error ?? "Unknown error");
           _loading = false;
         });
         return;
@@ -164,7 +171,10 @@ class JoinGroupDialogState extends State<JoinGroupDialog> {
       showSnackBar(context.l10n.group_joined_success, color: Colors.green);
     } catch (e) {
       if (!mounted) return;
-      setState(() { error = e.toString(); _loading = false; });
+      setState(() {
+        error = e.toString();
+        _loading = false;
+      });
     }
   }
 
@@ -189,7 +199,10 @@ class JoinGroupDialogState extends State<JoinGroupDialog> {
           color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
         ),
         if (_loading)
-          const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+          const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2))
         else
           SoftButton(
             onPressed: _joinGroup,
@@ -216,11 +229,17 @@ class CreateGroupDialogState extends State<CreateGroupDialog> {
 
   Future<void> _createGroup() async {
     if (_loading) return;
-    setState(() { error = null; _loading = true; });
+    setState(() {
+      error = null;
+      _loading = true;
+    });
 
     final name = _controller.text.trim();
     if (name.isEmpty) {
-      setState(() { error = context.l10n.group_name_empty_error; _loading = false; });
+      setState(() {
+        error = context.l10n.group_name_empty_error;
+        _loading = false;
+      });
       return;
     }
 
@@ -229,7 +248,8 @@ class CreateGroupDialogState extends State<CreateGroupDialog> {
       if (!mounted) return;
       if (!response.success) {
         setState(() {
-          error = context.l10n.error_creating_group(response.error ?? "Unknown error");
+          error = context.l10n
+              .error_creating_group(response.error ?? "Unknown error");
           _loading = false;
         });
         return;
@@ -240,7 +260,10 @@ class CreateGroupDialogState extends State<CreateGroupDialog> {
       showSnackBar(context.l10n.group_created_success, color: Colors.green);
     } catch (e) {
       if (!mounted) return;
-      setState(() { error = e.toString(); _loading = false; });
+      setState(() {
+        error = e.toString();
+        _loading = false;
+      });
     }
   }
 
@@ -265,7 +288,10 @@ class CreateGroupDialogState extends State<CreateGroupDialog> {
           color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
         ),
         if (_loading)
-          const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+          const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2))
         else
           SoftButton(
             onPressed: _createGroup,

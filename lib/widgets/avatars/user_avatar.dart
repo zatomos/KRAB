@@ -7,10 +7,10 @@ class UserAvatar extends StatelessWidget {
   final double radius;
 
   const UserAvatar(
-      this.user, {
-        super.key,
-        this.radius = 50,
-      });
+    this.user, {
+    super.key,
+    this.radius = 50,
+  });
 
   @override
   Widget build(BuildContext context) {

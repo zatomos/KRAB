@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-
 class ImageData {
   final Uint8List imageBytes;
   final String uploadedBy;

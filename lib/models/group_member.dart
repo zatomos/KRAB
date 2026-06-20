@@ -1,4 +1,5 @@
 import 'package:krab/models/user.dart' as krab_user;
+
 class GroupMember {
   final krab_user.User user;
   final String role;
@@ -19,8 +20,7 @@ class GroupMember {
   // Empty
   factory GroupMember.empty() {
     return GroupMember(
-      user: const krab_user.User(id: '', username: '', pfpUrl: ''),
-      role: 'member'
-    );
+        user: const krab_user.User(id: '', username: '', pfpUrl: ''),
+        role: 'member');
   }
 }

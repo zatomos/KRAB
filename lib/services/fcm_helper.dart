@@ -49,13 +49,15 @@ class FcmHelper {
         _listenersWired = true;
 
         // Token refresh
-        _tokenRefreshSubscription = FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
+        _tokenRefreshSubscription =
+            FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
           debugPrint('FCM: token refreshed = $newToken');
           await _pushTokenIfLoggedIn(newToken);
         });
 
         // Auth changes
-        _authStateSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((_) async {
+        _authStateSubscription =
+            Supabase.instance.client.auth.onAuthStateChange.listen((_) async {
           final t = await FirebaseMessaging.instance.getToken();
           debugPrint('FCM: auth state changed; pushing latest token = $t');
           if (t != null) {

@@ -4,7 +4,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/services/update_service.dart';
-import 'package:krab/widgets/update_dialog.dart';
+import 'package:krab/widgets/dialogs/update_dialog.dart';
 
 class UpdateChecker extends StatefulWidget {
   final Widget child;

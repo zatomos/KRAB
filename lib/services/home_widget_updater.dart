@@ -7,7 +7,7 @@ import 'package:workmanager/workmanager.dart';
 
 import 'package:krab/user_preferences.dart';
 import 'package:krab/models/image_ref.dart';
-import 'package:krab/services/supabase.dart';
+import 'package:krab/services/api/supabase.dart';
 import 'package:krab/services/debug_notifier.dart';
 import 'file_saver.dart';
 
@@ -301,7 +301,7 @@ Future<bool> _ensurePrevImages(
         if (await _savePrevPfp(prevId, pfpFile, pfpKey)) changed = true;
       }
     } else if (!await pfpFile.exists()) {
-      // Image already correct but pfp missing — repair just the pfp.
+      // Image already correct but pfp missing, repair just the pfp.
       if (await _savePrevPfp(prevId, pfpFile, pfpKey)) changed = true;
     }
   }

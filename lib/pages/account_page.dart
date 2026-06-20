@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
@@ -10,17 +9,18 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/models/user.dart' as krab_user;
-import 'package:krab/services/supabase.dart';
+import 'package:krab/services/api/supabase.dart';
 import 'package:krab/user_preferences.dart';
 import 'package:krab/services/debug_notifier.dart';
 import 'package:krab/services/home_widget_updater.dart';
 import 'package:krab/services/update_service.dart';
 import 'package:krab/widgets/rectangle_button.dart';
-import 'package:krab/widgets/user_avatar.dart';
+import 'package:krab/widgets/avatars/user_avatar.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/widgets/rounded_input_field.dart';
 import 'package:krab/widgets/soft_button.dart';
-import 'package:krab/widgets/update_dialog.dart';
+import 'package:krab/widgets/dialogs/change_password_dialog.dart';
+import 'package:krab/widgets/dialogs/update_dialog.dart';
 import 'login_page.dart';
 
 class AccountPage extends StatefulWidget {
@@ -33,24 +33,9 @@ class AccountPage extends StatefulWidget {
 class AccountPageState extends State<AccountPage> {
   final _usernameController = TextEditingController();
   final _emailController = TextEditingController();
-  final _currentPasswordController = TextEditingController();
-  final _newPasswordController = TextEditingController();
-  final _confirmNewPasswordController = TextEditingController();
   final _updateService = UpdateService();
 
   krab_user.User user = const krab_user.User(id: '', username: '');
-  String _localizeAuthError(String? error) {
-    switch (error) {
-      case 'invalid_email_or_password':
-        return context.l10n.invalid_email_or_password;
-      case 'email_already_exists':
-        return context.l10n.email_already_exists;
-      case 'password_too_weak':
-        return context.l10n.password_too_weak;
-      default:
-        return error ?? '';
-    }
-  }
 
   bool _isLoading = false;
 
@@ -350,158 +335,13 @@ class AccountPageState extends State<AccountPage> {
   }
 
   Future<void> openChangePasswordDialog() async {
-    _currentPasswordController.clear();
-    _newPasswordController.clear();
-    _confirmNewPasswordController.clear();
-
-    await showDialog(
+    final changed = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) {
-        String? dialogError;
-        bool saving = false;
-        bool showCurrent = false;
-        bool showNew = false;
-        bool showConfirm = false;
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return Dialog(
-              insetPadding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16)),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(context.l10n.change_password,
-                        style: TextStyle(
-                            fontSize: 18, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 16),
-                    RoundedInputField(
-                      controller: _currentPasswordController,
-                      hintText: context.l10n.current_password,
-                      obscureText: !showCurrent,
-                      icon: const Icon(Icons.lock_rounded),
-                      suffixIcon: IconButton(
-                        icon: Icon(showCurrent
-                            ? Icons.visibility_off_rounded
-                            : Icons.visibility_rounded),
-                        onPressed: () =>
-                            setDialogState(() => showCurrent = !showCurrent),
-                      ),
-                    ),
-                    AutofillGroup(
-                      onDisposeAction: AutofillContextAction.cancel,
-                      child: Column(
-                        children: [
-                          RoundedInputField(
-                            controller: _newPasswordController,
-                            hintText: context.l10n.new_password,
-                            obscureText: !showNew,
-                            icon: const Icon(Icons.key_rounded),
-                            autofillHints: const [AutofillHints.newPassword],
-                            suffixIcon: IconButton(
-                              icon: Icon(showNew
-                                  ? Icons.visibility_off_rounded
-                                  : Icons.visibility_rounded),
-                              onPressed: () =>
-                                  setDialogState(() => showNew = !showNew),
-                            ),
-                          ),
-                          RoundedInputField(
-                            controller: _confirmNewPasswordController,
-                            hintText: context.l10n.confirm_new_password,
-                            obscureText: !showConfirm,
-                            errorText: dialogError,
-                            icon: const Icon(Icons.check_rounded),
-                            autofillHints: const [AutofillHints.newPassword],
-                            suffixIcon: IconButton(
-                              icon: Icon(showConfirm
-                                  ? Icons.visibility_off_rounded
-                                  : Icons.visibility_rounded),
-                              onPressed: () => setDialogState(
-                                  () => showConfirm = !showConfirm),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        SoftButton(
-                          onPressed: () => Navigator.pop(dialogContext),
-                          label: context.l10n.cancel,
-                          color:
-                              GlobalThemeData.darkColorScheme.onSurfaceVariant,
-                        ),
-                        const SizedBox(width: 8),
-                        if (saving)
-                          const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        else
-                          SoftButton(
-                            label: context.l10n.save,
-                            onPressed: () async {
-                              final current = _currentPasswordController.text;
-                              final next = _newPasswordController.text;
-                              final confirm =
-                                  _confirmNewPasswordController.text;
-
-                              if (current.isEmpty ||
-                                  next.isEmpty ||
-                                  confirm.isEmpty) {
-                                setDialogState(() => dialogError =
-                                    context.l10n.fill_in_all_fields);
-                                return;
-                              }
-                              if (next != confirm) {
-                                setDialogState(() => dialogError =
-                                    context.l10n.passwords_do_not_match);
-                                return;
-                              }
-
-                              setDialogState(() {
-                                saving = true;
-                                dialogError = null;
-                              });
-                              final response =
-                                  await changePassword(current, next);
-                              if (!dialogContext.mounted) return;
-
-                              if (response.success) {
-                                TextInput.finishAutofillContext(
-                                    shouldSave: true);
-                                Navigator.pop(dialogContext);
-                                showSnackBar(
-                                    context.l10n.password_updated_success,
-                                    color: Colors.green);
-                              } else {
-                                setDialogState(() {
-                                  saving = false;
-                                  dialogError = _localizeAuthError(response.error);
-                                });
-                              }
-                            },
-                            color: GlobalThemeData.darkColorScheme.primary,
-                            icon: Icons.check_rounded,
-                          ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
+      builder: (_) => const ChangePasswordDialog(),
     );
+    if (changed == true && mounted) {
+      showSnackBar(context.l10n.password_updated_success, color: Colors.green);
+    }
   }
 
   Future<File?> pickCropPfp() async {
@@ -790,9 +630,6 @@ class AccountPageState extends State<AccountPage> {
   void dispose() {
     _usernameController.dispose();
     _emailController.dispose();
-    _currentPasswordController.dispose();
-    _newPasswordController.dispose();
-    _confirmNewPasswordController.dispose();
     super.dispose();
   }
 }

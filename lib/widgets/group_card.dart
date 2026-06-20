@@ -5,9 +5,9 @@ import 'package:krab/l10n/l10n.dart';
 import 'package:krab/pages/group_images_page.dart';
 import 'package:krab/models/group.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
-import 'package:krab/widgets/group_avatar.dart';
+import 'package:krab/widgets/avatars/group_avatar.dart';
 import 'package:krab/user_preferences.dart';
-import 'package:krab/services/supabase.dart';
+import 'package:krab/services/api/supabase.dart';
 import 'package:krab/services/time_formatting.dart';
 
 class GroupCard extends StatefulWidget {
@@ -22,12 +22,25 @@ class GroupCard extends StatefulWidget {
 
 class _GroupCardState extends State<GroupCard> {
   late Group _group;
+  // Memoized so the FutureBuilder doesn't refetch on every rebuild.
+  late Future<int> _memberCountFuture;
   bool isFavorite = false;
 
   @override
   void initState() {
     super.initState();
     _group = widget.group; // make a mutable copy
+    _memberCountFuture = _fetchGroupMemberCount(_group.id);
+  }
+
+  @override
+  void didUpdateWidget(GroupCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Refetch only if the card is now showing a different group.
+    if (oldWidget.group.id != widget.group.id) {
+      _group = widget.group;
+      _memberCountFuture = _fetchGroupMemberCount(_group.id);
+    }
   }
 
   @override
@@ -101,7 +114,7 @@ class _GroupCardState extends State<GroupCard> {
             ),
 
             subtitle: FutureBuilder<int>(
-              future: _fetchGroupMemberCount(_group.id),
+              future: _memberCountFuture,
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Text(" ");

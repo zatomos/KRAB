@@ -3,28 +3,25 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:krab/l10n/l10n.dart';
-import 'package:krab/widgets/user_avatar.dart';
+import 'package:krab/widgets/avatars/user_avatar.dart';
 import 'package:krab/models/comment.dart';
 import 'package:krab/models/user.dart' as krab_user;
 import 'package:krab/widgets/rounded_input_field.dart';
+import 'package:krab/widgets/dialogs/dialogs.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
-import 'package:krab/services/supabase.dart';
+import 'package:krab/services/api/supabase.dart';
 import 'package:krab/services/time_formatting.dart';
-import 'package:krab/themes/global_theme_data.dart';
-import 'soft_button.dart';
 
 class CommentsBottomSheet extends StatefulWidget {
   final String imageId;
   final String groupId;
   final String uploaderId;
-  final VoidCallback? onClose;
   final void Function(int delta)? onCommentCountChanged;
   const CommentsBottomSheet({
     super.key,
     required this.imageId,
     required this.groupId,
     required this.uploaderId,
-    this.onClose,
     this.onCommentCountChanged,
   });
 
@@ -151,52 +148,31 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
   }
 
   Future<void> _deleteComment(String commentId) async {
-    await showDialog(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: Text(dialogContext.l10n.confirm_delete_comment),
-          actions: [
-            SoftButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              label: dialogContext.l10n.cancel,
-              color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
-            ),
-            SoftButton(
-              onPressed: () async {
-                Navigator.of(dialogContext).pop();
+    final confirmed = await showConfirmDialog(context,
+        title: context.l10n.confirm_delete_comment,
+        confirmLabel: context.l10n.confirm,
+        destructive: true);
+    if (!confirmed) return;
 
-                final response = await deleteComment(
-                    commentId, widget.imageId, widget.groupId);
-                if (!mounted) return;
+    final response =
+        await deleteComment(commentId, widget.imageId, widget.groupId);
+    if (!mounted) return;
 
-                if (response.success) {
-                  if (_editingCommentId == commentId) {
-                    setState(() => _editingCommentId = null);
-                    _newCommentController.clear();
-                  }
-                  widget.onCommentCountChanged?.call(-1);
-                  await _fetchComments();
-                  if (!mounted) return;
-                  showSnackBar(
-                    context.l10n.comment_deleted_success,
-                    color: Colors.green,
-                  );
-                } else {
-                  showSnackBar(
-                    context.l10n.error_deleting_comment(
-                        response.error ?? "Unknown error"),
-                    color: Colors.red,
-                  );
-                }
-              },
-              label: dialogContext.l10n.confirm,
-              color: GlobalThemeData.darkColorScheme.primary,
-            ),
-          ],
-        );
-      },
-    );
+    if (response.success) {
+      if (_editingCommentId == commentId) {
+        setState(() => _editingCommentId = null);
+        _newCommentController.clear();
+      }
+      widget.onCommentCountChanged?.call(-1);
+      await _fetchComments();
+      if (!mounted) return;
+      showSnackBar(context.l10n.comment_deleted_success, color: Colors.green);
+    } else {
+      showSnackBar(
+        context.l10n.error_deleting_comment(response.error ?? "Unknown error"),
+        color: Colors.red,
+      );
+    }
   }
 
   void _startReply(Comment comment, String username) {
@@ -354,26 +330,17 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
     return Padding(
       padding: EdgeInsets.only(
         bottom: bottomInset,
-        top: 16,
         left: 16,
         right: 16,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Header
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(context.l10n.comments,
-                  style: const TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.bold)),
-              IconButton(
-                icon: const Icon(Symbols.close_rounded, color: Colors.white),
-                onPressed: widget.onClose ?? () => Navigator.of(context).pop(),
-              ),
-            ],
-          ),
+          Text(context.l10n.comments,
+              style:
+                  const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
 
           const SizedBox(height: 12),
 

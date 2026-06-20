@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:krab/l10n/l10n.dart';
-import 'package:krab/services/supabase.dart';
+import 'package:krab/services/api/supabase.dart';
 import 'package:krab/services/home_widget_updater.dart';
 import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
@@ -71,7 +71,10 @@ class LoginPageState extends State<LoginPage> {
       return;
     }
 
-    setState(() { _isLoading = true; _errorMessage = null; });
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
     final response = await registerUser(username, email, password);
     if (!mounted) return;
     if (response.success) {
@@ -83,7 +86,10 @@ class LoginPageState extends State<LoginPage> {
       );
       showSnackBar(context.l10n.register_user_success);
     } else {
-      setState(() { _isLoading = false; _errorMessage = _localizeAuthError(response.error); });
+      setState(() {
+        _isLoading = false;
+        _errorMessage = _localizeAuthError(response.error);
+      });
     }
   }
 
@@ -97,7 +103,10 @@ class LoginPageState extends State<LoginPage> {
       return;
     }
 
-    setState(() { _isLoading = true; _errorMessage = null; });
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
     final response = await loginUser(email, password);
     if (!mounted) return;
     if (response.success) {
@@ -108,7 +117,10 @@ class LoginPageState extends State<LoginPage> {
         MaterialPageRoute(builder: (context) => const CameraPage()),
       );
     } else {
-      setState(() { _isLoading = false; _errorMessage = _localizeAuthError(response.error); });
+      setState(() {
+        _isLoading = false;
+        _errorMessage = _localizeAuthError(response.error);
+      });
     }
   }
 
@@ -154,10 +166,14 @@ class LoginPageState extends State<LoginPage> {
                     onPressed: () async {
                       final email = _forgotPasswordController.text.trim();
                       if (email.isEmpty) {
-                        setDialogState(() => dialogError = context.l10n.fill_in_all_fields);
+                        setDialogState(() =>
+                            dialogError = context.l10n.fill_in_all_fields);
                         return;
                       }
-                      setDialogState(() { sending = true; dialogError = null; });
+                      setDialogState(() {
+                        sending = true;
+                        dialogError = null;
+                      });
                       final response = await sendPasswordResetEmail(email);
                       if (!context.mounted) return;
                       if (response.success) {
@@ -195,7 +211,8 @@ class LoginPageState extends State<LoginPage> {
               const SizedBox(height: 40),
               Text(
                 _isSigningUp ? context.l10n.sign_up : context.l10n.log_in,
-                style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+                style:
+                    const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 28),
               AutofillGroup(
@@ -226,8 +243,11 @@ class LoginPageState extends State<LoginPage> {
                             ? const [AutofillHints.newPassword]
                             : const [AutofillHints.password],
                         suffixIcon: IconButton(
-                          icon: Icon(_showPassword ? Icons.visibility_off_rounded : Icons.visibility_rounded),
-                          onPressed: () => setState(() => _showPassword = !_showPassword),
+                          icon: Icon(_showPassword
+                              ? Icons.visibility_off_rounded
+                              : Icons.visibility_rounded),
+                          onPressed: () =>
+                              setState(() => _showPassword = !_showPassword),
                         ),
                       ),
                       if (_isSigningUp)
@@ -238,8 +258,11 @@ class LoginPageState extends State<LoginPage> {
                           icon: const Icon(Icons.check_rounded),
                           autofillHints: const [AutofillHints.newPassword],
                           suffixIcon: IconButton(
-                            icon: Icon(_showConfirmPassword ? Icons.visibility_off_rounded : Icons.visibility_rounded),
-                            onPressed: () => setState(() => _showConfirmPassword = !_showConfirmPassword),
+                            icon: Icon(_showConfirmPassword
+                                ? Icons.visibility_off_rounded
+                                : Icons.visibility_rounded),
+                            onPressed: () => setState(() =>
+                                _showConfirmPassword = !_showConfirmPassword),
                           ),
                         ),
                     ],
@@ -289,7 +312,8 @@ class LoginPageState extends State<LoginPage> {
         Image.asset('logo/krab_logo.png', width: 120, height: 120),
         const Text(
           'KRAB',
-          style: TextStyle(fontSize: 40, fontWeight: FontWeight.w900, letterSpacing: 2),
+          style: TextStyle(
+              fontSize: 40, fontWeight: FontWeight.w900, letterSpacing: 2),
         ),
       ],
     );
@@ -306,7 +330,8 @@ class LoginPageState extends State<LoginPage> {
       ),
       child: Row(
         children: [
-          const Icon(Icons.error_outline_rounded, color: Colors.redAccent, size: 18),
+          const Icon(Icons.error_outline_rounded,
+              color: Colors.redAccent, size: 18),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -326,14 +351,17 @@ class LoginPageState extends State<LoginPage> {
         onPressed: _isLoading ? null : (_isSigningUp ? _signUp : _logIn),
         style: ElevatedButton.styleFrom(
           backgroundColor: GlobalThemeData.darkColorScheme.primary,
-          disabledBackgroundColor: GlobalThemeData.darkColorScheme.primary.withValues(alpha: 0.6),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          disabledBackgroundColor:
+              GlobalThemeData.darkColorScheme.primary.withValues(alpha: 0.6),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
         child: _isLoading
             ? const SizedBox(
                 width: 22,
                 height: 22,
-                child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
+                child: CircularProgressIndicator(
+                    strokeWidth: 2.5, color: Colors.white),
               )
             : Text(
                 _isSigningUp ? context.l10n.sign_up : context.l10n.log_in,

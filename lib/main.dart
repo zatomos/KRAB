@@ -9,7 +9,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import 'package:krab/services/supabase.dart';
+import 'package:krab/services/api/supabase.dart';
 import 'package:krab/services/background_session.dart';
 import 'package:krab/services/fcm_helper.dart';
 import 'package:krab/services/home_widget_updater.dart';
@@ -25,7 +25,7 @@ import 'package:krab/pages/camera_page.dart';
 import 'package:krab/pages/group_images_page.dart';
 import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
-import 'package:krab/widgets/reauth_prompt.dart';
+import 'package:krab/widgets/dialogs/reauth_prompt.dart';
 import 'package:krab/widgets/update_checker.dart';
 import 'package:krab/l10n/l10n.dart';
 import 'user_preferences.dart';
@@ -465,6 +465,9 @@ class MyApp extends StatefulWidget {
 
 class MyAppState extends State<MyApp> with WidgetsBindingObserver {
   DateTime? _lastWidgetRefresh;
+  // Decided once at startup. Recomputing per rebuild would re-show the loading
+  // spinner and could reset the navigation stack.
+  late final Future<Widget> _homePageFuture = _determineHomePage();
 
   @override
   void initState() {
@@ -565,7 +568,7 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
       supportedLocales: AppLocalizations.supportedLocales,
       builder: (context, child) => SafeArea(top: false, child: child!),
       home: FutureBuilder(
-        future: _determineHomePage(),
+        future: _homePageFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Scaffold(

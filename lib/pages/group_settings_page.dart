@@ -6,8 +6,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:krab/services/home_widget_updater.dart';
-import 'package:krab/widgets/group_avatar.dart';
-import 'package:krab/widgets/user_avatar.dart';
+import 'package:krab/widgets/avatars/group_avatar.dart';
+import 'package:krab/widgets/avatars/user_avatar.dart';
+import 'package:krab/widgets/dialogs/dialogs.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/widgets/rectangle_button.dart';
 import 'package:krab/widgets/soft_button.dart';
@@ -15,7 +16,7 @@ import 'package:krab/widgets/rounded_input_field.dart';
 import 'package:krab/models/group.dart';
 import 'package:krab/models/group_member.dart';
 import 'package:krab/pages/group_invites_page.dart';
-import 'package:krab/services/supabase.dart';
+import 'package:krab/services/api/supabase.dart';
 import 'package:krab/user_preferences.dart';
 import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/l10n/l10n.dart';
@@ -128,14 +129,20 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                 color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
               ),
               if (saving)
-                const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2))
               else
                 SoftButton(
                   onPressed: () async {
                     if (saving) return;
                     final newName = controller.text.trim();
                     if (newName.isEmpty) {
-                      setDialogState(() { error = true; errorMessage = context.l10n.group_name_empty; });
+                      setDialogState(() {
+                        error = true;
+                        errorMessage = context.l10n.group_name_empty;
+                      });
                       return;
                     }
                     setDialogState(() => saving = true);
@@ -153,8 +160,11 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                     }
 
                     Navigator.of(context).pop();
-                    showSnackBar(context.l10n.group_name_updated_success, color: Colors.green);
-                    setState(() { _group = _group.copyWith(name: newName); });
+                    showSnackBar(context.l10n.group_name_updated_success,
+                        color: Colors.green);
+                    setState(() {
+                      _group = _group.copyWith(name: newName);
+                    });
                   },
                   label: context.l10n.save,
                   color: GlobalThemeData.darkColorScheme.primary,
@@ -246,86 +256,41 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
   }
 
   Future<void> _manageUserRoleDialog(String userId, String action) async {
-    await showDialog(
-      context: context,
-      builder: (dialogContext) {
-        final title = {
-          "promote_admin": dialogContext.l10n.promote_user,
-          "demote": dialogContext.l10n.demote_user,
-          "transfer_ownership": dialogContext.l10n.transfer_ownership,
-        }[action]!;
+    final title = {
+      "promote_admin": context.l10n.promote_user,
+      "demote": context.l10n.demote_user,
+      "transfer_ownership": context.l10n.transfer_ownership,
+    }[action]!;
+    final content = {
+      "promote_admin": context.l10n.promote_user_confirmation,
+      "demote": context.l10n.demote_user_confirmation,
+      "transfer_ownership": context.l10n.transfer_ownership_confirmation,
+    }[action]!;
 
-        final content = {
-          "promote_admin": dialogContext.l10n.promote_user_confirmation,
-          "demote": dialogContext.l10n.demote_user_confirmation,
-          "transfer_ownership":
-              dialogContext.l10n.transfer_ownership_confirmation,
-        }[action]!;
+    final confirmed = await showConfirmDialog(context,
+        title: title, message: content, confirmLabel: context.l10n.confirm);
+    if (!confirmed || !mounted) return;
 
-        return AlertDialog(
-          title: Text(title),
-          content: Text(content),
-          actions: [
-            SoftButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              label: dialogContext.l10n.cancel,
-              color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
-            ),
-            SoftButton(
-              onPressed: () async {
-                final l10n = dialogContext.l10n;
-                Navigator.of(dialogContext).pop();
-
-                final res = await changeMemberRole(_group.id, userId, action);
-                if (!mounted) return;
-
-                if (res.success) {
-                  showSnackBar(l10n.user_role_updated_success,
-                      color: Colors.green);
-                  setState(() {
-                    _membersFuture = getGroupMembers(_group.id);
-                  });
-                } else {
-                  showSnackBar(
-                    l10n.error_updating_user_role(res.error ?? "Unknown"),
-                    color: Colors.red,
-                  );
-                }
-              },
-              label: dialogContext.l10n.confirm,
-              color: GlobalThemeData.darkColorScheme.primary,
-            ),
-          ],
-        );
-      },
-    );
+    final res = await changeMemberRole(_group.id, userId, action);
+    if (!mounted) return;
+    if (res.success) {
+      showSnackBar(context.l10n.user_role_updated_success, color: Colors.green);
+      setState(() => _membersFuture = getGroupMembers(_group.id));
+    } else {
+      showSnackBar(
+        context.l10n.error_updating_user_role(res.error ?? "Unknown"),
+        color: Colors.red,
+      );
+    }
   }
 
   Future<void> _manageUserBanDialog(String userId) async {
-    await showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text(context.l10n.ban_user),
-          content: Text(context.l10n.ban_user_confirmation),
-          actions: [
-            SoftButton(
-              onPressed: () => Navigator.of(context).pop(),
-              label: context.l10n.cancel,
-              color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
-            ),
-            SoftButton(
-              onPressed: () async {
-                Navigator.of(context).pop();
-                await _banUser(userId);
-              },
-              label: context.l10n.confirm,
-              color: GlobalThemeData.darkColorScheme.primary,
-            ),
-          ],
-        );
-      },
-    );
+    final confirmed = await showConfirmDialog(context,
+        title: context.l10n.ban_user,
+        message: context.l10n.ban_user_confirmation,
+        confirmLabel: context.l10n.confirm);
+    if (!confirmed) return;
+    await _banUser(userId);
   }
 
   Future<void> _banUser(String userId) async {
@@ -341,29 +306,12 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
   }
 
   Future<void> _manageUserUnbanDialog(String userId) async {
-    await showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text(context.l10n.unban_user),
-          content: Text(context.l10n.unban_user_confirmation),
-          actions: [
-            SoftButton(
-              onPressed: () => Navigator.of(context).pop(),
-              label: context.l10n.cancel,
-            ),
-            SoftButton(
-              onPressed: () async {
-                Navigator.of(context).pop();
-                await _unbanUser(userId);
-              },
-              label: context.l10n.confirm,
-              color: GlobalThemeData.darkColorScheme.primary,
-            ),
-          ],
-        );
-      },
-    );
+    final confirmed = await showConfirmDialog(context,
+        title: context.l10n.unban_user,
+        message: context.l10n.unban_user_confirmation,
+        confirmLabel: context.l10n.confirm);
+    if (!confirmed) return;
+    await _unbanUser(userId);
   }
 
   Future<void> _unbanUser(String userId) async {
@@ -378,31 +326,12 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
   }
 
   Future<void> _deleteGroup() async {
-    final confirm = await showDialog<bool>(
-          context: context,
-          builder: (context) {
-            return AlertDialog(
-              title: Text(context.l10n.delete_group),
-              content: Text(context.l10n.delete_group_confirmation),
-              actions: [
-                SoftButton(
-                  onPressed: () => Navigator.of(context).pop(false),
-                  label: context.l10n.cancel,
-                  color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
-                ),
-                SoftButton(
-                  onPressed: () => Navigator.of(context).pop(true),
-                  label: context.l10n.delete,
-                  color: Colors.red,
-                ),
-              ],
-            );
-          },
-        ) ??
-        false;
-
-    if (!confirm) return;
-    if (!mounted) return;
+    final confirm = await showConfirmDialog(context,
+        title: context.l10n.delete_group,
+        message: context.l10n.delete_group_confirmation,
+        confirmLabel: context.l10n.delete,
+        destructive: true);
+    if (!confirm || !mounted) return;
 
     await UserPreferences.removeFavoriteGroup(_group.id);
 
@@ -421,7 +350,9 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
 
   bool _canCreateInvite(String role, String permission) {
     if (role == 'owner') return true;
-    if (role == 'admin') return permission == 'admin' || permission == 'everyone';
+    if (role == 'admin') {
+      return permission == 'admin' || permission == 'everyone';
+    }
     if (role == 'member') return permission == 'everyone';
     return false;
   }
@@ -586,156 +517,20 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                 return Column(
                   children: members.map((member) {
                     final targetRole = member.role;
-                    final itemKey = GlobalKey();
-                    bool isHighlighted = false;
                     final canManage = member.user.id != _currentUserId &&
                         (currentRole == 'owner' ||
                             (currentRole == 'admin' &&
                                 targetRole != 'admin' &&
                                 targetRole != 'owner'));
 
-                    return StatefulBuilder(
-                      builder: (context, setItemState) {
-                        return GestureDetector(
-                          onLongPressDown: canManage
-                              ? (_) => setItemState(() => isHighlighted = true)
-                              : null,
-                          onLongPressCancel: canManage
-                              ? () => setItemState(() => isHighlighted = false)
-                              : null,
-                          onLongPress: canManage
-                              ? () async {
-                                  final overlay = Overlay.of(context)
-                                      .context
-                                      .findRenderObject() as RenderBox;
-                                  final box = itemKey.currentContext
-                                      ?.findRenderObject() as RenderBox?;
-                                  final pos = box?.localToGlobal(Offset.zero) ??
-                                      Offset.zero;
-                                  final size = box?.size ?? const Size(300, 56);
-
-                                  await showMenu<void>(
-                                    context: context,
-                                    color: GlobalThemeData
-                                        .darkColorScheme.surfaceBright,
-                                    position: RelativeRect.fromRect(
-                                      Rect.fromLTWH(pos.dx,
-                                          pos.dy + size.height, size.width, 0),
-                                      Offset.zero & overlay.size,
-                                    ),
-                                    items: [
-                                      if (targetRole == 'member')
-                                        PopupMenuItem(
-                                          child: ListTile(
-                                            leading: const Icon(
-                                                Symbols.add_moderator_rounded),
-                                            title:
-                                                Text(context.l10n.promote_user),
-                                            onTap: () {
-                                              Navigator.pop(context);
-                                              _manageUserRoleDialog(
-                                                  member.user.id,
-                                                  'promote_admin');
-                                            },
-                                          ),
-                                        ),
-                                      if (targetRole == 'admin' &&
-                                          currentRole == 'owner')
-                                        PopupMenuItem(
-                                          child: ListTile(
-                                            leading: const Icon(Symbols
-                                                .remove_moderator_rounded),
-                                            title:
-                                                Text(context.l10n.demote_user),
-                                            onTap: () {
-                                              Navigator.pop(context);
-                                              _manageUserRoleDialog(
-                                                  member.user.id, 'demote');
-                                            },
-                                          ),
-                                        ),
-                                      if (targetRole != 'banned' &&
-                                          (currentRole == 'owner' ||
-                                              (currentRole == 'admin' &&
-                                                  targetRole == 'member')))
-                                        PopupMenuItem(
-                                          child: ListTile(
-                                            leading: const Icon(
-                                                Symbols.person_off_rounded),
-                                            title: Text(context.l10n.ban_user),
-                                            onTap: () {
-                                              Navigator.pop(context);
-                                              _manageUserBanDialog(
-                                                  member.user.id);
-                                            },
-                                          ),
-                                        ),
-                                      if (targetRole == 'banned' &&
-                                          (currentRole == 'owner' ||
-                                              currentRole == 'admin'))
-                                        PopupMenuItem(
-                                          child: ListTile(
-                                            leading: const Icon(
-                                                Symbols.person_check_rounded),
-                                            title:
-                                                Text(context.l10n.unban_user),
-                                            onTap: () {
-                                              Navigator.pop(context);
-                                              _manageUserUnbanDialog(
-                                                  member.user.id);
-                                            },
-                                          ),
-                                        ),
-                                      if (currentRole == 'owner' &&
-                                          targetRole != 'owner' &&
-                                          targetRole != 'banned')
-                                        PopupMenuItem(
-                                          child: ListTile(
-                                            leading: const Icon(
-                                                Symbols.crown_rounded),
-                                            title: Text(context
-                                                .l10n.transfer_ownership),
-                                            onTap: () {
-                                              Navigator.pop(context);
-                                              _manageUserRoleDialog(
-                                                  member.user.id,
-                                                  'transfer_ownership');
-                                            },
-                                          ),
-                                        ),
-                                    ],
-                                  );
-                                  setItemState(() => isHighlighted = false);
-                                }
-                              : null,
-                          child: Container(
-                            key: itemKey,
-                            color: isHighlighted
-                                ? Colors.white.withValues(alpha: 0.08)
-                                : null,
-                            child: ListTile(
-                              leading: UserAvatar(member.user, radius: 25),
-                              title: Text(member.user.username),
-                              trailing: Icon(
-                                  targetRole == 'owner'
-                                      ? Symbols.crown_rounded
-                                      : targetRole == 'admin'
-                                          ? Symbols.shield_person_rounded
-                                          : targetRole == 'banned'
-                                              ? Symbols.block_rounded
-                                              : null,
-                                  color: targetRole == 'owner'
-                                      ? Colors.amber
-                                      : targetRole == 'admin'
-                                          ? Colors.blue
-                                          : targetRole == 'banned'
-                                              ? Colors.red
-                                              : null,
-                                  fill: 1),
-                            ),
-                          ),
-                        );
-                      },
+                    return _MemberTile(
+                      member: member,
+                      currentRole: currentRole,
+                      canManage: canManage,
+                      onRoleAction: (action) =>
+                          _manageUserRoleDialog(member.user.id, action),
+                      onBan: () => _manageUserBanDialog(member.user.id),
+                      onUnban: () => _manageUserUnbanDialog(member.user.id),
                     );
                   }).toList(),
                 );
@@ -853,6 +648,118 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
               },
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MemberTile extends StatefulWidget {
+  final GroupMember member;
+  final String currentRole;
+  final bool canManage;
+  final void Function(String action) onRoleAction;
+  final VoidCallback onBan;
+  final VoidCallback onUnban;
+
+  const _MemberTile({
+    required this.member,
+    required this.currentRole,
+    required this.canManage,
+    required this.onRoleAction,
+    required this.onBan,
+    required this.onUnban,
+  });
+
+  @override
+  State<_MemberTile> createState() => _MemberTileState();
+}
+
+class _MemberTileState extends State<_MemberTile> {
+  final _itemKey = GlobalKey();
+  bool _highlighted = false;
+
+  ({IconData? icon, Color? color}) _roleBadge(String role) {
+    switch (role) {
+      case 'owner':
+        return (icon: Symbols.crown_rounded, color: Colors.amber);
+      case 'admin':
+        return (icon: Symbols.shield_person_rounded, color: Colors.blue);
+      case 'banned':
+        return (icon: Symbols.block_rounded, color: Colors.red);
+      default:
+        return (icon: null, color: null);
+    }
+  }
+
+  Future<void> _showMenu() async {
+    final targetRole = widget.member.role;
+    final currentRole = widget.currentRole;
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final box = _itemKey.currentContext?.findRenderObject() as RenderBox?;
+    final pos = box?.localToGlobal(Offset.zero) ?? Offset.zero;
+    final size = box?.size ?? const Size(300, 56);
+
+    PopupMenuItem<void> item(IconData icon, String label, VoidCallback onTap) =>
+        PopupMenuItem(
+          child: ListTile(
+            leading: Icon(icon),
+            title: Text(label),
+            onTap: () {
+              Navigator.pop(context);
+              onTap();
+            },
+          ),
+        );
+
+    await showMenu<void>(
+      context: context,
+      color: GlobalThemeData.darkColorScheme.surfaceBright,
+      position: RelativeRect.fromRect(
+        Rect.fromLTWH(pos.dx, pos.dy + size.height, size.width, 0),
+        Offset.zero & overlay.size,
+      ),
+      items: [
+        if (targetRole == 'member')
+          item(Symbols.add_moderator_rounded, context.l10n.promote_user,
+              () => widget.onRoleAction('promote_admin')),
+        if (targetRole == 'admin' && currentRole == 'owner')
+          item(Symbols.remove_moderator_rounded, context.l10n.demote_user,
+              () => widget.onRoleAction('demote')),
+        if (targetRole != 'banned' &&
+            (currentRole == 'owner' ||
+                (currentRole == 'admin' && targetRole == 'member')))
+          item(Symbols.person_off_rounded, context.l10n.ban_user, widget.onBan),
+        if (targetRole == 'banned' &&
+            (currentRole == 'owner' || currentRole == 'admin'))
+          item(Symbols.person_check_rounded, context.l10n.unban_user,
+              widget.onUnban),
+        if (currentRole == 'owner' &&
+            targetRole != 'owner' &&
+            targetRole != 'banned')
+          item(Symbols.crown_rounded, context.l10n.transfer_ownership,
+              () => widget.onRoleAction('transfer_ownership')),
+      ],
+    );
+    if (mounted) setState(() => _highlighted = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final badge = _roleBadge(widget.member.role);
+    return GestureDetector(
+      onLongPressDown:
+          widget.canManage ? (_) => setState(() => _highlighted = true) : null,
+      onLongPressCancel:
+          widget.canManage ? () => setState(() => _highlighted = false) : null,
+      onLongPress: widget.canManage ? _showMenu : null,
+      child: Container(
+        key: _itemKey,
+        color: _highlighted ? Colors.white.withValues(alpha: 0.08) : null,
+        child: ListTile(
+          leading: UserAvatar(widget.member.user, radius: 25),
+          title: Text(widget.member.user.username),
+          trailing: Icon(badge.icon, color: badge.color, fill: 1),
         ),
       ),
     );

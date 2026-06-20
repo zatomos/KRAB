@@ -31,7 +31,6 @@
   "add_description": "Ajouter une description...",
   "cancel": "Annuler",
   "error": "Erreur",
-  "select_at_least_one_group": "Veuillez sélectionner au moins un groupe.",
   "send": "Envoyer",
   "comments": "Commentaires",
   "error_loading_images": "Erreur lors du chargement des images: {errorMsg}",

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/services/background_session.dart';
-import 'package:krab/services/supabase.dart';
+import 'package:krab/services/api/supabase.dart';
 import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/widgets/rounded_input_field.dart';
 import 'package:krab/widgets/soft_button.dart';

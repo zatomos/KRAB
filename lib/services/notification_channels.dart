@@ -7,7 +7,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:image/image.dart' as img;
 import 'package:krab/l10n/app_localizations.dart';
-import 'package:krab/services/supabase.dart';
+import 'package:krab/services/api/supabase.dart';
 import 'package:path_provider/path_provider.dart';
 
 AppLocalizations _l10n() {
@@ -62,7 +62,6 @@ Future<String?> getLocalNotificationLaunchPayload() async {
   if (details == null || !details.didNotificationLaunchApp) return null;
   return details.notificationResponse?.payload;
 }
-
 
 img.Image? _circleImage(Uint8List? bytes, int size) {
   if (bytes == null) return null;

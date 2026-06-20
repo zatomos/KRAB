@@ -7,10 +7,10 @@ class GroupAvatar extends StatelessWidget {
   final double radius;
 
   const GroupAvatar(
-      this.group, {
-        super.key,
-        this.radius = 50,
-      });
+    this.group, {
+    super.key,
+    this.radius = 50,
+  });
 
   @override
   Widget build(BuildContext context) {

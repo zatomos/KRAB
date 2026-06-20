@@ -4,20 +4,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:krab/services/home_widget_updater.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
-import 'package:krab/widgets/soft_button.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:native_device_orientation/native_device_orientation.dart';
 
-import 'package:krab/l10n/l10n.dart';
-import 'package:krab/services/supabase.dart';
+import 'package:krab/services/api/supabase.dart';
 import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/models/user.dart' as krab_user;
-import 'package:krab/widgets/image_sent_dialog.dart';
-import 'package:krab/widgets/rounded_input_field.dart';
-import 'package:krab/widgets/user_avatar.dart';
-import 'package:krab/user_preferences.dart';
+import 'package:krab/widgets/dialogs/image_sent_dialog.dart';
+import 'package:krab/widgets/dialogs/send_image_dialog.dart';
+import 'package:krab/widgets/avatars/user_avatar.dart';
 import 'groups_page.dart';
 import 'account_page.dart';
 
@@ -333,228 +330,21 @@ class CameraPageState extends State<CameraPage> {
   }
 
   Future<void> _showSendImageDialog(File imageFile) async {
-    final TextEditingController description = TextEditingController();
-    final favoriteGroups = await UserPreferences.getFavoriteGroups();
-    Set<String> selectedGroups = {};
-    selectedGroups.addAll(favoriteGroups);
-    final groupsFuture = getUserGroups();
-    if (!mounted) return;
-
-    // Capture the CameraPage context before entering any dialog builder so
-    // nested showDialog calls always use a live context
-    final outerContext = context;
-
     setState(() => _dialogOpen = true);
     try {
+      final response = await showDialog<SupabaseResponse<void>>(
+        context: context,
+        builder: (_) => SendImageDialog(imageFile: imageFile),
+      );
+      if (response == null || !mounted) return;
+
+      if (response.success) updateHomeWidget();
       await showDialog(
         context: context,
-        builder: (context) {
-          return StatefulBuilder(
-            builder: (BuildContext context, StateSetter setState) {
-              final isLandscape =
-                  MediaQuery.of(context).orientation == Orientation.landscape;
-              final screenWidth = MediaQuery.of(context).size.width;
-              final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
-              final keyboardOpen = keyboardHeight > 0;
-
-              final insetV = isLandscape ? 4.0 : 24.0;
-              // Zero spacer in landscape with keyboard to reclaim every pixel
-              final spacerH = (isLandscape && keyboardOpen) ? 0.0 : 8.0;
-
-              final groupsWidget = FutureBuilder(
-                future: groupsFuture,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Padding(
-                      padding: EdgeInsets.all(30),
-                      child: CircularProgressIndicator(),
-                    );
-                  } else if (snapshot.hasError ||
-                      !snapshot.hasData ||
-                      !(snapshot.data?.success ?? false)) {
-                    final errorMsg = snapshot.hasError
-                        ? snapshot.error.toString()
-                        : (snapshot.data?.error ??
-                            context.l10n.failed_to_load_groups);
-                    return Center(child: Text("Error: $errorMsg"));
-                  } else {
-                    final groups = snapshot.data!.data ?? [];
-                    if (groups.isEmpty) {
-                      return Center(child: Text(context.l10n.join_group_first));
-                    }
-                    return ListView.builder(
-                      itemCount: groups.length,
-                      itemBuilder: (context, index) {
-                        final group = groups[index];
-                        return CheckboxListTile(
-                          title: Text(group.name),
-                          value: selectedGroups.contains(group.id),
-                          onChanged: (bool? value) {
-                            setState(() {
-                              if (value == true) {
-                                selectedGroups.add(group.id);
-                              } else {
-                                selectedGroups.remove(group.id);
-                              }
-                            });
-                          },
-                        );
-                      },
-                    );
-                  }
-                },
-              );
-
-              final Widget dialogContent;
-              if (isLandscape) {
-                dialogContent = Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Expanded(
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
-                        child: Image.file(imageFile, fit: BoxFit.cover),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        children: [
-                          Flexible(child: groupsWidget),
-                        ],
-                      ),
-                    ),
-                  ],
-                );
-              } else {
-                dialogContent = Column(
-                  children: [
-                    if (!keyboardOpen) ...[
-                      Container(
-                        width: double.infinity,
-                        height: 200,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(10),
-                          image: DecorationImage(
-                              image: FileImage(imageFile), fit: BoxFit.cover),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                    ],
-                    Flexible(child: groupsWidget),
-                  ],
-                );
-              }
-
-              return AlertDialog(
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8)),
-                insetPadding: EdgeInsets.symmetric(
-                  horizontal: isLandscape ? 16 : 40,
-                  vertical: insetV,
-                ),
-                title: isLandscape ? null : Text(context.l10n.select_groups),
-                contentPadding: (isLandscape && keyboardOpen)
-                    ? EdgeInsets.zero
-                    : isLandscape
-                        ? const EdgeInsets.fromLTRB(16, 16, 16, 0)
-                        : null,
-                actionsPadding: isLandscape
-                    ? const EdgeInsets.fromLTRB(16, 4, 16, 8)
-                    : null,
-                content: SizedBox(
-                  width: screenWidth,
-                  child: LayoutBuilder(
-                    builder: (_, cst) {
-                      // Reserve room for description + spacer +  safety margin.
-                      final gh = cst.maxHeight.isFinite
-                          ? (cst.maxHeight - spacerH - 88).clamp(0.0, 400.0)
-                          : (MediaQuery.of(context).size.height * 0.40)
-                              .clamp(60.0, 400.0);
-                      return Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Visibility(
-                            visible: !(isLandscape && keyboardOpen),
-                            child: ConstrainedBox(
-                              constraints: BoxConstraints(maxHeight: gh),
-                              child: dialogContent,
-                            ),
-                          ),
-                          SizedBox(height: spacerH),
-                          RoundedInputField(
-                            hintText: context.l10n.add_description,
-                            capitalizeSentences: true,
-                            controller: description,
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                ),
-                actions: keyboardOpen
-                    ? null
-                    : [
-                        SoftButton(
-                            onPressed: () => Navigator.of(context).pop(),
-                            label: context.l10n.cancel),
-                        SoftButton(
-                            onPressed: () async {
-                              if (selectedGroups.isEmpty) {
-                                await showDialog(
-                                  context: context,
-                                  builder: (context) => AlertDialog(
-                                    title: Text(context.l10n.error),
-                                    content: Text(
-                                        context.l10n.select_at_least_one_group),
-                                    actions: [
-                                      SoftButton(
-                                          onPressed: () =>
-                                              Navigator.of(context).pop(),
-                                          label: "OK",
-                                          color: GlobalThemeData
-                                              .darkColorScheme.primary),
-                                    ],
-                                  ),
-                                );
-                                return;
-                              }
-
-                              showDialog(
-                                context: context,
-                                barrierDismissible: false,
-                                builder: (context) => const Center(
-                                    child: CircularProgressIndicator()),
-                              );
-
-                              final response = await sendImageToGroups(
-                                imageFile,
-                                selectedGroups.toList(),
-                                description.text,
-                              );
-                              if (!context.mounted) return;
-
-                              Navigator.of(context).pop(); // loading
-                              Navigator.of(context).pop(); // main dialog
-
-                              if (response.success) updateHomeWidget();
-
-                              if (!outerContext.mounted) return;
-                              await showDialog(
-                                context: outerContext,
-                                builder: (context) => ImageSentDialog(
-                                  success: response.success,
-                                  errorMsg: response.error,
-                                ),
-                              );
-                            },
-                            label: context.l10n.send,
-                            color: GlobalThemeData.darkColorScheme.primary),
-                      ],
-              );
-            },
-          );
-        },
+        builder: (_) => ImageSentDialog(
+          success: response.success,
+          errorMsg: response.error,
+        ),
       );
     } finally {
       if (mounted) setState(() => _dialogOpen = false);

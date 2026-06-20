@@ -143,7 +143,7 @@ class HomeScreenWidgetMulti : AppWidgetProvider() {
                         manager.updateAppWidget(id, views)
                     }
                 } else {
-                    Log.w(TAG, "Widget $id: prev1 null — url=$prev1Url fileExists=${prev1Url?.let { File(it.trim()).exists() }}")
+                    Log.w(TAG, "Widget $id: prev1 null - url=$prev1Url fileExists=${prev1Url?.let { File(it.trim()).exists() }}")
                 }
                 val bm2 = loadScaledBitmap(prev2Url, prevBudget)
                 if (bm2 != null) {
@@ -152,7 +152,7 @@ class HomeScreenWidgetMulti : AppWidgetProvider() {
                         manager.updateAppWidget(id, views)
                     }
                 } else {
-                    Log.w(TAG, "Widget $id: prev2 null — url=$prev2Url fileExists=${prev2Url?.let { File(it.trim()).exists() }}")
+                    Log.w(TAG, "Widget $id: prev2 null - url=$prev2Url fileExists=${prev2Url?.let { File(it.trim()).exists() }}")
                 }
 
                 if (showText && showPfp) {

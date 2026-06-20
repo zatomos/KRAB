@@ -24,7 +24,8 @@ class RectangleButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final effectiveBackgroundColor = backgroundColor ?? GlobalThemeData.darkColorScheme.primary;
+    final effectiveBackgroundColor =
+        backgroundColor ?? GlobalThemeData.darkColorScheme.primary;
     final button = ElevatedButton(
       onPressed: onPressed,
       style: ElevatedButton.styleFrom(

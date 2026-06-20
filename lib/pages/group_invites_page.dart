@@ -3,13 +3,14 @@ import 'package:flutter/services.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:krab/models/group_invite.dart';
-import 'package:krab/services/supabase.dart';
+import 'package:krab/services/api/supabase.dart';
+import 'package:krab/widgets/dialogs/dialogs.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/widgets/soft_button.dart';
 import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/l10n/l10n.dart';
 
-/// Owner/admin management view: create, share, and revoke group invites.
+/// Management view to create, share, and revoke group invites.
 class GroupInvitesPage extends StatefulWidget {
   final String groupId;
 
@@ -43,26 +44,11 @@ class _GroupInvitesPageState extends State<GroupInvitesPage> {
   }
 
   Future<void> _revokeInvite(String token) async {
-    final confirm = await showDialog<bool>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: Text(context.l10n.revoke_invite),
-            content: Text(context.l10n.revoke_invite_confirmation),
-            actions: [
-              SoftButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                label: context.l10n.cancel,
-                color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
-              ),
-              SoftButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                label: context.l10n.revoke,
-                color: Colors.red,
-              ),
-            ],
-          ),
-        ) ??
-        false;
+    final confirm = await showConfirmDialog(context,
+        title: context.l10n.revoke_invite,
+        message: context.l10n.revoke_invite_confirmation,
+        confirmLabel: context.l10n.revoke,
+        destructive: true);
     if (!confirm) return;
 
     final res = await revokeGroupInvite(token);
@@ -99,11 +85,10 @@ class _GroupInvitesPageState extends State<GroupInvitesPage> {
     return Scaffold(
       appBar: AppBar(title: Text(context.l10n.manage_invites)),
       floatingActionButton: SoftButton(
-        onPressed: _createInvite,
-        icon: Symbols.add_link_rounded,
-        label: context.l10n.create_invite,
-        color: GlobalThemeData.darkColorScheme.primary
-      ),
+          onPressed: _createInvite,
+          icon: Symbols.add_link_rounded,
+          label: context.l10n.create_invite,
+          color: GlobalThemeData.darkColorScheme.primary),
       body: FutureBuilder<SupabaseResponse<List<GroupInvite>>>(
         future: _invitesFuture,
         builder: (context, snapshot) {

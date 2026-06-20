@@ -39,8 +39,7 @@ class SecureBackgroundLocalStorage extends LocalStorage {
       _bgStorage.write(key: sessionKey, value: persistSessionString);
 
   @override
-  Future<void> removePersistedSession() =>
-      _bgStorage.delete(key: sessionKey);
+  Future<void> removePersistedSession() => _bgStorage.delete(key: sessionKey);
 }
 
 /// Manages the lifecycle of the per-isolate background session credentials.
@@ -71,9 +70,11 @@ class BackgroundSession {
   /// usable. If it couldn't be, drops this isolate's own stored credential so
   /// hasSession reports false and the next app open re-mints via the prompt.
   /// Call right after initializing the isolate's Supabase client.
-  static Future<bool> recoverOrClear(SecureBackgroundLocalStorage storage) async {
+  static Future<bool> recoverOrClear(
+      SecureBackgroundLocalStorage storage) async {
     if (Supabase.instance.client.auth.currentSession != null) return true;
-    debugPrint('BG session: unrecoverable (${storage.sessionKey}); clearing own');
+    debugPrint(
+        'BG session: unrecoverable (${storage.sessionKey}); clearing own');
     await storage.removePersistedSession();
     return false;
   }
@@ -87,8 +88,8 @@ class BackgroundSession {
     return results.every((ok) => ok);
   }
 
-  static Future<bool> _mintInto(
-      SecureBackgroundLocalStorage storage, String email, String password) async {
+  static Future<bool> _mintInto(SecureBackgroundLocalStorage storage,
+      String email, String password) async {
     try {
       final url = UserPreferences.supabaseUrl;
       final anon = UserPreferences.supabaseAnonKey;
@@ -103,7 +104,8 @@ class BackgroundSession {
 
       final session = data == null ? null : Session.fromJson(data);
       if (session == null) {
-        debugPrint('BG session: mint returned no session (${storage.sessionKey}).');
+        debugPrint(
+            'BG session: mint returned no session (${storage.sessionKey}).');
         return false;
       }
 

@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'package:krab/services/supabase.dart';
+import 'package:krab/services/api/supabase.dart';
 
 class User {
   final String id;
@@ -22,10 +22,7 @@ class User {
   }) {
     pfpUrl ??= '';
     return User(
-      id: id ?? this.id,
-      username: username ?? this.username,
-      pfpUrl: pfpUrl
-    );
+        id: id ?? this.id, username: username ?? this.username, pfpUrl: pfpUrl);
   }
 
   // Convert a JSON Map to a User object

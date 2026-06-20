@@ -25,7 +25,6 @@ class SoftButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-
     final bgColor = color.withValues(alpha: opacity);
 
     Widget content = Container(
@@ -37,10 +36,8 @@ class SoftButton extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (icon != null)
-            Icon(icon, color: color),
-          if (icon != null)
-            const SizedBox(width: 8),
+          if (icon != null) Icon(icon, color: color),
+          if (icon != null) const SizedBox(width: 8),
           Text(
             label,
             style: TextStyle(
@@ -64,7 +61,6 @@ class SoftButton extends StatelessWidget {
         ),
       );
     }
-
 
     return InkWell(
       borderRadius: BorderRadius.circular(radius),
