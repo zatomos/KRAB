@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:workmanager/workmanager.dart';
 
 import 'package:krab/user_preferences.dart';
+import 'package:krab/models/image_ref.dart';
 import 'package:krab/services/supabase.dart';
 import 'package:krab/services/debug_notifier.dart';
 import 'file_saver.dart';
@@ -24,7 +25,8 @@ class _WidgetEntry {
   _WidgetEntry(this.id, this.isMulti, this.groupIds);
 
   /// Signature used to dedupe network fetches across widgets sharing a filter.
-  String get filterKey => groupIds.isEmpty ? '*' : (List.of(groupIds)..sort()).join(',');
+  String get filterKey =>
+      groupIds.isEmpty ? '*' : (List.of(groupIds)..sort()).join(',');
 }
 
 /// Cache the user's groups so the native widget configure activity can populate
@@ -33,9 +35,7 @@ Future<void> cacheUserGroupsForWidget() async {
   try {
     final result = await getUserGroups();
     if (!result.success || result.data == null) return;
-    final list = result.data!
-        .map((g) => {'id': g.id, 'name': g.name})
-        .toList();
+    final list = result.data!.map((g) => {'id': g.id, 'name': g.name}).toList();
     await HomeWidget.saveWidgetData('cachedGroups', jsonEncode(list));
     debugPrint("Widget: cached ${list.length} groups");
   } catch (e) {
@@ -79,7 +79,11 @@ Future<List<int>> _readRegistry(String key) async {
 Future<List<String>> _readWidgetGroups(int id) async {
   final csv = await HomeWidget.getWidgetData<String>('widgetGroups_$id');
   if (csv == null || csv.trim().isEmpty) return [];
-  return csv.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+  return csv
+      .split(',')
+      .map((s) => s.trim())
+      .where((s) => s.isNotEmpty)
+      .toList();
 }
 
 Future<void> updateHomeWidget() async {
@@ -101,7 +105,8 @@ Future<void> updateHomeWidget() async {
 
     if (entries.isEmpty) {
       debugPrint("Registry empty, triggering onUpdate to force syncRegistry.");
-      await DebugNotifier.instance.notifyWidgetStep(2, 3, "Registry empty, syncing");
+      await DebugNotifier.instance
+          .notifyWidgetStep(2, 3, "Registry empty, syncing");
       await HomeWidget.updateWidget(name: "HomeScreenWidget");
       await HomeWidget.updateWidget(name: "HomeScreenWidgetMulti");
       return;
@@ -113,7 +118,7 @@ Future<void> updateHomeWidget() async {
 
     // Cache image-list fetches by filter signature so widgets that share a
     // group filter only hit the network once.
-    final fetchCache = <String, List<dynamic>>{};
+    final fetchCache = <String, List<ImageRef>>{};
 
     bool singleChanged = false;
     bool multiChanged = false;
@@ -124,12 +129,13 @@ Future<void> updateHomeWidget() async {
       final needed = entry.isMulti ? 3 : 1;
       final cacheKey = "${entry.filterKey}#$needed";
 
-      List<dynamic>? images = fetchCache[cacheKey];
+      List<ImageRef>? images = fetchCache[cacheKey];
       if (images == null) {
         final result = await getLatestImages(needed, groupIds: entry.groupIds);
         if (!result.success || result.data == null) {
           debugPrint("Widget ${entry.id}: fetch failed: ${result.error}");
-          await DebugNotifier.instance.notifyWidgetUpdateFailed("Fetch failed: ${result.error}");
+          await DebugNotifier.instance
+              .notifyWidgetUpdateFailed("Fetch failed: ${result.error}");
           continue;
         }
         images = result.data!;
@@ -152,17 +158,24 @@ Future<void> updateHomeWidget() async {
     if (anyNewImage) {
       step2Message = "New images found";
     } else if (anyChanged) {
-      step2Message = "Reloaded (new group filter or repaired missing thumbnail)";
+      step2Message =
+          "Reloaded (new group filter or repaired missing thumbnail)";
     } else {
       step2Message = "No new images";
     }
     await DebugNotifier.instance.notifyWidgetStep(2, 3, step2Message);
 
-    if (singleChanged) await HomeWidget.updateWidget(name: "HomeScreenWidget");
-    if (multiChanged) await HomeWidget.updateWidget(name: "HomeScreenWidgetMulti");
+    if (singleChanged) {
+      await HomeWidget.updateWidget(name: "HomeScreenWidget");
+    }
+    if (multiChanged) {
+      await HomeWidget.updateWidget(name: "HomeScreenWidgetMulti");
+    }
 
-    debugPrint("Widget update complete (single=$singleChanged multi=$multiChanged).");
-    await DebugNotifier.instance.notifyWidgetUpdateSuccess(anyChanged ? "updated" : "unchanged");
+    debugPrint(
+        "Widget update complete (single=$singleChanged multi=$multiChanged).");
+    await DebugNotifier.instance
+        .notifyWidgetUpdateSuccess(anyChanged ? "updated" : "unchanged");
   } catch (e, st) {
     debugPrint("Widget update failed: $e\n$st");
     await DebugNotifier.instance.notifyWidgetUpdateFailed("Error: $e");
@@ -171,19 +184,22 @@ Future<void> updateHomeWidget() async {
 
 // ---- Per-widget paths and keys -------------------------------------------
 
-String _mainPath(Directory dir, int id) => "${dir.path}/krab_widget_${id}_current.jpg";
-String _prevPath(Directory dir, int id, int i) => "${dir.path}/krab_widget_${id}_prev$i.jpg";
-String _pfpPath(Directory dir, int id) => "${dir.path}/krab_widget_${id}_pfp.jpg";
-String _prevPfpPath(Directory dir, int id, int i) => "${dir.path}/krab_widget_${id}_prev${i}_pfp.jpg";
+String _mainPath(Directory dir, int id) =>
+    "${dir.path}/krab_widget_${id}_current.jpg";
+String _prevPath(Directory dir, int id, int i) =>
+    "${dir.path}/krab_widget_${id}_prev$i.jpg";
+String _pfpPath(Directory dir, int id) =>
+    "${dir.path}/krab_widget_${id}_pfp.jpg";
+String _prevPfpPath(Directory dir, int id, int i) =>
+    "${dir.path}/krab_widget_${id}_prev${i}_pfp.jpg";
 
 /// Sync a single widget instance.
 Future<({bool changed, bool newImage})> _syncWidget(
-    _WidgetEntry entry, List<dynamic> images, Directory dir) async {
+    _WidgetEntry entry, List<ImageRef> images, Directory dir) async {
   if (images.isEmpty) return (changed: false, newImage: false);
 
   final id = entry.id;
-  final latestId = images[0]['id']?.toString();
-  if (latestId == null) return (changed: false, newImage: false);
+  final latestId = images[0].id;
 
   final lastId = await HomeWidget.getWidgetData<String>('lastImageId_$id');
   bool changed = false;
@@ -203,9 +219,11 @@ Future<({bool changed, bool newImage})> _syncWidget(
     await HomeWidget.saveWidgetData('recentImageUrl_$id', mainPath);
 
     final details = await getImageDetails(latestId);
-    final description = details.data?['description'] ?? "";
-    final uploaderId = details.data?['uploaded_by'];
-    final uploaderName = (await getUserDetails(uploaderId)).data?.username ?? "Unknown";
+    final description = details.data?.description ?? "";
+    final uploaderId = details.data?.uploadedBy;
+    final uploaderName = uploaderId == null
+        ? "Unknown"
+        : (await getUserDetails(uploaderId)).data?.username ?? "Unknown";
     await HomeWidget.saveWidgetData('recentImageDescription_$id', description);
     await HomeWidget.saveWidgetData('recentImageSender_$id', uploaderName);
     await HomeWidget.saveWidgetData('recentSenderUserId_$id', uploaderId);
@@ -247,7 +265,8 @@ Future<({bool changed, bool newImage})> _syncWidget(
 /// regardless of how many images arrived between refreshes or whether an earlier
 /// run failed midway. Slots with no corresponding image are cleared so a stale
 /// image can never linger or be duplicated.
-Future<bool> _ensurePrevImages(_WidgetEntry entry, List<dynamic> images, Directory dir) async {
+Future<bool> _ensurePrevImages(
+    _WidgetEntry entry, List<ImageRef> images, Directory dir) async {
   final id = entry.id;
   bool changed = false;
 
@@ -259,7 +278,7 @@ Future<bool> _ensurePrevImages(_WidgetEntry entry, List<dynamic> images, Directo
     final pfpKey = 'previousImage${i}SenderPfpUrl_$id';
 
     // No image for this slot (fewer than 3 images available): clear it.
-    if (i >= images.length || images[i]['id'] == null) {
+    if (i >= images.length) {
       if (await imgFile.exists()) await imgFile.delete();
       if (await pfpFile.exists()) await pfpFile.delete();
       await HomeWidget.saveWidgetData(urlKey, '');
@@ -268,7 +287,7 @@ Future<bool> _ensurePrevImages(_WidgetEntry entry, List<dynamic> images, Directo
       continue;
     }
 
-    final prevId = images[i]['id'].toString();
+    final prevId = images[i].id;
     final storedId = await HomeWidget.getWidgetData<String>(idKey);
 
     if (storedId != prevId || !await imgFile.exists()) {
@@ -295,7 +314,7 @@ Future<bool> _ensurePrevImages(_WidgetEntry entry, List<dynamic> images, Directo
 Future<bool> _savePrevPfp(String prevId, File pfpFile, String pfpKey) async {
   try {
     final details = await getImageDetails(prevId);
-    final uploaderId = details.data?['uploaded_by']?.toString();
+    final uploaderId = details.data?.uploadedBy;
     if (uploaderId == null) return false;
     final result = await getProfilePictureBytes(uploaderId);
     if (result.success && result.data != null) {
@@ -311,7 +330,8 @@ Future<bool> _savePrevPfp(String prevId, File pfpFile, String pfpKey) async {
 
 /// Auto-save the newest received image to the gallery, at most once per image
 /// id across all widgets, when the user has the setting enabled.
-Future<void> _maybeAutoSave(String imageId, Uint8List bytes, String uploaderName) async {
+Future<void> _maybeAutoSave(
+    String imageId, Uint8List bytes, String uploaderName) async {
   try {
     if (!await UserPreferences.getAutoImageSave()) return;
     final lastSaved = await UserPreferences.getLastWidgetImageId();

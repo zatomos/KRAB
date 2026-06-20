@@ -30,7 +30,6 @@ import 'package:krab/widgets/update_checker.dart';
 import 'package:krab/l10n/l10n.dart';
 import 'user_preferences.dart';
 
-
 bool isSupabaseInitialized = false;
 bool isAppInitialized = false;
 Completer<bool>? _supabaseInitCompleter;
@@ -168,22 +167,27 @@ Future<bool> initializeBackgroundSupabase(LocalStorage storage) async {
   }
 }
 
+/// Common boot sequence for background isolates
+Future<void> _bootstrapBackgroundIsolate() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await dotenv.load(fileName: ".env");
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await UserPreferences().initPrefs();
+  await DebugNotifier.instance.initialize();
+}
+
 @pragma('vm:entry-point')
 void workmanagerCallbackDispatcher() {
   Workmanager().executeTask((taskName, inputData) async {
     try {
-      WidgetsFlutterBinding.ensureInitialized();
-      await dotenv.load(fileName: ".env");
-      await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-      await UserPreferences().initPrefs();
-      await DebugNotifier.instance.initialize();
+      await _bootstrapBackgroundIsolate();
 
       // Piggyback a throttled app-update check on this wakeup
       await UpdateService.maybeCheckAndNotifyUpdate();
 
       // This isolate owns its own background session and refreshes it itself
-      final supabaseOk =
-          await initializeBackgroundSupabase(BackgroundSession.workmanagerStorage);
+      final supabaseOk = await initializeBackgroundSupabase(
+          BackgroundSession.workmanagerStorage);
       if (!supabaseOk) {
         debugPrint('WorkManager: Supabase init failed, skipping widget update');
         return Future.value(false);
@@ -214,18 +218,7 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   }
 
   try {
-    WidgetsFlutterBinding.ensureInitialized();
-
-    await dotenv.load(fileName: ".env");
-
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
-
-    await UserPreferences().initPrefs();
-
-    // Initialize debug notifier for background context
-    await DebugNotifier.instance.initialize();
+    await _bootstrapBackgroundIsolate();
     await DebugNotifier.instance.notifyBackgroundTaskStarted();
 
     final supabaseOk =
@@ -492,7 +485,6 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
         await _handleLocalNotificationTap(pendingLocalNotificationPayload!);
         pendingLocalNotificationPayload = null;
       }
-
 
       // One-time prompt to establish the background session for users who were
       // already logged in before it existed

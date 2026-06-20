@@ -171,17 +171,11 @@ class UpdateService {
     final pa = _parseVersion(a);
     final pb = _parseVersion(b);
 
-    final na = pa[0] as List<int>;
-    final nb = pb[0] as List<int>;
     for (int i = 0; i < 3; i++) {
-      if (na[i] != nb[i]) return na[i] - nb[i];
+      if (pa.nums[i] != pb.nums[i]) return pa.nums[i] - pb.nums[i];
     }
-
-    final stageA = pa[1] as int;
-    final stageB = pb[1] as int;
-    if (stageA != stageB) return stageA - stageB;
-
-    return (pa[2] as int) - (pb[2] as int);
+    if (pa.stage != pb.stage) return pa.stage - pb.stage;
+    return pa.stageNum - pb.stageNum;
   }
 
   static const _checkThrottle = Duration(hours: 24);
@@ -205,8 +199,10 @@ class UpdateService {
     await showUpdateNotification(result.info!.version);
   }
 
-  List<dynamic> _parseVersion(String version) {
-    final stagePriority = {
+  /// Parsed version: release numbers (major/minor/patch), prerelease [stage]
+  /// priority, and the number within that stage (e.g. beta.2 -> 2).
+  ({List<int> nums, int stage, int stageNum}) _parseVersion(String version) {
+    const stagePriority = {
       "debug": 0,
       "alpha": 1,
       "beta": 2,
@@ -216,25 +212,24 @@ class UpdateService {
 
     final split = version.split('-');
     final numbers = split[0].split('.').map(int.parse).toList();
-
     while (numbers.length < 3) {
       numbers.add(0);
     }
 
     String stageName = "";
     int stageNumber = 0;
-
     if (split.length > 1) {
       final stageParts = split[1].split('.');
       stageName = stageParts[0].toLowerCase();
-
       if (stageParts.length > 1) {
         stageNumber = int.tryParse(stageParts[1]) ?? 0;
       }
     }
 
-    final stage = stagePriority[stageName] ?? -1;
-
-    return [numbers, stage, stageNumber];
+    return (
+      nums: numbers,
+      stage: stagePriority[stageName] ?? -1,
+      stageNum: stageNumber,
+    );
   }
 }

@@ -9,6 +9,7 @@ import 'package:krab/services/supabase.dart';
 import 'package:krab/models/group.dart';
 import 'package:krab/models/user.dart' as krab_user;
 import 'package:krab/models/image_data.dart';
+import 'package:krab/models/image_ref.dart';
 import 'package:krab/pages/full_image_page.dart';
 import 'package:krab/pages/group_settings_page.dart';
 import 'package:krab/widgets/user_avatar.dart';
@@ -24,7 +25,7 @@ class GroupImagesPage extends StatefulWidget {
 }
 
 class GroupPageState extends State<GroupImagesPage> {
-  late Future<SupabaseResponse<List<dynamic>>> _groupImagesFuture;
+  late Future<SupabaseResponse<List<ImageRef>>> _groupImagesFuture;
 
   /// Caches
   final Map<String, Uint8List> _lowResCache = {};
@@ -47,8 +48,8 @@ class GroupPageState extends State<GroupImagesPage> {
         final imagesResponse = await _groupImagesFuture;
         if (!mounted) return;
         final images = imagesResponse.data ?? [];
-        final initialIndex = images.indexWhere(
-            (img) => img['id'].toString() == widget.imageId!);
+        final initialIndex =
+            images.indexWhere((img) => img.id == widget.imageId!);
         final initialData = await _getImageDataFuture(widget.imageId!);
         if (!mounted) return;
         final idx = initialIndex >= 0 ? initialIndex : 0;
@@ -132,8 +133,8 @@ class GroupPageState extends State<GroupImagesPage> {
           "Error fetching image details: ${imageDetailsResponse.error}");
     }
 
-    final Map<String, dynamic> imageDetails = imageDetailsResponse.data!;
-    final String uploaderId = imageDetails['uploaded_by'];
+    final imageDetails = imageDetailsResponse.data!;
+    final uploaderId = imageDetails.uploadedBy;
 
     // Cache username
     if (!_userCache.containsKey(uploaderId)) {
@@ -156,8 +157,8 @@ class GroupPageState extends State<GroupImagesPage> {
     return ImageData(
       imageBytes: imageBytes,
       uploadedBy: uploaderId,
-      createdAt: imageDetails['created_at'],
-      description: imageDetails['description'],
+      createdAt: imageDetails.createdAt,
+      description: imageDetails.description,
     );
   }
 
@@ -199,7 +200,7 @@ class GroupPageState extends State<GroupImagesPage> {
           ),
         ],
       ),
-      body: FutureBuilder<SupabaseResponse<List<dynamic>>>(
+      body: FutureBuilder<SupabaseResponse<List<ImageRef>>>(
         future: _groupImagesFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -229,8 +230,7 @@ class GroupPageState extends State<GroupImagesPage> {
                     childAspectRatio: 1,
                   ),
                   itemBuilder: (context, index) {
-                    final image = images[index];
-                    final imageId = image['id'].toString();
+                    final imageId = images[index].id;
 
                     return FutureBuilder<ImageData>(
                       future: _getImageDataFuture(imageId),
@@ -386,7 +386,7 @@ PageRoute<void> _galleryRoute(Widget page) => PageRouteBuilder<void>(
     );
 
 class _ImageGalleryPage extends StatefulWidget {
-  final List<dynamic> images;
+  final List<ImageRef> images;
   final int initialIndex;
   final ImageData initialImageData;
   final krab_user.User initialUploader;
@@ -517,7 +517,7 @@ class _ImageGalleryPageState extends State<_ImageGalleryPage> {
                   onPageChanged: (_) => _isZoomed.value = false,
                   itemCount: widget.images.length,
                   itemBuilder: (context, index) {
-                    final imageId = widget.images[index]['id'].toString();
+                    final imageId = widget.images[index].id;
                     if (index == widget.initialIndex) {
                       return _buildPage(
                           imageId, index, widget.initialImageData, widget.initialUploader);

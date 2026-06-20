@@ -114,7 +114,8 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
       if (mounted) {
         setState(() => _isSending = false);
         showSnackBar(
-            context.l10n.error_adding_comment(response.error ?? "Unknown error"),
+            context.l10n
+                .error_adding_comment(response.error ?? "Unknown error"),
             color: Colors.red);
       }
     }
@@ -130,7 +131,10 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
     if (response.success) {
       _newCommentController.clear();
       _inputFocusNode.unfocus();
-      setState(() { _editingCommentId = null; _isSending = false; });
+      setState(() {
+        _editingCommentId = null;
+        _isSending = false;
+      });
       await _fetchComments();
       if (mounted) {
         showSnackBar(context.l10n.comment_updated_success, color: Colors.green);
@@ -139,7 +143,8 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
       if (mounted) {
         setState(() => _isSending = false);
         showSnackBar(
-            context.l10n.error_updating_comment(response.error ?? "Unknown error"),
+            context.l10n
+                .error_updating_comment(response.error ?? "Unknown error"),
             color: Colors.red);
       }
     }
@@ -231,6 +236,45 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
     _inputFocusNode.unfocus();
   }
 
+  /// Resolve the author of a comment
+  Future<krab_user.User> _userFor(Comment comment) {
+    return _userCache.putIfAbsent(
+      comment.userId,
+      () => getUserDetails(comment.userId).then((response) =>
+          (response.success && response.data != null)
+              ? response.data!
+              : krab_user.User(id: comment.userId, username: "Unknown")),
+    );
+  }
+
+  /// Reply / edit / delete row under a comment
+  Widget _commentActions(Comment comment, String username, bool isCurrentUser) {
+    final muted = Theme.of(context).colorScheme.onSurfaceVariant;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(0, 12, 0, 18),
+      child: Row(
+        spacing: 32,
+        children: [
+          GestureDetector(
+            onTap: () => _startReply(comment, username),
+            child: Icon(Symbols.chat_rounded, size: 20, color: muted),
+          ),
+          if (isCurrentUser) ...[
+            GestureDetector(
+              onTap: () => _startEdit(comment),
+              child: Icon(Symbols.edit_rounded, size: 20, color: muted),
+            ),
+            GestureDetector(
+              onTap: () => _deleteComment(comment.id),
+              child: Icon(Symbols.delete_rounded,
+                  size: 20, color: Theme.of(context).colorScheme.error),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildCommentItem(Comment comment, {int depth = 0}) {
     final currentUserId = Supabase.instance.client.auth.currentUser?.id;
     final isCurrentUser = comment.userId == currentUserId;
@@ -243,15 +287,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
         Padding(
           padding: EdgeInsets.only(left: effectiveDepth * 24.0),
           child: FutureBuilder<krab_user.User>(
-            future: _userCache.putIfAbsent(
-              comment.userId,
-              () => getUserDetails(comment.userId).then((response) {
-                if (response.success && response.data != null) {
-                  return response.data!;
-                }
-                return krab_user.User(id: comment.userId, username: "Unknown");
-              }),
-            ),
+            future: _userFor(comment),
             builder: (context, snapshot) {
               final username = snapshot.data?.username ?? "...";
               final user = snapshot.data ??
@@ -276,8 +312,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
                                   text: username,
                                   style: const TextStyle(
                                       fontWeight: FontWeight.w600,
-                                    fontSize: 14
-                                  ),
+                                      fontSize: 14),
                                 ),
                                 TextSpan(
                                   text:
@@ -295,44 +330,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
                           const SizedBox(height: 4),
                           // Comment text
                           Text(comment.text),
-                          // Action buttons
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(0, 12, 0, 18),
-                            child: Row(
-                              spacing: 32,
-                              children: [
-                                // Reply button
-                                GestureDetector(
-                                  onTap: () => _startReply(comment, username),
-                                  child: Icon(Symbols.chat_rounded,
-                                      size: 20,
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .onSurfaceVariant),
-                                ),
-                                if (isCurrentUser) ...[
-                                  GestureDetector(
-                                    onTap: () => _startEdit(comment),
-                                    child: Icon(Symbols.edit_rounded,
-                                        size: 20,
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .onSurfaceVariant
-                                    ),
-                                  ),
-                                  GestureDetector(
-                                    onTap: () => _deleteComment(comment.id),
-                                    child: Icon(Symbols.delete_rounded,
-                                        size: 20,
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .error
-                                    )
-                                  ),
-                                ],
-                              ],
-                            ),
-                          )
+                          _commentActions(comment, username, isCurrentUser),
                         ],
                       ),
                     ),
@@ -354,169 +352,167 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom +
         MediaQuery.of(context).padding.bottom;
     return Padding(
-        padding: EdgeInsets.only(
-          bottom: bottomInset,
-          top: 16,
-          left: 16,
-          right: 16,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Header
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(context.l10n.comments,
-                    style: const TextStyle(
-                        fontSize: 18, fontWeight: FontWeight.bold)),
-                IconButton(
-                  icon: const Icon(Symbols.close_rounded, color: Colors.white),
-                  onPressed: widget.onClose ?? () => Navigator.of(context).pop(),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 12),
-
-            // Comments list
-            if (_loading)
-              const SizedBox(
-                height: 200,
-                child: Center(child: CircularProgressIndicator()),
-              )
-            else if (_rootComments.isEmpty)
-              SizedBox(
-                height: 100,
-                child: Center(child: Text(context.l10n.no_comments)),
-              )
-            else
-              Flexible(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  padding: const EdgeInsets.only(top: 6),
-                  itemCount: _rootComments.length,
-                  itemBuilder: (context, index) =>
-                      _buildCommentItem(_rootComments[index]),
-                ),
+      padding: EdgeInsets.only(
+        bottom: bottomInset,
+        top: 16,
+        left: 16,
+        right: 16,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Header
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(context.l10n.comments,
+                  style: const TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.bold)),
+              IconButton(
+                icon: const Icon(Symbols.close_rounded, color: Colors.white),
+                onPressed: widget.onClose ?? () => Navigator.of(context).pop(),
               ),
-
-            const SizedBox(height: 12),
-
-            // Editing indicator
-            if (_editingCommentId != null) ...[
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Symbols.edit_rounded,
-                        size: 18,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        context.l10n.editing_comment,
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ),
-                    GestureDetector(
-                      onTap: _cancelEdit,
-                      child: Icon(Symbols.close_rounded,
-                          size: 24,
-                          color:
-                              Theme.of(context).colorScheme.onSurfaceVariant),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 8),
             ],
+          ),
 
-            // Reply indicator
-            if (_replyingToCommentId != null)
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Symbols.reply_rounded,
-                        size: 18,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        "${context.l10n.replying_to} $_replyingToUsername",
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ),
-                    GestureDetector(
-                      onTap: () {
-                        _cancelReply();
-                        _inputFocusNode.unfocus();
-                      },
-                      child: Icon(Symbols.close_rounded,
-                          size: 24,
-                          color:
-                              Theme.of(context).colorScheme.onSurfaceVariant),
-                    ),
-                  ],
-                ),
+          const SizedBox(height: 12),
+
+          // Comments list
+          if (_loading)
+            const SizedBox(
+              height: 200,
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_rootComments.isEmpty)
+            SizedBox(
+              height: 100,
+              child: Center(child: Text(context.l10n.no_comments)),
+            )
+          else
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                padding: const EdgeInsets.only(top: 6),
+                itemCount: _rootComments.length,
+                itemBuilder: (context, index) =>
+                    _buildCommentItem(_rootComments[index]),
               ),
-
-            if (_replyingToCommentId != null) const SizedBox(height: 8),
-
-            // Input row
-            Row(
-              children: [
-                Expanded(
-                  child: RoundedInputField(
-                    controller: _newCommentController,
-                    focusNode: _inputFocusNode,
-                    capitalizeSentences: true,
-                    hintText: _editingCommentId != null
-                        ? context.l10n.edit_comment
-                        : _replyingToCommentId != null
-                            ? context.l10n.write_reply
-                            : context.l10n.post_comment,
-                  ),
-                ),
-                _isSending
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                      )
-                    : IconButton(
-                        onPressed: () {
-                          if (_editingCommentId != null) {
-                            _updateComment(_editingCommentId!);
-                          } else {
-                            _postComment();
-                          }
-                        },
-                        icon: const Icon(Symbols.send_rounded, color: Colors.white),
-                      ),
-              ],
             ),
 
+          const SizedBox(height: 12),
+
+          // Editing indicator
+          if (_editingCommentId != null) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(Symbols.edit_rounded,
+                      size: 18,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      context.l10n.editing_comment,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: _cancelEdit,
+                    child: Icon(Symbols.close_rounded,
+                        size: 24,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  ),
+                ],
+              ),
+            ),
             const SizedBox(height: 8),
           ],
-        ),
+
+          // Reply indicator
+          if (_replyingToCommentId != null)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(Symbols.reply_rounded,
+                      size: 18,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      "${context.l10n.replying_to} $_replyingToUsername",
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () {
+                      _cancelReply();
+                      _inputFocusNode.unfocus();
+                    },
+                    child: Icon(Symbols.close_rounded,
+                        size: 24,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant),
+                  ),
+                ],
+              ),
+            ),
+
+          if (_replyingToCommentId != null) const SizedBox(height: 8),
+
+          // Input row
+          Row(
+            children: [
+              Expanded(
+                child: RoundedInputField(
+                  controller: _newCommentController,
+                  focusNode: _inputFocusNode,
+                  capitalizeSentences: true,
+                  hintText: _editingCommentId != null
+                      ? context.l10n.edit_comment
+                      : _replyingToCommentId != null
+                          ? context.l10n.write_reply
+                          : context.l10n.post_comment,
+                ),
+              ),
+              _isSending
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white),
+                    )
+                  : IconButton(
+                      onPressed: () {
+                        if (_editingCommentId != null) {
+                          _updateComment(_editingCommentId!);
+                        } else {
+                          _postComment();
+                        }
+                      },
+                      icon:
+                          const Icon(Symbols.send_rounded, color: Colors.white),
+                    ),
+            ],
+          ),
+
+          const SizedBox(height: 8),
+        ],
+      ),
     );
   }
 }

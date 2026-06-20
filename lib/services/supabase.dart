@@ -12,6 +12,8 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:krab/models/group.dart';
 import 'package:krab/models/group_invite.dart';
 import 'package:krab/models/group_member.dart';
+import 'package:krab/models/image_ref.dart';
+import 'package:krab/models/image_details.dart';
 import 'package:krab/models/user.dart' as krab_user;
 
 final supabase = Supabase.instance.client;
@@ -23,6 +25,27 @@ class SupabaseResponse<T> {
   final String? error;
 
   SupabaseResponse({required this.success, this.data, this.error});
+}
+
+/// Calls a Supabase RPC that returns a `{success, error, ...}` JSON object and
+/// wraps the common success/error/try-catch handling.
+Future<SupabaseResponse<T>> _rpc<T>(
+  String fn, {
+  Map<String, dynamic>? params,
+  required String errorContext,
+  T Function(dynamic response)? parse,
+}) async {
+  try {
+    final response = await supabase.rpc(fn, params: params);
+    if (response is Map && response['success'] == false) {
+      return SupabaseResponse(
+          success: false, error: response['error']?.toString());
+    }
+    return SupabaseResponse(success: true, data: parse?.call(response));
+  } catch (error) {
+    return SupabaseResponse(
+        success: false, error: "Error $errorContext: $error");
+  }
 }
 
 /// ------------------ GROUP FUNCTIONS ------------------
@@ -112,22 +135,11 @@ Future<SupabaseResponse<Group>> getGroupDetails(String groupId) async {
 }
 
 /// Get count of members for a given group.
-Future<SupabaseResponse<int>> getGroupMemberCount(String groupId) async {
-  try {
-    final response = await supabase
-        .rpc("get_group_members_count", params: {"group_id": groupId});
-    if (response['success'] == false) {
-      return SupabaseResponse(
-          success: false,
-          error: "Error loading group member count: ${response['error']}");
-    }
-    return SupabaseResponse(
-        success: true, data: response['member_count'] as int);
-  } catch (error) {
-    return SupabaseResponse(
-        success: false, error: "Error loading group member count: $error");
-  }
-}
+Future<SupabaseResponse<int>> getGroupMemberCount(String groupId) =>
+    _rpc("get_group_members_count",
+        params: {"group_id": groupId},
+        errorContext: "loading group member count",
+        parse: (r) => r['member_count'] as int);
 
 /// Get members for a given group.
 Future<SupabaseResponse<List<GroupMember>>> getGroupMembers(
@@ -176,90 +188,27 @@ Future<SupabaseResponse<String>> changeMemberRole(
   String groupId,
   String targetUserId,
   String action, // 'promote_admin', 'demote', 'transfer_ownership'
-) async {
-  try {
-    final response = await supabase.rpc(
-      'manage_member_role',
-      params: {
-        'group_id': groupId,
-        'target_user_id': targetUserId,
-        'action': action,
-      },
-    );
+) =>
+    _rpc('manage_member_role',
+        params: {
+          'group_id': groupId,
+          'target_user_id': targetUserId,
+          'action': action,
+        },
+        errorContext: 'changing role',
+        parse: (r) => r['role'] as String);
 
-    if (response['success'] == true) {
-      return SupabaseResponse(success: true, data: response['role'] as String);
-    }
+Future<SupabaseResponse<String>> banUser(String groupId, String userId) =>
+    _rpc('ban_user',
+        params: {'group_id': groupId, 'target_user_id': userId},
+        errorContext: 'banning user',
+        parse: (_) => 'banned');
 
-    return SupabaseResponse(
-      success: false,
-      error: response['error']?.toString(),
-    );
-  } catch (err) {
-    return SupabaseResponse(
-      success: false,
-      error: 'Error changing role: $err',
-    );
-  }
-}
-
-Future<SupabaseResponse<String>> banUser(
-  String groupId,
-  String userId,
-) async {
-  try {
-    final response = await supabase.rpc(
-      'ban_user',
-      params: {
-        'group_id': groupId,
-        'target_user_id': userId,
-      },
-    );
-
-    if (response['success'] == true) {
-      return SupabaseResponse(success: true, data: 'banned');
-    }
-
-    return SupabaseResponse(
-      success: false,
-      error: response['error']?.toString(),
-    );
-  } catch (err) {
-    return SupabaseResponse(
-      success: false,
-      error: 'Error banning user: $err',
-    );
-  }
-}
-
-Future<SupabaseResponse<String>> unbanUser(
-    String groupId,
-    String userId,
-    ) async {
-  try {
-    final response = await supabase.rpc(
-      'unban_user',
-      params: {
-        'group_id': groupId,
-        'target_user_id': userId,
-      },
-    );
-
-    if (response['success'] == true) {
-      return SupabaseResponse(success: true, data: 'unbanned');
-    }
-
-    return SupabaseResponse(
-      success: false,
-      error: response['error']?.toString(),
-    );
-  } catch (err) {
-    return SupabaseResponse(
-      success: false,
-      error: 'Error banning user: $err',
-    );
-  }
-}
+Future<SupabaseResponse<String>> unbanUser(String groupId, String userId) =>
+    _rpc('unban_user',
+        params: {'group_id': groupId, 'target_user_id': userId},
+        errorContext: 'unbanning user',
+        parse: (_) => 'unbanned');
 
 /// Edit the profile picture of the current user.
 Future<SupabaseResponse<Group>> editGroupIcon(
@@ -336,68 +285,32 @@ Future<SupabaseResponse<void>> deleteGroupIcon(String groupId) async {
 
 /// Create a new group.
 Future<SupabaseResponse<void>> createGroup(String name) async {
-  try {
-    final response =
-        await supabase.rpc("create_group", params: {"group_name": name});
-    if (response['success'] == false) {
-      if (response['error'].toString().contains("new row")) {
-        return SupabaseResponse(success: false, error: "Name too short.");
-      }
-      return SupabaseResponse(success: false, error: response['error']);
-    }
-    return SupabaseResponse(success: true);
-  } catch (error) {
-    return SupabaseResponse(
-        success: false, error: "Error creating group: $error");
+  final res = await _rpc<void>("create_group",
+      params: {"group_name": name}, errorContext: "creating group");
+  // The DB rejects too-short names with a generic "new row" constraint error.
+  if (!res.success && (res.error?.contains("new row") ?? false)) {
+    return SupabaseResponse(success: false, error: "Name too short.");
   }
+  return res;
 }
 
 /// Update the name of an existing group.
-Future<SupabaseResponse<void>> updateGroupName(
-    String groupId, String name) async {
-  try {
-    final response = await supabase.rpc("update_group_name",
-        params: {"group_id": groupId, "new_name": name});
-    if (response['success'] == false) {
-      return SupabaseResponse(success: false, error: response['error']);
-    }
-    return SupabaseResponse(success: true);
-  } catch (error) {
-    return SupabaseResponse(
-        success: false, error: "Error updating group name: $error");
-  }
-}
+Future<SupabaseResponse<void>> updateGroupName(String groupId, String name) =>
+    _rpc("update_group_name",
+        params: {"group_id": groupId, "new_name": name},
+        errorContext: "updating group name");
 
 /// Delete a group.
-Future<SupabaseResponse<void>> deleteGroup(String groupId) async {
-  try {
-    final response =
-        await supabase.rpc("remove_group", params: {"group_id": groupId});
-    if (response['success'] == false) {
-      return SupabaseResponse(success: false, error: response['error']);
-    }
-    return SupabaseResponse(success: true);
-  } catch (error) {
-    return SupabaseResponse(
-        success: false, error: "Error deleting group: $error");
-  }
-}
+Future<SupabaseResponse<void>> deleteGroup(String groupId) =>
+    _rpc("remove_group",
+        params: {"group_id": groupId}, errorContext: "deleting group");
 
 /// Join a group using an invite token.
-Future<SupabaseResponse<String>> joinGroupByInvite(String token) async {
-  try {
-    final response = await supabase
-        .rpc("join_group_by_invite", params: {"p_token": token.trim()});
-    if (response['success'] == false) {
-      return SupabaseResponse(success: false, error: response['error']);
-    }
-    return SupabaseResponse(
-        success: true, data: response['group_id'] as String?);
-  } catch (error) {
-    return SupabaseResponse(
-        success: false, error: "Error joining group: $error");
-  }
-}
+Future<SupabaseResponse<String>> joinGroupByInvite(String token) =>
+    _rpc("join_group_by_invite",
+        params: {"p_token": token.trim()},
+        errorContext: "joining group",
+        parse: (r) => r['group_id'] as String);
 
 /// Create an invite token for a group. [expiresAt] and [maxUses] are optional;
 /// null means the invite never expires / has unlimited uses.
@@ -405,88 +318,41 @@ Future<SupabaseResponse<String>> createGroupInvite(
   String groupId, {
   DateTime? expiresAt,
   int? maxUses,
-}) async {
-  try {
-    final response = await supabase.rpc("create_group_invite", params: {
-      "p_group_id": groupId,
-      "p_expires_at": expiresAt?.toUtc().toIso8601String(),
-      "p_max_uses": maxUses,
-    });
-    if (response['success'] == false) {
-      return SupabaseResponse(success: false, error: response['error']);
-    }
-    return SupabaseResponse(success: true, data: response['token'] as String);
-  } catch (error) {
-    return SupabaseResponse(
-        success: false, error: "Error creating invite: $error");
-  }
-}
+}) =>
+    _rpc("create_group_invite",
+        params: {
+          "p_group_id": groupId,
+          "p_expires_at": expiresAt?.toUtc().toIso8601String(),
+          "p_max_uses": maxUses,
+        },
+        errorContext: "creating invite",
+        parse: (r) => r['token'] as String);
 
 /// List a group's invites (owner/admin only).
-Future<SupabaseResponse<List<GroupInvite>>> listGroupInvites(
-    String groupId) async {
-  try {
-    final response = await supabase
-        .rpc("list_group_invites", params: {"p_group_id": groupId});
-    if (response['success'] == false) {
-      return SupabaseResponse(success: false, error: response['error']);
-    }
-    final invites = (response['invites'] as List)
-        .map((e) => GroupInvite.fromJson(e as Map<String, dynamic>))
-        .toList();
-    return SupabaseResponse(success: true, data: invites);
-  } catch (error) {
-    return SupabaseResponse(
-        success: false, error: "Error loading invites: $error");
-  }
-}
+Future<SupabaseResponse<List<GroupInvite>>> listGroupInvites(String groupId) =>
+    _rpc("list_group_invites",
+        params: {"p_group_id": groupId},
+        errorContext: "loading invites",
+        parse: (r) => (r['invites'] as List)
+            .map((e) => GroupInvite.fromJson(e as Map<String, dynamic>))
+            .toList());
 
 /// Revoke an invite token.
-Future<SupabaseResponse<void>> revokeGroupInvite(String token) async {
-  try {
-    final response =
-        await supabase.rpc("revoke_group_invite", params: {"p_token": token});
-    if (response['success'] == false) {
-      return SupabaseResponse(success: false, error: response['error']);
-    }
-    return SupabaseResponse(success: true);
-  } catch (error) {
-    return SupabaseResponse(
-        success: false, error: "Error revoking invite: $error");
-  }
-}
+Future<SupabaseResponse<void>> revokeGroupInvite(String token) =>
+    _rpc("revoke_group_invite",
+        params: {"p_token": token}, errorContext: "revoking invite");
 
 /// Set who may create invites for a group (owner only).
 /// [permission] is one of 'owner', 'admin', 'everyone'.
 Future<SupabaseResponse<void>> setGroupInvitePermission(
-    String groupId, String permission) async {
-  try {
-    final response = await supabase.rpc("set_group_invite_permission",
-        params: {"p_group_id": groupId, "p_permission": permission});
-    if (response['success'] == false) {
-      return SupabaseResponse(success: false, error: response['error']);
-    }
-    return SupabaseResponse(success: true);
-  } catch (error) {
-    return SupabaseResponse(
-        success: false, error: "Error updating invite permission: $error");
-  }
-}
+        String groupId, String permission) =>
+    _rpc("set_group_invite_permission",
+        params: {"p_group_id": groupId, "p_permission": permission},
+        errorContext: "updating invite permission");
 
 /// Leave a group.
-Future<SupabaseResponse<void>> leaveGroup(String groupId) async {
-  try {
-    final response =
-        await supabase.rpc("leave_group", params: {"group_id": groupId});
-    if (response['success'] == false) {
-      return SupabaseResponse(success: false, error: response['error']);
-    }
-    return SupabaseResponse(success: true);
-  } catch (error) {
-    return SupabaseResponse(
-        success: false, error: "Error leaving group: $error");
-  }
-}
+Future<SupabaseResponse<void>> leaveGroup(String groupId) => _rpc("leave_group",
+    params: {"group_id": groupId}, errorContext: "leaving group");
 
 /// ------------------ IMAGE FUNCTIONS ------------------
 
@@ -544,58 +410,31 @@ Future<SupabaseResponse<void>> sendImageToGroups(
 }
 
 /// Get images for a given group.
-Future<SupabaseResponse<List<dynamic>>> getGroupImages(String groupId) async {
-  try {
-    final response =
-        await supabase.rpc("get_group_images", params: {"p_group_id": groupId});
-    if (response['success'] == false) {
-      return SupabaseResponse(
-          success: false,
-          error: "Error loading group images: ${response['error']}");
-    }
-    return SupabaseResponse(success: true, data: response['images'] as List);
-  } catch (error) {
-    return SupabaseResponse(
-        success: false, error: "Error loading group images: $error");
-  }
-}
-
-/// Get all images.
-Future<SupabaseResponse<List<dynamic>>> getAllImages() async {
-  try {
-    final response = await supabase.rpc("get_all_images");
-    if (response['success'] == false) {
-      return SupabaseResponse(
-          success: false, error: "Error loading images: ${response['error']}");
-    }
-    return SupabaseResponse(success: true, data: response['images'] as List);
-  } catch (error) {
-    return SupabaseResponse(
-        success: false, error: "Error loading images: $error");
-  }
-}
+Future<SupabaseResponse<List<ImageRef>>> getGroupImages(String groupId) =>
+    _rpc("get_group_images",
+        params: {"p_group_id": groupId},
+        errorContext: "loading group images",
+        parse: (r) => (r['images'] as List)
+            .map((e) => ImageRef.fromJson(e as Map<String, dynamic>))
+            .toList());
 
 /// Get the n most recent images accessible to the user, deduplicated
 /// across groups.
 /// If groupIds is provided and non-empty, only images from those groups are
 /// returned; otherwise images from all accessible groups are included.
-Future<SupabaseResponse<List<dynamic>>> getLatestImages(int count,
-    {List<String>? groupIds}) async {
-  try {
-    final params = <String, dynamic>{"p_count": count};
-    if (groupIds != null && groupIds.isNotEmpty) {
-      params["p_group_ids"] = groupIds;
-    }
-    final response = await supabase.rpc("get_latest_images", params: params);
-    if (response['success'] == false) {
-      return SupabaseResponse(success: false, error: "Error: ${response['error']}");
-    }
-    return SupabaseResponse(success: true, data: response['images'] as List);
-  } catch (error) {
-    return SupabaseResponse(success: false, error: "Error loading latest images: $error");
+Future<SupabaseResponse<List<ImageRef>>> getLatestImages(int count,
+    {List<String>? groupIds}) {
+  final params = <String, dynamic>{"p_count": count};
+  if (groupIds != null && groupIds.isNotEmpty) {
+    params["p_group_ids"] = groupIds;
   }
+  return _rpc("get_latest_images",
+      params: params,
+      errorContext: "loading latest images",
+      parse: (r) => (r['images'] as List)
+          .map((e) => ImageRef.fromJson(e as Map<String, dynamic>))
+          .toList());
 }
-
 
 /// Download an image from storage.
 Future<SupabaseResponse<Uint8List>> getImage(String imageId,
@@ -644,11 +483,14 @@ Future<SupabaseResponse<Uint8List>> getImage(String imageId,
 }
 
 /// Download a profile picture from storage.
-Future<SupabaseResponse<Uint8List>> getProfilePictureBytes(String userId) async {
+Future<SupabaseResponse<Uint8List>> getProfilePictureBytes(
+    String userId) async {
   try {
-    final data = await supabase.storage.from('profile-pictures').download(userId);
+    final data =
+        await supabase.storage.from('profile-pictures').download(userId);
     if (data.isEmpty) {
-      return SupabaseResponse(success: false, error: 'Profile picture is empty');
+      return SupabaseResponse(
+          success: false, error: 'Profile picture is empty');
     }
     return SupabaseResponse(success: true, data: data);
   } catch (error) {
@@ -659,24 +501,8 @@ Future<SupabaseResponse<Uint8List>> getProfilePictureBytes(String userId) async 
   }
 }
 
-Future<SupabaseResponse<Uint8List>> getGroupIconBytes(String groupId) async {
-  try {
-    final data = await supabase.storage.from('group-icons').download(groupId);
-    if (data.isEmpty) {
-      return SupabaseResponse(success: false, error: 'Group icon is empty');
-    }
-    return SupabaseResponse(success: true, data: data);
-  } catch (error) {
-    return SupabaseResponse(
-      success: false,
-      error: 'Error downloading group icon: $error',
-    );
-  }
-}
-
 /// Get detailed information about an image.
-Future<SupabaseResponse<Map<String, dynamic>>> getImageDetails(
-    String imageId) async {
+Future<SupabaseResponse<ImageDetails>> getImageDetails(String imageId) async {
   try {
     final response =
         await supabase.rpc("get_image_details", params: {"image_id": imageId});
@@ -684,7 +510,8 @@ Future<SupabaseResponse<Map<String, dynamic>>> getImageDetails(
       return SupabaseResponse(success: false, error: "No image details found");
     }
     return SupabaseResponse(
-        success: true, data: response.first as Map<String, dynamic>);
+        success: true,
+        data: ImageDetails.fromJson(response.first as Map<String, dynamic>));
   } catch (error) {
     return SupabaseResponse(
         success: false, error: "Error fetching image details: $error");
@@ -692,100 +519,50 @@ Future<SupabaseResponse<Map<String, dynamic>>> getImageDetails(
 }
 
 Future<SupabaseResponse<void>> postComment(
-    String imageId, String groupId, String comment, {String? parentId}) async {
-  try {
-    final response = await supabase.rpc("add_comment", params: {
-      "image_id": imageId,
-      "group_id": groupId,
-      "text": comment,
-      if (parentId != null) "parent_id": parentId,
-    });
-    if (response['success'] == false) {
-      return SupabaseResponse(success: false, error: response['error']);
-    }
-    return SupabaseResponse(success: true);
-  } catch (error) {
-    return SupabaseResponse(
-        success: false, error: "Error posting comment: $error");
-  }
-}
+        String imageId, String groupId, String comment,
+        {String? parentId}) =>
+    _rpc("add_comment",
+        params: {
+          "image_id": imageId,
+          "group_id": groupId,
+          "text": comment,
+          if (parentId != null) "parent_id": parentId,
+        },
+        errorContext: "posting comment");
 
 Future<SupabaseResponse<void>> updateComment(
-    String commentId, String imageId, String groupId, String text) async {
-  try {
-    final response = await supabase.rpc("update_comment", params: {
-      "comment_id": commentId,
-      "image_id": imageId,
-      "group_id": groupId,
-      "text": text,
-    });
-    if (response['success'] == false) {
-      return SupabaseResponse(success: false, error: response['error']);
-    }
-    return SupabaseResponse(success: true);
-  } catch (error) {
-    return SupabaseResponse(
-        success: false, error: "Error updating comment: $error");
-  }
-}
+        String commentId, String imageId, String groupId, String text) =>
+    _rpc("update_comment",
+        params: {
+          "comment_id": commentId,
+          "image_id": imageId,
+          "group_id": groupId,
+          "text": text,
+        },
+        errorContext: "updating comment");
 
 Future<SupabaseResponse<void>> deleteComment(
-    String commentId, String imageId, String groupId) async {
-  try {
-    final response = await supabase.rpc("delete_comment", params: {
-      "comment_id": commentId,
-      "image_id": imageId,
-      "group_id": groupId,
-    });
-    if (response['success'] == false) {
-      return SupabaseResponse(success: false, error: response['error']);
-    }
-    return SupabaseResponse(success: true);
-  } catch (error) {
-    return SupabaseResponse(
-        success: false, error: "Error deleting comment: $error");
-  }
-}
+        String commentId, String imageId, String groupId) =>
+    _rpc("delete_comment",
+        params: {
+          "comment_id": commentId,
+          "image_id": imageId,
+          "group_id": groupId,
+        },
+        errorContext: "deleting comment");
 
 Future<SupabaseResponse<List<dynamic>>> getComments(
-    String imageId, String groupId) async {
-  try {
-    final response = await supabase.rpc("get_comments", params: {
-      "image_id": imageId,
-      "group_id": groupId,
-    });
-    if (response['success'] == false) {
-      return SupabaseResponse(success: false, error: response['error']);
-    }
+        String imageId, String groupId) =>
+    _rpc("get_comments",
+        params: {"image_id": imageId, "group_id": groupId},
+        errorContext: "loading comments",
+        parse: (r) => (r['comments'] as List?) ?? []);
 
-    // If there are no comments, return an empty list
-    if (response['comments'] == null) {
-      return SupabaseResponse(success: true, data: []);
-    }
-
-    return SupabaseResponse(success: true, data: response['comments'] as List);
-  } catch (error) {
-    return SupabaseResponse(
-        success: false, error: "Error loading comments: $error");
-  }
-}
-
-Future<SupabaseResponse<int>> getCommentCount(
-    String imageId, String groupId) async {
-  try {
-    final response = await supabase.rpc("get_comment_count", params: {
-      "image_id": imageId,
-      "group_id": groupId,
-    });
-    if (response['success'] == false) {
-      return SupabaseResponse(success: false, error: response['error']);
-    }
-    return SupabaseResponse(success: true, data: response['count'] as int);
-  } catch (error) {
-    return SupabaseResponse(
-        success: false, error: "Error loading comment count: $error");
-  }
-}
+Future<SupabaseResponse<int>> getCommentCount(String imageId, String groupId) =>
+    _rpc("get_comment_count",
+        params: {"image_id": imageId, "group_id": groupId},
+        errorContext: "loading comment count",
+        parse: (r) => r['count'] as int);
 
 /// ------------------ FCM TOKEN & USER FUNCTIONS ------------------
 
@@ -809,7 +586,8 @@ Future<SupabaseResponse<void>> fcmTokenHandler({String? username}) async {
     });
 
     if (response["success"] == false) {
-      return SupabaseResponse(success: false, error: response["error"]?.toString());
+      return SupabaseResponse(
+          success: false, error: response["error"]?.toString());
     }
     return SupabaseResponse(success: true);
   } catch (error) {
@@ -887,9 +665,8 @@ Future<SupabaseResponse<void>> loginUser(String email, String password) async {
     await fcmTokenHandler();
     return SupabaseResponse(success: true);
   } catch (error) {
-    final message = error is AuthException
-        ? _authError(error)
-        : 'Error logging in: $error';
+    final message =
+        error is AuthException ? _authError(error) : 'Error logging in: $error';
     return SupabaseResponse(success: false, error: message);
   }
 }
@@ -1089,7 +866,8 @@ Future<SupabaseResponse<void>> changePassword(
     if (email == null) {
       return SupabaseResponse(success: false, error: 'No authenticated user.');
     }
-    await supabase.auth.signInWithPassword(email: email, password: currentPassword);
+    await supabase.auth
+        .signInWithPassword(email: email, password: currentPassword);
     await supabase.auth.updateUser(UserAttributes(password: newPassword));
     // Revoke the old background sessions server-side, then re-mint with the new
     // password so no stale background tokens linger after a password change.
@@ -1107,7 +885,8 @@ Future<SupabaseResponse<void>> changePassword(
 /// Send a password reset email.
 Future<SupabaseResponse<void>> sendPasswordResetEmail(String email) async {
   try {
-    final redirectUrl = dotenv.env['PASSWORD_RESET_URL'] ?? 'https://your-domain.com/reset-password.html';
+    final redirectUrl = dotenv.env['PASSWORD_RESET_URL'] ??
+        'https://your-domain.com/reset-password.html';
     await supabase.auth.resetPasswordForEmail(email, redirectTo: redirectUrl);
     return SupabaseResponse(success: true);
   } catch (error) {
@@ -1119,38 +898,13 @@ Future<SupabaseResponse<void>> sendPasswordResetEmail(String email) async {
 }
 
 /// Set setting to receive notifications about new comments under other users' images.
-Future<SupabaseResponse<void>> setGroupCommentNotificationSetting(bool enabled) async {
-  try {
-    final response = await supabase.rpc("set_notify_group_comments",
-        params: {"enabled": enabled});
-    if (response['success'] == false) {
-      return SupabaseResponse(
-          success: false,
-          error:
-              "Error updating notification setting: ${response['error']}");
-    }
-    return SupabaseResponse(success: true);
-  } catch (error) {
-    return SupabaseResponse(
-        success: false,
-        error: "Error updating notification setting: $error");
-  }
-}
+Future<SupabaseResponse<void>> setGroupCommentNotificationSetting(
+        bool enabled) =>
+    _rpc("set_notify_group_comments",
+        params: {"enabled": enabled},
+        errorContext: "updating notification setting");
 
-Future<SupabaseResponse<bool>> getGroupCommentNotificationSetting() async {
-  try {
-    final response = await supabase.rpc("get_notify_group_comments");
-    if (response['success'] == false) {
-      return SupabaseResponse(
-          success: false,
-          error:
-              "Error fetching notification setting: ${response['error']}");
-    }
-    return SupabaseResponse(
-        success: true, data: response['enabled'] as bool);
-  } catch (error) {
-    return SupabaseResponse(
-        success: false,
-        error: "Error fetching notification setting: $error");
-  }
-}
+Future<SupabaseResponse<bool>> getGroupCommentNotificationSetting() =>
+    _rpc("get_notify_group_comments",
+        errorContext: "fetching notification setting",
+        parse: (r) => r['enabled'] as bool);
