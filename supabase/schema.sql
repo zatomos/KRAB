@@ -54,6 +54,7 @@ CREATE TYPE storage.buckettype AS ENUM (
 
 CREATE FUNCTION public.add_comment(image_id uuid, group_id uuid, text text, parent_id uuid DEFAULT NULL::uuid) RETURNS jsonb
     LANGUAGE plpgsql
+    SET search_path TO 'public'
     AS $$
 DECLARE
   current_user_id UUID;
@@ -249,6 +250,59 @@ END;$$;
 
 
 --
+-- Name: create_group_invite(uuid, timestamp with time zone, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.create_group_invite(p_group_id uuid, p_expires_at timestamp with time zone DEFAULT NULL::timestamp with time zone, p_max_uses integer DEFAULT NULL::integer) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  uid uuid := auth.uid();
+  v_permission text;
+  v_role text;
+  v_token text;
+BEGIN
+  IF uid IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
+  END IF;
+
+  SELECT invite_permission INTO v_permission
+  FROM "Groups" WHERE id = p_group_id;
+
+  IF v_permission IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Group not found');
+  END IF;
+
+  SELECT role INTO v_role
+  FROM "Members" WHERE group_id = p_group_id AND user_id = uid;
+
+  IF v_role IS NULL OR v_role = 'banned' THEN
+    RETURN jsonb_build_object('success', false, 'error', 'You are not a member of this group');
+  END IF;
+
+  IF NOT (
+       v_role = 'owner'
+    OR (v_permission = 'admin'    AND v_role = 'admin')
+    OR (v_permission = 'everyone' AND v_role IN ('admin', 'member'))
+  ) THEN
+    RETURN jsonb_build_object('success', false, 'error', 'You do not have permission to create invites for this group');
+  END IF;
+
+  IF p_max_uses IS NOT NULL AND p_max_uses < 1 THEN
+    RETURN jsonb_build_object('success', false, 'error', 'max_uses must be at least 1');
+  END IF;
+
+  INSERT INTO "GroupInvites" (group_id, created_by, expires_at, max_uses)
+  VALUES (p_group_id, uid, p_expires_at, p_max_uses)
+  RETURNING token INTO v_token;
+
+  RETURN jsonb_build_object('success', true, 'token', v_token);
+END;
+$$;
+
+
+--
 -- Name: create_user_profile(text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -272,6 +326,7 @@ $$;
 
 CREATE FUNCTION public.delete_comment(comment_id uuid, image_id uuid, group_id uuid) RETURNS jsonb
     LANGUAGE plpgsql
+    SET search_path TO 'public'
     AS $$DECLARE
   current_user_id UUID;
   has_children BOOLEAN;
@@ -594,6 +649,7 @@ $$;
 
 CREATE FUNCTION public.get_comments(image_id uuid, group_id uuid) RETURNS jsonb
     LANGUAGE plpgsql
+    SET search_path TO 'public'
     AS $$DECLARE
   current_user_id UUID;
   comments JSONB;
@@ -651,10 +707,8 @@ CREATE FUNCTION public.get_group_details(group_id uuid) RETURNS jsonb
     SET search_path TO 'public'
     AS $$DECLARE
     group_record RECORD;
-    is_admin BOOLEAN;
 BEGIN
-    -- Fetch group details
-    SELECT id, created_at, name, code
+    SELECT id, created_at, name
     INTO group_record
     FROM "Groups"
     WHERE id = get_group_details.group_id;
@@ -663,21 +717,12 @@ BEGIN
         RETURN jsonb_build_object('success', false, 'error', 'Group not found');
     END IF;
 
-    -- Check if current user is admin in this group
-    SELECT role IN ('owner', 'admin')
-    INTO is_admin
-    FROM "Members"
-    WHERE "Members".group_id = get_group_details.group_id
-      AND user_id = auth.uid();
-
-    -- Return group details, without the code if the user isn't admin
     RETURN jsonb_build_object(
         'success', true,
         'group', jsonb_build_object(
             'id', group_record.id,
             'created_at', group_record.created_at,
-            'name', group_record.name,
-            'code', CASE WHEN is_admin THEN group_record.code ELSE NULL END
+            'name', group_record.name
         )
     );
 
@@ -1073,18 +1118,15 @@ BEGIN
   current_user_id := auth.uid();
 
   IF current_user_id IS NULL THEN
-    RETURN jsonb_build_object(
-      'success', false,
-      'error', 'User not authenticated'
-    );
+    RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
   END IF;
 
-  -- Compute groups
   WITH group_data AS (
     SELECT
       g.id,
       g.name,
-      CASE WHEN gm.role IN ('owner','admin') THEN g.code ELSE NULL END AS code,
+      g.invite_permission,
+      gm.role,
       g.created_at,
       MAX(ig.uploaded_at) AS latest_image_at
     FROM "Groups" g
@@ -1092,14 +1134,14 @@ BEGIN
     LEFT JOIN "ImageGroups" ig ON ig.group_id = g.id
     WHERE gm.user_id = current_user_id
       AND gm.role <> 'banned'
-    GROUP BY g.id, g.name, g.code, g.created_at, gm.role
+    GROUP BY g.id, g.name, g.invite_permission, g.created_at, gm.role
   )
-
   SELECT jsonb_agg(
     jsonb_build_object(
       'id', id,
       'name', name,
-      'code', code,
+      'invite_permission', invite_permission,
+      'role', role,
       'created_at', created_at,
       'latest_image_at', latest_image_at
     )
@@ -1108,17 +1150,11 @@ BEGIN
   INTO user_groups
   FROM group_data;
 
-  RETURN jsonb_build_object(
-    'success', true,
-    'groups', COALESCE(user_groups, '[]'::jsonb)
-  );
+  RETURN jsonb_build_object('success', true, 'groups', COALESCE(user_groups, '[]'::jsonb));
 
 EXCEPTION
   WHEN OTHERS THEN
-    RETURN jsonb_build_object(
-      'success', false,
-      'error', SQLERRM
-    );
+    RETURN jsonb_build_object('success', false, 'error', SQLERRM);
 END;$$;
 
 
@@ -1187,81 +1223,56 @@ $$;
 
 
 --
--- Name: join_group_by_code(text); Type: FUNCTION; Schema: public; Owner: -
+-- Name: join_group_by_invite(text); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.join_group_by_code(group_code text) RETURNS jsonb
+CREATE FUNCTION public.join_group_by_invite(p_token text) RETURNS jsonb
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public'
-    AS $$DECLARE
-  current_user_id UUID;
-  found_group_id UUID;
-  existing_role text;
-  is_member boolean;
+    AS $$
+DECLARE
+  uid uuid := auth.uid();
+  v_invite "GroupInvites";
+  v_existing_role text;
 BEGIN
-  -- Current user
-  current_user_id := auth.uid();
-
-  IF current_user_id IS NULL THEN
-    RETURN jsonb_build_object(
-      'success', false,
-      'error', 'User not authenticated'
-    );
+  IF uid IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
   END IF;
 
-  -- Find group by code
-  SELECT id INTO found_group_id
-  FROM "Groups"
-  WHERE code = group_code;
+  -- Lock the invite row so concurrent joins can't blow past max_uses.
+  SELECT * INTO v_invite
+  FROM "GroupInvites"
+  WHERE token = btrim(p_token)
+  FOR UPDATE;
 
-  IF found_group_id IS NULL THEN
-    RETURN jsonb_build_object(
-      'success', false,
-      'error', 'Invalid group code'
-    );
+  IF v_invite.token IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Invalid invite');
   END IF;
 
-
-  -- Check if a row exists and get their role
-  SELECT role INTO existing_role
-  FROM "Members"
-  WHERE group_id = found_group_id
-    AND user_id = current_user_id;
-
-
-  -- Banned users cannot rejoin
-  IF existing_role = 'banned' THEN
-    RETURN jsonb_build_object(
-      'success', false,
-      'error', 'You have been banned from this group'
-    );
+  IF v_invite.revoked
+     OR (v_invite.expires_at IS NOT NULL AND v_invite.expires_at <= now())
+     OR (v_invite.max_uses IS NOT NULL AND v_invite.uses >= v_invite.max_uses) THEN
+    RETURN jsonb_build_object('success', false, 'error', 'This invite is no longer valid');
   END IF;
 
+  SELECT role INTO v_existing_role
+  FROM "Members" WHERE group_id = v_invite.group_id AND user_id = uid;
 
-  -- If user already in group
-  IF existing_role IS NOT NULL THEN
-    RETURN jsonb_build_object(
-      'success', false,
-      'error', 'You are already a member of this group'
-    );
+  IF v_existing_role = 'banned' THEN
+    RETURN jsonb_build_object('success', false, 'error', 'You have been banned from this group');
+  ELSIF v_existing_role IS NOT NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'You are already a member of this group');
   END IF;
 
-
-  -- Insert new membership
   INSERT INTO "Members" (group_id, user_id, role)
-  VALUES (found_group_id, current_user_id, 'member');
+  VALUES (v_invite.group_id, uid, 'member')
+  ON CONFLICT (group_id, user_id) DO NOTHING;
 
-  RETURN jsonb_build_object(
-    'success', true,
-    'group_id', found_group_id
-  );
+  UPDATE "GroupInvites" SET uses = uses + 1 WHERE token = v_invite.token;
 
-EXCEPTION WHEN OTHERS THEN
-  RETURN jsonb_build_object(
-    'success', false,
-    'error', SQLERRM
-  );
-END;$$;
+  RETURN jsonb_build_object('success', true, 'group_id', v_invite.group_id);
+END;
+$$;
 
 
 --
@@ -1329,6 +1340,47 @@ EXCEPTION WHEN OTHERS THEN
         'error', SQLERRM
     );
 END;$$;
+
+
+--
+-- Name: list_group_invites(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.list_group_invites(p_group_id uuid) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  uid uuid := auth.uid();
+  v_role text;
+  v_invites jsonb;
+BEGIN
+  IF uid IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
+  END IF;
+
+  SELECT role INTO v_role
+  FROM "Members" WHERE group_id = p_group_id AND user_id = uid;
+
+  IF v_role IS NULL OR v_role NOT IN ('owner', 'admin') THEN
+    RETURN jsonb_build_object('success', false, 'error', 'You do not have permission to view invites');
+  END IF;
+
+  SELECT COALESCE(jsonb_agg(jsonb_build_object(
+           'token', token,
+           'created_by', created_by,
+           'created_at', created_at,
+           'expires_at', expires_at,
+           'max_uses', max_uses,
+           'uses', uses,
+           'revoked', revoked
+         ) ORDER BY created_at DESC), '[]'::jsonb)
+  INTO v_invites
+  FROM "GroupInvites" WHERE group_id = p_group_id;
+
+  RETURN jsonb_build_object('success', true, 'invites', v_invites);
+END;
+$$;
 
 
 --
@@ -1432,7 +1484,7 @@ END;$$;
 --
 
 CREATE FUNCTION public.register_fcm_token(p_fcm_token text, p_username text DEFAULT NULL::text) RETURNS jsonb
-    LANGUAGE plpgsql SECURITY DEFINER
+    LANGUAGE plpgsql
     SET search_path TO 'public'
     AS $$BEGIN
   IF auth.uid() IS NULL THEN
@@ -1590,6 +1642,79 @@ $$;
 
 
 --
+-- Name: revoke_group_invite(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.revoke_group_invite(p_token text) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  uid uuid := auth.uid();
+  v_group_id uuid;
+  v_created_by uuid;
+  v_role text;
+BEGIN
+  IF uid IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
+  END IF;
+
+  SELECT group_id, created_by INTO v_group_id, v_created_by
+  FROM "GroupInvites" WHERE token = btrim(p_token);
+
+  IF v_group_id IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Invalid invite');
+  END IF;
+
+  SELECT role INTO v_role
+  FROM "Members" WHERE group_id = v_group_id AND user_id = uid;
+
+  IF NOT (v_created_by = uid OR v_role IN ('owner', 'admin')) THEN
+    RETURN jsonb_build_object('success', false, 'error', 'You do not have permission to revoke this invite');
+  END IF;
+
+  UPDATE "GroupInvites" SET revoked = true WHERE token = btrim(p_token);
+
+  RETURN jsonb_build_object('success', true);
+END;
+$$;
+
+
+--
+-- Name: set_group_invite_permission(uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.set_group_invite_permission(p_group_id uuid, p_permission text) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  uid uuid := auth.uid();
+  v_role text;
+BEGIN
+  IF uid IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
+  END IF;
+
+  IF p_permission NOT IN ('owner', 'admin', 'everyone') THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Invalid permission value');
+  END IF;
+
+  SELECT role INTO v_role
+  FROM "Members" WHERE group_id = p_group_id AND user_id = uid;
+
+  IF v_role IS DISTINCT FROM 'owner' THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Only the group owner can change invite permissions');
+  END IF;
+
+  UPDATE "Groups" SET invite_permission = p_permission WHERE id = p_group_id;
+
+  RETURN jsonb_build_object('success', true, 'invite_permission', p_permission);
+END;
+$$;
+
+
+--
 -- Name: set_notify_group_comments(boolean); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1721,6 +1846,7 @@ END;$$;
 
 CREATE FUNCTION public.update_comment(comment_id uuid, image_id uuid, group_id uuid, text text) RETURNS jsonb
     LANGUAGE plpgsql
+    SET search_path TO 'public'
     AS $$
 DECLARE
   current_user_id UUID;
@@ -2752,6 +2878,22 @@ COMMENT ON COLUMN public."Comments".parent_id IS 'The original comment this comm
 
 
 --
+-- Name: GroupInvites; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."GroupInvites" (
+    token text DEFAULT encode(extensions.gen_random_bytes(16), 'hex'::text) NOT NULL,
+    group_id uuid NOT NULL,
+    created_by uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone,
+    max_uses integer,
+    uses integer DEFAULT 0 NOT NULL,
+    revoked boolean DEFAULT false NOT NULL
+);
+
+
+--
 -- Name: Groups; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2759,8 +2901,9 @@ CREATE TABLE public."Groups" (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     name text DEFAULT 'My new group'::text NOT NULL,
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    code text DEFAULT encode(extensions.gen_random_bytes(4), 'hex'::text) NOT NULL,
     owner uuid,
+    invite_permission text DEFAULT 'admin'::text NOT NULL,
+    CONSTRAINT "Groups_invite_permission_check" CHECK ((invite_permission = ANY (ARRAY['owner'::text, 'admin'::text, 'everyone'::text]))),
     CONSTRAINT "Groups_name_check" CHECK ((length(name) < 20)),
     CONSTRAINT check_group_name_length CHECK (((length(name) > 2) AND (length(name) < 20)))
 );
@@ -3019,19 +3162,11 @@ ALTER TABLE ONLY public."Comments"
 
 
 --
--- Name: Groups Groups_code_key; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: GroupInvites GroupInvites_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public."Groups"
-    ADD CONSTRAINT "Groups_code_key" UNIQUE (code);
-
-
---
--- Name: Groups Groups_id_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public."Groups"
-    ADD CONSTRAINT "Groups_id_key" UNIQUE (id);
+ALTER TABLE ONLY public."GroupInvites"
+    ADD CONSTRAINT "GroupInvites_pkey" PRIMARY KEY (token);
 
 
 --
@@ -3059,11 +3194,11 @@ ALTER TABLE ONLY public."Images"
 
 
 --
--- Name: Members Members_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: Members Members_group_user_unique; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public."Members"
-    ADD CONSTRAINT "Members_id_key" UNIQUE (id);
+    ADD CONSTRAINT "Members_group_user_unique" UNIQUE (group_id, user_id);
 
 
 --
@@ -3072,14 +3207,6 @@ ALTER TABLE ONLY public."Members"
 
 ALTER TABLE ONLY public."Members"
     ADD CONSTRAINT "Members_pkey" PRIMARY KEY (id);
-
-
---
--- Name: Users Users_id_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public."Users"
-    ADD CONSTRAINT "Users_id_key" UNIQUE (id);
 
 
 --
@@ -3176,6 +3303,13 @@ ALTER TABLE ONLY storage.s3_multipart_uploads
 
 ALTER TABLE ONLY storage.vector_indexes
     ADD CONSTRAINT vector_indexes_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: GroupInvites_group_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX "GroupInvites_group_id_idx" ON public."GroupInvites" USING btree (group_id);
 
 
 --
@@ -3337,6 +3471,22 @@ ALTER TABLE ONLY public."Comments"
 
 
 --
+-- Name: GroupInvites GroupInvites_created_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."GroupInvites"
+    ADD CONSTRAINT "GroupInvites_created_by_fkey" FOREIGN KEY (created_by) REFERENCES public."Users"(id) ON DELETE CASCADE;
+
+
+--
+-- Name: GroupInvites GroupInvites_group_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."GroupInvites"
+    ADD CONSTRAINT "GroupInvites_group_id_fkey" FOREIGN KEY (group_id) REFERENCES public."Groups"(id) ON DELETE CASCADE;
+
+
+--
 -- Name: Groups Groups_owner_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3469,14 +3619,14 @@ CREATE POLICY "Admins can update the group name" ON public."Groups" FOR UPDATE T
 
 CREATE POLICY "Allow owners to delete a group" ON public."Groups" FOR DELETE TO authenticated USING ((EXISTS ( SELECT 1
    FROM public."Members"
-  WHERE (("Members".group_id = "Groups".id) AND ("Members".user_id = auth.uid()) AND ("Members".role = 'owner'::text)))));
+  WHERE (("Members".group_id = "Groups".id) AND ("Members".user_id = ( SELECT auth.uid() AS uid)) AND ("Members".role = 'owner'::text)))));
 
 
 --
 -- Name: Groups Allow users to create groups; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Allow users to create groups" ON public."Groups" FOR INSERT TO authenticated WITH CHECK ((auth.uid() IS NOT NULL));
+CREATE POLICY "Allow users to create groups" ON public."Groups" FOR INSERT TO authenticated WITH CHECK ((( SELECT auth.uid() AS uid) IS NOT NULL));
 
 
 --
@@ -3507,36 +3657,12 @@ CREATE POLICY "Enable insert for users based on user_id" ON public."Members" FOR
 
 
 --
--- Name: Users Enable select for users; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Enable select for users" ON public."Users" FOR SELECT TO authenticated USING ((( SELECT auth.uid() AS uid) = id));
-
-
---
--- Name: Users Enable update for users based on user_id; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Enable update for users based on user_id" ON public."Users" FOR UPDATE TO authenticated USING ((( SELECT auth.uid() AS uid) = id));
-
-
---
--- Name: Images Group members can access images of their groups; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Group members can access images of their groups" ON public."Images" FOR SELECT TO authenticated USING ((EXISTS ( SELECT 1
-   FROM (public."ImageGroups" ig
-     JOIN public."Members" m ON ((ig.group_id = m.group_id)))
-  WHERE ((ig.image_id = "Images".id) AND (m.user_id = auth.uid())))));
-
-
---
 -- Name: Groups Group members can see their groups; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY "Group members can see their groups" ON public."Groups" FOR SELECT TO authenticated USING ((EXISTS ( SELECT 1
    FROM public."Members" m
-  WHERE ((m.group_id = "Groups".id) AND (m.user_id = auth.uid())))));
+  WHERE ((m.group_id = "Groups".id) AND (m.user_id = ( SELECT auth.uid() AS uid))))));
 
 
 --
@@ -3545,8 +3671,24 @@ CREATE POLICY "Group members can see their groups" ON public."Groups" FOR SELECT
 
 CREATE POLICY "Group members can select images from that group" ON public."ImageGroups" FOR SELECT TO authenticated USING ((EXISTS ( SELECT 1
    FROM public."Members" m
-  WHERE ((m.group_id = "ImageGroups".group_id) AND (m.user_id = auth.uid()) AND (m.role <> 'banned'::text)))));
+  WHERE ((m.group_id = "ImageGroups".group_id) AND (m.user_id = ( SELECT auth.uid() AS uid)) AND (m.role <> 'banned'::text)))));
 
+
+--
+-- Name: Images Group members or owner can access images; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Group members or owner can access images" ON public."Images" FOR SELECT TO authenticated USING (((uploaded_by = ( SELECT auth.uid() AS uid)) OR (EXISTS ( SELECT 1
+   FROM (public."ImageGroups" ig
+     JOIN public."Members" m ON ((ig.group_id = m.group_id)))
+  WHERE ((ig.image_id = "Images".id) AND (m.user_id = ( SELECT auth.uid() AS uid)))))));
+
+
+--
+-- Name: GroupInvites; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public."GroupInvites" ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: Groups; Type: ROW SECURITY; Schema: public; Owner: -
@@ -3576,9 +3718,9 @@ ALTER TABLE public."Members" ENABLE ROW LEVEL SECURITY;
 -- Name: Comments Members can insert comments; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Members can insert comments" ON public."Comments" FOR INSERT WITH CHECK (((user_id = auth.uid()) AND (EXISTS ( SELECT 1
+CREATE POLICY "Members can insert comments" ON public."Comments" FOR INSERT WITH CHECK (((user_id = ( SELECT auth.uid() AS uid)) AND (EXISTS ( SELECT 1
    FROM public."Members" m
-  WHERE ((m.group_id = "Comments".group_id) AND (m.user_id = auth.uid()) AND (m.role <> 'banned'::text))))));
+  WHERE ((m.group_id = "Comments".group_id) AND (m.user_id = ( SELECT auth.uid() AS uid)) AND (m.role <> 'banned'::text))))));
 
 
 --
@@ -3587,7 +3729,7 @@ CREATE POLICY "Members can insert comments" ON public."Comments" FOR INSERT WITH
 
 CREATE POLICY "Members can insert images to groups" ON public."ImageGroups" FOR INSERT WITH CHECK ((EXISTS ( SELECT 1
    FROM public."Members" m
-  WHERE ((m.group_id = "ImageGroups".group_id) AND (m.user_id = auth.uid()) AND (m.role <> 'banned'::text)))));
+  WHERE ((m.group_id = "ImageGroups".group_id) AND (m.user_id = ( SELECT auth.uid() AS uid)) AND (m.role <> 'banned'::text)))));
 
 
 --
@@ -3597,7 +3739,7 @@ CREATE POLICY "Members can insert images to groups" ON public."ImageGroups" FOR 
 CREATE POLICY "Only group members can select comments" ON public."Comments" FOR SELECT USING ((EXISTS ( SELECT 1
    FROM (public."ImageGroups" ig
      JOIN public."Members" m ON ((ig.group_id = m.group_id)))
-  WHERE ((ig.image_id = "Comments".image_id) AND (m.user_id = auth.uid())))));
+  WHERE ((ig.image_id = "Comments".image_id) AND (m.user_id = ( SELECT auth.uid() AS uid))))));
 
 
 --
@@ -3610,44 +3752,44 @@ ALTER TABLE public."Users" ENABLE ROW LEVEL SECURITY;
 -- Name: Comments Users can delete their own comments; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Users can delete their own comments" ON public."Comments" FOR DELETE USING (((user_id = auth.uid()) AND (EXISTS ( SELECT 1
+CREATE POLICY "Users can delete their own comments" ON public."Comments" FOR DELETE USING (((user_id = ( SELECT auth.uid() AS uid)) AND (EXISTS ( SELECT 1
    FROM (public."ImageGroups" ig
      JOIN public."Members" m ON ((ig.group_id = m.group_id)))
-  WHERE ((ig.image_id = "Comments".image_id) AND (m.user_id = auth.uid()))))));
+  WHERE ((ig.image_id = "Comments".image_id) AND (m.user_id = ( SELECT auth.uid() AS uid)))))));
 
 
 --
 -- Name: Images Users can insert their own images; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Users can insert their own images" ON public."Images" FOR INSERT TO authenticated WITH CHECK ((uploaded_by = auth.uid()));
+CREATE POLICY "Users can insert their own images" ON public."Images" FOR INSERT TO authenticated WITH CHECK ((uploaded_by = ( SELECT auth.uid() AS uid)));
 
 
 --
--- Name: Users Users can see members of their groups; Type: POLICY; Schema: public; Owner: -
+-- Name: Users Users can see themselves and fellow group members; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Users can see members of their groups" ON public."Users" FOR SELECT TO authenticated USING ((EXISTS ( SELECT 1
+CREATE POLICY "Users can see themselves and fellow group members" ON public."Users" FOR SELECT TO authenticated USING (((( SELECT auth.uid() AS uid) = id) OR (EXISTS ( SELECT 1
    FROM (public."Members" m1
      JOIN public."Members" m2 ON ((m1.group_id = m2.group_id)))
-  WHERE ((m1.user_id = auth.uid()) AND (m2.user_id = "Users".id)))));
-
-
---
--- Name: Images Users can see their own images; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "Users can see their own images" ON public."Images" FOR SELECT USING ((uploaded_by = auth.uid()));
+  WHERE ((m1.user_id = ( SELECT auth.uid() AS uid)) AND (m2.user_id = "Users".id))))));
 
 
 --
 -- Name: Comments Users can update their own comments; Type: POLICY; Schema: public; Owner: -
 --
 
-CREATE POLICY "Users can update their own comments" ON public."Comments" FOR UPDATE USING (((user_id = auth.uid()) AND (EXISTS ( SELECT 1
+CREATE POLICY "Users can update their own comments" ON public."Comments" FOR UPDATE USING (((user_id = ( SELECT auth.uid() AS uid)) AND (EXISTS ( SELECT 1
    FROM (public."ImageGroups" ig
      JOIN public."Members" m ON ((ig.group_id = m.group_id)))
-  WHERE ((ig.image_id = "Comments".image_id) AND (m.user_id = auth.uid()))))));
+  WHERE ((ig.image_id = "Comments".image_id) AND (m.user_id = ( SELECT auth.uid() AS uid)))))));
+
+
+--
+-- Name: Users Users can update their own row; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Users can update their own row" ON public."Users" FOR UPDATE TO authenticated USING ((( SELECT auth.uid() AS uid) = id)) WITH CHECK ((( SELECT auth.uid() AS uid) = id));
 
 
 --
@@ -3656,7 +3798,7 @@ CREATE POLICY "Users can update their own comments" ON public."Comments" FOR UPD
 
 CREATE POLICY allow_admins_owners_update_roles ON public."Members" FOR UPDATE TO authenticated USING ((EXISTS ( SELECT 1
    FROM public."Members" m
-  WHERE ((m.group_id = "Members".group_id) AND (m.user_id = auth.uid()) AND (m.role = ANY (ARRAY['owner'::text, 'admin'::text]))))));
+  WHERE ((m.group_id = "Members".group_id) AND (m.user_id = ( SELECT auth.uid() AS uid)) AND (m.role = ANY (ARRAY['owner'::text, 'admin'::text]))))));
 
 
 --
@@ -3664,13 +3806,6 @@ CREATE POLICY allow_admins_owners_update_roles ON public."Members" FOR UPDATE TO
 --
 
 CREATE POLICY members_read ON public."Members" FOR SELECT USING (((role <> 'banned'::text) OR public.is_admin_or_owner(group_id)));
-
-
---
--- Name: Users users update own row; Type: POLICY; Schema: public; Owner: -
---
-
-CREATE POLICY "users update own row" ON public."Users" FOR UPDATE TO authenticated USING ((id = auth.uid())) WITH CHECK ((id = auth.uid()));
 
 
 --
@@ -3874,6 +4009,16 @@ GRANT ALL ON FUNCTION public.create_group(group_name text) TO service_role;
 
 
 --
+-- Name: FUNCTION create_group_invite(p_group_id uuid, p_expires_at timestamp with time zone, p_max_uses integer); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.create_group_invite(p_group_id uuid, p_expires_at timestamp with time zone, p_max_uses integer) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.create_group_invite(p_group_id uuid, p_expires_at timestamp with time zone, p_max_uses integer) TO postgres;
+GRANT ALL ON FUNCTION public.create_group_invite(p_group_id uuid, p_expires_at timestamp with time zone, p_max_uses integer) TO authenticated;
+GRANT ALL ON FUNCTION public.create_group_invite(p_group_id uuid, p_expires_at timestamp with time zone, p_max_uses integer) TO service_role;
+
+
+--
 -- Name: FUNCTION create_user_profile(username text); Type: ACL; Schema: public; Owner: -
 --
 
@@ -4055,11 +4200,13 @@ GRANT ALL ON FUNCTION public.is_admin_or_owner(p_group_id uuid) TO service_role;
 
 
 --
--- Name: FUNCTION join_group_by_code(group_code text); Type: ACL; Schema: public; Owner: -
+-- Name: FUNCTION join_group_by_invite(p_token text); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.join_group_by_code(group_code text) TO authenticated;
-GRANT ALL ON FUNCTION public.join_group_by_code(group_code text) TO service_role;
+REVOKE ALL ON FUNCTION public.join_group_by_invite(p_token text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.join_group_by_invite(p_token text) TO postgres;
+GRANT ALL ON FUNCTION public.join_group_by_invite(p_token text) TO authenticated;
+GRANT ALL ON FUNCTION public.join_group_by_invite(p_token text) TO service_role;
 
 
 --
@@ -4068,6 +4215,16 @@ GRANT ALL ON FUNCTION public.join_group_by_code(group_code text) TO service_role
 
 GRANT ALL ON FUNCTION public.leave_group(group_id uuid) TO authenticated;
 GRANT ALL ON FUNCTION public.leave_group(group_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION list_group_invites(p_group_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.list_group_invites(p_group_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.list_group_invites(p_group_id uuid) TO postgres;
+GRANT ALL ON FUNCTION public.list_group_invites(p_group_id uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.list_group_invites(p_group_id uuid) TO service_role;
 
 
 --
@@ -4083,8 +4240,8 @@ GRANT ALL ON FUNCTION public.manage_member_role(group_id uuid, target_user_id uu
 -- Name: FUNCTION register_fcm_token(p_fcm_token text, p_username text); Type: ACL; Schema: public; Owner: -
 --
 
+REVOKE ALL ON FUNCTION public.register_fcm_token(p_fcm_token text, p_username text) FROM PUBLIC;
 GRANT ALL ON FUNCTION public.register_fcm_token(p_fcm_token text, p_username text) TO postgres;
-GRANT ALL ON FUNCTION public.register_fcm_token(p_fcm_token text, p_username text) TO anon;
 GRANT ALL ON FUNCTION public.register_fcm_token(p_fcm_token text, p_username text) TO authenticated;
 GRANT ALL ON FUNCTION public.register_fcm_token(p_fcm_token text, p_username text) TO service_role;
 
@@ -4113,6 +4270,26 @@ GRANT ALL ON FUNCTION public.remove_group(group_id uuid) TO service_role;
 GRANT ALL ON FUNCTION public.request_image_uuid() TO postgres;
 GRANT ALL ON FUNCTION public.request_image_uuid() TO authenticated;
 GRANT ALL ON FUNCTION public.request_image_uuid() TO service_role;
+
+
+--
+-- Name: FUNCTION revoke_group_invite(p_token text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.revoke_group_invite(p_token text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.revoke_group_invite(p_token text) TO postgres;
+GRANT ALL ON FUNCTION public.revoke_group_invite(p_token text) TO authenticated;
+GRANT ALL ON FUNCTION public.revoke_group_invite(p_token text) TO service_role;
+
+
+--
+-- Name: FUNCTION set_group_invite_permission(p_group_id uuid, p_permission text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.set_group_invite_permission(p_group_id uuid, p_permission text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.set_group_invite_permission(p_group_id uuid, p_permission text) TO postgres;
+GRANT ALL ON FUNCTION public.set_group_invite_permission(p_group_id uuid, p_permission text) TO authenticated;
+GRANT ALL ON FUNCTION public.set_group_invite_permission(p_group_id uuid, p_permission text) TO service_role;
 
 
 --
@@ -4157,6 +4334,14 @@ GRANT ALL ON FUNCTION public.update_group_name(group_id uuid, new_name text) TO 
 
 GRANT ALL ON TABLE public."Comments" TO authenticated;
 GRANT ALL ON TABLE public."Comments" TO service_role;
+
+
+--
+-- Name: TABLE "GroupInvites"; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public."GroupInvites" TO postgres;
+GRANT ALL ON TABLE public."GroupInvites" TO service_role;
 
 
 --

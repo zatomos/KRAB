@@ -128,7 +128,7 @@ class GroupsPageState extends State<GroupsPage> {
   }
 }
 
-/// Join group dialog where the user enters an 8-character group code.
+/// Join group dialog where the user pastes an invite token.
 class JoinGroupDialog extends StatefulWidget {
   const JoinGroupDialog({super.key});
 
@@ -144,13 +144,13 @@ class JoinGroupDialogState extends State<JoinGroupDialog> {
   Future<void> _joinGroup() async {
     if (_loading) return;
     setState(() { error = null; _loading = true; });
-    final code = _controller.text.trim();
-    if (code.length != 8) {
-      setState(() { error = context.l10n.group_code_eight_chars; _loading = false; });
+    final token = _controller.text.trim();
+    if (token.isEmpty) {
+      setState(() { error = context.l10n.invite_empty; _loading = false; });
       return;
     }
     try {
-      final response = await joinGroup(code);
+      final response = await joinGroupByInvite(token);
       if (!mounted) return;
       if (!response.success) {
         setState(() {
@@ -177,8 +177,7 @@ class JoinGroupDialogState extends State<JoinGroupDialog> {
         children: [
           RoundedInputField(
             controller: _controller,
-            maxLength: 8,
-            hintText: context.l10n.enter_group_code,
+            hintText: context.l10n.enter_invite,
             errorText: error,
           ),
         ],

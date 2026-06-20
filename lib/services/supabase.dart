@@ -10,6 +10,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 
 import 'package:krab/models/group.dart';
+import 'package:krab/models/group_invite.dart';
 import 'package:krab/models/group_member.dart';
 import 'package:krab/models/user.dart' as krab_user;
 
@@ -382,20 +383,93 @@ Future<SupabaseResponse<void>> deleteGroup(String groupId) async {
   }
 }
 
-/// Join a group using a code.
-Future<SupabaseResponse<void>> joinGroup(String code) async {
+/// Join a group using an invite token.
+Future<SupabaseResponse<String>> joinGroupByInvite(String token) async {
   try {
-    // Normalize code to lowercase
-    code = code.toLowerCase();
+    final response = await supabase
+        .rpc("join_group_by_invite", params: {"p_token": token.trim()});
+    if (response['success'] == false) {
+      return SupabaseResponse(success: false, error: response['error']);
+    }
+    return SupabaseResponse(
+        success: true, data: response['group_id'] as String?);
+  } catch (error) {
+    return SupabaseResponse(
+        success: false, error: "Error joining group: $error");
+  }
+}
+
+/// Create an invite token for a group. [expiresAt] and [maxUses] are optional;
+/// null means the invite never expires / has unlimited uses.
+Future<SupabaseResponse<String>> createGroupInvite(
+  String groupId, {
+  DateTime? expiresAt,
+  int? maxUses,
+}) async {
+  try {
+    final response = await supabase.rpc("create_group_invite", params: {
+      "p_group_id": groupId,
+      "p_expires_at": expiresAt?.toUtc().toIso8601String(),
+      "p_max_uses": maxUses,
+    });
+    if (response['success'] == false) {
+      return SupabaseResponse(success: false, error: response['error']);
+    }
+    return SupabaseResponse(success: true, data: response['token'] as String);
+  } catch (error) {
+    return SupabaseResponse(
+        success: false, error: "Error creating invite: $error");
+  }
+}
+
+/// List a group's invites (owner/admin only).
+Future<SupabaseResponse<List<GroupInvite>>> listGroupInvites(
+    String groupId) async {
+  try {
+    final response = await supabase
+        .rpc("list_group_invites", params: {"p_group_id": groupId});
+    if (response['success'] == false) {
+      return SupabaseResponse(success: false, error: response['error']);
+    }
+    final invites = (response['invites'] as List)
+        .map((e) => GroupInvite.fromJson(e as Map<String, dynamic>))
+        .toList();
+    return SupabaseResponse(success: true, data: invites);
+  } catch (error) {
+    return SupabaseResponse(
+        success: false, error: "Error loading invites: $error");
+  }
+}
+
+/// Revoke an invite token.
+Future<SupabaseResponse<void>> revokeGroupInvite(String token) async {
+  try {
     final response =
-        await supabase.rpc("join_group_by_code", params: {"group_code": code});
+        await supabase.rpc("revoke_group_invite", params: {"p_token": token});
     if (response['success'] == false) {
       return SupabaseResponse(success: false, error: response['error']);
     }
     return SupabaseResponse(success: true);
   } catch (error) {
     return SupabaseResponse(
-        success: false, error: "Error joining group: $error");
+        success: false, error: "Error revoking invite: $error");
+  }
+}
+
+/// Set who may create invites for a group (owner only).
+/// [permission] is one of 'owner', 'admin', 'everyone'.
+Future<SupabaseResponse<void>> setGroupInvitePermission(
+    String groupId, String permission) async {
+  try {
+    final response = await supabase.rpc("set_group_invite_permission",
+        params: {"p_group_id": groupId, "p_permission": permission});
+    if (response['success'] == false) {
+      return SupabaseResponse(success: false, error: response['error']);
+    }
+    return SupabaseResponse(success: true);
+  } catch (error) {
+    return SupabaseResponse(
+        success: false, error: "Error updating invite permission: $error");
   }
 }
 

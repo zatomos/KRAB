@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -15,6 +14,7 @@ import 'package:krab/widgets/soft_button.dart';
 import 'package:krab/widgets/rounded_input_field.dart';
 import 'package:krab/models/group.dart';
 import 'package:krab/models/group_member.dart';
+import 'package:krab/pages/group_invites_page.dart';
 import 'package:krab/services/supabase.dart';
 import 'package:krab/user_preferences.dart';
 import 'package:krab/themes/global_theme_data.dart';
@@ -419,6 +419,67 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
     Navigator.of(context).popUntil((r) => r.isFirst);
   }
 
+  bool _canCreateInvite(String role, String permission) {
+    if (role == 'owner') return true;
+    if (role == 'admin') return permission == 'admin' || permission == 'everyone';
+    if (role == 'member') return permission == 'everyone';
+    return false;
+  }
+
+  String _invitePermissionLabel(BuildContext context, String permission) {
+    switch (permission) {
+      case 'owner':
+        return context.l10n.invite_permission_owner;
+      case 'everyone':
+        return context.l10n.invite_permission_everyone;
+      case 'admin':
+      default:
+        return context.l10n.invite_permission_admin;
+    }
+  }
+
+  Future<void> _createInvite() async {
+    final token = await showDialog<String>(
+      context: context,
+      builder: (_) => CreateInviteDialog(groupId: _group.id),
+    );
+    if (token == null || !mounted) return;
+    await showInviteTokenDialog(context, token);
+  }
+
+  Future<void> _changeInvitePermission() async {
+    final current = _group.invitePermission ?? 'admin';
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        return SimpleDialog(
+          title: Text(context.l10n.who_can_invite),
+          children: ['owner', 'admin', 'everyone'].map((value) {
+            final isSelected = value == current;
+            return ListTile(
+              title: Text(_invitePermissionLabel(context, value)),
+              trailing: isSelected
+                  ? Icon(Symbols.check_rounded,
+                      color: GlobalThemeData.darkColorScheme.primary)
+                  : null,
+              onTap: () => Navigator.of(context).pop(value),
+            );
+          }).toList(),
+        );
+      },
+    );
+    if (selected == null || selected == current || !mounted) return;
+
+    final res = await setGroupInvitePermission(_group.id, selected);
+    if (!mounted) return;
+    if (res.success) {
+      showSnackBar(context.l10n.invite_permission_updated, color: Colors.green);
+      setState(() => _group = _group.copyWith(invitePermission: selected));
+    } else {
+      showSnackBar(res.error ?? "Unknown error", color: Colors.red);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -681,26 +742,73 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
               },
             ),
 
-            /// Group Invite Code
-            if (_group.code != null) ...[
-              Divider(
-                height: 64,
-                color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
-              ),
-              GestureDetector(
-                onTap: () {
-                  Clipboard.setData(
-                      ClipboardData(text: _group.code!.toUpperCase()));
-                  showSnackBar(context.l10n.group_code_copied,
-                      color: Colors.green);
-                },
-                child: Text(
-                  context.l10n.group_code(_group.code!.toUpperCase()),
-                  style: const TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-              ),
-            ],
+            /// Group invites
+            FutureBuilder<SupabaseResponse<List<GroupMember>>>(
+              future: _membersFuture,
+              builder: (context, snapshot) {
+                final members = snapshot.data?.data ?? [];
+                final role = snapshot.hasData
+                    ? _getCurrentUserRole(members)
+                    : (_group.role ?? 'member');
+                final permission = _group.invitePermission ?? 'admin';
+                final canCreate = _canCreateInvite(role, permission);
+                final isManager = role == 'owner' || role == 'admin';
+
+                if (!canCreate && !isManager) {
+                  return const SizedBox.shrink();
+                }
+
+                return Column(
+                  children: [
+                    Divider(
+                      height: 64,
+                      color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
+                    ),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        context.l10n.group_invites,
+                        style: const TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    if (canCreate)
+                      RectangleButton(
+                        onPressed: _createInvite,
+                        label: context.l10n.create_invite,
+                        icon: Symbols.add_link_rounded,
+                      ),
+                    if (isManager) ...[
+                      const SizedBox(height: 8),
+                      RectangleButton(
+                        onPressed: () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                GroupInvitesPage(groupId: _group.id),
+                          ),
+                        ),
+                        label: context.l10n.manage_invites,
+                        icon: Symbols.link_rounded,
+                        backgroundColor:
+                            GlobalThemeData.darkColorScheme.surfaceBright,
+                      ),
+                    ],
+                    if (role == 'owner') ...[
+                      const SizedBox(height: 8),
+                      ListTile(
+                        leading: const Icon(Symbols.lock_person_rounded),
+                        title: Text(context.l10n.who_can_invite),
+                        subtitle:
+                            Text(_invitePermissionLabel(context, permission)),
+                        trailing: const Icon(Symbols.chevron_right_rounded),
+                        onTap: _changeInvitePermission,
+                      ),
+                    ],
+                  ],
+                );
+              },
+            ),
 
             Divider(
               height: 64,
