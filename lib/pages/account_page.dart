@@ -707,7 +707,7 @@ class AccountPageState extends State<AccountPage> {
                               if (value == null) return;
                               await UserPreferences.setWidgetRefreshInterval(
                                   value);
-                              await scheduleWidgetRefresh(value);
+                              await scheduleWidgetRefresh(value, force: true);
                               setState(() => _widgetRefreshInterval = value);
                             },
                           ),

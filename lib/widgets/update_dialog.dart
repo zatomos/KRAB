@@ -84,18 +84,55 @@ Future<void> showUpdateDialog({
                 context.l10n.whats_new,
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
-              if (info.changelog.isNotEmpty) ...[
+              if (info.releases.any((r) => r.changelog.isNotEmpty)) ...[
                 const SizedBox(height: 4),
-                ...info.changelog.map(
-                  (change) => Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('• ', style: TextStyle(fontSize: 14)),
-                      Expanded(
-                        child:
-                            Text(change, style: const TextStyle(fontSize: 14)),
+                Flexible(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 240),
+                    child: Scrollbar(
+                      child: SingleChildScrollView(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            for (final release in info.releases)
+                              if (release.changelog.isNotEmpty) ...[
+                                // Only label versions when several are shown
+                                if (info.releases
+                                        .where((r) => r.changelog.isNotEmpty)
+                                        .length >
+                                    1)
+                                  Padding(
+                                    padding: const EdgeInsets.only(
+                                        top: 8, bottom: 2),
+                                    child: Text(
+                                      context.l10n.version(release.version),
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ...release.changelog.map(
+                                  (change) => Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const Text('• ',
+                                          style: TextStyle(fontSize: 14)),
+                                      Expanded(
+                                        child: Text(change,
+                                            style:
+                                                const TextStyle(fontSize: 14)),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                          ],
+                        ),
                       ),
-                    ],
+                    ),
                   ),
                 ),
               ] else ...[

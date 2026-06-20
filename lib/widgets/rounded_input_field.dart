@@ -4,6 +4,7 @@ import 'package:krab/themes/global_theme_data.dart';
 
 class RoundedInputField extends StatelessWidget {
   final TextEditingController? controller;
+  final FocusNode? focusNode;
   final String hintText;
   final String? errorText;
   final bool obscureText;
@@ -19,6 +20,7 @@ class RoundedInputField extends StatelessWidget {
   const RoundedInputField({
     super.key,
     this.controller,
+    this.focusNode,
     this.hintText = '',
     this.errorText,
     this.obscureText = false,
@@ -39,6 +41,7 @@ class RoundedInputField extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(0, 8, 0, 8),
       child: TextField(
         controller: controller,
+        focusNode: focusNode,
         obscureText: obscureText,
         autofillHints: autofillHints,
         keyboardType: keyboardType,

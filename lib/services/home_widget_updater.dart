@@ -43,17 +43,27 @@ Future<void> cacheUserGroupsForWidget() async {
   }
 }
 
-Future<void> scheduleWidgetRefresh(int minutes) async {
-  await Workmanager().cancelByUniqueName('widget_periodic_refresh');
-  if (minutes > 0) {
-    await Workmanager().registerPeriodicTask(
-      'widget_periodic_refresh',
-      'widgetPeriodicRefresh',
-      frequency: Duration(minutes: minutes),
-      constraints: Constraints(networkType: NetworkType.connected),
-      existingWorkPolicy: ExistingPeriodicWorkPolicy.replace,
-    );
+/// Schedule or cancel the periodic background widget refresh.
+///
+/// On app start, call without [force] so an already-scheduled worker is kept as
+/// is. Otherwise re-registering on every launch resets the interval timer and
+/// cancels any in-flight run, which makes background updates unreliable. Pass
+/// [force] only when the user actually changes the interval, so the new period
+/// takes effect.
+Future<void> scheduleWidgetRefresh(int minutes, {bool force = false}) async {
+  if (minutes <= 0) {
+    await Workmanager().cancelByUniqueName('widget_periodic_refresh');
+    return;
   }
+  await Workmanager().registerPeriodicTask(
+    'widget_periodic_refresh',
+    'widgetPeriodicRefresh',
+    frequency: Duration(minutes: minutes),
+    constraints: Constraints(networkType: NetworkType.connected),
+    existingWorkPolicy: force
+        ? ExistingPeriodicWorkPolicy.replace
+        : ExistingPeriodicWorkPolicy.keep,
+  );
 }
 
 Future<List<int>> _readRegistry(String key) async {
@@ -180,17 +190,8 @@ Future<({bool changed, bool newImage})> _syncWidget(
   bool newImage = false;
 
   if (latestId != lastId) {
-    // New main image for this widget.
-    if (entry.isMulti) {
-      if (lastId == null) {
-        // Filter changed or first load: wipe stale prev files so that we
-        // refetch them from the new group filter instead of rotating old ones
-        await _clearPrevFiles(dir, id);
-      } else {
-        await _rotatePrevFiles(dir, id);
-      }
-    }
-
+    // New main image for this widget. Previous-image slots are reconciled by
+    // id in _ensurePrevImages below, so there is no fragile file rotation here.
     final imgResult = await getImage(latestId);
     final bytes = imgResult.data;
     if (bytes == null) {
@@ -239,85 +240,73 @@ Future<({bool changed, bool newImage})> _syncWidget(
   return (changed: changed, newImage: newImage);
 }
 
-/// Delete prev image/pfp files for a multi widget so that we re-download them
-Future<void> _clearPrevFiles(Directory dir, int id) async {
-  try {
-    for (int i = 1; i <= 2; i++) {
-      final img = File(_prevPath(dir, id, i));
-      final pfp = File(_prevPfpPath(dir, id, i));
-      if (await img.exists()) await img.delete();
-      if (await pfp.exists()) await pfp.delete();
-    }
-  } catch (e) {
-    debugPrint("Widget $id: clear prev files failed: $e");
-  }
-}
-
-/// Rotate this widget's on-disk files before saving a new main image
-Future<void> _rotatePrevFiles(Directory dir, int id) async {
-  try {
-    final current = File(_mainPath(dir, id));
-    final prev1 = File(_prevPath(dir, id, 1));
-    final prev2 = File(_prevPath(dir, id, 2));
-    final pfp = File(_pfpPath(dir, id));
-    final prev1Pfp = File(_prevPfpPath(dir, id, 1));
-    final prev2Pfp = File(_prevPfpPath(dir, id, 2));
-
-    if (await prev1.exists()) await prev1.copy(prev2.path);
-    if (await current.exists()) await current.copy(prev1.path);
-    if (await prev1Pfp.exists()) await prev1Pfp.copy(prev2Pfp.path);
-    if (await pfp.exists()) await pfp.copy(prev1Pfp.path);
-
-    // Register fixed paths so the widget knows where to look
-    await HomeWidget.saveWidgetData('previousImage1Url_$id', prev1.path);
-    await HomeWidget.saveWidgetData('previousImage2Url_$id', prev2.path);
-    await HomeWidget.saveWidgetData('previousImage1SenderPfpUrl_$id', prev1Pfp.path);
-    await HomeWidget.saveWidgetData('previousImage2SenderPfpUrl_$id', prev2Pfp.path);
-  } catch (e) {
-    debugPrint("Widget $id: file rotation failed: $e");
-  }
-}
-
-/// Fetch any missing previous images or pfps for a multi widget
+/// Reconcile each previous-image slot so it matches images[i], by id.
+///
+/// A slot is re-fetched whenever the id stored for it differs from the desired
+/// image or its file is missing, so the result is idempotent and self-correcting
+/// regardless of how many images arrived between refreshes or whether an earlier
+/// run failed midway. Slots with no corresponding image are cleared so a stale
+/// image can never linger or be duplicated.
 Future<bool> _ensurePrevImages(_WidgetEntry entry, List<dynamic> images, Directory dir) async {
   final id = entry.id;
   bool changed = false;
 
   for (int i = 1; i <= 2; i++) {
-    if (i >= images.length) break;
-    final prevId = images[i]['id']?.toString();
-    if (prevId == null) continue;
-
     final imgFile = File(_prevPath(dir, id, i));
-    if (!await imgFile.exists()) {
+    final pfpFile = File(_prevPfpPath(dir, id, i));
+    final idKey = 'previousImage${i}Id_$id';
+    final urlKey = 'previousImage${i}Url_$id';
+    final pfpKey = 'previousImage${i}SenderPfpUrl_$id';
+
+    // No image for this slot (fewer than 3 images available): clear it.
+    if (i >= images.length || images[i]['id'] == null) {
+      if (await imgFile.exists()) await imgFile.delete();
+      if (await pfpFile.exists()) await pfpFile.delete();
+      await HomeWidget.saveWidgetData(urlKey, '');
+      await HomeWidget.saveWidgetData(pfpKey, '');
+      await HomeWidget.saveWidgetData(idKey, '');
+      continue;
+    }
+
+    final prevId = images[i]['id'].toString();
+    final storedId = await HomeWidget.getWidgetData<String>(idKey);
+
+    if (storedId != prevId || !await imgFile.exists()) {
       final result = await getImage(prevId, lowRes: true);
       if (result.success && result.data != null) {
         await imgFile.writeAsBytes(result.data!, flush: true);
-        await HomeWidget.saveWidgetData('previousImage${i}Url_$id', imgFile.path);
+        await HomeWidget.saveWidgetData(urlKey, imgFile.path);
+        await HomeWidget.saveWidgetData(idKey, prevId);
         changed = true;
+        // The uploader may have changed, so refresh the pfp too.
+        if (await _savePrevPfp(prevId, pfpFile, pfpKey)) changed = true;
       }
-    }
-
-    final pfpFile = File(_prevPfpPath(dir, id, i));
-    if (!await pfpFile.exists()) {
-      try {
-        final details = await getImageDetails(prevId);
-        final uploaderId = details.data?['uploaded_by']?.toString();
-        if (uploaderId != null) {
-          final result = await getProfilePictureBytes(uploaderId);
-          if (result.success && result.data != null) {
-            await pfpFile.writeAsBytes(result.data!, flush: true);
-            await HomeWidget.saveWidgetData('previousImage${i}SenderPfpUrl_$id', pfpFile.path);
-            changed = true;
-          }
-        }
-      } catch (e) {
-        debugPrint("Widget $id: prev$i pfp repair failed: $e");
-      }
+    } else if (!await pfpFile.exists()) {
+      // Image already correct but pfp missing — repair just the pfp.
+      if (await _savePrevPfp(prevId, pfpFile, pfpKey)) changed = true;
     }
   }
 
   return changed;
+}
+
+/// Fetch and store the uploader's pfp for a previous image. Returns true if a
+/// file was written.
+Future<bool> _savePrevPfp(String prevId, File pfpFile, String pfpKey) async {
+  try {
+    final details = await getImageDetails(prevId);
+    final uploaderId = details.data?['uploaded_by']?.toString();
+    if (uploaderId == null) return false;
+    final result = await getProfilePictureBytes(uploaderId);
+    if (result.success && result.data != null) {
+      await pfpFile.writeAsBytes(result.data!, flush: true);
+      await HomeWidget.saveWidgetData(pfpKey, pfpFile.path);
+      return true;
+    }
+  } catch (e) {
+    debugPrint("Widget: prev pfp save failed: $e");
+  }
+  return false;
 }
 
 /// Auto-save the newest received image to the gallery, at most once per image

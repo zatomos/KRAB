@@ -24,6 +24,7 @@
     <string name="widget_desc_lines_subtitle">Nombre maximum de lignes de description affichées</string>
 
     <string name="widget_section_groups">Groupes</string>
-    <string name="widget_groups_hint">Afficher uniquement les images de ces groupes. Si aucun n\'est sélectionné, les images de tous les groupes sont affichées.</string>
+    <string name="widget_groups_hint">Seules les images des groupes sélectionnés sont affichées.</string>
     <string name="widget_groups_empty">Ouvrez l\'application en étant connecté pour charger vos groupes.</string>
+    <string name="widget_groups_min_one">Au moins un groupe doit être sélectionné.</string>
 </resources>

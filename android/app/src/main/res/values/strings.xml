@@ -27,6 +27,7 @@
     <string name="widget_desc_lines_subtitle">Max lines of description shown</string>
 
     <string name="widget_section_groups">Groups</string>
-    <string name="widget_groups_hint">Only show images from these groups. If none are selected, images from all groups are shown.</string>
+    <string name="widget_groups_hint">Only images from the selected groups are shown.</string>
     <string name="widget_groups_empty">Open the app while signed in to load your groups.</string>
+    <string name="widget_groups_min_one">At least one group must be selected.</string>
 </resources>

@@ -9,6 +9,7 @@ import android.widget.CheckBox
 import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.work.Data
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequest
@@ -186,20 +187,37 @@ class HomeScreenWidgetConfigureActivity : Activity() {
         val textColor = ta.getColor(0, android.graphics.Color.WHITE)
         ta.recycle()
 
+        // New widget (no saved selection): default to every group checked.
+        val preselectAll = selectedGroupIds.isEmpty()
+
         for (i in 0 until groups.length()) {
             val obj = groups.optJSONObject(i) ?: continue
             val gid = obj.optString("id")
             val name = obj.optString("name")
             if (gid.isEmpty()) continue
 
+            val checked = preselectAll || selectedGroupIds.contains(gid)
+            if (checked) selectedGroupIds.add(gid)
+
             val cb = CheckBox(this).apply {
                 text = name
                 textSize = 15f
                 setTextColor(textColor)
-                isChecked = selectedGroupIds.contains(gid)
+                isChecked = checked
                 setPadding(paddingLeft, 20, paddingRight, 20)
-                setOnCheckedChangeListener { _, checked ->
-                    if (checked) selectedGroupIds.add(gid) else selectedGroupIds.remove(gid)
+                setOnCheckedChangeListener { buttonView, isChecked ->
+                    // Don't allow unchecking the last selected group
+                    if (!isChecked && selectedGroupIds.size <= 1 &&
+                        selectedGroupIds.contains(gid)) {
+                        buttonView.isChecked = true
+                        Toast.makeText(
+                            this@HomeScreenWidgetConfigureActivity,
+                            R.string.widget_groups_min_one,
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        return@setOnCheckedChangeListener
+                    }
+                    if (isChecked) selectedGroupIds.add(gid) else selectedGroupIds.remove(gid)
                 }
             }
             groupsContainer.addView(

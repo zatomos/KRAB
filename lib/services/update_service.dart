@@ -10,27 +10,42 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:krab/user_preferences.dart';
 import 'package:krab/services/notification_channels.dart';
 
-class UpdateInfo {
+/// A single published release entry in the manifest.
+class Release {
   final String version;
   final String downloadUrl;
   final List<String> changelog;
+  final bool mandatory;
+
+  Release({
+    required this.version,
+    required this.downloadUrl,
+    required this.changelog,
+    this.mandatory = false,
+  });
+
+  factory Release.fromJson(Map<String, dynamic> json) {
+    return Release(
+      version: json['version'] ?? '',
+      downloadUrl: json['downloadUrl'] ?? '',
+      changelog: List<String>.from(json['changelog'] ?? []),
+      mandatory: json['mandatory'] ?? false,
+    );
+  }
+}
+
+class UpdateInfo {
+  final String version;
+  final String downloadUrl;
+  final List<Release> releases;
   final bool forceUpdate;
 
   UpdateInfo({
     required this.version,
     required this.downloadUrl,
-    required this.changelog,
+    required this.releases,
     this.forceUpdate = false,
   });
-
-  factory UpdateInfo.fromJson(Map<String, dynamic> json) {
-    return UpdateInfo(
-      version: json['latestVersion'] ?? '',
-      downloadUrl: json['downloadUrl'] ?? '',
-      changelog: List<String>.from(json['changelog'] ?? []),
-      forceUpdate: json['forceUpdate'] ?? false,
-    );
-  }
 }
 
 class UpdateCheckResult {
@@ -62,19 +77,56 @@ class UpdateService {
       dynamic rawData = response.data;
       if (rawData is String) rawData = jsonDecode(rawData);
 
-      final updateInfo = UpdateInfo.fromJson(rawData);
+      final releases = _parseReleases(rawData);
+      if (releases.isEmpty) {
+        return UpdateCheckResult(success: true, hasUpdate: false);
+      }
+
+      // Newest release is the install target
+      releases.sort((a, b) => _compareVersions(a.version, b.version));
+      final latest = releases.last;
+
       final packageInfo = await PackageInfo.fromPlatform();
       final currentVersion = packageInfo.version;
 
-      final hasUpdate = _isUpdateAvailable(currentVersion, updateInfo.version);
+      final hasUpdate = _compareVersions(currentVersion, latest.version) < 0;
+      if (!hasUpdate) {
+        return UpdateCheckResult(success: true, hasUpdate: false);
+      }
+
+      // Releases newer than the user's version, newest first
+      final newer = releases
+          .where((r) => _compareVersions(currentVersion, r.version) < 0)
+          .toList()
+          .reversed
+          .toList();
+
+      // Forced if the user has skipped past any mandatory release
+      final forceUpdate = newer.any((r) => r.mandatory);
+
       return UpdateCheckResult(
-          success: true,
-          hasUpdate: hasUpdate,
-          info: hasUpdate ? updateInfo : null);
+        success: true,
+        hasUpdate: true,
+        info: UpdateInfo(
+          version: latest.version,
+          downloadUrl: latest.downloadUrl,
+          releases: newer,
+          forceUpdate: forceUpdate,
+        ),
+      );
     } catch (e) {
       debugPrint('Error checking for updates: $e');
       return UpdateCheckResult(success: false, hasUpdate: false);
     }
+  }
+
+  /// Parses the `{"releases": [...]}` manifest.
+  List<Release> _parseReleases(Map<String, dynamic> data) {
+    if (data['releases'] is! List) return [];
+    return (data['releases'] as List)
+        .map((e) => Release.fromJson(e as Map<String, dynamic>))
+        .where((r) => r.version.isNotEmpty)
+        .toList();
   }
 
   Future<bool> downloadAndInstall(
@@ -113,32 +165,23 @@ class UpdateService {
     }
   }
 
-  bool _isUpdateAvailable(String current, String latest) {
-    try {
-      final currentParsed = _parseVersion(current);
-      final latestParsed = _parseVersion(latest);
+  /// Returns < 0 if [a] is older than [b], 0 if equal, > 0 if newer.
+  /// Throws on unparseable input so callers can decide how to handle it.
+  int _compareVersions(String a, String b) {
+    final pa = _parseVersion(a);
+    final pb = _parseVersion(b);
 
-      final currentNumbers = currentParsed[0] as List<int>;
-      final latestNumbers = latestParsed[0] as List<int>;
-
-      final currentStage = currentParsed[1] as int;
-      final latestStage = latestParsed[1] as int;
-
-      final currentStageNumber = currentParsed[2] as int;
-      final latestStageNumber = latestParsed[2] as int;
-
-      for (int i = 0; i < 3; i++) {
-        if (latestNumbers[i] > currentNumbers[i]) return true;
-        if (latestNumbers[i] < currentNumbers[i]) return false;
-      }
-
-      if (latestStage > currentStage) return true;
-      if (latestStage < currentStage) return false;
-
-      return latestStageNumber > currentStageNumber;
-    } catch (_) {
-      return false;
+    final na = pa[0] as List<int>;
+    final nb = pb[0] as List<int>;
+    for (int i = 0; i < 3; i++) {
+      if (na[i] != nb[i]) return na[i] - nb[i];
     }
+
+    final stageA = pa[1] as int;
+    final stageB = pb[1] as int;
+    if (stageA != stageB) return stageA - stageB;
+
+    return (pa[2] as int) - (pb[2] as int);
   }
 
   static const _checkThrottle = Duration(hours: 24);

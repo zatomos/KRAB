@@ -34,6 +34,7 @@ class CommentsBottomSheet extends StatefulWidget {
 
 class CommentsBottomSheetState extends State<CommentsBottomSheet> {
   final TextEditingController _newCommentController = TextEditingController();
+  final FocusNode _inputFocusNode = FocusNode();
   List<Comment> _rootComments = [];
   bool _loading = true;
   bool _isSending = false;
@@ -51,6 +52,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
   @override
   void dispose() {
     _newCommentController.dispose();
+    _inputFocusNode.dispose();
     super.dispose();
   }
 
@@ -101,6 +103,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
     if (response.success) {
       _newCommentController.clear();
       _cancelReply();
+      _inputFocusNode.unfocus();
       widget.onCommentCountChanged?.call(1);
       await _fetchComments();
       if (mounted) {
@@ -126,6 +129,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
         await updateComment(commentId, widget.imageId, widget.groupId, text);
     if (response.success) {
       _newCommentController.clear();
+      _inputFocusNode.unfocus();
       setState(() { _editingCommentId = null; _isSending = false; });
       await _fetchComments();
       if (mounted) {
@@ -197,6 +201,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
       _editingCommentId = null;
     });
     _newCommentController.clear();
+    _inputFocusNode.requestFocus();
   }
 
   void _cancelReply() {
@@ -212,7 +217,18 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
       _replyingToCommentId = null;
       _replyingToUsername = null;
       _newCommentController.text = comment.text;
+      // Put the cursor at the end of the existing text
+      _newCommentController.selection = TextSelection.collapsed(
+        offset: comment.text.length,
+      );
     });
+    _inputFocusNode.requestFocus();
+  }
+
+  void _cancelEdit() {
+    setState(() => _editingCommentId = null);
+    _newCommentController.clear();
+    _inputFocusNode.unfocus();
   }
 
   Widget _buildCommentItem(Comment comment, {int depth = 0}) {
@@ -259,7 +275,9 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
                                 TextSpan(
                                   text: username,
                                   style: const TextStyle(
-                                      fontWeight: FontWeight.w600),
+                                      fontWeight: FontWeight.w600,
+                                    fontSize: 14
+                                  ),
                                 ),
                                 TextSpan(
                                   text:
@@ -279,51 +297,37 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
                           Text(comment.text),
                           // Action buttons
                           Padding(
-                            padding: const EdgeInsets.fromLTRB(0, 8, 0, 12),
+                            padding: const EdgeInsets.fromLTRB(0, 12, 0, 18),
                             child: Row(
-                              spacing: 4,
+                              spacing: 32,
                               children: [
                                 // Reply button
                                 GestureDetector(
                                   onTap: () => _startReply(comment, username),
-                                  child: Text(
-                                    context.l10n.reply,
-                                    style: TextStyle(
+                                  child: Icon(Symbols.chat_rounded,
+                                      size: 20,
                                       color: Theme.of(context)
                                           .colorScheme
-                                          .onSurfaceVariant,
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
+                                          .onSurfaceVariant),
                                 ),
                                 if (isCurrentUser) ...[
-                                  const SizedBox(width: 16),
                                   GestureDetector(
                                     onTap: () => _startEdit(comment),
-                                    child: Text(
-                                      context.l10n.edit,
-                                      style: TextStyle(
+                                    child: Icon(Symbols.edit_rounded,
+                                        size: 20,
                                         color: Theme.of(context)
                                             .colorScheme
-                                            .onSurfaceVariant,
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w500,
-                                      ),
+                                            .onSurfaceVariant
                                     ),
                                   ),
-                                  const SizedBox(width: 16),
                                   GestureDetector(
                                     onTap: () => _deleteComment(comment.id),
-                                    child: Text(
-                                      context.l10n.delete,
-                                      style: TextStyle(
-                                        color:
-                                            Theme.of(context).colorScheme.error,
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
+                                    child: Icon(Symbols.delete_rounded,
+                                        size: 20,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .error
+                                    )
                                   ),
                                 ],
                               ],
@@ -399,6 +403,43 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
 
             const SizedBox(height: 12),
 
+            // Editing indicator
+            if (_editingCommentId != null) ...[
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Symbols.edit_rounded,
+                        size: 18,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        context.l10n.editing_comment,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: _cancelEdit,
+                      child: Icon(Symbols.close_rounded,
+                          size: 24,
+                          color:
+                              Theme.of(context).colorScheme.onSurfaceVariant),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+
             // Reply indicator
             if (_replyingToCommentId != null)
               Container(
@@ -424,9 +465,12 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
                       ),
                     ),
                     GestureDetector(
-                      onTap: _cancelReply,
+                      onTap: () {
+                        _cancelReply();
+                        _inputFocusNode.unfocus();
+                      },
                       child: Icon(Symbols.close_rounded,
-                          size: 18,
+                          size: 24,
                           color:
                               Theme.of(context).colorScheme.onSurfaceVariant),
                     ),
@@ -442,6 +486,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
                 Expanded(
                   child: RoundedInputField(
                     controller: _newCommentController,
+                    focusNode: _inputFocusNode,
                     capitalizeSentences: true,
                     hintText: _editingCommentId != null
                         ? context.l10n.edit_comment
