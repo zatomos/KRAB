@@ -100,7 +100,7 @@ psql_run() { docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres "$@"; }
 log "Waiting for storage schema (storage.buckets)..."
 for i in $(seq 1 60); do
   [[ "$(psql_run -tAc "select to_regclass('storage.buckets') is not null" 2>/dev/null)" == "t" ]] && break
-  [[ $i -eq 60 ]] && die "storage.buckets never appeared — is the 'storage' container running?"
+  [[ $i -eq 60 ]] && die "storage.buckets never appeared, is the 'storage' container running?"
   sleep 2
 done
 
@@ -114,7 +114,7 @@ sed "s#your_supabase_url#${API_URL}#g" "$SCHEMA_TMP" | psql_run >/dev/null 2>&1 
 log "Schema loaded (public.Groups present)"
 
 trg="$(psql_run -tAc "select count(*) from information_schema.triggers where trigger_name in ('on-image-insert','on-comment-insert');" | tr -d '[:space:]')"
-[[ "$trg" == "2" ]] || echo "  WARN: notification triggers missing ($trg/2) — check supabase_functions/pg_net"
+[[ "$trg" == "2" ]] || echo "  WARN: notification triggers missing ($trg/2), check supabase_functions/pg_net"
 
 # --- 5. Storage buckets ---------------------------------------------------
 log "Creating storage buckets"

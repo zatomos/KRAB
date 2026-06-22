@@ -91,8 +91,8 @@ posted.
 
 You can use a free or paid hosted instance at https://supabase.com, which has a reasonable
 [privacy policy](https://supabase.com/privacy). If you'd rather self-host your own instance, you can
-do so by running the included scripts — see the [self-hosting guide](https://supabase.com/docs/guides/self-hosting)
-to learn more.
+do so by running the included scripts.
+> See the [Supabase self-hosting guide](https://supabase.com/docs/guides/self-hosting) to learn more.
 
 **Prerequisites:** a Linux server with [Docker](https://docs.docker.com/engine/install/) and the
 Docker Compose plugin.

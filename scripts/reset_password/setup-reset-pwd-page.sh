@@ -87,7 +87,7 @@ systemctl reload nginx
 RESET_OVERRIDE="docker-compose.krab-reset.yml"
 if [ ! -f "$ENV_FILE" ]; then
   echo ""
-  echo "⚠️  No .env at $ENV_FILE — skipping Supabase config."
+  echo "⚠️  No .env at $ENV_FILE, skipping Supabase config."
   echo "    Re-run with SUPABASE_DIR=/path/to/supabase-project, or set manually:"
   echo "      ADDITIONAL_REDIRECT_URLS must include $RESET_PAGE_URL"
   echo "      GOTRUE_MAILER_TEMPLATES_RECOVERY=$EMAIL_TEMPLATE_URL  (on the auth container)"
