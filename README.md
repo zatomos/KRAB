@@ -77,10 +77,10 @@ posted.
    - Package name: **`fr.zatomos.krab`** (or your own, if you change `applicationId` in
      `android/app/build.gradle`).
    - Download the generated **`google-services.json`**.
-3. **Enable Cloud Messaging**: in the console, *Build → Cloud Messaging*
+3. **Enable Cloud Messaging**: in the console, *Settings / General / Cloud Messaging*
      (the *Firebase Cloud Messaging API (V1)* must be enabled).
 4. **Create a service-account key** (used by the backend to send notifications):
-   - *Project settings / Service accounts / Generate new private key*.
+   - *Settings / Service accounts / Generate new private key*.
    - This downloads a JSON file. Keep it secret, you'll paste its contents into the backend setup
      in the next step.
 
