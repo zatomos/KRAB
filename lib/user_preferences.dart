@@ -11,7 +11,6 @@ class UserPreferences {
   static late bool autoImageSave;
   static late bool isFirstLaunch;
   static late List<String> favoriteGroups;
-  static late int widgetBitmapLimit;
   static late bool debugNotifications;
   static late bool developerOptionsUnlocked;
   static late int widgetRefreshIntervalMinutes;
@@ -25,21 +24,12 @@ class UserPreferences {
     autoImageSave = _preferences?.getBool('autoImageSave') ?? false;
     isFirstLaunch = _preferences?.getBool('isFirstLaunch') ?? true;
     favoriteGroups = _preferences?.getStringList('favoriteGroups') ?? [];
-    widgetBitmapLimit = 10 * 1024 * 1024; // Default 10 MB
     debugNotifications = _preferences?.getBool('debugNotifications') ?? false;
     developerOptionsUnlocked =
         _preferences?.getBool('developerOptionsUnlocked') ?? false;
     widgetRefreshIntervalMinutes =
         _preferences?.getInt('widgetRefreshIntervalMinutes') ?? 30;
     updateNotifications = _preferences?.getBool('updateNotifications') ?? true;
-  }
-
-  static Future<int> getWidgetBitmapLimit() async {
-    return _preferences?.getInt('widgetBitmapLimit') ?? (10 * 1024 * 1024);
-  }
-
-  static Future<void> setWidgetBitmapLimit(int bytes) async {
-    await _preferences?.setInt('widgetBitmapLimit', bytes);
   }
 
   static Future<bool> getAutoImageSave() async {

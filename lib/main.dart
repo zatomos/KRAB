@@ -71,26 +71,6 @@ Future<void> _handleLocalNotificationTap(String payload) async {
   }
 }
 
-Future<int> _getWidgetBitmapLimitBytes() async {
-  final views = WidgetsBinding.instance.platformDispatcher.views;
-  if (views.isEmpty) {
-    debugPrint('Failed to get screen size, using default 10 MB limit.');
-    return 10 * 1024 * 1024;
-  }
-
-  final view = views.first;
-  final mq = MediaQueryData.fromView(view);
-  final width = mq.size.width * mq.devicePixelRatio;
-  final height = mq.size.height * mq.devicePixelRatio;
-  final bytes = (width * height * 4 * 1.5).round();
-
-  debugPrint(
-    'Computed widget bitmap limit: ${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB '
-    '(${width.round()}×${height.round()})',
-  );
-
-  return bytes;
-}
 
 Future<bool> initializeSupabaseIfNeeded() async {
   // Already initialized
@@ -331,18 +311,6 @@ void main() async {
     final localLaunchPayload = await getLocalNotificationLaunchPayload();
     if (localLaunchPayload != null) {
       pendingLocalNotificationPayload = localLaunchPayload;
-    }
-
-    // Compute and store widget bitmap limit
-    final cachedWidgetLimit = await UserPreferences.getWidgetBitmapLimit();
-    if (cachedWidgetLimit != 10 * 1024 * 1024) {
-      debugPrint('Using cached widget bitmap limit: '
-          '${(cachedWidgetLimit / (1024 * 1024)).toStringAsFixed(1)} MB');
-    } else {
-      final computedWidgetLimit = await _getWidgetBitmapLimitBytes();
-      await UserPreferences.setWidgetBitmapLimit(computedWidgetLimit);
-      debugPrint('Stored computed widget bitmap limit: '
-          '${(computedWidgetLimit / (1024 * 1024)).toStringAsFixed(1)} MB');
     }
 
     // Supabase

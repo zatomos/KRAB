@@ -172,6 +172,68 @@ class HomeScreenWidget : AppWidgetProvider() {
                 .apply()
         }
 
+        private fun buildBaseViews(
+            context: Context,
+            id: Int,
+            showText: Boolean,
+            showGradient: Boolean,
+            showPfp: Boolean,
+            showSenderName: Boolean,
+            descLines: Int,
+            description: String?,
+            sender: String?
+        ): RemoteViews {
+            val density = context.resources.displayMetrics.density
+            fun Int.px() = (this * density).toInt()
+
+            val views = RemoteViews(context.packageName, R.layout.home_screen_widget)
+            views.setImageViewResource(R.id.recent_image, R.drawable.ic_placeholder)
+            views.setViewVisibility(R.id.overlay_pfp, View.GONE)
+
+            if (showText) {
+                views.setViewVisibility(R.id.overlay_container, View.VISIBLE)
+                if (showSenderName && !sender.isNullOrEmpty()) {
+                    views.setViewVisibility(R.id.overlay_sender, View.VISIBLE)
+                    views.setTextViewText(R.id.overlay_sender, sender)
+                } else {
+                    views.setViewVisibility(R.id.overlay_sender, View.GONE)
+                }
+                if (!description.isNullOrEmpty()) {
+                    views.setViewVisibility(R.id.overlay_description, View.VISIBLE)
+                    views.setTextViewText(R.id.overlay_description, description)
+                    views.setInt(R.id.overlay_description, "setMaxLines", descLines)
+                } else {
+                    views.setViewVisibility(R.id.overlay_description, View.GONE)
+                }
+                if (showGradient) {
+                    views.setInt(R.id.overlay_container, "setBackgroundResource",
+                        R.drawable.widget_gradient_overlay)
+                    views.setViewPadding(R.id.overlay_container, 10.px(), 56.px(), 10.px(), 10.px())
+                } else {
+                    views.setInt(R.id.overlay_container, "setBackgroundColor",
+                        Color.parseColor("#80000000"))
+                    views.setViewPadding(R.id.overlay_container, 6.px(), 6.px(), 6.px(), 6.px())
+                }
+                if (showPfp) views.setViewVisibility(R.id.overlay_pfp, View.VISIBLE)
+            } else {
+                views.setViewVisibility(R.id.overlay_container, View.GONE)
+            }
+
+            val clickIntent = Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                addCategory(Intent.CATEGORY_LAUNCHER)
+                action = Intent.ACTION_MAIN
+            }
+            views.setOnClickPendingIntent(
+                R.id.recent_image,
+                PendingIntent.getActivity(
+                    context, id, clickIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+            )
+            return views
+        }
+
         suspend fun updateAppWidget(
             context: Context,
             manager: AppWidgetManager,
@@ -191,96 +253,51 @@ class HomeScreenWidget : AppWidgetProvider() {
                 val showSenderName = getShowSenderNamePref(context, id)
                 val descLines = getDescLinesPref(context, id)
 
-                Log.d(TAG, "Widget $id: imageUrl=$imageUrl pfpUrl=$pfpUrl showText=$showText showGradient=$showGradient showPfp=$showPfp showSenderName=$showSenderName")
+                Log.d(TAG, "Widget $id: imageUrl=$imageUrl pfpUrl=$pfpUrl showText=$showText " +
+                        "showGradient=$showGradient showPfp=$showPfp showSenderName=$showSenderName")
 
-                val views = RemoteViews(context.packageName, R.layout.home_screen_widget)
-                views.setImageViewResource(R.id.recent_image, R.drawable.ic_placeholder)
-                views.setViewVisibility(R.id.overlay_pfp, View.GONE)
-
-                val density = context.resources.displayMetrics.density
-                fun Int.px() = (this * density).toInt()
-
-                if (showText) {
-                    views.setViewVisibility(R.id.overlay_container, View.VISIBLE)
-
-                    if (showSenderName && !sender.isNullOrEmpty()) {
-                        views.setViewVisibility(R.id.overlay_sender, View.VISIBLE)
-                        views.setTextViewText(R.id.overlay_sender, sender)
-                    } else {
-                        views.setViewVisibility(R.id.overlay_sender, View.GONE)
-                    }
-
-                    if (!description.isNullOrEmpty()) {
-                        views.setViewVisibility(R.id.overlay_description, View.VISIBLE)
-                        views.setTextViewText(R.id.overlay_description, description)
-                        views.setInt(R.id.overlay_description, "setMaxLines", descLines)
-                    } else {
-                        views.setViewVisibility(R.id.overlay_description, View.GONE)
-                    }
-
-                    if (showGradient) {
-                        views.setInt(R.id.overlay_container, "setBackgroundResource", R.drawable.widget_gradient_overlay)
-                        views.setViewPadding(R.id.overlay_container, 10.px(), 56.px(), 10.px(), 10.px())
-                    } else {
-                        views.setInt(R.id.overlay_container, "setBackgroundColor", Color.parseColor("#80000000"))
-                        views.setViewPadding(R.id.overlay_container, 6.px(), 6.px(), 6.px(), 6.px())
-                    }
-
-                    if (showPfp) views.setViewVisibility(R.id.overlay_pfp, View.VISIBLE)
-                } else {
-                    views.setViewVisibility(R.id.overlay_container, View.GONE)
-                }
-
-                val clickIntent = Intent(context, MainActivity::class.java).apply {
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                    addCategory(Intent.CATEGORY_LAUNCHER)
-                    action = Intent.ACTION_MAIN
-                }
-                val pending = PendingIntent.getActivity(
-                    context, id, clickIntent,
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                )
-                views.setOnClickPendingIntent(R.id.recent_image, pending)
-
-                withContext(Dispatchers.Main) {
-                    manager.updateAppWidget(id, views)
-                }
+                // Placeholder update: no bitmaps, always succeeds
+                manager.tryUpdateAppWidget(context, id,
+                    buildBaseViews(context, id, showText, showGradient, showPfp, showSenderName,
+                        descLines, description, sender))
 
                 if (imageUrl.isNullOrEmpty()) {
                     Log.w(TAG, "Widget $id: no image URL saved yet")
                     return
                 }
 
-                val safeLimit = (systemBitmapLimit(context) * 0.95).toInt()
                 val pfpSlots = if (showText && showPfp) 1 else 0
-                val pfpBudget = safeLimit / 14  // 7% each
-                val mainBudget = safeLimit - pfpSlots * pfpBudget
-                val bitmap = loadScaledBitmap(imageUrl, mainBudget)
-                withContext(Dispatchers.Main) {
-                    if (bitmap != null) {
-                        views.setImageViewBitmap(R.id.recent_image, bitmap)
-                    } else {
-                        views.setImageViewResource(R.id.recent_image, R.drawable.ic_error)
-                    }
-                    manager.updateAppWidget(id, views)
-                }
 
-                if (showText && showPfp) {
-                    val pfpBitmap = loadScaledBitmap(pfpUrl, pfpBudget)
-                    if (pfpBitmap != null) {
-                        val circular = pfpBitmap.toCircular()
-                        pfpBitmap.recycle()
-                        withContext(Dispatchers.Main) {
+                // Try up to twice: first attempt uses current limit. On overflow,
+                // tryUpdateAppWidget refines cachedBitmapLimit so the retry uses a
+                // fresh RemoteViews built with the correct smaller budget.
+                for (attempt in 1..2) {
+                    val safeLimit = (systemBitmapLimit() * 0.95).toInt()
+                    val pfpBudget = 128 * 1024
+                    val mainBudget = safeLimit - pfpSlots * pfpBudget
+
+                    val views = buildBaseViews(context, id, showText, showGradient, showPfp, showSenderName, descLines, description, sender)
+                    val bitmap = loadScaledBitmap(imageUrl, mainBudget)
+                    if (bitmap != null) views.setImageViewBitmap(R.id.recent_image, bitmap)
+                    else views.setImageViewResource(R.id.recent_image, R.drawable.ic_error)
+
+                    if (!manager.tryUpdateAppWidget(context, id, views)) continue
+
+                    // Main image succeeded; pfp overflow degrades gracefully - skip
+                    if (showText && showPfp) {
+                        val pfpBitmap = loadScaledBitmap(pfpUrl, pfpBudget)
+                        if (pfpBitmap != null) {
+                            val circular = pfpBitmap.toCircular()
+                            pfpBitmap.recycle()
                             views.setImageViewBitmap(R.id.overlay_pfp, circular)
-                            manager.updateAppWidget(id, views)
-                        }
-                    } else {
-                        // pfp unavailable, hide so it doesn't render blank
-                        withContext(Dispatchers.Main) {
+                            if (!manager.tryUpdateAppWidget(context, id, views))
+                                Log.w(TAG, "Widget $id: pfp exceeded bitmap limit, skipping")
+                        } else {
                             views.setViewVisibility(R.id.overlay_pfp, View.GONE)
-                            manager.updateAppWidget(id, views)
+                            manager.tryUpdateAppWidget(context, id, views)
                         }
                     }
+                    break
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Widget $id: updateAppWidget failed", e)

@@ -96,7 +96,7 @@ Future<SupabaseResponse<Uint8List>> getImage(String imageId,
       try {
         data = await supabase.storage.from('images').download(
               imageId,
-              transform: const TransformOptions(width: 400, quality: 50),
+              transform: const TransformOptions(width: 600, quality: 70),
             );
         debugPrint("Successfully downloaded low-res image for $imageId");
       } catch (e) {
