@@ -14,7 +14,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # --- Load config ----------------------------------------------------------
-ENV_FILE="$SCRIPT_DIR/release.env"
+ENV_FILE="$ROOT_DIR/release.env"
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "Missing $ENV_FILE. Copy scripts/release.env.example and fill it in." >&2
   exit 1

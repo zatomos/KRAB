@@ -52,4 +52,4 @@ supabase/functions/service-account.json
 supabase/.temp
 lib/firebase_options.dart
 .env
-scripts/release.env
+release.env
