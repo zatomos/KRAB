@@ -272,7 +272,7 @@ class LoginPageState extends State<LoginPage> {
               if (_errorMessage != null) _buildError(),
               const SizedBox(height: 20),
               _buildButton(),
-              if (!_isSigningUp)
+              if (!_isSigningUp && isPasswordResetEnabled)
                 Align(
                   alignment: Alignment.centerRight,
                   child: TextButton(

@@ -318,8 +318,16 @@ Future<SupabaseResponse<void>> changePassword(
   }
 }
 
+/// Whether the password reset feature is enabled via the .env configuration.
+/// Defaults to enabled.
+bool get isPasswordResetEnabled =>
+    dotenv.env['ENABLE_PASSWORD_RESET']?.toLowerCase() != 'false';
+
 /// Send a password reset email.
 Future<SupabaseResponse<void>> sendPasswordResetEmail(String email) async {
+  if (!isPasswordResetEnabled) {
+    return SupabaseResponse(success: false, error: 'Password reset is disabled');
+  }
   try {
     final redirectUrl = dotenv.env['PASSWORD_RESET_URL'] ??
         'https://your-domain.com/reset-password.html';
