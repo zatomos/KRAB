@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/cupertino.dart';
@@ -29,6 +30,33 @@ class SupabaseResponse<T> {
   final String? error;
 
   SupabaseResponse({required this.success, this.data, this.error});
+}
+
+/// Whether error looks like a transient network failure worth retrying.
+bool _isTransientError(Object error) {
+  if (error is SocketException || error is TimeoutException) return true;
+  final message = error.toString().toLowerCase();
+  return message.contains('socket') ||
+      message.contains('timeout') ||
+      message.contains('connection');
+}
+
+/// Runs action, retrying on transient network errors with exponential
+/// backoff. Non-transient errors are rethrown immediately.
+Future<T> _withRetry<T>(
+  Future<T> Function() action, {
+  int maxAttempts = 3,
+}) async {
+  var attempt = 0;
+  while (true) {
+    attempt++;
+    try {
+      return await action();
+    } catch (error) {
+      if (attempt >= maxAttempts || !_isTransientError(error)) rethrow;
+      await Future.delayed(Duration(milliseconds: 300 * attempt * attempt));
+    }
+  }
 }
 
 /// Calls a Supabase RPC that returns a `{success, error, ...}` JSON object and

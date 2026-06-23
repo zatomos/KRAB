@@ -25,6 +25,9 @@ migrate_working_dir/
 **/doc/api/
 **/ios/Flutter/.last_build_id
 .dart_tool/
+
+/lib/l10n/app_localizations*.dart
+/lib/l10n/untranslated_messages.json
 .flutter-plugins
 .flutter-plugins-dependencies
 .metadata

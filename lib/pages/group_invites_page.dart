@@ -57,7 +57,7 @@ class _GroupInvitesPageState extends State<GroupInvitesPage> {
       showSnackBar(context.l10n.invite_revoked_success, color: Colors.green);
       _refresh();
     } else {
-      showSnackBar(res.error ?? "Unknown error", color: Colors.red);
+      showSnackBar(context.errorOr(res.error), color: Colors.red);
     }
   }
 
@@ -172,7 +172,7 @@ class _CreateInviteDialogState extends State<CreateInviteDialog> {
     if (!mounted) return;
     if (!res.success) {
       setState(() {
-        error = res.error ?? "Unknown error";
+        error = context.errorOr(res.error);
         _loading = false;
       });
       return;

@@ -1,8 +1,5 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:image_cropper/image_cropper.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
@@ -10,6 +7,7 @@ import 'package:krab/l10n/l10n.dart';
 import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/models/user.dart' as krab_user;
 import 'package:krab/services/api/supabase.dart';
+import 'package:krab/services/image_crop_helper.dart';
 import 'package:krab/user_preferences.dart';
 import 'package:krab/services/debug_notifier.dart';
 import 'package:krab/services/home_widget_updater.dart';
@@ -17,9 +15,9 @@ import 'package:krab/services/update_service.dart';
 import 'package:krab/widgets/rectangle_button.dart';
 import 'package:krab/widgets/avatars/user_avatar.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
-import 'package:krab/widgets/rounded_input_field.dart';
-import 'package:krab/widgets/soft_button.dart';
 import 'package:krab/widgets/dialogs/change_password_dialog.dart';
+import 'package:krab/widgets/dialogs/edit_avatar_dialog.dart';
+import 'package:krab/widgets/dialogs/rename_dialog.dart';
 import 'package:krab/widgets/dialogs/update_dialog.dart';
 import 'login_page.dart';
 
@@ -31,7 +29,6 @@ class AccountPage extends StatefulWidget {
 }
 
 class AccountPageState extends State<AccountPage> {
-  final _usernameController = TextEditingController();
   final _emailController = TextEditingController();
   final _updateService = UpdateService();
 
@@ -69,7 +66,7 @@ class AccountPageState extends State<AccountPage> {
       setState(() {
         _isLoading = false;
       });
-      showSnackBar("No user logged in.", color: Colors.red);
+      showSnackBar(context.l10n.no_user_logged_in, color: Colors.red);
       return;
     }
 
@@ -89,11 +86,13 @@ class AccountPageState extends State<AccountPage> {
     setState(() => _widgetRefreshInterval = interval);
 
     if (!userResponse.success) {
-      showSnackBar("Error loading user: ${userResponse.error}",
+      showSnackBar(
+          context.l10n.error_loading_user(context.errorOr(userResponse.error)),
           color: Colors.red);
     }
     if (!emailResponse.success) {
-      showSnackBar("Error loading email: ${emailResponse.error}",
+      showSnackBar(
+          context.l10n.error_loading_email(context.errorOr(emailResponse.error)),
           color: Colors.red);
     }
 
@@ -104,7 +103,8 @@ class AccountPageState extends State<AccountPage> {
 
     if (!groupCommentSettingResponse.success) {
       showSnackBar(
-        "Error loading notification setting: ${groupCommentSettingResponse.error}",
+        context.l10n.error_loading_notification_setting(
+            context.errorOr(groupCommentSettingResponse.error)),
         color: Colors.red,
       );
     }
@@ -115,7 +115,6 @@ class AccountPageState extends State<AccountPage> {
         user = userResponse.data!;
       }
 
-      _usernameController.text = user.username;
       _emailController.text = emailResponse.data ?? "";
 
       if (groupCommentSettingResponse.success &&
@@ -192,146 +191,65 @@ class AccountPageState extends State<AccountPage> {
   }
 
   Future<void> openEditUsernameDialog() async {
-    _usernameController.text = user.username;
-
-    await showDialog<String>(
+    final newName = await showDialog<String>(
       context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: Text(dialogContext.l10n.edit_username),
-          content: RoundedInputField(
-              controller: _usernameController,
-              hintText: dialogContext.l10n.username),
-          actions: [
-            SoftButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              label: dialogContext.l10n.cancel,
-              color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
-            ),
-            SoftButton(
-              onPressed: () {
-                final successMsg = dialogContext.l10n.username_updated_success;
-                final errorPrefix = dialogContext.l10n.error_updating_username;
-                final response = editUsername(_usernameController.text);
-                Navigator.of(dialogContext).pop(_usernameController.text);
-
-                response.then((res) {
-                  if (!mounted) return;
-                  if (res.success) {
-                    setState(() {
-                      user = user.copyWith(username: _usernameController.text);
-                    });
-                    showSnackBar(successMsg, color: Colors.green);
-                  } else {
-                    showSnackBar("$errorPrefix: ${res.error}",
-                        color: Colors.red);
-                  }
-                });
-              },
-              label: dialogContext.l10n.save,
-              color: GlobalThemeData.darkColorScheme.primary,
-            ),
-          ],
-        );
-      },
+      builder: (_) => RenameDialog(
+        title: context.l10n.edit_username,
+        hintText: context.l10n.username,
+        initialValue: user.username,
+        onSubmit: (value) async {
+          final l10n = context.l10n;
+          final res = await editUsername(value);
+          return res.success
+              ? null
+              : "${l10n.error_updating_username}: ${res.error ?? l10n.unknown_error}";
+        },
+      ),
     );
+    if (newName == null || !mounted) return;
+    setState(() => user = user.copyWith(username: newName));
+    showSnackBar(context.l10n.username_updated_success, color: Colors.green);
   }
 
   Future<void> openEditPfpDialog() async {
-    final pageContext = context;
-    await showDialog<String>(
-      context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: Text(dialogContext.l10n.edit_pfp_title),
-          actions: [
-            SoftButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              label: dialogContext.l10n.cancel,
-              color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
-            ),
-
-            // Edit pfp
-            SoftButton(
-                onPressed: () {
-                  pickCropPfp().then((file) {
-                    if (!mounted || !dialogContext.mounted) return;
-                    if (file != null) {
-                      // Cache localization
-                      final successMsg = pageContext.l10n.pfp_updated_success;
-                      final errorMsg = pageContext.l10n.error_updating_pfp;
-
-                      // Upload new profile picture
-                      final response = editProfilePicture(file);
-
-                      // Close dialog
-                      Navigator.of(dialogContext).pop();
-
-                      response.then((res) async {
-                        if (!mounted) return;
-
-                        if (res.success) {
-                          // Get a fresh signed URL
-                          final newUrlResponse =
-                              await getProfilePictureUrl(user.id);
-                          String? newUrl;
-                          if (newUrlResponse.success) {
-                            newUrl = newUrlResponse.data;
-                          }
-
-                          // Update user state
-                          if (!mounted) return;
-                          setState(() {
-                            user = user.copyWith(pfpUrl: newUrl);
-                          });
-
-                          // Show success snackbar
-                          showSnackBar(successMsg, color: Colors.green);
-                        } else {
-                          showSnackBar("$errorMsg: ${res.error}",
-                              color: Colors.red);
-                        }
-                      });
-                    }
-                  });
-                },
-                label: (user.pfpUrl.isEmpty)
-                    ? dialogContext.l10n.add
-                    : dialogContext.l10n.edit,
-                color: GlobalThemeData.darkColorScheme.primary),
-
-            // Delete pfp
-            if (user.pfpUrl.isNotEmpty)
-              SoftButton(
-                onPressed: () {
-                  // Delete profile picture from DB
-                  final response = deleteProfilePicture();
-
-                  // Cache localization
-                  final successMsg = pageContext.l10n.pfp_deleted_success;
-                  final errorMsg = pageContext.l10n.error_deleting_pfp;
-                  Navigator.of(dialogContext).pop();
-
-                  // Handle response
-                  response.then((res) {
-                    if (!mounted) return;
-
-                    if (res.success) {
-                      setState(() => user = user.copyWith(pfpUrl: null));
-                      showSnackBar(successMsg, color: Colors.green);
-                    } else {
-                      showSnackBar("$errorMsg: ${res.error}",
-                          color: Colors.red);
-                    }
-                  });
-                },
-                label: dialogContext.l10n.delete,
-                color: Colors.redAccent,
-              )
-          ],
-        );
-      },
+    final action = await showEditAvatarDialog(
+      context,
+      title: context.l10n.edit_pfp_title,
+      hasImage: user.pfpUrl.isNotEmpty,
     );
+    if (action == null || !mounted) return;
+
+    if (action == AvatarAction.edit) {
+      final file = await pickAndCropSquareImage();
+      if (file == null || !mounted) return;
+
+      final res = await editProfilePicture(file);
+      if (!mounted) return;
+      if (!res.success) {
+        showSnackBar(
+            "${context.l10n.error_updating_pfp}: ${context.errorOr(res.error)}",
+            color: Colors.red);
+        return;
+      }
+
+      // Fetch a fresh signed URL for the new picture.
+      final newUrlResponse = await getProfilePictureUrl(user.id);
+      if (!mounted) return;
+      setState(() => user = user.copyWith(
+          pfpUrl: newUrlResponse.success ? newUrlResponse.data : null));
+      showSnackBar(context.l10n.pfp_updated_success, color: Colors.green);
+    } else {
+      final res = await deleteProfilePicture();
+      if (!mounted) return;
+      if (!res.success) {
+        showSnackBar(
+            "${context.l10n.error_deleting_pfp}: ${context.errorOr(res.error)}",
+            color: Colors.red);
+        return;
+      }
+      setState(() => user = user.copyWith(pfpUrl: null));
+      showSnackBar(context.l10n.pfp_deleted_success, color: Colors.green);
+    }
   }
 
   Future<void> openChangePasswordDialog() async {
@@ -342,33 +260,6 @@ class AccountPageState extends State<AccountPage> {
     if (changed == true && mounted) {
       showSnackBar(context.l10n.password_updated_success, color: Colors.green);
     }
-  }
-
-  Future<File?> pickCropPfp() async {
-    final pfpPicked =
-        await ImagePicker().pickImage(source: ImageSource.gallery);
-    if (pfpPicked == null) return null;
-
-    final pfpCropped = await ImageCropper().cropImage(
-      sourcePath: pfpPicked.path,
-      aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
-      maxHeight: 1000,
-      maxWidth: 1000,
-      uiSettings: [
-        AndroidUiSettings(
-          toolbarTitle: 'Crop Image',
-          toolbarColor: GlobalThemeData.darkColorScheme.surface,
-          toolbarWidgetColor: Colors.white,
-          activeControlsWidgetColor: GlobalThemeData.darkColorScheme.primary,
-          statusBarLight: false,
-          initAspectRatio: CropAspectRatioPreset.square,
-          lockAspectRatio: true,
-        ),
-      ],
-    );
-
-    if (pfpCropped == null) return null;
-    return File(pfpCropped.path);
   }
 
   @override
@@ -503,7 +394,7 @@ class AccountPageState extends State<AccountPage> {
                               .l10n.group_comment_notifications_description),
                           value: receiveAllGroupComments,
                           onChanged: (value) {
-                            const errorPrefix = "Error updating setting";
+                            final l10n = context.l10n;
                             final response =
                                 setGroupCommentNotificationSetting(value);
                             response.then((res) {
@@ -511,7 +402,9 @@ class AccountPageState extends State<AccountPage> {
                                 if (!mounted) return;
                                 setState(() => receiveAllGroupComments = value);
                               } else {
-                                showSnackBar("$errorPrefix: ${res.error}",
+                                showSnackBar(
+                                    l10n.error_updating_setting(
+                                        res.error ?? l10n.unknown_error),
                                     color: Colors.red);
                               }
                             });
@@ -628,7 +521,6 @@ class AccountPageState extends State<AccountPage> {
 
   @override
   void dispose() {
-    _usernameController.dispose();
     _emailController.dispose();
     super.dispose();
   }

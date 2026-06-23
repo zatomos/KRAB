@@ -10,7 +10,7 @@ Future<SupabaseResponse<void>> sendImageToGroups(
 ) async {
   try {
     // Request UUID
-    final uuidResponse = await supabase.rpc("request_image_uuid");
+    final uuidResponse = await _withRetry(() => supabase.rpc("request_image_uuid"));
 
     if (uuidResponse['success'] == false) {
       return SupabaseResponse(
@@ -23,8 +23,11 @@ Future<SupabaseResponse<void>> sendImageToGroups(
 
     // Upload image to storage
     try {
-      await supabase.storage.from("images").upload(imageId, imageFile,
-          fileOptions: const FileOptions(contentType: 'image/jpeg'));
+      await _withRetry(() => supabase.storage.from("images").upload(
+            imageId,
+            imageFile,
+            fileOptions: const FileOptions(contentType: 'image/jpeg'),
+          ));
     } catch (uploadError) {
       return SupabaseResponse(
         success: false,
@@ -33,11 +36,12 @@ Future<SupabaseResponse<void>> sendImageToGroups(
     }
 
     // Register image in database
-    final regResponse = await supabase.rpc("register_uploaded_image", params: {
-      "image_id": imageId,
-      "group_ids": selectedGroups,
-      "image_description": description,
-    });
+    final regResponse =
+        await _withRetry(() => supabase.rpc("register_uploaded_image", params: {
+              "image_id": imageId,
+              "group_ids": selectedGroups,
+              "image_description": description,
+            }));
 
     if (regResponse['success'] == false) {
       return SupabaseResponse(

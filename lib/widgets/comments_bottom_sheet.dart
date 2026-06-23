@@ -112,7 +112,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
         setState(() => _isSending = false);
         showSnackBar(
             context.l10n
-                .error_adding_comment(response.error ?? "Unknown error"),
+                .error_adding_comment(context.errorOr(response.error)),
             color: Colors.red);
       }
     }
@@ -141,7 +141,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
         setState(() => _isSending = false);
         showSnackBar(
             context.l10n
-                .error_updating_comment(response.error ?? "Unknown error"),
+                .error_updating_comment(context.errorOr(response.error)),
             color: Colors.red);
       }
     }
@@ -169,7 +169,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
       showSnackBar(context.l10n.comment_deleted_success, color: Colors.green);
     } else {
       showSnackBar(
-        context.l10n.error_deleting_comment(response.error ?? "Unknown error"),
+        context.l10n.error_deleting_comment(context.errorOr(response.error)),
         color: Colors.red,
       );
     }

@@ -161,7 +161,7 @@ class JoinGroupDialogState extends State<JoinGroupDialog> {
       if (!response.success) {
         setState(() {
           error = context.l10n
-              .group_code_invalid(response.error ?? "Unknown error");
+              .group_code_invalid(context.errorOr(response.error));
           _loading = false;
         });
         return;
@@ -249,7 +249,7 @@ class CreateGroupDialogState extends State<CreateGroupDialog> {
       if (!response.success) {
         setState(() {
           error = context.l10n
-              .error_creating_group(response.error ?? "Unknown error");
+              .error_creating_group(context.errorOr(response.error));
           _loading = false;
         });
         return;
