@@ -16,8 +16,8 @@ Future<File?> pickAndCropSquareImage() async {
   final cropped = await ImageCropper().cropImage(
     sourcePath: picked.path,
     aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
-    maxHeight: 1000,
-    maxWidth: 1000,
+    maxHeight: 512,
+    maxWidth: 512,
     uiSettings: [
       AndroidUiSettings(
         toolbarTitle: 'Crop Image',

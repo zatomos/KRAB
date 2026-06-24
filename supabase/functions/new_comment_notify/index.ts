@@ -18,12 +18,20 @@ interface WebhookPayload {
   old_record: null;
 }
 
-const supabase = createClient(
-  Deno.env.get('SUPABASE_URL')!,
-  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-);
+const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
+const supabase = createClient(Deno.env.get('SUPABASE_URL')!, SERVICE_ROLE_KEY);
 
 Deno.serve(async (req) => {
+    // Only the database webhook may call this edge function
+  const token = (req.headers.get('Authorization') ?? '')
+    .replace(/^Bearer\s+/i, '')
+    .trim();
+  if (token !== SERVICE_ROLE_KEY) {
+    return new Response(JSON.stringify({ error: 'forbidden' }), { status: 403 });
+  }
+  console.log('Successfully authorized token');
+
   try {
     const payload: WebhookPayload = await req.json();
 

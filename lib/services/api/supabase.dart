@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
-import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:krab/services/profile_picture_cache.dart';
 import 'package:krab/services/background_session.dart';

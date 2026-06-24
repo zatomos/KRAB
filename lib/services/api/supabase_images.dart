@@ -60,6 +60,11 @@ Future<SupabaseResponse<void>> sendImageToGroups(
   }
 }
 
+/// Storage bucket holding one pre-generated thumbnail per image, keyed by the
+/// bare image id. The client reads them, and falls back to the full image
+/// when a thumbnail hasn't been generated.
+const String _thumbnailsBucket = 'image-thumbnails';
+
 /// Get images for a given group, paginated
 Future<SupabaseResponse<List<ImageRef>>> getGroupImages(
   String groupId, {
@@ -118,19 +123,7 @@ Future<SupabaseResponse<Uint8List>> getImage(String imageId,
     Uint8List data;
 
     if (lowRes) {
-      // Try with transform
-      try {
-        data = await supabase.storage.from('images').download(
-              imageId,
-              transform: const TransformOptions(width: 600, quality: 70),
-            );
-        debugPrint("Successfully downloaded low-res image for $imageId");
-      } catch (e) {
-        // Fallback to full image
-        debugPrint(
-            "Low-res transform failed for $imageId, falling back to full image. Error: $e");
-        data = await supabase.storage.from('images').download(imageId);
-      }
+      data = await _downloadThumbnail(imageId);
     } else {
       // Fullres download
       data = await supabase.storage.from('images').download(imageId);
@@ -152,6 +145,23 @@ Future<SupabaseResponse<Uint8List>> getImage(String imageId,
       error: "Error downloading image: $error",
     );
   }
+}
+
+/// Fetch an image's thumbnail. Prefers the pre-generated static thumbnail;
+/// when it isn't there, it falls back to the full image.
+Future<Uint8List> _downloadThumbnail(String imageId) async {
+  try {
+    final data =
+        await supabase.storage.from(_thumbnailsBucket).download(imageId);
+    if (data.isNotEmpty) {
+      debugPrint("Thumbnail $imageId served statically");
+      return data;
+    }
+  } catch (_) {
+    // No static thumbnail yet, fall back to the full image.
+  }
+
+  return supabase.storage.from('images').download(imageId);
 }
 
 /// Download a profile picture from storage.
