@@ -9,9 +9,14 @@ import 'package:krab/widgets/soft_button.dart';
 import 'package:krab/widgets/rounded_input_field.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/widgets/group_card.dart';
+import 'package:krab/pages/group_images_page.dart';
 import 'package:krab/models/group.dart';
 
 class GroupsPage extends StatefulWidget {
+  /// Route name used so a group gallery's back button can return
+  /// straight to the group list, wherever it was opened from.
+  static const String routeName = 'groups';
+
   const GroupsPage({super.key});
 
   @override
@@ -88,6 +93,7 @@ class GroupsPageState extends State<GroupsPage> {
       ),
       body: Column(
         children: [
+          _RecentPhotosCard(),
           Expanded(
             child: FutureBuilder<SupabaseResponse<List<Group>>>(
               future: _groupsFuture,
@@ -123,6 +129,43 @@ class GroupsPageState extends State<GroupsPage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Pinned card opening the cross-group gallery of recent photos
+class _RecentPhotosCard extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final scheme = GlobalThemeData.darkColorScheme;
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      elevation: 0,
+      color: scheme.surfaceBright,
+      child: ListTile(
+        contentPadding: const EdgeInsets.fromLTRB(15, 2, 15, 2),
+        minVerticalPadding: 0,
+        visualDensity: VisualDensity.compact,
+        leading: CircleAvatar(
+          radius: 25,
+          backgroundColor: scheme.primary,
+          child: Icon(Symbols.photo_library,
+              fill: 1, color: scheme.onPrimary),
+        ),
+        title: Text(
+          context.l10n.recent_photos,
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
+        subtitle: Text(
+          context.l10n.recent_photos_subtitle,
+          style: const TextStyle(fontSize: 14, color: Colors.grey),
+        ),
+        trailing: const Icon(Symbols.chevron_right_rounded),
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const GroupImagesPage()),
+        ),
       ),
     );
   }

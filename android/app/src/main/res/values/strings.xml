@@ -26,6 +26,12 @@
     <string name="widget_desc_lines_title">Description lines</string>
     <string name="widget_desc_lines_subtitle">Max lines of description shown</string>
 
+    <string name="widget_section_behavior">Behavior</string>
+    <string name="widget_tap_to_open_title">Tap to open image</string>
+    <string name="widget_tap_to_open_subtitle">Open the app and view the tapped image. When off, tapping just opens the app.</string>
+    <string name="widget_quick_snap_title">Quick snap button</string>
+    <string name="widget_quick_snap_subtitle">Show a camera button on the widget to take a photo right away.</string>
+
     <string name="widget_section_groups">Groups</string>
     <string name="widget_groups_hint">Only images from the selected groups are shown.</string>
     <string name="widget_groups_empty">Open the app while signed in to load your groups.</string>

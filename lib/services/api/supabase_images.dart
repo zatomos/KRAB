@@ -10,7 +10,8 @@ Future<SupabaseResponse<void>> sendImageToGroups(
 ) async {
   try {
     // Request UUID
-    final uuidResponse = await _withRetry(() => supabase.rpc("request_image_uuid"));
+    final uuidResponse =
+        await _withRetry(() => supabase.rpc("request_image_uuid"));
 
     if (uuidResponse['success'] == false) {
       return SupabaseResponse(
@@ -59,24 +60,45 @@ Future<SupabaseResponse<void>> sendImageToGroups(
   }
 }
 
-/// Get images for a given group.
-Future<SupabaseResponse<List<ImageRef>>> getGroupImages(String groupId) =>
+/// Get images for a given group, paginated
+Future<SupabaseResponse<List<ImageRef>>> getGroupImages(
+  String groupId, {
+  int? limit,
+  DateTime? beforeCreatedAt,
+  String? beforeId,
+}) =>
     _rpc("get_group_images",
-        params: {"p_group_id": groupId},
+        params: {
+          "p_group_id": groupId,
+          if (limit != null) "p_limit": limit,
+          if (beforeCreatedAt != null)
+            "p_before_created_at": beforeCreatedAt.toIso8601String(),
+          if (beforeId != null) "p_before_id": beforeId,
+        },
         errorContext: "loading group images",
         parse: (r) => (r['images'] as List)
             .map((e) => ImageRef.fromJson(e as Map<String, dynamic>))
             .toList());
 
-/// Get the n most recent images accessible to the user, deduplicated
+/// Get the [count] most recent images accessible to the user, deduplicated
 /// across groups.
 /// If groupIds is provided and non-empty, only images from those groups are
 /// returned; otherwise images from all accessible groups are included.
-Future<SupabaseResponse<List<ImageRef>>> getLatestImages(int count,
-    {List<String>? groupIds}) {
+Future<SupabaseResponse<List<ImageRef>>> getLatestImages(
+  int count, {
+  List<String>? groupIds,
+  DateTime? beforeCreatedAt,
+  String? beforeId,
+}) {
   final params = <String, dynamic>{"p_count": count};
   if (groupIds != null && groupIds.isNotEmpty) {
     params["p_group_ids"] = groupIds;
+  }
+  if (beforeCreatedAt != null) {
+    params["p_before_created_at"] = beforeCreatedAt.toIso8601String();
+  }
+  if (beforeId != null) {
+    params["p_before_id"] = beforeId;
   }
   return _rpc("get_latest_images",
       params: params,
@@ -213,3 +235,31 @@ Future<SupabaseResponse<int>> getCommentCount(String imageId, String groupId) =>
         params: {"image_id": imageId, "group_id": groupId},
         errorContext: "loading comment count",
         parse: (r) => r['count'] as int);
+
+/// Total number of comments an image received across every group the current
+/// user is a member of
+Future<SupabaseResponse<int>> getImageCommentCount(String imageId) =>
+    _rpc("get_image_comment_count",
+        params: {"p_image_id": imageId},
+        errorContext: "loading comment count",
+        parse: (r) => r['count'] as int);
+
+/// Every group the current user shares an image with
+Future<SupabaseResponse<List<dynamic>>> getImageGroups(String imageId) =>
+    _rpc("get_image_groups",
+        params: {"p_image_id": imageId},
+        errorContext: "loading groups",
+        parse: (r) => (r['groups'] as List?) ?? []);
+
+/// Comments for an image grouped by every group the current user shares it
+/// with. When primaryGroupId is provided, that group is returned first and
+/// flagged as primary.
+Future<SupabaseResponse<List<dynamic>>> getImageCommentsGrouped(String imageId,
+        {String? primaryGroupId}) =>
+    _rpc("get_image_comments_grouped",
+        params: {
+          "p_image_id": imageId,
+          if (primaryGroupId != null) "p_primary_group_id": primaryGroupId,
+        },
+        errorContext: "loading comments",
+        parse: (r) => (r['groups'] as List?) ?? []);

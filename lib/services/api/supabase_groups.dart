@@ -198,6 +198,14 @@ Future<SupabaseResponse<Group>> editGroupIcon(
   }
 }
 
+/// Resolve the signed icon URL for a group, or null if it has none.
+Future<String?> resolveGroupIconUrl(String groupId) =>
+    ProfilePictureCache.of(supabase).getUrl(
+      groupId,
+      bucket: 'group-icons',
+      ttl: const Duration(hours: 1),
+    );
+
 /// Get the icon picture of the requested group.
 Future<SupabaseResponse<String>> getGroupIconUrl(String groupId) async {
   // Force refresh

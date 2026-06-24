@@ -699,6 +699,155 @@ END;$$;
 
 
 --
+-- Name: get_image_comments_grouped(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.get_image_comments_grouped(p_image_id uuid, p_primary_group_id uuid DEFAULT NULL::uuid) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  current_user_id uuid;
+  result jsonb;
+BEGIN
+  current_user_id := auth.uid();
+  IF current_user_id IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
+  END IF;
+
+  SELECT COALESCE(
+    jsonb_agg(sub.grp ORDER BY sub.grp_is_primary DESC, sub.grp_name ASC),
+    '[]'::jsonb
+  )
+  INTO result
+  FROM (
+    SELECT
+      (g.id = p_primary_group_id) AS grp_is_primary,
+      g.name AS grp_name,
+      jsonb_build_object(
+        'group_id', g.id,
+        'group_name', g.name,
+        'is_primary', (g.id = p_primary_group_id),
+        'comments', COALESCE((
+          SELECT jsonb_agg(
+            jsonb_build_object(
+              'id', c.id,
+              'user_id', c.user_id,
+              'text', c.text,
+              'created_at', c.created_at,
+              'parent_id', c.parent_id
+            ) ORDER BY c.created_at ASC
+          )
+          FROM "Comments" c
+          WHERE c.image_id = p_image_id
+            AND c.group_id = g.id
+        ), '[]'::jsonb)
+      ) AS grp
+    FROM "Groups" g
+    WHERE EXISTS (
+      SELECT 1 FROM "ImageGroups" ig
+      WHERE ig.image_id = p_image_id
+        AND ig.group_id = g.id
+    )
+    AND EXISTS (
+      SELECT 1 FROM "Members" m
+      WHERE m.group_id = g.id
+        AND m.user_id = current_user_id
+        AND m.role != 'banned'
+    )
+  ) sub;
+
+  RETURN jsonb_build_object('success', true, 'groups', result);
+EXCEPTION
+  WHEN OTHERS THEN
+    RETURN jsonb_build_object('success', false, 'error', SQLERRM);
+END;
+$$;
+
+
+--
+-- Name: get_image_comment_count(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.get_image_comment_count(p_image_id uuid) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  current_user_id uuid;
+  comment_count integer;
+BEGIN
+  current_user_id := auth.uid();
+  IF current_user_id IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
+  END IF;
+
+  SELECT COUNT(*)
+  INTO comment_count
+  FROM "Comments" c
+  WHERE c.image_id = p_image_id
+    AND EXISTS (
+      SELECT 1 FROM "Members" m
+      WHERE m.group_id = c.group_id
+        AND m.user_id = current_user_id
+        AND m.role != 'banned'
+    );
+
+  RETURN jsonb_build_object('success', true, 'count', comment_count);
+EXCEPTION
+  WHEN OTHERS THEN
+    RETURN jsonb_build_object('success', false, 'error', SQLERRM);
+END;
+$$;
+
+
+--
+-- Name: get_image_groups(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.get_image_groups(p_image_id uuid) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  current_user_id uuid;
+  result jsonb;
+BEGIN
+  current_user_id := auth.uid();
+  IF current_user_id IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
+  END IF;
+
+  SELECT COALESCE(
+    jsonb_agg(
+      jsonb_build_object('group_id', g.id, 'group_name', g.name)
+      ORDER BY g.name ASC
+    ),
+    '[]'::jsonb
+  )
+  INTO result
+  FROM "Groups" g
+  WHERE EXISTS (
+    SELECT 1 FROM "ImageGroups" ig
+    WHERE ig.image_id = p_image_id
+      AND ig.group_id = g.id
+  )
+  AND EXISTS (
+    SELECT 1 FROM "Members" m
+    WHERE m.group_id = g.id
+      AND m.user_id = current_user_id
+      AND m.role != 'banned'
+  );
+
+  RETURN jsonb_build_object('success', true, 'groups', result);
+EXCEPTION
+  WHEN OTHERS THEN
+    RETURN jsonb_build_object('success', false, 'error', SQLERRM);
+END;
+$$;
+
+
+--
 -- Name: get_group_details(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -733,29 +882,23 @@ END;$$;
 
 
 --
--- Name: get_group_images(uuid); Type: FUNCTION; Schema: public; Owner: -
+-- Name: get_group_images(uuid, integer, timestamp with time zone, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.get_group_images(p_group_id uuid) RETURNS jsonb
+CREATE FUNCTION public.get_group_images(p_group_id uuid, p_limit integer DEFAULT NULL::integer, p_before_created_at timestamp with time zone DEFAULT NULL::timestamp with time zone, p_before_id uuid DEFAULT NULL::uuid) RETURNS jsonb
     LANGUAGE plpgsql
     SET search_path TO 'public'
-    AS $$DECLARE
-  current_user_id UUID;
-  images_data JSONB;
-  is_member BOOLEAN;
+    AS $$
+DECLARE
+  current_user_id uuid;
+  images_data jsonb;
+  is_member boolean;
 BEGIN
-  -- Get the user ID from the current request
   current_user_id := auth.uid();
-
-  -- Check if user is authenticated
   IF current_user_id IS NULL THEN
-    RETURN jsonb_build_object(
-      'success', false,
-      'error', 'User not authenticated'
-    );
+    RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
   END IF;
 
-  -- Check if user is a member of this group
   SELECT EXISTS (
     SELECT 1 FROM "Members"
     WHERE user_id = current_user_id
@@ -763,36 +906,33 @@ BEGIN
   ) INTO is_member;
 
   IF NOT is_member THEN
-    RETURN jsonb_build_object(
-      'success', false,
-      'error', 'You are not a member of this group'
-    );
+    RETURN jsonb_build_object('success', false, 'error', 'You are not a member of this group');
   END IF;
 
-  -- Get all images for this group, ordering them by created_at descending.
   SELECT jsonb_agg(
     jsonb_build_object(
-      'id', i.id,
-      'uploaded_by', i.uploaded_by,
-      'uploaded_at', i.created_at
-    ) ORDER BY i.created_at DESC
+      'id', sub.id,
+      'uploaded_by', sub.uploaded_by,
+      'uploaded_at', sub.created_at
+    ) ORDER BY sub.created_at DESC, sub.id DESC
   )
-  FROM "Images" i
-  JOIN "ImageGroups" ig ON i.id = ig.image_id
-  WHERE ig.group_id = p_group_id
-  INTO images_data;
+  INTO images_data
+  FROM (
+    SELECT i.id, i.uploaded_by, i.created_at
+    FROM "Images" i
+    JOIN "ImageGroups" ig ON i.id = ig.image_id
+    WHERE ig.group_id = p_group_id
+      AND (p_before_created_at IS NULL
+           OR (i.created_at, i.id) < (p_before_created_at, p_before_id))
+    ORDER BY i.created_at DESC, i.id DESC
+    LIMIT p_limit
+  ) sub;
 
-  -- Return the complete result.
-  RETURN jsonb_build_object(
-    'success', true,
-    'images', COALESCE(images_data, '[]'::jsonb)
-  );
+  RETURN jsonb_build_object('success', true, 'images', COALESCE(images_data, '[]'::jsonb));
 EXCEPTION WHEN OTHERS THEN
-  RETURN jsonb_build_object(
-    'success', false,
-    'error', SQLERRM
-  );
-END;$$;
+  RETURN jsonb_build_object('success', false, 'error', SQLERRM);
+END;
+$$;
 
 
 --
@@ -1013,16 +1153,16 @@ END;$$;
 
 
 --
--- Name: get_latest_images(integer, text[]); Type: FUNCTION; Schema: public; Owner: -
+-- Name: get_latest_images(integer, text[], timestamp with time zone, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.get_latest_images(p_count integer DEFAULT 1, p_group_ids text[] DEFAULT NULL::text[]) RETURNS jsonb
+CREATE FUNCTION public.get_latest_images(p_count integer DEFAULT 1, p_group_ids text[] DEFAULT NULL::text[], p_before_created_at timestamp with time zone DEFAULT NULL::timestamp with time zone, p_before_id uuid DEFAULT NULL::uuid) RETURNS jsonb
     LANGUAGE plpgsql
     SET search_path TO 'public'
     AS $$
 DECLARE
-  current_user_id UUID;
-  images_data JSONB;
+  current_user_id uuid;
+  images_data jsonb;
 BEGIN
   current_user_id := auth.uid();
 
@@ -1032,11 +1172,12 @@ BEGIN
 
   SELECT jsonb_agg(
     jsonb_build_object(
-      'id', id,
-      'uploaded_by', uploaded_by,
-      'uploaded_at', created_at
-    )
+      'id', sub.id,
+      'uploaded_by', sub.uploaded_by,
+      'uploaded_at', sub.created_at
+    ) ORDER BY sub.created_at DESC, sub.id DESC
   )
+  INTO images_data
   FROM (
     SELECT i.id, i.uploaded_by, i.created_at
     FROM "Images" i
@@ -1045,11 +1186,12 @@ BEGIN
     WHERE m.user_id = current_user_id
     AND m.role != 'banned'
     AND (p_group_ids IS NULL OR ig.group_id = ANY(p_group_ids::uuid[]))
+    AND (p_before_created_at IS NULL
+         OR (i.created_at, i.id) < (p_before_created_at, p_before_id))
     GROUP BY i.id, i.uploaded_by, i.created_at
-    ORDER BY i.created_at DESC
+    ORDER BY i.created_at DESC, i.id DESC
     LIMIT p_count
-  ) AS unique_images
-  INTO images_data;
+  ) sub;
 
   RETURN jsonb_build_object(
     'success', true,
@@ -3313,6 +3455,27 @@ CREATE INDEX "GroupInvites_group_id_idx" ON public."GroupInvites" USING btree (g
 
 
 --
+-- Name: idx_comments_image_group; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_comments_image_group ON public."Comments" USING btree (image_id, group_id);
+
+
+--
+-- Name: idx_imagegroups_image_group; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_imagegroups_image_group ON public."ImageGroups" USING btree (image_id, group_id);
+
+
+--
+-- Name: idx_members_group_user; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_members_group_user ON public."Members" USING btree (group_id, user_id);
+
+
+--
 -- Name: bname; Type: INDEX; Schema: storage; Owner: -
 --
 
@@ -4090,6 +4253,36 @@ GRANT ALL ON FUNCTION public.get_comments(image_id uuid, group_id uuid) TO servi
 
 
 --
+-- Name: FUNCTION get_image_comments_grouped(p_image_id uuid, p_primary_group_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.get_image_comments_grouped(p_image_id uuid, p_primary_group_id uuid) TO postgres;
+GRANT ALL ON FUNCTION public.get_image_comments_grouped(p_image_id uuid, p_primary_group_id uuid) TO anon;
+GRANT ALL ON FUNCTION public.get_image_comments_grouped(p_image_id uuid, p_primary_group_id uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.get_image_comments_grouped(p_image_id uuid, p_primary_group_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION get_image_comment_count(p_image_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.get_image_comment_count(p_image_id uuid) TO postgres;
+GRANT ALL ON FUNCTION public.get_image_comment_count(p_image_id uuid) TO anon;
+GRANT ALL ON FUNCTION public.get_image_comment_count(p_image_id uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.get_image_comment_count(p_image_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION get_image_groups(p_image_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.get_image_groups(p_image_id uuid) TO postgres;
+GRANT ALL ON FUNCTION public.get_image_groups(p_image_id uuid) TO anon;
+GRANT ALL ON FUNCTION public.get_image_groups(p_image_id uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.get_image_groups(p_image_id uuid) TO service_role;
+
+
+--
 -- Name: FUNCTION get_group_details(group_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
@@ -4098,11 +4291,11 @@ GRANT ALL ON FUNCTION public.get_group_details(group_id uuid) TO service_role;
 
 
 --
--- Name: FUNCTION get_group_images(p_group_id uuid); Type: ACL; Schema: public; Owner: -
+-- Name: FUNCTION get_group_images(p_group_id uuid, p_limit integer, p_before_created_at timestamp with time zone, p_before_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.get_group_images(p_group_id uuid) TO authenticated;
-GRANT ALL ON FUNCTION public.get_group_images(p_group_id uuid) TO service_role;
+GRANT ALL ON FUNCTION public.get_group_images(p_group_id uuid, p_limit integer, p_before_created_at timestamp with time zone, p_before_id uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.get_group_images(p_group_id uuid, p_limit integer, p_before_created_at timestamp with time zone, p_before_id uuid) TO service_role;
 
 
 --
@@ -4148,13 +4341,13 @@ GRANT ALL ON FUNCTION public.get_latest_image() TO service_role;
 
 
 --
--- Name: FUNCTION get_latest_images(p_count integer, p_group_ids text[]); Type: ACL; Schema: public; Owner: -
+-- Name: FUNCTION get_latest_images(p_count integer, p_group_ids text[], p_before_created_at timestamp with time zone, p_before_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.get_latest_images(p_count integer, p_group_ids text[]) TO postgres;
-GRANT ALL ON FUNCTION public.get_latest_images(p_count integer, p_group_ids text[]) TO anon;
-GRANT ALL ON FUNCTION public.get_latest_images(p_count integer, p_group_ids text[]) TO authenticated;
-GRANT ALL ON FUNCTION public.get_latest_images(p_count integer, p_group_ids text[]) TO service_role;
+GRANT ALL ON FUNCTION public.get_latest_images(p_count integer, p_group_ids text[], p_before_created_at timestamp with time zone, p_before_id uuid) TO postgres;
+GRANT ALL ON FUNCTION public.get_latest_images(p_count integer, p_group_ids text[], p_before_created_at timestamp with time zone, p_before_id uuid) TO anon;
+GRANT ALL ON FUNCTION public.get_latest_images(p_count integer, p_group_ids text[], p_before_created_at timestamp with time zone, p_before_id uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.get_latest_images(p_count integer, p_group_ids text[], p_before_created_at timestamp with time zone, p_before_id uuid) TO service_role;
 
 
 --

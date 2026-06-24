@@ -38,10 +38,14 @@ class HomeScreenWidgetConfigureActivity : Activity() {
     private lateinit var switchGradient: SwitchMaterial
     private lateinit var switchShowPfp: SwitchMaterial
     private lateinit var switchPrevPfps: SwitchMaterial
+    private lateinit var switchTapToOpen: SwitchMaterial
+    private lateinit var switchQuickSnap: SwitchMaterial
     private lateinit var rowSenderName: View
     private lateinit var rowGradient: View
     private lateinit var rowShowPfp: View
     private lateinit var rowPrevPfps: View
+    private lateinit var rowTapToOpen: View
+    private lateinit var rowQuickSnap: View
     private lateinit var rowDescLines: View
     private lateinit var btnDescDecrease: ImageButton
     private lateinit var btnDescIncrease: ImageButton
@@ -71,10 +75,14 @@ class HomeScreenWidgetConfigureActivity : Activity() {
         switchGradient = findViewById(R.id.switchGradient)
         switchShowPfp = findViewById(R.id.switchShowPfp)
         switchPrevPfps = findViewById(R.id.switchPrevPfps)
+        switchTapToOpen = findViewById(R.id.switchTapToOpen)
+        switchQuickSnap = findViewById(R.id.switchQuickSnap)
         rowSenderName = findViewById(R.id.rowSenderName)
         rowGradient = findViewById(R.id.rowGradient)
         rowShowPfp = findViewById(R.id.rowShowPfp)
         rowPrevPfps = findViewById(R.id.rowPrevPfps)
+        rowTapToOpen = findViewById(R.id.rowTapToOpen)
+        rowQuickSnap = findViewById(R.id.rowQuickSnap)
         rowDescLines = findViewById(R.id.rowDescLines)
         btnDescDecrease = findViewById(R.id.btnDescDecrease)
         btnDescIncrease = findViewById(R.id.btnDescIncrease)
@@ -89,6 +97,8 @@ class HomeScreenWidgetConfigureActivity : Activity() {
         switchGradient.isChecked = HomeScreenWidget.getShowGradientPref(this, widgetId)
         switchShowPfp.isChecked = HomeScreenWidget.getShowPfpPref(this, widgetId)
         switchPrevPfps.isChecked = HomeScreenWidget.getShowPrevPfpsPref(this, widgetId)
+        switchTapToOpen.isChecked = HomeScreenWidget.getTapToOpenPref(this, widgetId)
+        switchQuickSnap.isChecked = HomeScreenWidget.getShowQuickSnapPref(this, widgetId)
         descLines = HomeScreenWidget.getDescLinesPref(this, widgetId, default = if (isMultiWidget) 1 else 2)
         if (isMultiWidget) descLines = descLines.coerceIn(1, 2)
         tvDescLines.text = descLines.toString()
@@ -99,6 +109,7 @@ class HomeScreenWidgetConfigureActivity : Activity() {
         buildGroupCheckboxes()
 
         updateDependentRows(switchShowText.isChecked)
+        updateQuickSnapRow(switchTapToOpen.isChecked)
         updateStepperButtons()
 
         findViewById<View>(R.id.rowShowText).setOnClickListener {
@@ -128,6 +139,19 @@ class HomeScreenWidgetConfigureActivity : Activity() {
         rowPrevPfps.setOnClickListener {
             switchPrevPfps.isChecked = !switchPrevPfps.isChecked
             HomeScreenWidget.setShowPrevPfpsPref(this, widgetId, switchPrevPfps.isChecked)
+            applyAndUpdate()
+        }
+        rowTapToOpen.setOnClickListener {
+            switchTapToOpen.isChecked = !switchTapToOpen.isChecked
+            HomeScreenWidget.setTapToOpenPref(this, widgetId, switchTapToOpen.isChecked)
+            updateQuickSnapRow(switchTapToOpen.isChecked)
+            applyAndUpdate()
+        }
+        rowQuickSnap.setOnClickListener {
+            // Quick snap depends on tap-to-open being enabled
+            if (!switchTapToOpen.isChecked) return@setOnClickListener
+            switchQuickSnap.isChecked = !switchQuickSnap.isChecked
+            HomeScreenWidget.setShowQuickSnapPref(this, widgetId, switchQuickSnap.isChecked)
             applyAndUpdate()
         }
         val maxDescLines = if (isMultiWidget) 2 else 4
@@ -286,6 +310,13 @@ class HomeScreenWidgetConfigureActivity : Activity() {
         switchSenderName.isEnabled = showText
         switchGradient.isEnabled = showText
         switchShowPfp.isEnabled = showText
+    }
+
+    /// Grey out the quick-snap row when tap-to-open is disabled, since the
+    /// camera button only appears when tapping opens the app
+    private fun updateQuickSnapRow(tapToOpen: Boolean) {
+        rowQuickSnap.alpha = if (tapToOpen) 1f else 0.4f
+        switchQuickSnap.isEnabled = tapToOpen
     }
 
     private fun updateStepperButtons() {

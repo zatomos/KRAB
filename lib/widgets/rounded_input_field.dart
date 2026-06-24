@@ -16,6 +16,7 @@ class RoundedInputField extends StatelessWidget {
   final EdgeInsetsGeometry contentPadding;
   final Iterable<String>? autofillHints;
   final TextInputType? keyboardType;
+  final bool enabled;
 
   const RoundedInputField({
     super.key,
@@ -33,6 +34,7 @@ class RoundedInputField extends StatelessWidget {
         const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
     this.autofillHints,
     this.keyboardType,
+    this.enabled = true,
   });
 
   @override
@@ -42,6 +44,7 @@ class RoundedInputField extends StatelessWidget {
       child: TextField(
         controller: controller,
         focusNode: focusNode,
+        enabled: enabled,
         obscureText: obscureText,
         autofillHints: autofillHints,
         keyboardType: keyboardType,

@@ -7,9 +7,11 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
+import android.net.Uri
 import android.util.Log
 import android.view.View
 import android.widget.RemoteViews
+import es.antonborri.home_widget.HomeWidgetLaunchIntent
 import es.antonborri.home_widget.HomeWidgetPlugin
 import kotlinx.coroutines.*
 
@@ -102,6 +104,13 @@ class HomeScreenWidget : AppWidgetProvider() {
         private const val PREF_DESC_LINES_PREFIX = "descLines_"
         private const val PREF_SHOW_SENDER_NAME_PREFIX = "showSenderName_"
         private const val PREF_SHOW_PREV_PFPS_PREFIX = "showPrevPfps_"
+        private const val PREF_TAP_TO_OPEN_PREFIX = "tapToOpen_"
+        private const val PREF_SHOW_QUICK_SNAP_PREFIX = "showQuickSnap_"
+
+        // Request-code namespaces so each clickable slot gets its own PendingIntent
+        const val REQ_CAMERA = 0x10000000
+        const val REQ_PREV1 = 0x20000000
+        const val REQ_PREV2 = 0x30000000
 
         private fun prefs(context: Context) =
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -148,6 +157,81 @@ class HomeScreenWidget : AppWidgetProvider() {
             prefs(context).edit().putBoolean(PREF_SHOW_SENDER_NAME_PREFIX + id, value).apply()
         }
 
+        fun getTapToOpenPref(context: Context, id: Int) =
+            prefs(context).getBoolean(PREF_TAP_TO_OPEN_PREFIX + id, true)
+
+        fun setTapToOpenPref(context: Context, id: Int, value: Boolean) {
+            prefs(context).edit().putBoolean(PREF_TAP_TO_OPEN_PREFIX + id, value).apply()
+        }
+
+        fun getShowQuickSnapPref(context: Context, id: Int) =
+            prefs(context).getBoolean(PREF_SHOW_QUICK_SNAP_PREFIX + id, false)
+
+        fun setShowQuickSnapPref(context: Context, id: Int, value: Boolean) {
+            prefs(context).edit().putBoolean(PREF_SHOW_QUICK_SNAP_PREFIX + id, value).apply()
+        }
+
+        /// PendingIntent that opens the app and is delivered to Dart as a widget click URI
+        fun launchPendingIntent(context: Context, requestCode: Int, uri: Uri): PendingIntent {
+            val intent = Intent(context, MainActivity::class.java).apply {
+                action = HomeWidgetLaunchIntent.HOME_WIDGET_LAUNCH_ACTION
+                data = uri
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            }
+            return PendingIntent.getActivity(
+                context, requestCode, intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+        }
+
+        /// PendingIntent that simply launches the app with no deep link
+        fun openAppPendingIntent(context: Context, requestCode: Int): PendingIntent {
+            val intent = Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                addCategory(Intent.CATEGORY_LAUNCHER)
+                action = Intent.ACTION_MAIN
+            }
+            return PendingIntent.getActivity(
+                context, requestCode, intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+        }
+
+        /// Quick-snap camera button is visible only when both tap-to-open
+        /// and the quick-snap option are enabled.
+        fun applyQuickSnap(
+            context: Context,
+            views: RemoteViews,
+            id: Int,
+            tapToOpen: Boolean,
+            showQuickSnap: Boolean
+        ) {
+            if (tapToOpen && showQuickSnap) {
+                views.setViewVisibility(R.id.quick_snap_button, View.VISIBLE)
+                views.setOnClickPendingIntent(
+                    R.id.quick_snap_button,
+                    launchPendingIntent(context, id or REQ_CAMERA, Uri.parse("krab://open?action=camera"))
+                )
+            } else {
+                views.setViewVisibility(R.id.quick_snap_button, View.GONE)
+            }
+        }
+
+        /// Click intent for an image slot opens the tapped image when tap-to-open
+        /// is enabled and an image id is known, otherwise just opens the app.
+        fun imageClickIntent(
+            context: Context,
+            requestCode: Int,
+            tapToOpen: Boolean,
+            imageId: String?
+        ): PendingIntent {
+            return if (tapToOpen && !imageId.isNullOrEmpty()) {
+                launchPendingIntent(context, requestCode, Uri.parse("krab://open?imageId=$imageId"))
+            } else {
+                openAppPendingIntent(context, requestCode)
+            }
+        }
+
         fun deletePrefs(context: Context, id: Int) {
             prefs(context).edit()
                 .remove(PREF_SHOW_TEXT_PREFIX + id)
@@ -156,6 +240,8 @@ class HomeScreenWidget : AppWidgetProvider() {
                 .remove(PREF_DESC_LINES_PREFIX + id)
                 .remove(PREF_SHOW_SENDER_NAME_PREFIX + id)
                 .remove(PREF_SHOW_PREV_PFPS_PREFIX + id)
+                .remove(PREF_TAP_TO_OPEN_PREFIX + id)
+                .remove(PREF_SHOW_QUICK_SNAP_PREFIX + id)
                 .apply()
             HomeWidgetPlugin.getData(context).edit()
                 .remove("widgetGroups_$id")
@@ -181,7 +267,10 @@ class HomeScreenWidget : AppWidgetProvider() {
             showSenderName: Boolean,
             descLines: Int,
             description: String?,
-            sender: String?
+            sender: String?,
+            tapToOpen: Boolean,
+            showQuickSnap: Boolean,
+            imageId: String?
         ): RemoteViews {
             val density = context.resources.displayMetrics.density
             fun Int.px() = (this * density).toInt()
@@ -219,18 +308,11 @@ class HomeScreenWidget : AppWidgetProvider() {
                 views.setViewVisibility(R.id.overlay_container, View.GONE)
             }
 
-            val clickIntent = Intent(context, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                addCategory(Intent.CATEGORY_LAUNCHER)
-                action = Intent.ACTION_MAIN
-            }
             views.setOnClickPendingIntent(
                 R.id.recent_image,
-                PendingIntent.getActivity(
-                    context, id, clickIntent,
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                )
+                imageClickIntent(context, id, tapToOpen, imageId)
             )
+            applyQuickSnap(context, views, id, tapToOpen, showQuickSnap)
             return views
         }
 
@@ -252,14 +334,18 @@ class HomeScreenWidget : AppWidgetProvider() {
                 val showPfp = getShowPfpPref(context, id)
                 val showSenderName = getShowSenderNamePref(context, id)
                 val descLines = getDescLinesPref(context, id)
+                val tapToOpen = getTapToOpenPref(context, id)
+                val showQuickSnap = getShowQuickSnapPref(context, id)
+                val imageId = keyedString(prefs, "lastImageId", id)
 
                 Log.d(TAG, "Widget $id: imageUrl=$imageUrl pfpUrl=$pfpUrl showText=$showText " +
-                        "showGradient=$showGradient showPfp=$showPfp showSenderName=$showSenderName")
+                        "showGradient=$showGradient showPfp=$showPfp showSenderName=$showSenderName " +
+                        "tapToOpen=$tapToOpen showQuickSnap=$showQuickSnap")
 
                 // Placeholder update: no bitmaps, always succeeds
                 manager.tryUpdateAppWidget(context, id,
                     buildBaseViews(context, id, showText, showGradient, showPfp, showSenderName,
-                        descLines, description, sender))
+                        descLines, description, sender, tapToOpen, showQuickSnap, imageId))
 
                 if (imageUrl.isNullOrEmpty()) {
                     Log.w(TAG, "Widget $id: no image URL saved yet")
@@ -276,7 +362,7 @@ class HomeScreenWidget : AppWidgetProvider() {
                     val pfpBudget = 128 * 1024
                     val mainBudget = safeLimit - pfpSlots * pfpBudget
 
-                    val views = buildBaseViews(context, id, showText, showGradient, showPfp, showSenderName, descLines, description, sender)
+                    val views = buildBaseViews(context, id, showText, showGradient, showPfp, showSenderName, descLines, description, sender, tapToOpen, showQuickSnap, imageId)
                     val bitmap = loadScaledBitmap(imageUrl, mainBudget)
                     if (bitmap != null) views.setImageViewBitmap(R.id.recent_image, bitmap)
                     else views.setImageViewResource(R.id.recent_image, R.drawable.ic_error)

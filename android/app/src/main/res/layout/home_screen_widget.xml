@@ -17,6 +17,20 @@
         android:focusable="true"
         android:scaleType="centerCrop" />
 
+    <ImageButton
+        android:id="@+id/quick_snap_button"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:layout_gravity="top|end"
+        android:layout_margin="10dp"
+        android:padding="8dp"
+        android:scaleType="fitCenter"
+        android:src="@drawable/ic_camera"
+        android:background="@drawable/widget_quick_snap_bg"
+        android:alpha="0.7"
+        android:contentDescription="@string/widget_quick_snap_title"
+        android:visibility="gone" />
+
     <LinearLayout
         android:id="@+id/overlay_container"
         android:layout_width="match_parent"

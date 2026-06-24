@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'avatar_color.dart';
 
 enum FallbackType {
   firstLetter,
@@ -24,17 +25,6 @@ class GroupOrUserAvatar extends StatelessWidget {
     this.fallbackIcon,
   });
 
-  // Random color generator based on name
-  Color _colorFromName(String text, BuildContext context) {
-    if (text.isEmpty) {
-      return Theme.of(context).colorScheme.primaryContainer;
-    }
-    final hash = text.codeUnits.fold<int>(0, (acc, c) => acc + c);
-    final hue = (hash % 360).toDouble();
-    final hsv = HSVColor.fromAHSV(1, hue, 0.5, 0.85);
-    return hsv.toColor();
-  }
-
   @override
   Widget build(BuildContext context) {
     final hasImage = imageUrl != null && imageUrl!.isNotEmpty;
@@ -51,7 +41,7 @@ class GroupOrUserAvatar extends StatelessWidget {
     }
 
     final bgColor = useRandomColor
-        ? _colorFromName(name, context)
+        ? colorFromName(name, context)
         : Theme.of(context).colorScheme.primaryContainer;
 
     Widget child;

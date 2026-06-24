@@ -23,6 +23,12 @@
     <string name="widget_desc_lines_title">Lignes de description</string>
     <string name="widget_desc_lines_subtitle">Nombre maximum de lignes de description affichées</string>
 
+    <string name="widget_section_behavior">Comportement</string>
+    <string name="widget_tap_to_open_title">Taper pour ouvrir l\'image</string>
+    <string name="widget_tap_to_open_subtitle">Ouvrir l\'application et afficher l\'image sélectionnée. Si désactivé, ce geste ouvre simplement l\'application.</string>
+    <string name="widget_quick_snap_title">Bouton photo rapide</string>
+    <string name="widget_quick_snap_subtitle">Afficher un bouton sur le widget pour prendre une photo immédiatement.</string>
+
     <string name="widget_section_groups">Groupes</string>
     <string name="widget_groups_hint">Seules les images des groupes sélectionnés sont affichées.</string>
     <string name="widget_groups_empty">Ouvrez l\'application en étant connecté pour charger vos groupes.</string>

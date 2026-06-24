@@ -8,6 +8,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:home_widget/home_widget.dart';
 
 import 'package:krab/services/api/supabase.dart';
 import 'package:krab/services/background_session.dart';
@@ -40,6 +41,47 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 RemoteMessage? pendingNotificationMessage;
 String? pendingLocalNotificationPayload;
+Uri? pendingWidgetUri;
+
+/// Handle a tap on a home-screen widget. The URI is emitted by the native
+/// widget providers via the home_widget plugin:
+///   krab://open?imageId=ID     open the all-groups gallery on that image
+///   krab://open?action=camera  bring the camera to the front
+Future<void> handleWidgetLaunch(Uri? uri) async {
+  if (uri == null) return;
+  debugPrint('Handling widget launch: $uri');
+  try {
+    int attempts = 0;
+    while (navigatorKey.currentState == null && attempts < 20) {
+      await Future.delayed(const Duration(milliseconds: 100));
+      attempts++;
+    }
+    final nav = navigatorKey.currentState;
+    if (nav == null) return;
+
+    // Only act on an authenticated session; otherwise the app just opens
+    if (!isSupabaseInitialized ||
+        Supabase.instance.client.auth.currentUser == null) {
+      return;
+    }
+
+    if (uri.queryParameters['action'] == 'camera') {
+      nav.popUntil((route) => route.isFirst);
+      return;
+    }
+
+    final imageId = uri.queryParameters['imageId'];
+    if (imageId != null && imageId.isNotEmpty) {
+      nav.push(
+        MaterialPageRoute(
+          builder: (_) => GroupImagesPage(imageId: imageId),
+        ),
+      );
+    }
+  } catch (e, st) {
+    debugPrint('Error handling widget launch: $e\n$st');
+  }
+}
 
 Future<void> _handleLocalNotificationTap(String payload) async {
   try {
@@ -70,7 +112,6 @@ Future<void> _handleLocalNotificationTap(String payload) async {
     debugPrint('Error handling local notification tap: $e');
   }
 }
-
 
 Future<bool> initializeSupabaseIfNeeded() async {
   // Already initialized
@@ -333,6 +374,14 @@ void main() async {
       pendingNotificationMessage = initialMessage;
     }
 
+    // Home-screen widget taps
+    final initialWidgetUri = await HomeWidget.initiallyLaunchedFromHomeWidget();
+    if (initialWidgetUri != null) {
+      debugPrint('App launched from widget: $initialWidgetUri');
+      pendingWidgetUri = initialWidgetUri;
+    }
+    HomeWidget.widgetClicked.listen(handleWidgetLaunch);
+
     // FCM permissions and auto-init
     final messaging = FirebaseMessaging.instance;
     final settings = await messaging.requestPermission();
@@ -455,6 +504,13 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
         debugPrint('Processing pending local notification');
         await _handleLocalNotificationTap(pendingLocalNotificationPayload!);
         pendingLocalNotificationPayload = null;
+      }
+
+      // Handle pending widget tap
+      if (pendingWidgetUri != null) {
+        debugPrint('Processing pending widget launch');
+        await handleWidgetLaunch(pendingWidgetUri);
+        pendingWidgetUri = null;
       }
 
       // One-time prompt to establish the background session for users who were

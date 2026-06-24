@@ -10,21 +10,42 @@ import 'package:krab/models/user.dart' as krab_user;
 import 'package:krab/models/image_data.dart';
 import 'package:krab/models/image_ref.dart';
 import 'package:krab/pages/group_settings_page.dart';
+import 'package:krab/pages/groups_page.dart';
 import 'package:krab/pages/viewer/image_gallery_page.dart';
 import 'package:krab/widgets/avatars/user_avatar.dart';
 
+/// Number of images fetched per page in both the single-group and cross-group
+/// galleries. New pages load as the user scrolls.
+const int _kPageSize = 30;
+
+/// When deep-linking to a specific image, how many pages to load while
+/// searching for it before giving up. The target should be recent,
+/// so it lands in the first page or two.
+const int _kDeepLinkMaxPages = 10;
+
 class GroupImagesPage extends StatefulWidget {
-  final Group group;
+  /// The group to show images for, or null for the cross-group "recent photos"
+  /// view that aggregates the latest images from every group the user is in.
+  final Group? group;
   final String? imageId;
 
-  const GroupImagesPage({super.key, required this.group, this.imageId});
+  const GroupImagesPage({super.key, this.group, this.imageId});
 
   @override
   GroupPageState createState() => GroupPageState();
 }
 
 class GroupPageState extends State<GroupImagesPage> {
-  late Future<SupabaseResponse<List<ImageRef>>> _groupImagesFuture;
+  /// The group being viewed, or null in cross-group recent photos mode.
+  String? get _groupId => widget.group?.id;
+
+  /// Paginated image list, loaded incrementally as the user scrolls.
+  final List<ImageRef> _images = [];
+  final ScrollController _scrollController = ScrollController();
+  bool _loadingInitial = true;
+  bool _loadingMore = false;
+  bool _hasMore = true;
+  String? _error;
 
   /// Caches
   final Map<String, Uint8List> _lowResCache = {};
@@ -34,56 +55,146 @@ class GroupPageState extends State<GroupImagesPage> {
   final Map<String, krab_user.User> _userCache = {};
   final Map<String, int> _commentCountCache = {};
 
+  /// LRU bound on how many images' decoded bytes are retained, so memory stays
+  /// bounded while paging through an arbitrarily long feed. The lightweight
+  /// caches are not evicted. lruOrder lists image ids from least to
+  /// most-recently accessed.
+  static const int _maxCachedImages = 60;
+  final List<String> _lruOrder = [];
+
   @override
   void initState() {
     super.initState();
-    _groupImagesFuture = getGroupImages(widget.group.id);
+    _scrollController.addListener(_onScroll);
+    _bootstrap();
+  }
 
-    // If an imageId is provided, navigate to it
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (widget.imageId == null) return;
+  /// Fetch one page. With after set, fetches the page following that image;
+  /// otherwise fetches the first page.
+  Future<SupabaseResponse<List<ImageRef>>> _fetchPage({ImageRef? after}) =>
+      _groupId != null
+          ? getGroupImages(
+              _groupId!,
+              limit: _kPageSize,
+              beforeCreatedAt: after?.uploadedAt,
+              beforeId: after?.id,
+            )
+          : getLatestImages(
+              _kPageSize,
+              beforeCreatedAt: after?.uploadedAt,
+              beforeId: after?.id,
+            );
 
-      try {
-        final imagesResponse = await _groupImagesFuture;
+  /// Load the first page, then, if deep-linking to an image, open it.
+  Future<void> _bootstrap() async {
+    await _loadInitial();
+    if (widget.imageId == null || !mounted) return;
+
+    try {
+      // The target is usually recent, but page forward until it's found (or we
+      // run out / hit the lookup cap) so the gallery can open on it.
+      int index = _images.indexWhere((img) => img.id == widget.imageId);
+      int pages = 0;
+      while (index < 0 && _hasMore && pages < _kDeepLinkMaxPages) {
+        await _loadMore();
         if (!mounted) return;
-        final images = imagesResponse.data ?? [];
-        final initialIndex =
-            images.indexWhere((img) => img.id == widget.imageId!);
-        final initialData = await _getImageDataFuture(widget.imageId!);
-        if (!mounted) return;
-        final idx = initialIndex >= 0 ? initialIndex : 0;
-
-        Navigator.push(
-          context,
-          _galleryRoute(ImageGalleryPage(
-            images: images,
-            initialIndex: idx,
-            initialImageData: initialData,
-            initialUploader: _userCache[initialData.uploadedBy] ??
-                krab_user.User(id: initialData.uploadedBy, username: ''),
-            groupId: widget.group.id,
-            getImageData: _getImageDataFuture,
-            getOrStartFullResFuture: _getOrStartFullResFuture,
-            getCachedImage: _getCachedImage,
-            commentCountCache: _commentCountCache,
-            userCache: _userCache,
-            onCommentCountChanged: _onCommentCountChanged,
-          )),
-        );
-      } catch (err) {
-        debugPrint("Failed to preload image: $err");
+        index = _images.indexWhere((img) => img.id == widget.imageId);
+        pages++;
       }
+
+      final initialData = await _getImageDataFuture(widget.imageId!);
+      if (!mounted) return;
+      final idx = index >= 0 ? index : 0;
+
+      Navigator.push(
+        context,
+        _galleryRoute(ImageGalleryPage(
+          images: _images,
+          initialIndex: idx,
+          initialImageData: initialData,
+          initialUploader: _userCache[initialData.uploadedBy] ??
+              krab_user.User(id: initialData.uploadedBy, username: ''),
+          groupId: _groupId,
+          getImageData: _getImageDataFuture,
+          getOrStartFullResFuture: _getOrStartFullResFuture,
+          getCachedImage: _getCachedImage,
+          commentCountCache: _commentCountCache,
+          userCache: _userCache,
+          onCommentCountChanged: _onCommentCountChanged,
+          loadMore: _loadMore,
+          hasMore: () => _hasMore,
+        )),
+      );
+    } catch (err) {
+      debugPrint("Failed to preload image: $err");
+    }
+  }
+
+  Future<void> _loadInitial() async {
+    final response = await _fetchPage();
+    if (!mounted) return;
+    if (!response.success || response.data == null) {
+      setState(() {
+        _loadingInitial = false;
+        _error = response.error ?? context.l10n.unknown_error;
+      });
+      return;
+    }
+    final page = response.data!;
+    setState(() {
+      _images
+        ..clear()
+        ..addAll(page);
+      _hasMore = page.length == _kPageSize;
+      _loadingInitial = false;
+      _error = null;
     });
+  }
+
+  Future<void> _loadMore() async {
+    if (_loadingMore || !_hasMore || _images.isEmpty) return;
+    final last = _images.last;
+    // No cursor available means we can't page reliably; stop here.
+    if (last.uploadedAt == null) {
+      setState(() => _hasMore = false);
+      return;
+    }
+    setState(() => _loadingMore = true);
+
+    final response = await _fetchPage(after: last);
+    if (!mounted) return;
+    if (!response.success || response.data == null) {
+      // Leave _hasMore set so a later scroll can retry.
+      setState(() => _loadingMore = false);
+      return;
+    }
+    final page = response.data!;
+    final existing = _images.map((e) => e.id).toSet();
+    setState(() {
+      _images.addAll(page.where((e) => !existing.contains(e.id)));
+      _hasMore = page.length == _kPageSize;
+      _loadingMore = false;
+    });
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    if (position.pixels >= position.maxScrollExtent - 600) {
+      _loadMore();
+    }
   }
 
   @override
   void dispose() {
+    _scrollController.dispose();
     _lowResCache.clear();
     _fullResCache.clear();
     _fullResFutureCache.clear();
     _imageFutureCache.clear();
     _userCache.clear();
     _commentCountCache.clear();
+    _lruOrder.clear();
     super.dispose();
   }
 
@@ -105,12 +216,29 @@ class GroupPageState extends State<GroupImagesPage> {
   }
 
   Future<ImageData> _getImageDataFuture(String imageId) {
-    if (_imageFutureCache.containsKey(imageId)) {
-      return _imageFutureCache[imageId]!;
-    }
+    // Mark as most-recently used and evict stale images before reading, so a
+    // just-touched image is never the one dropped.
+    _touchCache(imageId);
+    final cached = _imageFutureCache[imageId];
+    if (cached != null) return cached;
     final future = _fetchImageData(imageId);
     _imageFutureCache[imageId] = future;
     return future;
+  }
+
+  /// Record [imageId] as most-recently accessed and drop the byte caches of any
+  /// images that fall outside the LRU window.
+  void _touchCache(String imageId) {
+    _lruOrder
+      ..remove(imageId)
+      ..add(imageId);
+    while (_lruOrder.length > _maxCachedImages) {
+      final evicted = _lruOrder.removeAt(0);
+      _lowResCache.remove(evicted);
+      _fullResCache.remove(evicted);
+      _fullResFutureCache.remove(evicted);
+      _imageFutureCache.remove(evicted);
+    }
   }
 
   Future<Uint8List?> _getOrStartFullResFuture(String imageId) {
@@ -123,10 +251,19 @@ class GroupPageState extends State<GroupImagesPage> {
   }
 
   Future<ImageData> _fetchImageData(String imageId) async {
-    final imageBytes = await _getCachedImage(imageId, lowRes: true);
+    // Run the RPC calls in parallel
+    final bytesFuture = _getCachedImage(imageId, lowRes: true);
+    final detailsFuture = getImageDetails(imageId);
+    final countFuture = _commentCountCache.containsKey(imageId)
+        ? null
+        : (_groupId != null
+            ? getCommentCount(imageId, _groupId!)
+            : getImageCommentCount(imageId));
+
+    final imageBytes = await bytesFuture;
     if (imageBytes == null) throw Exception("Error downloading low-res image");
 
-    final imageDetailsResponse = await getImageDetails(imageId);
+    final imageDetailsResponse = await detailsFuture;
     if (!imageDetailsResponse.success || imageDetailsResponse.data == null) {
       throw Exception(
           "Error fetching image details: ${imageDetailsResponse.error}");
@@ -145,8 +282,8 @@ class GroupPageState extends State<GroupImagesPage> {
     }
 
     // Cache comment count
-    if (!_commentCountCache.containsKey(imageId)) {
-      final commentResponse = await getCommentCount(imageId, widget.group.id);
+    if (countFuture != null) {
+      final commentResponse = await countFuture;
       _commentCountCache[imageId] =
           (commentResponse.success && commentResponse.data != null)
               ? commentResponse.data!
@@ -167,206 +304,260 @@ class GroupPageState extends State<GroupImagesPage> {
     });
   }
 
+  /// Pull-to-refresh
   Future<void> _refreshGroupImages() async {
+    final response = await _fetchPage();
+    if (!mounted || !response.success || response.data == null) return;
+    final page = response.data!;
     setState(() {
-      _groupImagesFuture = getGroupImages(widget.group.id);
-
       _lowResCache.clear();
       _fullResCache.clear();
       _fullResFutureCache.clear();
       _imageFutureCache.clear();
       _userCache.clear();
       _commentCountCache.clear();
+      _lruOrder.clear();
+      _images
+        ..clear()
+        ..addAll(page);
+      _hasMore = page.length == _kPageSize;
+      _error = null;
     });
+  }
 
-    await _groupImagesFuture;
+  /// Bring the user back to the group list, regardless of how this single
+  /// group's gallery was reached
+  void _backToGroupList() {
+    final nav = Navigator.of(context);
+    bool foundGroups = false;
+    nav.popUntil((route) {
+      if (route.settings.name == GroupsPage.routeName) foundGroups = true;
+      return foundGroups || route.isFirst;
+    });
+    if (!foundGroups) {
+      nav.push(MaterialPageRoute(
+        settings: const RouteSettings(name: GroupsPage.routeName),
+        builder: (_) => const GroupsPage(),
+      ));
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final scaffold = _buildScaffold(context);
+    // A single group's gallery always returns to the group list on back
+    if (widget.group == null) return scaffold;
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _backToGroupList();
+      },
+      child: scaffold,
+    );
+  }
+
+  Widget _buildScaffold(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.group.name),
+        title: Text(widget.group?.name ?? context.l10n.recent_photos),
         actions: [
-          IconButton(
-            icon: const Icon(Symbols.settings_rounded, fill: 1),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => GroupSettingsPage(group: widget.group),
+          if (widget.group != null)
+            IconButton(
+              icon: const Icon(Symbols.settings_rounded, fill: 1),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => GroupSettingsPage(group: widget.group!),
+                ),
+              ),
+            ),
+        ],
+      ),
+      body: _buildBody(context),
+    );
+  }
+
+  /// The scrolling grid, with loading / empty / error states and a footer
+  /// spinner while the next page loads.
+  Widget _buildBody(BuildContext context) {
+    if (_loadingInitial) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_error != null) {
+      return Center(child: Text(context.l10n.error_loading_images(_error!)));
+    }
+    if (_images.isEmpty) {
+      return Center(
+          child: Text(widget.group != null
+              ? context.l10n.no_images
+              : context.l10n.no_recent_photos));
+    }
+
+    return RefreshIndicator(
+      onRefresh: _refreshGroupImages,
+      child: CustomScrollView(
+        controller: _scrollController,
+        physics: const BouncingScrollPhysics(
+            parent: AlwaysScrollableScrollPhysics()),
+        slivers: [
+          SliverPadding(
+            padding: const EdgeInsets.only(bottom: 8.0),
+            sliver: SliverGrid(
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                crossAxisSpacing: 4.0,
+                mainAxisSpacing: 4.0,
+                childAspectRatio: 1,
+              ),
+              delegate: SliverChildBuilderDelegate(
+                (context, index) => _buildTile(context, index),
+                childCount: _images.length,
               ),
             ),
           ),
+          if (_loadingMore)
+            const SliverToBoxAdapter(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Center(child: CircularProgressIndicator()),
+              ),
+            ),
         ],
       ),
-      body: FutureBuilder<SupabaseResponse<List<ImageRef>>>(
-        future: _groupImagesFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(
-                child: Text(context.l10n
-                    .error_loading_images(snapshot.error.toString())));
-          }
-          final images = snapshot.data!.data!;
-          if (images.isEmpty) {
-            return Center(child: Text(context.l10n.no_images));
-          }
+    );
+  }
 
-          return RefreshIndicator(
-              onRefresh: _refreshGroupImages,
-              child: GridView.builder(
-                padding: const EdgeInsets.only(bottom: 8.0),
-                physics: const BouncingScrollPhysics(
-                    parent: AlwaysScrollableScrollPhysics()),
-                itemCount: images.length,
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 4.0,
-                  mainAxisSpacing: 4.0,
-                  childAspectRatio: 1,
+  Widget _buildTile(BuildContext context, int index) {
+    final imageId = _images[index].id;
+
+    return FutureBuilder<ImageData>(
+      future: _getImageDataFuture(imageId),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              color: Colors.grey[350],
+            ),
+            child: const Center(child: CircularProgressIndicator()),
+          );
+        }
+        if (!snapshot.hasData) {
+          return Container(
+            color: Colors.grey,
+            child: const Icon(Symbols.error_rounded, size: 50),
+          );
+        }
+
+        final imageData = snapshot.data!;
+        final uploader = _userCache[imageData.uploadedBy] ??
+            krab_user.User(
+              id: imageData.uploadedBy,
+              username: "",
+            );
+
+        return GestureDetector(
+          onTap: () {
+            _getOrStartFullResFuture(imageId);
+            Navigator.push(
+              context,
+              _galleryRoute(ImageGalleryPage(
+                images: _images,
+                initialIndex: index,
+                initialImageData: imageData,
+                initialUploader: uploader,
+                groupId: _groupId,
+                getImageData: _getImageDataFuture,
+                getOrStartFullResFuture: _getOrStartFullResFuture,
+                getCachedImage: _getCachedImage,
+                commentCountCache: _commentCountCache,
+                userCache: _userCache,
+                onCommentCountChanged: _onCommentCountChanged,
+                loadMore: _loadMore,
+                hasMore: () => _hasMore,
+              )),
+            );
+          },
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Hero(
+                  tag: "image_$imageId",
+                  child: Image.memory(
+                    imageData.imageBytes,
+                    fit: BoxFit.cover,
+                    gaplessPlayback: true,
+                    filterQuality: FilterQuality.low,
+                  ),
                 ),
-                itemBuilder: (context, index) {
-                  final imageId = images[index].id;
-
-                  return FutureBuilder<ImageData>(
-                    future: _getImageDataFuture(imageId),
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return Container(
+                Positioned(
+                  bottom: (imageData.description != null &&
+                          imageData.description!.isNotEmpty)
+                      ? 12
+                      : 8,
+                  right: (imageData.description != null &&
+                          imageData.description!.isNotEmpty)
+                      ? 12
+                      : 8,
+                  child: UserAvatar(uploader, radius: 20),
+                ),
+                (_commentCountCache[imageId] ?? 0) > 0
+                    ? Positioned(
+                        top: 8,
+                        right: 8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.6),
                             borderRadius: BorderRadius.circular(10),
-                            color: Colors.grey[350],
                           ),
-                          child:
-                              const Center(child: CircularProgressIndicator()),
-                        );
-                      }
-                      if (!snapshot.hasData) {
-                        return Container(
-                          color: Colors.grey,
-                          child: const Icon(Symbols.error_rounded, size: 50),
-                        );
-                      }
-
-                      final imageData = snapshot.data!;
-                      final uploader = _userCache[imageData.uploadedBy] ??
-                          krab_user.User(
-                            id: imageData.uploadedBy,
-                            username: "",
-                          );
-
-                      return GestureDetector(
-                        onTap: () {
-                          _getOrStartFullResFuture(imageId);
-                          Navigator.push(
-                            context,
-                            _galleryRoute(ImageGalleryPage(
-                              images: images,
-                              initialIndex: index,
-                              initialImageData: imageData,
-                              initialUploader: uploader,
-                              groupId: widget.group.id,
-                              getImageData: _getImageDataFuture,
-                              getOrStartFullResFuture: _getOrStartFullResFuture,
-                              getCachedImage: _getCachedImage,
-                              commentCountCache: _commentCountCache,
-                              userCache: _userCache,
-                              onCommentCountChanged: _onCommentCountChanged,
-                            )),
-                          );
-                        },
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(10),
-                          child: Stack(
-                            fit: StackFit.expand,
+                          child: Row(
                             children: [
-                              Hero(
-                                tag: "image_$imageId",
-                                child: Image.memory(
-                                  imageData.imageBytes,
-                                  fit: BoxFit.cover,
-                                  gaplessPlayback: true,
-                                  filterQuality: FilterQuality.low,
+                              const Icon(
+                                Symbols.comment_rounded,
+                                size: 12,
+                                color: Colors.white,
+                              ),
+                              const SizedBox(width: 3),
+                              Text(
+                                (_commentCountCache[imageId] ?? 0).toString(),
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
-                              Positioned(
-                                bottom: (imageData.description != null &&
-                                        imageData.description!.isNotEmpty)
-                                    ? 12
-                                    : 8,
-                                right: (imageData.description != null &&
-                                        imageData.description!.isNotEmpty)
-                                    ? 12
-                                    : 8,
-                                child: UserAvatar(uploader, radius: 20),
-                              ),
-                              (_commentCountCache[imageId] ?? 0) > 0
-                                  ? Positioned(
-                                      top: 8,
-                                      right: 8,
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 6, vertical: 2),
-                                        decoration: BoxDecoration(
-                                          color: Colors.black
-                                              .withValues(alpha: 0.6),
-                                          borderRadius:
-                                              BorderRadius.circular(10),
-                                        ),
-                                        child: Row(
-                                          children: [
-                                            const Icon(
-                                              Symbols.comment_rounded,
-                                              size: 12,
-                                              color: Colors.white,
-                                            ),
-                                            const SizedBox(width: 3),
-                                            Text(
-                                              (_commentCountCache[imageId] ?? 0)
-                                                  .toString(),
-                                              style: const TextStyle(
-                                                fontSize: 12,
-                                                color: Colors.white,
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    )
-                                  : const SizedBox.shrink(),
-                              if (imageData.description != null &&
-                                  imageData.description!.isNotEmpty)
-                                Positioned(
-                                  bottom: 6,
-                                  right: 6,
-                                  child: Container(
-                                    padding: const EdgeInsets.all(4),
-                                    decoration: BoxDecoration(
-                                      color:
-                                          Colors.black.withValues(alpha: 0.6),
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: const Icon(
-                                      Symbols.notes_rounded,
-                                      size: 12,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                ),
                             ],
                           ),
                         ),
-                      );
-                    },
-                  );
-                },
-              ));
-        },
-      ),
+                      )
+                    : const SizedBox.shrink(),
+                if (imageData.description != null &&
+                    imageData.description!.isNotEmpty)
+                  Positioned(
+                    bottom: 6,
+                    right: 6,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.6),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Symbols.notes_rounded,
+                        size: 12,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

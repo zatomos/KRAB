@@ -96,7 +96,11 @@ class CameraPageState extends State<CameraPage> {
 
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => page),
+      MaterialPageRoute(
+        settings:
+            page is GroupsPage ? const RouteSettings(name: GroupsPage.routeName) : null,
+        builder: (_) => page,
+      ),
     );
 
     if (mounted) {

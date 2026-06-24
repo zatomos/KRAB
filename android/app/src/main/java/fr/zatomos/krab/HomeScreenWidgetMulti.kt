@@ -1,6 +1,5 @@
 package fr.zatomos.krab
 
-import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
@@ -53,7 +52,12 @@ class HomeScreenWidgetMulti : AppWidgetProvider() {
             showPrevPfps: Boolean,
             descLines: Int,
             description: String?,
-            sender: String?
+            sender: String?,
+            tapToOpen: Boolean,
+            showQuickSnap: Boolean,
+            mainId: String?,
+            prev1Id: String?,
+            prev2Id: String?
         ): RemoteViews {
             val density = context.resources.displayMetrics.density
             fun Int.px() = (this * density).toInt()
@@ -100,18 +104,19 @@ class HomeScreenWidgetMulti : AppWidgetProvider() {
                 views.setViewVisibility(R.id.prev_pfp_2, View.VISIBLE)
             }
 
-            val clickIntent = Intent(context, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                addCategory(Intent.CATEGORY_LAUNCHER)
-                action = Intent.ACTION_MAIN
-            }
-            val pending = PendingIntent.getActivity(
-                context, id, clickIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            views.setOnClickPendingIntent(
+                R.id.multi_main_image,
+                HomeScreenWidget.imageClickIntent(context, id, tapToOpen, mainId)
             )
-            views.setOnClickPendingIntent(R.id.multi_main_image, pending)
-            views.setOnClickPendingIntent(R.id.multi_prev_image1, pending)
-            views.setOnClickPendingIntent(R.id.multi_prev_image2, pending)
+            views.setOnClickPendingIntent(
+                R.id.multi_prev_image1,
+                HomeScreenWidget.imageClickIntent(context, id or HomeScreenWidget.REQ_PREV1, tapToOpen, prev1Id)
+            )
+            views.setOnClickPendingIntent(
+                R.id.multi_prev_image2,
+                HomeScreenWidget.imageClickIntent(context, id or HomeScreenWidget.REQ_PREV2, tapToOpen, prev2Id)
+            )
+            HomeScreenWidget.applyQuickSnap(context, views, id, tapToOpen, showQuickSnap)
             return views
         }
 
@@ -126,12 +131,17 @@ class HomeScreenWidgetMulti : AppWidgetProvider() {
                 val pfpUrl = HomeScreenWidget.keyedString(prefs, "recentSenderPfpUrl", id)
                 val prev1PfpUrl = HomeScreenWidget.keyedString(prefs, "previousImage1SenderPfpUrl",id)
                 val prev2PfpUrl = HomeScreenWidget.keyedString(prefs, "previousImage2SenderPfpUrl", id)
+                val mainId = HomeScreenWidget.keyedString(prefs, "lastImageId", id)
+                val prev1Id = HomeScreenWidget.keyedString(prefs, "previousImage1Id", id)
+                val prev2Id = HomeScreenWidget.keyedString(prefs, "previousImage2Id", id)
 
                 val showText = HomeScreenWidget.getShowTextPref(context, id)
                 val showGradient = HomeScreenWidget.getShowGradientPref(context, id)
                 val showPfp = HomeScreenWidget.getShowPfpPref(context, id)
                 val showSenderName = HomeScreenWidget.getShowSenderNamePref(context, id)
                 val showPrevPfps = HomeScreenWidget.getShowPrevPfpsPref(context, id)
+                val tapToOpen = HomeScreenWidget.getTapToOpenPref(context, id)
+                val showQuickSnap = HomeScreenWidget.getShowQuickSnapPref(context, id)
                 val descLines = HomeScreenWidget.getDescLinesPref(context, id, default = 1).coerceIn(1, 2)
 
                 val pfpSlots = (if (showText && showPfp) 1 else 0) + (if (showPrevPfps) 2 else 0)
@@ -139,7 +149,8 @@ class HomeScreenWidgetMulti : AppWidgetProvider() {
                 // Placeholder update — no bitmaps, always succeeds
                 manager.tryUpdateAppWidget(context, id,
                     buildBaseViews(context, id, showText, showGradient, showPfp, showSenderName,
-                        showPrevPfps, descLines, description, sender))
+                        showPrevPfps, descLines, description, sender, tapToOpen, showQuickSnap,
+                        mainId, prev1Id, prev2Id))
 
                 // Try up to twice: on overflow tryUpdateAppWidget refines the limit so
                 // the retry builds fresh views with a correctly-sized budget.
@@ -153,7 +164,8 @@ class HomeScreenWidgetMulti : AppWidgetProvider() {
                             "pfpSlots=$pfpSlots mainBudget=$mainBudget prevBudget=$prevBudget")
 
                     val views = buildBaseViews(context, id, showText, showGradient, showPfp,
-                        showSenderName, showPrevPfps, descLines, description, sender)
+                        showSenderName, showPrevPfps, descLines, description, sender, tapToOpen,
+                        showQuickSnap, mainId, prev1Id, prev2Id)
                     var overflow = false
 
                     val mainBm = loadScaledBitmap(mainUrl, mainBudget)

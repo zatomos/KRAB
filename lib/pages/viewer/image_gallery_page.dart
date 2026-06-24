@@ -28,13 +28,21 @@ class ImageGalleryPage extends StatefulWidget {
   final int initialIndex;
   final ImageData initialImageData;
   final krab_user.User initialUploader;
-  final String groupId;
+
+  /// The group being viewed, or null for the cross-group recent photos gallery.
+  final String? groupId;
   final Future<ImageData> Function(String) getImageData;
   final Future<Uint8List?> Function(String) getOrStartFullResFuture;
   final Future<Uint8List?> Function(String, {bool lowRes}) getCachedImage;
   final Map<String, int> commentCountCache;
   final Map<String, krab_user.User> userCache;
   final void Function(String imageId, int delta)? onCommentCountChanged;
+
+  /// Loads the next page of images when the user swipes near the end, and
+  /// reports whether more remain. images grows in place as pages load.
+  /// Null disables pagination.
+  final Future<void> Function()? loadMore;
+  final bool Function()? hasMore;
 
   const ImageGalleryPage({
     super.key,
@@ -49,6 +57,8 @@ class ImageGalleryPage extends StatefulWidget {
     required this.commentCountCache,
     required this.userCache,
     this.onCommentCountChanged,
+    this.loadMore,
+    this.hasMore,
   });
 
   @override
@@ -63,6 +73,10 @@ class _ImageGalleryPageState extends State<ImageGalleryPage> {
   final Map<int, Uint8List> _pageBytes = {};
   final ValueNotifier<int> _pointerCount = ValueNotifier(0);
 
+  // Start fetching the next page once within this many images of the end
+  static const int _loadMoreThreshold = 3;
+  bool _isLoadingMore = false;
+
   @override
   void initState() {
     super.initState();
@@ -70,6 +84,8 @@ class _ImageGalleryPageState extends State<ImageGalleryPage> {
     _pageController = PageController(initialPage: widget.initialIndex);
     _pageController.addListener(_onPageScroll);
     _pageBytes[widget.initialIndex] = widget.initialImageData.imageBytes;
+    // The entry image may already sit near the end of the loaded set
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeLoadMore());
   }
 
   void _onPageScroll() {
@@ -78,7 +94,21 @@ class _ImageGalleryPageState extends State<ImageGalleryPage> {
     final nearest = page.round();
     if (nearest != _currentIndex) {
       setState(() => _currentIndex = nearest);
+      _maybeLoadMore();
     }
+  }
+
+  /// Pull in the next page when the user nears the end of the loaded images
+  Future<void> _maybeLoadMore() async {
+    if (_isLoadingMore || widget.loadMore == null) return;
+    if (!(widget.hasMore?.call() ?? false)) return;
+    if (_currentIndex < widget.images.length - _loadMoreThreshold) return;
+
+    _isLoadingMore = true;
+    await widget.loadMore!();
+    if (!mounted) return;
+    // Rebuild so the PageView picks up the newly appended images.
+    setState(() => _isLoadingMore = false);
   }
 
   void _cachePageBytes(int index, Uint8List bytes) {

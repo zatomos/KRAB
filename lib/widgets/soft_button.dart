@@ -10,6 +10,9 @@ class SoftButton extends StatelessWidget {
   final double radius;
   final EdgeInsets padding;
   final bool blurBackground;
+  final double? width;
+  final double? height;
+  final double progress;  // entrance progress
 
   const SoftButton({
     super.key,
@@ -21,31 +24,41 @@ class SoftButton extends StatelessWidget {
     this.radius = 14,
     this.padding = const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
     this.blurBackground = false,
+    this.progress = 1,
+    this.width,
+    this.height,
   });
 
   @override
   Widget build(BuildContext context) {
-    final bgColor = color.withValues(alpha: opacity);
+    final bgColor = color.withValues(alpha: opacity * progress);
+    final hasFixedSize = width != null || height != null;
 
     Widget content = Container(
+      width: width,
+      height: height,
       padding: padding,
+      alignment: hasFixedSize ? Alignment.center : null,
       decoration: BoxDecoration(
         color: bgColor,
         borderRadius: BorderRadius.circular(radius),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (icon != null) Icon(icon, color: color),
-          if (icon != null) const SizedBox(width: 8),
-          Text(
-            label,
-            style: TextStyle(
-              color: color,
-              fontWeight: FontWeight.w600,
+      child: Opacity(
+        opacity: progress,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) Icon(icon, color: color),
+            if (icon != null) const SizedBox(width: 8),
+            Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontWeight: FontWeight.w600,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
 
@@ -53,9 +66,10 @@ class SoftButton extends StatelessWidget {
       content = ClipRRect(
         borderRadius: BorderRadius.circular(radius),
         child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+          filter:
+              ImageFilter.blur(sigmaX: 15 * progress, sigmaY: 15 * progress),
           child: Container(
-            color: Colors.black.withValues(alpha: 0.3),
+            color: Colors.black.withValues(alpha: 0.3 * progress),
             child: content,
           ),
         ),
