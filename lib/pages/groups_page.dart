@@ -9,7 +9,7 @@ import 'package:krab/widgets/soft_button.dart';
 import 'package:krab/widgets/rounded_input_field.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/widgets/group_card.dart';
-import 'package:krab/pages/group_images_page.dart';
+import 'package:krab/pages/image_feed_page.dart';
 import 'package:krab/models/group.dart';
 
 class GroupsPage extends StatefulWidget {
@@ -164,7 +164,7 @@ class _RecentPhotosCard extends StatelessWidget {
         trailing: const Icon(Symbols.chevron_right_rounded),
         onTap: () => Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => const GroupImagesPage()),
+          MaterialPageRoute(builder: (_) => const ImageFeedPage()),
         ),
       ),
     );

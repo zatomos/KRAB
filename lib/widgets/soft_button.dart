@@ -65,7 +65,10 @@ class SoftButton extends StatelessWidget {
     if (blurBackground) {
       content = ClipRRect(
         borderRadius: BorderRadius.circular(radius),
-        child: BackdropFilter(
+        // Shares the enclosing BackdropGroup's blur pass when one is present
+        // Falls back to a standalone pass otherwise.
+        child: BackdropFilter.grouped(
+          enabled: progress > 0,
           filter:
               ImageFilter.blur(sigmaX: 15 * progress, sigmaY: 15 * progress),
           child: Container(

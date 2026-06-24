@@ -11,7 +11,7 @@ import 'package:krab/models/image_data.dart';
 import 'package:krab/models/image_ref.dart';
 import 'package:krab/pages/group_settings_page.dart';
 import 'package:krab/pages/groups_page.dart';
-import 'package:krab/pages/viewer/image_gallery_page.dart';
+import 'package:krab/pages/viewer/image_viewer_page.dart';
 import 'package:krab/widgets/avatars/user_avatar.dart';
 
 /// Number of images fetched per page in both the single-group and cross-group
@@ -23,19 +23,22 @@ const int _kPageSize = 30;
 /// so it lands in the first page or two.
 const int _kDeepLinkMaxPages = 10;
 
-class GroupImagesPage extends StatefulWidget {
+/// Paginated grid of a group's images. Owns the image list, caches and
+/// pagination, and opens the full-screen [ImageViewerPage] when an image
+/// is tapped.
+class ImageFeedPage extends StatefulWidget {
   /// The group to show images for, or null for the cross-group "recent photos"
   /// view that aggregates the latest images from every group the user is in.
   final Group? group;
   final String? imageId;
 
-  const GroupImagesPage({super.key, this.group, this.imageId});
+  const ImageFeedPage({super.key, this.group, this.imageId});
 
   @override
-  GroupPageState createState() => GroupPageState();
+  ImageFeedPageState createState() => ImageFeedPageState();
 }
 
-class GroupPageState extends State<GroupImagesPage> {
+class ImageFeedPageState extends State<ImageFeedPage> {
   /// The group being viewed, or null in cross-group recent photos mode.
   String? get _groupId => widget.group?.id;
 
@@ -105,13 +108,16 @@ class GroupPageState extends State<GroupImagesPage> {
       final initialData = await _getImageDataFuture(widget.imageId!);
       if (!mounted) return;
       final idx = index >= 0 ? index : 0;
+      final initialSize = await decodeImageSize(initialData.imageBytes);
+      if (!mounted) return;
 
       Navigator.push(
         context,
-        _galleryRoute(ImageGalleryPage(
+        _viewerRoute(ImageViewerPage(
           images: _images,
           initialIndex: idx,
           initialImageData: initialData,
+          initialImageSize: initialSize,
           initialUploader: _userCache[initialData.uploadedBy] ??
               krab_user.User(id: initialData.uploadedBy, username: ''),
           groupId: _groupId,
@@ -457,14 +463,18 @@ class GroupPageState extends State<GroupImagesPage> {
             );
 
         return GestureDetector(
-          onTap: () {
+          onTap: () async {
             _getOrStartFullResFuture(imageId);
+            // Decode the size first so the viewer's hero flight is stable
+            final initialSize = await decodeImageSize(imageData.imageBytes);
+            if (!context.mounted) return;
             Navigator.push(
               context,
-              _galleryRoute(ImageGalleryPage(
+              _viewerRoute(ImageViewerPage(
                 images: _images,
                 initialIndex: index,
                 initialImageData: imageData,
+                initialImageSize: initialSize,
                 initialUploader: uploader,
                 groupId: _groupId,
                 getImageData: _getImageDataFuture,
@@ -562,7 +572,7 @@ class GroupPageState extends State<GroupImagesPage> {
   }
 }
 
-PageRoute<void> _galleryRoute(Widget page) => PageRouteBuilder<void>(
+PageRoute<void> _viewerRoute(Widget page) => PageRouteBuilder<void>(
       transitionDuration: const Duration(milliseconds: 280),
       reverseTransitionDuration: const Duration(milliseconds: 280),
       pageBuilder: (_, __, ___) => page,

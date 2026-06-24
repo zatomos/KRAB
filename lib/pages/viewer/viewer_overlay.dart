@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:typed_data';
 import 'dart:ui';
 import 'package:flutter/material.dart';
@@ -9,8 +8,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:krab/models/image_data.dart';
 import 'package:krab/models/user.dart' as krab_user;
 import 'package:krab/models/group.dart';
-import 'package:krab/pages/group_images_page.dart';
-import 'package:krab/pages/viewer/photo_zoom_controller.dart';
+import 'package:krab/pages/image_feed_page.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/services/file_saver.dart';
 import 'package:krab/services/api/supabase.dart';
@@ -20,100 +18,87 @@ import 'package:krab/widgets/avatars/user_avatar.dart';
 import 'package:krab/widgets/avatars/group_avatar.dart';
 import 'package:krab/themes/global_theme_data.dart';
 
-class ImageViewer extends StatefulWidget {
-  final krab_user.User uploader;
+/// The non-zoomable chrome layered over the current photo in the gallery.
+class ViewerOverlay extends StatefulWidget {
   final String imageId;
 
   /// The group the image was opened from, or null in the cross-group
   /// "recent photos" gallery where comments span every shared group
   final String? groupId;
-  final ImageData lowResImageData;
+  final ImageData imageData;
+  final krab_user.User uploader;
   final int commentCount;
-  final Future<Uint8List?> Function() loadFullImage;
-  final Future<Uint8List?>? preloadedFullImage;
-  final ValueNotifier<bool>? zoomNotifier;
+
+  /// Returns the best available bytes (full-res if loaded, else low-res) to
+  /// save to the gallery.
+  final Future<Uint8List?> Function() loadBestBytesForSave;
+
+  /// Entrance progress, 0..1, so the chrome fades in once the hero flight
+  /// settles instead of flickering as the image passes over it.
+  final double progress;
+
+  /// Whether an upward fling from the bottom strip opens the comments. Disabled
+  /// while the image is zoomed so panning doesn't get mistaken for the gesture.
+  final bool flingToCommentsEnabled;
+
   final void Function(int delta)? onCommentCountChanged;
 
-  const ImageViewer({
+  const ViewerOverlay({
     super.key,
-    required this.uploader,
     required this.imageId,
     required this.groupId,
-    required this.lowResImageData,
+    required this.imageData,
+    required this.uploader,
     required this.commentCount,
-    required this.loadFullImage,
-    this.preloadedFullImage,
-    this.zoomNotifier,
+    required this.loadBestBytesForSave,
+    required this.progress,
+    this.flingToCommentsEnabled = true,
     this.onCommentCountChanged,
   });
 
   @override
-  State<ImageViewer> createState() => _ImageViewerState();
+  State<ViewerOverlay> createState() => _ViewerOverlayState();
 }
 
-class _ImageViewerState extends State<ImageViewer>
-    with TickerProviderStateMixin {
-  Uint8List get _lowBytes => widget.lowResImageData.imageBytes;
-  Uint8List? _fullBytes;
-  Uint8List get _bestBytes => _fullBytes ?? _lowBytes;
-  Timer? _heroFlightTimer;
-
-  late final AnimationController _controlsAnim = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 250),
-  );
-
-  late final PhotoZoomController _zoom;
-  Size _screenSize = const Size(1, 1);
-
+class _ViewerOverlayState extends State<ViewerOverlay> {
   late int _commentCount;
-  // Whether the current gesture began in the bottom strip, so an upward fling
-  // there opens the comments
-  bool _dragStartInBottomZone = false;
 
   // Groups this image was posted in
   List<Group> _postedInGroups = [];
 
-  String get _description => widget.lowResImageData.description ?? '';
+  String get _description => widget.imageData.description ?? '';
 
   @override
   void initState() {
     super.initState();
     _commentCount = widget.commentCount;
-
-    _zoom = PhotoZoomController(
-      vsync: this,
-      onZoomChanged: (zoomed) => widget.zoomNotifier?.value = zoomed,
-      onNaturalSizeResolved: () {
-        if (mounted) setState(() {});
-      },
-    );
-
-    _zoom.loadNaturalSize(MemoryImage(widget.lowResImageData.imageBytes));
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _heroFlightTimer = Timer(const Duration(milliseconds: 300), () {
-        if (mounted) _controlsAnim.forward();
-      });
-      Future<void>.delayed(const Duration(milliseconds: 120), () {
-        if (mounted) _loadFullRes();
-      });
-    });
-
     _loadPostedInGroups();
+  }
+
+  @override
+  void didUpdateWidget(covariant ViewerOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // The gallery reuses this widget across swipes; reload per-image state when
+    // the underlying image changes.
+    if (oldWidget.imageId != widget.imageId) {
+      _commentCount = widget.commentCount;
+      _postedInGroups = [];
+      _loadPostedInGroups();
+    }
   }
 
   /// Resolve the groups this image was shared to so they can be shown as
   /// avatars on the image. Only kept when the image spans multiple groups.
   Future<void> _loadPostedInGroups() async {
-    final response = await getImageGroups(widget.imageId);
-    if (!mounted || !response.success || response.data == null) return;
+    final imageId = widget.imageId;
+    final response = await getImageGroups(imageId);
+    if (!mounted || imageId != widget.imageId) return;
+    if (!response.success || response.data == null) return;
     final raw = response.data!;
     if (raw.isEmpty) return;
 
     // Only show the groups pill when the image spans multiple groups.
-    // In the cross-group recent photos view (no group context) always show it.
+    // In the cross-group recent photos view, always show it.
     if (raw.length < 2 && widget.groupId != null) return;
 
     final groups = await Future.wait(raw.map((e) async {
@@ -135,60 +120,8 @@ class _ImageViewerState extends State<ImageViewer>
       if (idx > 0) groups.insert(0, groups.removeAt(idx));
     }
 
-    if (!mounted) return;
+    if (!mounted || imageId != widget.imageId) return;
     setState(() => _postedInGroups = groups);
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _screenSize = MediaQuery.of(context).size;
-    _zoom.screenSize = _screenSize;
-    if (_zoom.scale <= 1.0) {
-      _zoom.applyClampNow();
-    }
-  }
-
-  @override
-  void dispose() {
-    _heroFlightTimer?.cancel();
-    _controlsAnim.dispose();
-    _zoom.dispose();
-    widget.zoomNotifier?.value = false;
-    super.dispose();
-  }
-
-  void _onInteractionStart(ScaleStartDetails details) {
-    _zoom.onInteractionStart();
-    _dragStartInBottomZone =
-        details.localFocalPoint.dy > _screenSize.height * 0.8;
-  }
-
-  void _onInteractionUpdate(ScaleUpdateDetails details) {
-    _zoom.applyClampDuringInteraction();
-  }
-
-  void _onInteractionEnd(ScaleEndDetails details) {
-    _zoom.onInteractionEnd();
-    // An upward fling from the bottom strip (while not zoomed) opens comments.
-    if (_zoom.scale <= 1.05 &&
-        _dragStartInBottomZone &&
-        details.velocity.pixelsPerSecond.dy < -600) {
-      _openComments();
-    }
-  }
-
-  Future<void> _loadFullRes() async {
-    final full = await (widget.preloadedFullImage ?? widget.loadFullImage());
-    if (!mounted) return;
-
-    if (full != null) {
-      await precacheImage(MemoryImage(full), context);
-      if (!mounted) return;
-      setState(() {
-        _fullBytes = full;
-      });
-    }
   }
 
   Widget _frostedSurface({
@@ -201,7 +134,11 @@ class _ImageViewerState extends State<ImageViewer>
     return ClipRRect(
       borderRadius: borderRadius,
       child: ClipRect(
-        child: BackdropFilter(
+        child: BackdropFilter.grouped(
+          // Shares a single backdrop sampling pass with the other frosted
+          // chrome via the enclosing BackdropGroup. Skipped entirely while the
+          // chrome is still hidden during the entrance.
+          enabled: progress > 0,
           filter: ImageFilter.blur(
               sigmaX: sigma * progress, sigmaY: sigma * progress),
           child: Container(
@@ -434,24 +371,25 @@ class _ImageViewerState extends State<ImageViewer>
         Navigator.pop(context);
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => GroupImagesPage(group: group)),
+          MaterialPageRoute(builder: (_) => ImageFeedPage(group: group)),
         );
       },
     );
   }
 
   void _openComments() {
+    final screenHeight = MediaQuery.of(context).size.height;
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
       backgroundColor: Theme.of(context).colorScheme.surface,
-      constraints: BoxConstraints(maxHeight: _screenSize.height * 0.85),
+      constraints: BoxConstraints(maxHeight: screenHeight * 0.85),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (_) => CommentsBottomSheet(
-        uploaderId: widget.lowResImageData.uploadedBy,
+        uploaderId: widget.imageData.uploadedBy,
         imageId: widget.imageId,
         primaryGroupId: widget.groupId,
         onCommentCountChanged: (delta) {
@@ -465,7 +403,7 @@ class _ImageViewerState extends State<ImageViewer>
   void _showFullDescriptionDialog() {
     final locale = Localizations.localeOf(context).toLanguageTag();
     final uploadDate = DateFormat.yMMMMd(locale).add_jm().format(
-          DateTime.parse(widget.lowResImageData.createdAt).toLocal(),
+          DateTime.parse(widget.imageData.createdAt).toLocal(),
         );
     _showFrostedDialog(
       (context) {
@@ -554,63 +492,70 @@ class _ImageViewerState extends State<ImageViewer>
     );
   }
 
+  Future<void> _saveImage() async {
+    final bytes = await widget.loadBestBytesForSave();
+    if (!mounted || bytes == null) {
+      showSnackBar("Failed to save image", color: Colors.red);
+      return;
+    }
+    final success = await downloadImage(
+      bytes,
+      widget.imageData.uploadedBy,
+      widget.imageData.createdAt,
+    );
+    showSnackBar(
+      success ? "Image saved!" : "Failed to save image",
+      color: success ? Colors.green : Colors.red,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Stack(
+    final t = widget.progress;
+    // Groups every frosted pill so they share one backdrop blur pass per frame
+    // instead of each sampling the photo behind them independently.
+    return BackdropGroup(
+      child: Stack(
         children: [
-          // Main Image
-          Positioned.fill(
-            child: RepaintBoundary(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onDoubleTapDown: (d) => _zoom.doubleTapDetails = d,
-                onDoubleTap: _zoom.handleDoubleTap,
-                child: InteractiveViewer(
-                  transformationController: _zoom.transformationController,
-                  minScale: 1.0,
-                  maxScale: 10,
-                  clipBehavior: Clip.none,
-                  onInteractionStart: _onInteractionStart,
-                  onInteractionUpdate: _onInteractionUpdate,
-                  onInteractionEnd: _onInteractionEnd,
-                  child: Hero(
-                    tag: "image_${widget.imageId}",
-                    child: SizedBox(
-                      width: _screenSize.width,
-                      height: _screenSize.height,
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          // Low-res base, always visible
-                          Image.memory(
-                            _lowBytes,
-                            fit: BoxFit.contain,
-                            width: _screenSize.width,
-                            height: _screenSize.height,
-                            gaplessPlayback: true,
-                            filterQuality: FilterQuality.medium,
-                          ),
-                          // Full-res fades in on top of the low-res base
-                          if (_fullBytes != null)
-                            TweenAnimationBuilder<double>(
-                              key: ValueKey<int>(_fullBytes.hashCode),
-                              duration: const Duration(milliseconds: 250),
-                              curve: Curves.easeOut,
-                              tween: Tween<double>(begin: 0, end: 1),
-                              builder: (context, value, child) =>
-                                  Opacity(opacity: value, child: child),
-                              child: Image.memory(
-                                _fullBytes!,
-                                fit: BoxFit.contain,
-                                width: _screenSize.width,
-                                height: _screenSize.height,
-                                gaplessPlayback: true,
-                                filterQuality: FilterQuality.medium,
-                              ),
-                            ),
-                        ],
+        // An upward fling from the bottom strip opens the comments. Sits below
+        // the buttons in paint order so taps on them still win.
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          height: MediaQuery.of(context).size.height * 0.2,
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onVerticalDragEnd: (details) {
+              if (widget.flingToCommentsEnabled &&
+                  details.velocity.pixelsPerSecond.dy < -600) {
+                _openComments();
+              }
+            },
+          ),
+        ),
+
+        // Top Buttons
+        Positioned(
+          top: 60,
+          left: 16,
+          child: ClipOval(
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () => Navigator.pop(context),
+                customBorder: const CircleBorder(),
+                child: RepaintBoundary(
+                  child: _frostedSurface(
+                    borderRadius: BorderRadius.circular(999),
+                    tint: Colors.white.withValues(alpha: 0.15),
+                    progress: t,
+                    child: const Padding(
+                      padding: EdgeInsets.all(8),
+                      child: Icon(
+                        Symbols.close_rounded,
+                        color: Colors.white,
+                        size: 30,
                       ),
                     ),
                   ),
@@ -618,176 +563,117 @@ class _ImageViewerState extends State<ImageViewer>
               ),
             ),
           ),
+        ),
 
-          // Overlay controls animate in once the hero flight settles, so they
-          // don't flicker as the flying image passes over and behind them
-          Positioned.fill(
-            child: AnimatedBuilder(
-              animation: _controlsAnim,
-              builder: (context, _) {
-                final t = Curves.easeOut.transform(_controlsAnim.value);
-                return IgnorePointer(
-                  ignoring: t == 0,
-                  child: Stack(
-                    children: [
-                      // Top Buttons
-                      Positioned(
-                        top: 60,
-                        left: 16,
-                        child: ClipOval(
-                          child: Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              onTap: () => Navigator.pop(context),
-                              customBorder: const CircleBorder(),
-                              child: RepaintBoundary(
-                                child: _frostedSurface(
-                                  borderRadius: BorderRadius.circular(999),
-                                  tint: Colors.white.withValues(alpha: 0.15),
-                                  progress: t,
-                                  child: const Padding(
-                                    padding: EdgeInsets.all(8),
-                                    child: Icon(
-                                      Symbols.close_rounded,
-                                      color: Colors.white,
-                                      size: 30,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      Positioned(
-                        top: 60,
-                        right: 16,
-                        child: ClipOval(
-                          child: RepaintBoundary(
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(32),
-                              onTap: () async {
-                                final success = await downloadImage(
-                                  _bestBytes,
-                                  widget.lowResImageData.uploadedBy,
-                                  widget.lowResImageData.createdAt,
-                                );
-                                showSnackBar(
-                                  success
-                                      ? "Image saved!"
-                                      : "Failed to save image",
-                                  color: success ? Colors.green : Colors.red,
-                                );
-                              },
-                              child: _frostedSurface(
-                                borderRadius: BorderRadius.circular(999),
-                                tint: Colors.white.withValues(alpha: 0.15),
-                                progress: t,
-                                child: const Padding(
-                                  padding: EdgeInsets.all(8),
-                                  child: Icon(Symbols.download_rounded,
-                                      color: Colors.white, size: 30),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      // Posted-in group avatars
-                      if (_postedInGroups.isNotEmpty)
-                        Positioned(
-                          top: 64,
-                          left: 72,
-                          right: 72,
-                          child: Center(
-                            child: GestureDetector(
-                              onTap: _showPostedInDialog,
-                              child: _postedInBadge(progress: t),
-                            ),
-                          ),
-                        ),
-
-                      // Image description
-                      Positioned(
-                        bottom: 15,
-                        left: 10,
-                        right: 90,
-                        // Pill
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(14),
-                          onTap: _showFullDescriptionDialog,
-                          // Background
-                          child: SizedBox(
-                            height: 48,
-                            child: RepaintBoundary(
-                              child: _frostedSurface(
-                                borderRadius: BorderRadius.circular(14),
-                                tint: Colors.black.withValues(alpha: 0.35),
-                                sigma: 10,
-                                progress: t,
-                                child: Padding(
-                                  padding:
-                                      const EdgeInsets.symmetric(horizontal: 8),
-                                  child: Row(
-                                    children: [
-                                      UserAvatar(widget.uploader, radius: 19),
-                                      const SizedBox(width: 10),
-                                      Expanded(
-                                        child: _description.isEmpty
-                                            ? Text(
-                                                context.l10n.no_description,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: TextStyle(
-                                                  color: Colors.white
-                                                      .withValues(alpha: 0.5),
-                                                  fontSize: 14,
-                                                  fontStyle: FontStyle.italic,
-                                                ),
-                                              )
-                                            : Text(
-                                                _description,
-                                                maxLines: 2,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: const TextStyle(
-                                                  color: Colors.white,
-                                                  fontSize: 14,
-                                                  fontWeight: FontWeight.w500,
-                                                ),
-                                              ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-
-                      // Comments button
-                      Positioned(
-                        bottom: 15,
-                        right: 10,
-                        child: SoftButton(
-                          onPressed: _openComments,
-                          label: _commentCount.toString(),
-                          icon: Symbols.comment_rounded,
-                          color: GlobalThemeData.darkColorScheme.primary,
-                          opacity: 0.3,
-                          height: 48,
-                          blurBackground: true,
-                          progress: t,
-                        ),
-                      ),
-                    ],
+        Positioned(
+          top: 60,
+          right: 16,
+          child: ClipOval(
+            child: RepaintBoundary(
+              child: InkWell(
+                borderRadius: BorderRadius.circular(32),
+                onTap: _saveImage,
+                child: _frostedSurface(
+                  borderRadius: BorderRadius.circular(999),
+                  tint: Colors.white.withValues(alpha: 0.15),
+                  progress: t,
+                  child: const Padding(
+                    padding: EdgeInsets.all(8),
+                    child: Icon(Symbols.download_rounded,
+                        color: Colors.white, size: 30),
                   ),
-                );
-              },
+                ),
+              ),
             ),
           ),
+        ),
+
+        // Posted-in group avatars
+        if (_postedInGroups.isNotEmpty)
+          Positioned(
+            top: 64,
+            left: 72,
+            right: 72,
+            child: Center(
+              child: GestureDetector(
+                onTap: _showPostedInDialog,
+                child: _postedInBadge(progress: t),
+              ),
+            ),
+          ),
+
+        // Image description
+        Positioned(
+          bottom: 15,
+          left: 10,
+          right: 90,
+          // Pill
+          child: InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: _showFullDescriptionDialog,
+            // Background
+            child: SizedBox(
+              height: 48,
+              child: RepaintBoundary(
+                child: _frostedSurface(
+                  borderRadius: BorderRadius.circular(14),
+                  tint: Colors.black.withValues(alpha: 0.35),
+                  sigma: 10,
+                  progress: t,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Row(
+                      children: [
+                        UserAvatar(widget.uploader, radius: 19),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _description.isEmpty
+                              ? Text(
+                                  context.l10n.no_description,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color:
+                                        Colors.white.withValues(alpha: 0.5),
+                                    fontSize: 14,
+                                    fontStyle: FontStyle.italic,
+                                  ),
+                                )
+                              : Text(
+                                  _description,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+
+        // Comments button
+        Positioned(
+          bottom: 15,
+          right: 10,
+          child: SoftButton(
+            onPressed: _openComments,
+            label: _commentCount.toString(),
+            icon: Symbols.comment_rounded,
+            color: GlobalThemeData.darkColorScheme.primary,
+            opacity: 0.3,
+            height: 48,
+            blurBackground: true,
+            progress: t,
+          ),
+        ),
         ],
       ),
     );

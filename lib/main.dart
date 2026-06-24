@@ -23,7 +23,7 @@ import 'package:krab/services/debug_notifier.dart';
 import 'package:krab/pages/welcome_page.dart';
 import 'package:krab/pages/login_page.dart';
 import 'package:krab/pages/camera_page.dart';
-import 'package:krab/pages/group_images_page.dart';
+import 'package:krab/pages/image_feed_page.dart';
 import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/widgets/dialogs/reauth_prompt.dart';
@@ -74,7 +74,7 @@ Future<void> handleWidgetLaunch(Uri? uri) async {
     if (imageId != null && imageId.isNotEmpty) {
       nav.push(
         MaterialPageRoute(
-          builder: (_) => GroupImagesPage(imageId: imageId),
+          builder: (_) => ImageFeedPage(imageId: imageId),
         ),
       );
     }
@@ -102,7 +102,7 @@ Future<void> _handleLocalNotificationTap(String payload) async {
 
     navigatorKey.currentState!.push(
       MaterialPageRoute(
-        builder: (_) => GroupImagesPage(
+        builder: (_) => ImageFeedPage(
           group: groupResponse.data!,
           imageId: imageId,
         ),
@@ -315,10 +315,10 @@ Future<void> handleNotificationNavigation(RemoteMessage message) async {
       return;
     }
 
-    debugPrint('Navigating to GroupImagesPage');
+    debugPrint('Navigating to ImageFeedPage');
     navigatorKey.currentState!.push(
       MaterialPageRoute(
-        builder: (_) => GroupImagesPage(group: group, imageId: imageId),
+        builder: (_) => ImageFeedPage(group: group, imageId: imageId),
       ),
     );
   } catch (e, st) {

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:krab/l10n/l10n.dart';
-import 'package:krab/pages/group_images_page.dart';
+import 'package:krab/pages/image_feed_page.dart';
 import 'package:krab/models/group.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/widgets/avatars/group_avatar.dart';
@@ -73,7 +73,7 @@ class _GroupCardState extends State<GroupCard> {
         await Navigator.push<Group>(
           context,
           MaterialPageRoute(
-            builder: (_) => GroupImagesPage(group: _group),
+            builder: (_) => ImageFeedPage(group: _group),
           ),
         );
         // Call the callback when returning
