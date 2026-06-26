@@ -99,7 +99,7 @@ class _SendImageDialogState extends State<SendImageDialog> {
   Widget build(BuildContext context) {
     final isLandscape =
         MediaQuery.of(context).orientation == Orientation.landscape;
-    final screenWidth = MediaQuery.of(context).size.width;
+    final screenWidth = MediaQuery.sizeOf(context).width;
     final keyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
 
     final insetV = isLandscape ? 4.0 : 24.0;
@@ -142,7 +142,7 @@ class _SendImageDialogState extends State<SendImageDialog> {
     }
 
     return AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       insetPadding: EdgeInsets.symmetric(
         horizontal: isLandscape ? 16 : 40,
         vertical: insetV,
@@ -161,9 +161,9 @@ class _SendImageDialogState extends State<SendImageDialog> {
           builder: (_, cst) {
             // Reserve room for description + spacer + safety margin.
             final gh = cst.maxHeight.isFinite
-                ? (cst.maxHeight - spacerH - 88).clamp(0.0, 400.0)
-                : (MediaQuery.of(context).size.height * 0.40)
-                    .clamp(60.0, 400.0);
+                ? (cst.maxHeight - spacerH - 88).clamp(0.0, 500.0)
+                : (MediaQuery.sizeOf(context).height * 0.5)
+                    .clamp(60.0, 500.0);
             return Column(
               mainAxisSize: MainAxisSize.min,
               children: [

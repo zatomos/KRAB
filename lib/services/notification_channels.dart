@@ -10,6 +10,29 @@ import 'package:krab/l10n/app_localizations.dart';
 import 'package:krab/services/api/supabase.dart';
 import 'package:path_provider/path_provider.dart';
 
+/// Delete cached big-picture notification images older than [maxAge] so they
+/// don't accumulate unbounded in the temporary directory.
+Future<void> _pruneOldNotifImages(Directory dir,
+    {Duration maxAge = const Duration(days: 2)}) async {
+  try {
+    final cutoff = DateTime.now().subtract(maxAge);
+    await for (final entity in dir.list()) {
+      if (entity is! File) continue;
+      final name = entity.uri.pathSegments.last;
+      if (!name.startsWith('notif_img_') || !name.endsWith('.jpg')) continue;
+      try {
+        if ((await entity.stat()).modified.isBefore(cutoff)) {
+          await entity.delete();
+        }
+      } catch (_) {
+        // Racing with another isolate deleting the same file; ignore.
+      }
+    }
+  } catch (e) {
+    debugPrint('notif: prune failed: $e');
+  }
+}
+
 AppLocalizations _l10n() {
   final locale = ui.PlatformDispatcher.instance.locale;
   try {
@@ -228,6 +251,10 @@ Future<void> showImageNotification({
   if (imageBytes != null) {
     try {
       final dir = await getTemporaryDirectory();
+      // These big-picture files are only needed while the notification is on
+      // screen; old ones would otherwise pile up in the cache forever, so prune
+      // stale ones whenever a new image notification arrives.
+      await _pruneOldNotifImages(dir);
       final f = File('${dir.path}/notif_img_$imageId.jpg');
       await f.writeAsBytes(imageBytes);
       bigPicturePath = f.path;

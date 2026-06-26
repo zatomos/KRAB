@@ -241,6 +241,7 @@ Future<SupabaseResponse<void>> editProfilePicture(File imageFile) async {
     }
 
     await ProfilePictureCache.of(supabase).refresh(user.id);
+    await evictAvatar(user.id);
 
     return SupabaseResponse(success: true);
   } catch (error) {
@@ -271,6 +272,7 @@ Future<SupabaseResponse<void>> deleteProfilePicture() async {
     }
     await supabase.storage.from("profile-pictures").remove([user.id]);
     await ProfilePictureCache.of(supabase).refresh(user.id);
+    await evictAvatar(user.id);
     return SupabaseResponse(success: true);
   } catch (error) {
     return SupabaseResponse(

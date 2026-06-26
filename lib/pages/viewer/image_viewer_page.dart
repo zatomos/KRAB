@@ -1,11 +1,9 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:extended_image/extended_image.dart';
 import 'package:image/image.dart' as img;
-import 'package:photo_view/photo_view.dart';
-import 'package:photo_view/photo_view_gallery.dart';
 
 import 'package:krab/models/user.dart' as krab_user;
 import 'package:krab/models/image_data.dart';
@@ -37,18 +35,24 @@ Future<Size> decodeImageSize(Uint8List bytes) {
   return completer.future;
 }
 
-/// Double-tap toggles between fitted and the image's true pixel size
-PhotoViewScaleState _doubleTapZoomCycle(PhotoViewScaleState actual) {
-  switch (actual) {
-    case PhotoViewScaleState.initial:
-    case PhotoViewScaleState.zoomedOut:
-      return PhotoViewScaleState.originalSize;
-    default:
-      return PhotoViewScaleState.initial;
-  }
+/// Page physics with a stiff spring so a swipe snaps to the next image quickly
+class _SnappyPageScrollPhysics extends ClampingScrollPhysics {
+  const _SnappyPageScrollPhysics({super.parent});
+
+  @override
+  _SnappyPageScrollPhysics applyTo(ScrollPhysics? ancestor) =>
+      _SnappyPageScrollPhysics(parent: buildParent(ancestor));
+
+  @override
+  SpringDescription get spring => SpringDescription.withDampingRatio(
+        mass: 0.4,
+        stiffness: 220,
+        ratio: 1.1,
+      );
 }
 
-/// Downscales and blurs an image off the main isolate for the gallery backdrop
+/// Downscales and gaussian-blurs an image off the main isolate for the gallery
+/// backdrop.
 Uint8List? createBlurredBackgroundBytes(Uint8List sourceBytes) {
   final decoded = img.decodeImage(sourceBytes);
   if (decoded == null) return null;
@@ -68,7 +72,6 @@ class ImageViewerPage extends StatefulWidget {
   final List<ImageRef> images;
   final int initialIndex;
   final ImageData initialImageData;
-  final krab_user.User initialUploader;
 
   /// Natural pixel size of the entry image
   final Size? initialImageSize;
@@ -93,7 +96,6 @@ class ImageViewerPage extends StatefulWidget {
     required this.images,
     required this.initialIndex,
     required this.initialImageData,
-    required this.initialUploader,
     this.initialImageSize,
     required this.groupId,
     required this.getImageData,
@@ -112,7 +114,7 @@ class ImageViewerPage extends StatefulWidget {
 
 class _ImageViewerPageState extends State<ImageViewerPage>
     with SingleTickerProviderStateMixin {
-  late final PageController _pageController;
+  late final ExtendedPageController _pageController;
   late int _currentIndex;
   // The page nearest screen-center. Only this page carries a Hero, so popping
   // mid-swipe flies a single image, not both.
@@ -121,10 +123,12 @@ class _ImageViewerPageState extends State<ImageViewerPage>
   // Bytes cached here as pages load so the background never needs an async
   // lookup, keyed by page index.
   final Map<int, Uint8List> _pageBytes = {};
-  // Natural image size per page, used as PhotoView's child size so contained/
-  // covered/original scales differ (enabling double-tap zoom) and panning
-  // clamps to the image. Resolved lazily, except the entry page which is
-  // seeded up front to keep its hero flight stable.
+  // Pre-blurred backdrop bytes per page
+  final Map<int, Uint8List> _blurredBg = {};
+  final Set<int> _blurInFlight = {};
+  // Natural image size per page, used to compute the contained on-screen rect
+  // Resolved lazily, except the entry page which is seeded up front to keep its
+  // hero flight stable.
   final Map<int, Size> _childSizes = {};
 
   // The overlay chrome fades in once the hero flight settles, so it doesn't
@@ -140,21 +144,20 @@ class _ImageViewerPageState extends State<ImageViewerPage>
   bool _isLoadingMore = false;
 
   // Cap on how many pages' bytes/sizes/futures are retained. Tracks access
-  // order and evicts the least-recently-used page once over ,the cap,
+  // order and evicts the least-recently-used page once over the cap,
   // never touching the pages currently in use.
   static const int _maxCachedPages = 7;
   final List<int> _lru = [];
-
-  static const double _doubleTapZoom = 2.0;
 
   @override
   void initState() {
     super.initState();
     _currentIndex = widget.initialIndex;
     _heroIndex = widget.initialIndex;
-    _pageController = PageController(initialPage: widget.initialIndex);
+    _pageController = ExtendedPageController(initialPage: widget.initialIndex);
     _pageController.addListener(_onScroll);
     _pageBytes[widget.initialIndex] = widget.initialImageData.imageBytes;
+    _ensureBlur(widget.initialIndex, widget.initialImageData.imageBytes);
     if (widget.initialImageSize != null) {
       _childSizes[widget.initialIndex] = widget.initialImageSize!;
     }
@@ -219,10 +222,11 @@ class _ImageViewerPageState extends State<ImageViewerPage>
     }
   }
 
-  void _onScaleStateChanged(PhotoViewScaleState state) {
-    final zoomed = state != PhotoViewScaleState.initial &&
-        state != PhotoViewScaleState.zoomedOut;
-    if (zoomed != _isZoomed) setState(() => _isZoomed = zoomed);
+  void _onPageZoomChanged(bool zoomed) {
+    if (zoomed == _isZoomed) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && zoomed != _isZoomed) setState(() => _isZoomed = zoomed);
+    });
   }
 
   /// Pull in the next page when the user nears the end of the loaded images
@@ -239,12 +243,24 @@ class _ImageViewerPageState extends State<ImageViewerPage>
   }
 
   void _cachePageBytes(int index, Uint8List bytes) {
+    _ensureBlur(index, bytes);
     if (_pageBytes.containsKey(index)) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && !_pageBytes.containsKey(index)) {
         setState(() => _pageBytes[index] = bytes);
         _touch(index);
       }
+    });
+  }
+
+  /// Build the page's pre-blurred backdrop off-thread once
+  void _ensureBlur(int index, Uint8List srcBytes) {
+    if (_blurredBg.containsKey(index) || _blurInFlight.contains(index)) return;
+    _blurInFlight.add(index);
+    compute(createBlurredBackgroundBytes, srcBytes).then((bytes) {
+      _blurInFlight.remove(index);
+      if (!mounted || bytes == null) return;
+      setState(() => _blurredBg[index] = bytes);
     });
   }
 
@@ -280,23 +296,25 @@ class _ImageViewerPageState extends State<ImageViewerPage>
       }
       _lru.removeAt(i);
       _pageBytes.remove(index);
+      _blurredBg.remove(index);
       _childSizes.remove(index);
       _imageDataFutures.remove(index);
     }
   }
 
-  /// The child size, shrunk so its true-pixel size is at most
-  /// doubleTapZoom * the viewport
-  Size? _childSizeFor(int index, Size viewport) {
+  /// The image's contained on-screen rect
+  /// Used as the hero's tight target size. Falls back to the full viewport
+  /// until the natural size is known.
+  Size _displaySizeFor(int index, Size viewport) {
     final natural = _childSizes[index];
-    if (natural == null || viewport.width <= 1 || viewport.height <= 1) {
-      return natural;
+    if (natural == null || natural.width <= 0 || natural.height <= 0) {
+      return viewport;
     }
-    final fit = math.min(
-      viewport.width * _doubleTapZoom / natural.width,
-      viewport.height * _doubleTapZoom / natural.height,
+    final s = math.min(
+      viewport.width / natural.width,
+      viewport.height / natural.height,
     );
-    return fit >= 1.0 ? natural : natural * fit;
+    return Size(natural.width * s, natural.height * s);
   }
 
   String get _currentImageId => widget.images[_currentIndex].id;
@@ -323,23 +341,19 @@ class _ImageViewerPageState extends State<ImageViewerPage>
         final upper = page.ceil().clamp(0, widget.images.length - 1);
         final t = (page - lower).clamp(0.0, 1.0);
 
-        final lowerBytes = _pageBytes[lower];
-        final upperBytes = _pageBytes[upper];
         return Stack(
           fit: StackFit.expand,
           children: [
-            // Solid base so a mid-fade never reveals black behind the top layer
-            if (lowerBytes != null)
-              _ViewerBackground(
-                key: ValueKey(lower),
-                imageBytes: lowerBytes,
-              ),
-            if (upper != lower && upperBytes != null)
+            _ViewerBackground(
+              key: ValueKey(lower),
+              blurredBytes: _blurredBg[lower],
+            ),
+            if (upper != lower)
               Opacity(
                 opacity: t,
                 child: _ViewerBackground(
                   key: ValueKey(upper),
-                  imageBytes: upperBytes,
+                  blurredBytes: _blurredBg[upper],
                 ),
               ),
           ],
@@ -401,7 +415,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
 
   @override
   Widget build(BuildContext context) {
-    final viewport = MediaQuery.of(context).size;
+    final viewport = MediaQuery.sizeOf(context);
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
@@ -411,36 +425,27 @@ class _ImageViewerPageState extends State<ImageViewerPage>
             child: ColoredBox(color: Colors.black.withValues(alpha: 0.7)),
           ),
           Positioned.fill(
-            child: PhotoViewGallery.builder(
-              pageController: _pageController,
+            child: ExtendedImageGesturePageView.builder(
+              controller: _pageController,
               itemCount: widget.images.length,
               onPageChanged: _onPageChanged,
-              scaleStateChangedCallback: _onScaleStateChanged,
-              backgroundDecoration:
-                  const BoxDecoration(color: Colors.transparent),
-              builder: (context, index) {
+              physics: const _SnappyPageScrollPhysics(),
+              itemBuilder: (context, index) {
                 _touch(index);
                 final imageId = widget.images[index].id;
-                return PhotoViewGalleryPageOptions.customChild(
-                  childSize: _childSizeFor(index, viewport),
-                  minScale: PhotoViewComputedScale.contained,
-                  initialScale: PhotoViewComputedScale.contained,
-                  maxScale: PhotoViewComputedScale.contained * 10,
-                  scaleStateCycle: _doubleTapZoomCycle,
+                return _ViewerPhoto(
+                  key: ValueKey(imageId),
+                  displaySize: _displaySizeFor(index, viewport),
                   // Only the page nearest center gets a Hero
-                  heroAttributes: index == _heroIndex
-                      ? PhotoViewHeroAttributes(tag: "image_$imageId")
-                      : null,
-                  child: _ViewerPhoto(
-                    key: ValueKey(imageId),
-                    // Seed from the prefetch cache so a known page paints its
-                    // low-res image on the first frame instead of flashing
-                    initialBytes: _pageBytes[index],
-                    imageDataFuture: _imageDataFor(index),
-                    fullFuture: widget.getOrStartFullResFuture(imageId),
-                    onLowBytes: (bytes) => _cachePageBytes(index, bytes),
-                    onNaturalSize: (size) => _setChildSize(index, size),
-                  ),
+                  heroTag: index == _heroIndex ? "image_$imageId" : null,
+                  // Seed from the prefetch cache so a known page paints its
+                  // low-res image on the first frame instead of flashing
+                  initialBytes: _pageBytes[index],
+                  imageDataFuture: _imageDataFor(index),
+                  fullFuture: widget.getOrStartFullResFuture(imageId),
+                  onLowBytes: (bytes) => _cachePageBytes(index, bytes),
+                  onNaturalSize: (size) => _setChildSize(index, size),
+                  onZoomChanged: _onPageZoomChanged,
                 );
               },
             ),
@@ -455,32 +460,49 @@ class _ImageViewerPageState extends State<ImageViewerPage>
 /// The zoomable content for one page: the low-res image shown immediately with
 /// the full-res image crossfading in on top once it loads
 class _ViewerPhoto extends StatefulWidget {
+  final Size displaySize;
+  final String? heroTag;
   final Uint8List? initialBytes;
   final Future<ImageData> imageDataFuture;
   final Future<Uint8List?> fullFuture;
   final void Function(Uint8List lowBytes) onLowBytes;
   final void Function(Size naturalSize) onNaturalSize;
+  final void Function(bool zoomed) onZoomChanged;
 
   const _ViewerPhoto({
     super.key,
+    required this.displaySize,
+    required this.heroTag,
     required this.initialBytes,
     required this.imageDataFuture,
     required this.fullFuture,
     required this.onLowBytes,
     required this.onNaturalSize,
+    required this.onZoomChanged,
   });
 
   @override
   State<_ViewerPhoto> createState() => _ViewerPhotoState();
 }
 
-class _ViewerPhotoState extends State<_ViewerPhoto> {
+class _ViewerPhotoState extends State<_ViewerPhoto>
+    with SingleTickerProviderStateMixin {
   Uint8List? _low;
   Uint8List? _full;
+
+  static const double _doubleTapScale = 2.5;
+
+  late final AnimationController _doubleTapController;
+  Animation<double>? _doubleTapAnimation;
+  VoidCallback? _doubleTapListener;
 
   @override
   void initState() {
     super.initState();
+    _doubleTapController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 200),
+    );
     _low = widget.initialBytes;
     if (_low != null) {
       widget.onLowBytes(_low!);
@@ -491,6 +513,15 @@ class _ViewerPhotoState extends State<_ViewerPhoto> {
     _loadFull();
   }
 
+  @override
+  void dispose() {
+    if (_doubleTapListener != null) {
+      _doubleTapAnimation?.removeListener(_doubleTapListener!);
+    }
+    _doubleTapController.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadLow() async {
     final data = await widget.imageDataFuture;
     if (!mounted) return;
@@ -499,8 +530,8 @@ class _ViewerPhotoState extends State<_ViewerPhoto> {
     _resolveNaturalSize(data.imageBytes);
   }
 
-  /// Decodes the image's natural size and reports it up so PhotoView can use it
-  /// as the child size.
+  /// Decodes the image's natural size and reports it up so the page can compute
+  /// the contained rect
   void _resolveNaturalSize(Uint8List bytes) {
     final stream = MemoryImage(bytes).resolve(const ImageConfiguration());
     late final ImageStreamListener listener;
@@ -520,9 +551,45 @@ class _ViewerPhotoState extends State<_ViewerPhoto> {
     await precacheImage(MemoryImage(full), context);
     if (!mounted) return;
     setState(() => _full = full);
-    // Upgrade the child size to the full-res dimensions so double-tap zooms to
-    // true pixels.
     _resolveNaturalSize(full);
+  }
+
+  GestureConfig _initGestureConfig(ExtendedImageState state) {
+    return GestureConfig(
+      inPageView: true,
+      initialScale: 1.0,
+      minScale: 1.0,
+      animationMinScale: 1.0,
+      maxScale: 5.0,
+      animationMaxScale: 6.0,
+      cacheGesture: false,
+      gestureDetailsIsChanged: (details) {
+        if (details == null) return;
+        widget.onZoomChanged((details.totalScale ?? 1.0) > 1.01);
+      },
+    );
+  }
+
+  /// Animates a double-tap zoom toward the tapped point
+  void _onDoubleTap(ExtendedImageGestureState state) {
+    final pointer = state.pointerDownPosition;
+    final begin = state.gestureDetails?.totalScale ?? 1.0;
+    final end = begin <= 1.01 ? _doubleTapScale : 1.0;
+
+    if (_doubleTapListener != null) {
+      _doubleTapAnimation?.removeListener(_doubleTapListener!);
+    }
+    _doubleTapController.stop();
+    _doubleTapController.value = 0.0;
+    _doubleTapAnimation = Tween<double>(begin: begin, end: end).animate(
+      CurvedAnimation(parent: _doubleTapController, curve: Curves.easeOutCubic),
+    );
+    _doubleTapListener = () => state.handleDoubleTap(
+          scale: _doubleTapAnimation!.value,
+          doubleTapPosition: pointer,
+        );
+    _doubleTapAnimation!.addListener(_doubleTapListener!);
+    _doubleTapController.forward();
   }
 
   @override
@@ -531,97 +598,74 @@ class _ViewerPhotoState extends State<_ViewerPhoto> {
     // Transparent until the low-res bytes arrive so the blurred backdrop shows
     // through instead of flashing black during a fast swipe onto a new page.
     if (low == null) return const SizedBox.expand();
+
+    // Low-res base
+    Widget base = Image.memory(
+      low,
+      fit: BoxFit.contain,
+      gaplessPlayback: true,
+      filterQuality: FilterQuality.medium,
+    );
+    if (widget.heroTag != null) {
+      base = Hero(tag: widget.heroTag!, child: base);
+    }
+
     return Stack(
       fit: StackFit.expand,
       children: [
-        // Low-res base, always visible
-        Image.memory(
-          low,
-          fit: BoxFit.contain,
-          gaplessPlayback: true,
-          filterQuality: FilterQuality.medium,
+        Center(
+          child: SizedBox.fromSize(size: widget.displaySize, child: base),
         ),
-        // Full-res fades in on top of the low-res base
-        if (_full != null)
-          TweenAnimationBuilder<double>(
-            key: ValueKey<int>(_full.hashCode),
-            duration: const Duration(milliseconds: 250),
-            curve: Curves.easeOut,
-            tween: Tween<double>(begin: 0, end: 1),
-            builder: (context, value, child) =>
-                Opacity(opacity: value, child: child),
-            child: Image.memory(
-              _full!,
-              fit: BoxFit.contain,
-              gaplessPlayback: true,
-              filterQuality: FilterQuality.medium,
-            ),
+        TweenAnimationBuilder<double>(
+          key: ValueKey<bool>(_full != null),
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+          tween: Tween<double>(begin: 0, end: 1),
+          builder: (context, value, child) =>
+              Opacity(opacity: value, child: child),
+          child: ExtendedImage.memory(
+            _full ?? low,
+            fit: BoxFit.contain,
+            gaplessPlayback: true,
+            filterQuality: FilterQuality.medium,
+            mode: ExtendedImageMode.gesture,
+            onDoubleTap: _onDoubleTap,
+            initGestureConfigHandler: _initGestureConfig,
           ),
+        ),
       ],
     );
   }
 }
 
-class _ViewerBackground extends StatefulWidget {
-  final Uint8List imageBytes;
-  const _ViewerBackground({super.key, required this.imageBytes});
-
-  @override
-  State<_ViewerBackground> createState() => _ViewerBackgroundState();
-}
-
-class _ViewerBackgroundState extends State<_ViewerBackground> {
-  Uint8List? _computedBytes;
-  bool _showComputed = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _computeBlur();
-  }
-
-  Future<void> _computeBlur() async {
-    final bytes =
-        await compute(createBlurredBackgroundBytes, widget.imageBytes);
-    if (!mounted || bytes == null) return;
-    setState(() => _computedBytes = bytes);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) setState(() => _showComputed = true);
-    });
-  }
+class _ViewerBackground extends StatelessWidget {
+  final Uint8List? blurredBytes;
+  const _ViewerBackground({super.key, required this.blurredBytes});
 
   @override
   Widget build(BuildContext context) {
-    return RepaintBoundary(
-      child: Transform.scale(
-        scale: 1.2,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            ImageFiltered(
-              imageFilter: ui.ImageFilter.blur(sigmaX: 28, sigmaY: 28),
-              child: Image.memory(
-                widget.imageBytes,
-                fit: BoxFit.cover,
-                filterQuality: FilterQuality.low,
-                gaplessPlayback: true,
-              ),
-            ),
-            if (_computedBytes != null)
-              AnimatedOpacity(
-                duration: const Duration(seconds: 1),
-                curve: Curves.easeOut,
-                opacity: _showComputed ? 1.0 : 0.0,
-                child: Image.memory(
-                  _computedBytes!,
-                  fit: BoxFit.cover,
-                  filterQuality: FilterQuality.low,
-                  gaplessPlayback: true,
+    final bytes = blurredBytes;
+    return AnimatedOpacity(
+      opacity: bytes != null ? 1.0 : 0.0,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+      child: bytes == null
+          ? const SizedBox.expand()
+          : RepaintBoundary(
+              child: ClipRect(
+                child: Transform.scale(
+                  scale: 1.2,
+                  child: Image.memory(
+                    bytes,
+                    fit: BoxFit.cover,
+                    width: double.infinity,
+                    height: double.infinity,
+                    filterQuality: FilterQuality.low,
+                    gaplessPlayback: true,
+                  ),
                 ),
               ),
-          ],
-        ),
-      ),
+            ),
     );
   }
 }

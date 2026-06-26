@@ -153,6 +153,11 @@ class UpdateService {
       final statusCode =
           await AndroidPackageInstaller.installApk(apkFilePath: savePath);
 
+      // Drop APK file after install
+      try {
+        if (await file.exists()) await file.delete();
+      } catch (_) {}
+
       if (statusCode != null) {
         final status = PackageInstallerStatus.byCode(statusCode);
         debugPrint('Installer status: $status');

@@ -378,7 +378,7 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
   }
 
   void _openComments() {
-    final screenHeight = MediaQuery.of(context).size.height;
+    final screenHeight = MediaQuery.sizeOf(context).height;
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -523,7 +523,7 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
           left: 0,
           right: 0,
           bottom: 0,
-          height: MediaQuery.of(context).size.height * 0.2,
+          height: MediaQuery.sizeOf(context).height * 0.2,
           child: GestureDetector(
             behavior: HitTestBehavior.translucent,
             onVerticalDragEnd: (details) {
@@ -602,76 +602,79 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
             ),
           ),
 
-        // Image description
+        // Bottom strip
         Positioned(
           bottom: 15,
           left: 10,
-          right: 90,
-          // Pill
-          child: InkWell(
-            borderRadius: BorderRadius.circular(14),
-            onTap: _showFullDescriptionDialog,
-            // Background
-            child: SizedBox(
-              height: 48,
-              child: RepaintBoundary(
-                child: _frostedSurface(
+          right: 10,
+          child: Row(
+            children: [
+              // Image description pill
+              Expanded(
+                child: InkWell(
                   borderRadius: BorderRadius.circular(14),
-                  tint: Colors.black.withValues(alpha: 0.35),
-                  sigma: 10,
-                  progress: t,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    child: Row(
-                      children: [
-                        UserAvatar(widget.uploader, radius: 19),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: _description.isEmpty
-                              ? Text(
-                                  context.l10n.no_description,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color:
-                                        Colors.white.withValues(alpha: 0.5),
-                                    fontSize: 14,
-                                    fontStyle: FontStyle.italic,
-                                  ),
-                                )
-                              : Text(
-                                  _description,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
+                  onTap: _showFullDescriptionDialog,
+                  // Background
+                  child: SizedBox(
+                    height: 48,
+                    child: RepaintBoundary(
+                      child: _frostedSurface(
+                        borderRadius: BorderRadius.circular(14),
+                        tint: Colors.black.withValues(alpha: 0.35),
+                        sigma: 10,
+                        progress: t,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: Row(
+                            children: [
+                              UserAvatar(widget.uploader, radius: 19),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: _description.isEmpty
+                                    ? Text(
+                                        context.l10n.no_description,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: Colors.white
+                                              .withValues(alpha: 0.5),
+                                          fontSize: 14,
+                                          fontStyle: FontStyle.italic,
+                                        ),
+                                      )
+                                    : Text(
+                                        _description,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ),
-        ),
-
-        // Comments button
-        Positioned(
-          bottom: 15,
-          right: 10,
-          child: SoftButton(
-            onPressed: _openComments,
-            label: _commentCount.toString(),
-            icon: Symbols.comment_rounded,
-            color: GlobalThemeData.darkColorScheme.primary,
-            opacity: 0.3,
-            height: 48,
-            blurBackground: true,
-            progress: t,
+              const SizedBox(width: 10),
+              // Comments button
+              SoftButton(
+                onPressed: _openComments,
+                label: _commentCount.toString(),
+                icon: Symbols.comment_rounded,
+                color: GlobalThemeData.darkColorScheme.primary,
+                opacity: 0.3,
+                height: 48,
+                minLabelWidth: 10,
+                blurBackground: true,
+                progress: t,
+              ),
+            ],
           ),
         ),
         ],

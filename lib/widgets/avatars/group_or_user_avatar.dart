@@ -14,6 +14,7 @@ class GroupOrUserAvatar extends StatelessWidget {
   final bool useRandomColor;
   final FallbackType fallbackType;
   final IconData? fallbackIcon;
+  final String? cacheKey;
 
   const GroupOrUserAvatar({
     super.key,
@@ -23,6 +24,7 @@ class GroupOrUserAvatar extends StatelessWidget {
     this.useRandomColor = false,
     this.fallbackType = FallbackType.firstLetter,
     this.fallbackIcon,
+    this.cacheKey,
   });
 
   @override
@@ -33,7 +35,7 @@ class GroupOrUserAvatar extends StatelessWidget {
       return CircleAvatar(
         radius: radius,
         backgroundColor: Colors.transparent,
-        backgroundImage: CachedNetworkImageProvider(imageUrl!),
+        backgroundImage: CachedNetworkImageProvider(imageUrl!, cacheKey: cacheKey),
         onBackgroundImageError: (_, __) {
           debugPrint('⚠️ Failed to load image for $name');
         },

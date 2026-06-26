@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -5,10 +6,15 @@ import 'package:krab/models/cached_url.dart';
 
 class ProfilePictureCache {
   static const _prefsKey = 'pfp_cache';
+  // How long to wait after the last change before writing to disk, so a burst
+  // of avatar fetches coalesces into one write instead of re-encoding and
+  //persisting the whole map per URL.
+  static const _persistDebounce = Duration(milliseconds: 400);
   static ProfilePictureCache? _instance;
 
   final SupabaseClient _supabase;
   final Map<String, CachedUrl> _memory = {};
+  Timer? _persistTimer;
 
   ProfilePictureCache._(this._supabase);
 
@@ -33,8 +39,16 @@ class ProfilePictureCache {
     }
   }
 
+  /// Coalesce rapid changes into a single disk write.
+  void _schedulePersist() {
+    _persistTimer?.cancel();
+    _persistTimer = Timer(_persistDebounce, _persist);
+  }
+
   /// Persist cache
   Future<void> _persist() async {
+    _persistTimer?.cancel();
+    _persistTimer = null;
     final prefs = await SharedPreferences.getInstance();
     final map = _memory.map((k, v) => MapEntry(k, v.toJson()));
     await prefs.setString(_prefsKey, jsonEncode(map));
@@ -42,6 +56,8 @@ class ProfilePictureCache {
 
   /// Clear cache
   Future<void> clear() async {
+    _persistTimer?.cancel();
+    _persistTimer = null;
     _memory.clear();
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_prefsKey);
@@ -67,7 +83,7 @@ class ProfilePictureCache {
 
       final fresh = CachedUrl(url, DateTime.now().add(ttl));
       _memory[id] = fresh;
-      await _persist();
+      _schedulePersist();
       return url;
     } catch (e) {
       return cached?.url; // last resort: stale
@@ -76,7 +92,7 @@ class ProfilePictureCache {
 
   /// Force refresh
   Future<String?> refresh(String id,
-      {String bucket = 'profile-picture',
+      {String bucket = 'profile-pictures',
       Duration ttl = const Duration(hours: 1)}) async {
     _memory.remove(id);
     return getUrl(id, bucket: bucket, ttl: ttl);

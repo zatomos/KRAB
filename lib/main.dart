@@ -418,6 +418,13 @@ void main() async {
           case AuthChangeEvent.tokenRefreshed:
             await DebugNotifier.instance.notifyAuthTokenRefreshed();
             break;
+          case AuthChangeEvent.signedIn:
+            await DebugNotifier.instance.notifyAuthStateChanged(event.name);
+            // The cold-start widget refresh (app resume) can fire before the
+            // session is restored, failing with "User not authenticated". Now
+            // that we're authenticated, refresh so the widget actually fills in
+            unawaited(updateHomeWidget());
+            break;
           default:
             await DebugNotifier.instance.notifyAuthStateChanged(event.name);
         }

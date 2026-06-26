@@ -184,6 +184,12 @@ class JoinGroupDialogState extends State<JoinGroupDialog> {
   String? error;
   bool _loading = false;
 
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
   Future<void> _joinGroup() async {
     if (_loading) return;
     setState(() {
@@ -269,6 +275,12 @@ class CreateGroupDialogState extends State<CreateGroupDialog> {
   final TextEditingController _controller = TextEditingController();
   String? error;
   bool _loading = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   Future<void> _createGroup() async {
     if (_loading) return;

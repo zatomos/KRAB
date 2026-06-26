@@ -17,6 +17,7 @@ class UserAvatar extends StatelessWidget {
     return GroupOrUserAvatar(
       name: user.username,
       imageUrl: user.pfpUrl,
+      cacheKey: user.id,
       radius: radius,
       fallbackType: FallbackType.firstLetter,
     );

@@ -118,8 +118,6 @@ class ImageFeedPageState extends State<ImageFeedPage> {
           initialIndex: idx,
           initialImageData: initialData,
           initialImageSize: initialSize,
-          initialUploader: _userCache[initialData.uploadedBy] ??
-              krab_user.User(id: initialData.uploadedBy, username: ''),
           groupId: _groupId,
           getImageData: _getImageDataFuture,
           getOrStartFullResFuture: _getOrStartFullResFuture,
@@ -475,7 +473,6 @@ class ImageFeedPageState extends State<ImageFeedPage> {
                 initialIndex: index,
                 initialImageData: imageData,
                 initialImageSize: initialSize,
-                initialUploader: uploader,
                 groupId: _groupId,
                 getImageData: _getImageDataFuture,
                 getOrStartFullResFuture: _getOrStartFullResFuture,

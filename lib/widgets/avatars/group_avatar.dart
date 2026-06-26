@@ -17,6 +17,7 @@ class GroupAvatar extends StatelessWidget {
     return GroupOrUserAvatar(
       name: group.name,
       imageUrl: group.iconUrl,
+      cacheKey: group.id,
       radius: radius,
       useRandomColor: true,
       fallbackType: FallbackType.icon,

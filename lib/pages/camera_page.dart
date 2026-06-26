@@ -431,8 +431,8 @@ class CameraPageState extends State<CameraPage> {
         SystemChrome.setEnabledSystemUIMode(targetMode);
       }
     }
-    final screenWidth = MediaQuery.of(context).size.width;
-    final screenHeight = MediaQuery.of(context).size.height;
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final screenHeight = MediaQuery.sizeOf(context).height;
     final maxPreviewHeight = screenHeight * (isLandscape ? 0.95 : 0.7);
     final maxPreviewWidth = screenWidth * (isLandscape ? 0.7 : 0.95);
 
@@ -476,8 +476,8 @@ class CameraPageState extends State<CameraPage> {
                         final Offset localPosition =
                             box.globalToLocal(details.globalPosition);
 
-                        final screenWidth = MediaQuery.of(context).size.width;
-                        final screenHeight = MediaQuery.of(context).size.height;
+                        final screenWidth = MediaQuery.sizeOf(context).width;
+                        final screenHeight = MediaQuery.sizeOf(context).height;
                         final previewLeft = (screenWidth - previewWidth) / 2;
                         final previewTop = (screenHeight - previewHeight) / 2;
 
@@ -539,8 +539,8 @@ class CameraPageState extends State<CameraPage> {
 
                 // Zoom HUD
                 Positioned(
-                  top: MediaQuery.of(context).size.height * 0.15,
-                  left: MediaQuery.of(context).size.width / 2 - 30,
+                  top: MediaQuery.sizeOf(context).height * 0.15,
+                  left: MediaQuery.sizeOf(context).width / 2 - 30,
                   child: ValueListenableBuilder<double>(
                     valueListenable: _zoomNotifier,
                     builder: (context, zoom, _) {

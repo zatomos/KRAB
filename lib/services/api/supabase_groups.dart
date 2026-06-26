@@ -177,6 +177,7 @@ Future<SupabaseResponse<Group>> editGroupIcon(
     // Refresh cache and get the new signed URL
     final cache = ProfilePictureCache.of(supabase);
     final iconUrl = await cache.refresh(groupId, bucket: 'group-icons');
+    await evictAvatar(groupId);
 
     // Return the updated group
     final groupResponse = await getGroupDetails(groupId);
@@ -224,6 +225,7 @@ Future<SupabaseResponse<void>> deleteGroupIcon(String groupId) async {
     await supabase.storage.from("group-icons").remove([groupId]);
     await ProfilePictureCache.of(supabase)
         .refresh(groupId, bucket: 'group-icons');
+    await evictAvatar(groupId);
     return SupabaseResponse(success: true);
   } catch (error) {
     return SupabaseResponse(

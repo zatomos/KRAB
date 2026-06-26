@@ -13,6 +13,7 @@ class SoftButton extends StatelessWidget {
   final double? width;
   final double? height;
   final double progress;  // entrance progress
+  final double minLabelWidth;
 
   const SoftButton({
     super.key,
@@ -27,6 +28,7 @@ class SoftButton extends StatelessWidget {
     this.progress = 1,
     this.width,
     this.height,
+    this.minLabelWidth = 0,
   });
 
   @override
@@ -50,11 +52,17 @@ class SoftButton extends StatelessWidget {
           children: [
             if (icon != null) Icon(icon, color: color),
             if (icon != null) const SizedBox(width: 8),
-            Text(
-              label,
-              style: TextStyle(
-                color: color,
-                fontWeight: FontWeight.w600,
+            ConstrainedBox(
+              constraints: BoxConstraints(minWidth: minLabelWidth),
+              child: Text(
+                label,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: color,
+                  fontWeight: FontWeight.w600,
+                  // Equal-width digits so the count doesn't jitter per value.
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
               ),
             ),
           ],
