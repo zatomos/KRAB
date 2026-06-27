@@ -121,6 +121,8 @@ Future<SupabaseResponse<void>> logOut() async {
 
     // Clear profile picture cache
     await ProfilePictureCache.of(supabase).clear();
+    // Clear cached image bytes
+    await ImageDiskCache.instance.clear();
 
     // Sign out
     await supabase.auth.signOut();

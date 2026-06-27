@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:krab/services/profile_picture_cache.dart';
 import 'package:krab/services/avatar_cache.dart';
+import 'package:krab/services/image_disk_cache.dart';
 import 'package:krab/services/background_session.dart';
 import 'package:krab/services/fcm_helper.dart';
 import 'package:krab/services/debug_notifier.dart';

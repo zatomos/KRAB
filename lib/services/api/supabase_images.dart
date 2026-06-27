@@ -113,9 +113,16 @@ Future<SupabaseResponse<List<ImageRef>>> getLatestImages(
           .toList());
 }
 
-/// Download an image from storage.
+/// Download an image from storage, backed by a persistent on-disk cache.
 Future<SupabaseResponse<Uint8List>> getImage(String imageId,
     {bool lowRes = false}) async {
+  final cacheKey = '$imageId.${lowRes ? 'low' : 'full'}';
+
+  final cached = await ImageDiskCache.instance.read(cacheKey);
+  if (cached != null) {
+    return SupabaseResponse(success: true, data: cached);
+  }
+
   try {
     debugPrint(
         "Downloading image $imageId with transform: ${lowRes ? 'low' : 'full'}");
@@ -135,6 +142,9 @@ Future<SupabaseResponse<Uint8List>> getImage(String imageId,
         error: "Downloaded image is empty",
       );
     }
+
+    // Populate the disk cache for next time.
+    unawaited(ImageDiskCache.instance.write(cacheKey, data));
 
     return SupabaseResponse(success: true, data: data);
   } catch (error, stack) {

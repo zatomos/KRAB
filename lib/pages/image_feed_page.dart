@@ -206,13 +206,12 @@ class ImageFeedPageState extends State<ImageFeedPage> {
       {bool lowRes = true}) async {
     final cache = lowRes ? _lowResCache : _fullResCache;
     if (cache.containsKey(imageId)) {
-      debugPrint("Image $imageId (${lowRes ? 'low' : 'full'}) from cache");
+      debugPrint("[feed] bytes HIT $imageId (${lowRes ? 'low' : 'full'})");
       return cache[imageId];
     }
 
     final response = await getImage(imageId, lowRes: lowRes);
     if (response.success && response.data != null) {
-      debugPrint("Image $imageId (${lowRes ? 'low' : 'full'}) downloaded");
       cache[imageId] = response.data!;
       return response.data!;
     }
@@ -224,7 +223,10 @@ class ImageFeedPageState extends State<ImageFeedPage> {
     // just-touched image is never the one dropped.
     _touchCache(imageId);
     final cached = _imageFutureCache[imageId];
-    if (cached != null) return cached;
+    if (cached != null) {
+      debugPrint("[feed] memo HIT $imageId (imageData)");
+      return cached;
+    }
     final future = _fetchImageData(imageId);
     _imageFutureCache[imageId] = future;
     return future;
@@ -247,6 +249,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
 
   Future<Uint8List?> _getOrStartFullResFuture(String imageId) {
     if (_fullResFutureCache.containsKey(imageId)) {
+      debugPrint("[feed] memo HIT $imageId (fullres)");
       return _fullResFutureCache[imageId]!;
     }
     final future = _getCachedImage(imageId, lowRes: false);
