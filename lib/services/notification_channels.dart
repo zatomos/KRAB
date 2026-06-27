@@ -8,6 +8,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:image/image.dart' as img;
 import 'package:krab/l10n/app_localizations.dart';
 import 'package:krab/services/api/supabase.dart';
+import 'package:krab/user_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 
 /// Delete cached big-picture notification images older than [maxAge] so they
@@ -190,6 +191,7 @@ Future<void> dispatchCommentNotification(
   }
 
   if (groupId.isEmpty || groupName.isEmpty) return;
+  if (await UserPreferences.isGroupMuted(groupId)) return;
   if (commenterUsername.isEmpty) commenterUsername = 'Someone';
 
   final results = await Future.wait([
@@ -220,6 +222,8 @@ Future<void> dispatchImageNotification(Map<String, dynamic> data) async {
   final imageId = data['image_id'] ?? '';
 
   if (groupId.isEmpty || imageId.isEmpty) return;
+  // Skip the notification if the user muted this group.
+  if (await UserPreferences.isGroupMuted(groupId)) return;
 
   final ctx = await getImageNotificationContext(imageId, groupId);
   if (!ctx.success || ctx.data == null) return;

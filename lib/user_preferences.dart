@@ -65,6 +65,29 @@ class UserPreferences {
     return favoriteGroups.contains(group);
   }
 
+  // Groups whose notifications the user has muted. Read with a fresh
+  // SharedPreferences handle so it also works in the FCM background isolate,
+  // where the static _preferences is never initialized.
+  static Future<SharedPreferences> _prefs() async =>
+      _preferences ?? await SharedPreferences.getInstance();
+
+  static Future<List<String>> getMutedGroups() async =>
+      (await _prefs()).getStringList('mutedGroups') ?? [];
+
+  static Future<bool> isGroupMuted(String group) async =>
+      (await getMutedGroups()).contains(group);
+
+  static Future<void> setGroupMuted(String group, bool muted) async {
+    final prefs = await _prefs();
+    final groups = prefs.getStringList('mutedGroups') ?? [];
+    if (muted) {
+      if (!groups.contains(group)) groups.add(group);
+    } else {
+      groups.remove(group);
+    }
+    await prefs.setStringList('mutedGroups', groups);
+  }
+
   static Future<bool> getIsFirstLaunch() async {
     return _preferences?.getBool('isFirstLaunch') ?? true;
   }

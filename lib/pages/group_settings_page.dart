@@ -32,6 +32,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
   late Group _group;
   late Future<SupabaseResponse<List<GroupMember>>> _membersFuture;
   late String? _currentUserId;
+  bool _muted = false;
 
   @override
   void initState() {
@@ -39,6 +40,14 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
     _group = widget.group;
     _membersFuture = getGroupMembers(_group.id);
     _currentUserId = Supabase.instance.client.auth.currentUser?.id;
+    UserPreferences.isGroupMuted(_group.id).then((muted) {
+      if (mounted) setState(() => _muted = muted);
+    });
+  }
+
+  Future<void> _toggleMuted(bool muted) async {
+    setState(() => _muted = muted);
+    await UserPreferences.setGroupMuted(_group.id, muted);
   }
 
   String _getCurrentUserRole(List<GroupMember> members) {
@@ -443,6 +452,18 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                     ),
                   ],
                 ],
+
+                const SizedBox(height: 8),
+                SwitchListTile(
+                  value: _muted,
+                  onChanged: _toggleMuted,
+                  secondary: Icon(_muted
+                      ? Symbols.notifications_off_rounded
+                      : Symbols.notifications_rounded),
+                  title: Text(context.l10n.mute_notifications),
+                  subtitle: Text(context.l10n.mute_notifications_subtitle),
+                  contentPadding: EdgeInsets.zero,
+                ),
 
                 Divider(
                   height: 64,

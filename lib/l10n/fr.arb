@@ -210,6 +210,8 @@
   "create_invite": "Créer une invitation",
   "manage_invites": "Gérer les invitations",
   "who_can_invite": "Qui peut inviter",
+  "mute_notifications": "Mettre en sourdine",
+  "mute_notifications_subtitle": "Ne plus me notifier des photos ou commentaires de ce groupe. Le widget se mettra toujours à jour.",
   "invite_permission_owner": "Propriétaire uniquement",
   "invite_permission_admin": "Propriétaire et admins",
   "invite_permission_everyone": "Tout le monde",
