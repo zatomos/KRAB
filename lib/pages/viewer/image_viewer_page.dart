@@ -215,6 +215,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
   void _prefetchNeighbors(int index) {
     for (final i in [index - 1, index + 1]) {
       if (i < 0 || i >= widget.images.length) continue;
+      fetchPostedInGroups(widget.images[i].id);
       if (_pageBytes.containsKey(i)) continue;
       _imageDataFor(i).then((data) {
         if (mounted) _cachePageBytes(i, data.imageBytes);
@@ -617,7 +618,6 @@ class _ViewerPhotoState extends State<_ViewerPhoto>
           child: SizedBox.fromSize(size: widget.displaySize, child: base),
         ),
         TweenAnimationBuilder<double>(
-          key: ValueKey<bool>(_full != null),
           duration: const Duration(milliseconds: 250),
           curve: Curves.easeOut,
           tween: Tween<double>(begin: 0, end: 1),

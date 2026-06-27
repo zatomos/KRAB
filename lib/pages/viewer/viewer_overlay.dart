@@ -18,6 +18,30 @@ import 'package:krab/widgets/avatars/user_avatar.dart';
 import 'package:krab/widgets/avatars/group_avatar.dart';
 import 'package:krab/themes/global_theme_data.dart';
 
+final Map<String, List<Group>> _postedInGroupsCache = {};
+
+Future<List<Group>?> fetchPostedInGroups(String imageId) async {
+  final cached = _postedInGroupsCache[imageId];
+  if (cached != null) return cached;
+
+  final response = await getImageGroups(imageId);
+  if (!response.success || response.data == null) return null;
+
+  final groups = await Future.wait((response.data!).map((e) async {
+    final map = e as Map<String, dynamic>;
+    final id = map['group_id']?.toString() ?? '';
+    return Group(
+      id: id,
+      name: map['group_name']?.toString() ?? '',
+      iconUrl: await resolveGroupIconUrl(id),
+      createdAt: '',
+    );
+  }));
+
+  _postedInGroupsCache[imageId] = groups;
+  return groups;
+}
+
 /// The non-zoomable chrome layered over the current photo in the gallery.
 class ViewerOverlay extends StatefulWidget {
   final String imageId;
@@ -72,7 +96,7 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
   void initState() {
     super.initState();
     _commentCount = widget.commentCount;
-    _loadPostedInGroups();
+    _initPostedInGroups();
   }
 
   @override
@@ -82,46 +106,41 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
     // the underlying image changes.
     if (oldWidget.imageId != widget.imageId) {
       _commentCount = widget.commentCount;
+      _initPostedInGroups();
+    }
+  }
+
+  /// Populate the "posted in" pill. If the groups are already cached,
+  /// show them synchronously so the pill doesn't flash;
+  /// otherwise fetch and fill them in when ready.
+  void _initPostedInGroups() {
+    final cached = _postedInGroupsCache[widget.imageId];
+    if (cached != null) {
+      _postedInGroups = _displayGroups(cached);
+    } else {
       _postedInGroups = [];
       _loadPostedInGroups();
     }
   }
 
-  /// Resolve the groups this image was shared to so they can be shown as
-  /// avatars on the image. Only kept when the image spans multiple groups.
   Future<void> _loadPostedInGroups() async {
     final imageId = widget.imageId;
-    final response = await getImageGroups(imageId);
-    if (!mounted || imageId != widget.imageId) return;
-    if (!response.success || response.data == null) return;
-    final raw = response.data!;
-    if (raw.isEmpty) return;
+    final groups = await fetchPostedInGroups(imageId);
+    if (!mounted || imageId != widget.imageId || groups == null) return;
+    setState(() => _postedInGroups = _displayGroups(groups));
+  }
 
-    // Only show the groups pill when the image spans multiple groups.
-    // In the cross-group recent photos view, always show it.
-    if (raw.length < 2 && widget.groupId != null) return;
-
-    final groups = await Future.wait(raw.map((e) async {
-      final map = e as Map<String, dynamic>;
-      final id = map['group_id']?.toString() ?? '';
-      final iconUrl = await resolveGroupIconUrl(id);
-      return Group(
-        id: id,
-        name: map['group_name']?.toString() ?? '',
-        iconUrl: iconUrl,
-        createdAt: '',
-      );
-    }));
-
-    // In a single-group gallery, surface the group being viewed first so it
-    // leads the pill and can be highlighted
+  /// Apply per-view filtering and ordering to the cached raw group list: hide
+  /// the pill unless the image spans multiple groups, and surface the
+  /// currently-viewed group first so it leads the pill and can be highlighted.
+  List<Group> _displayGroups(List<Group> all) {
+    if (all.length < 2 && widget.groupId != null) return const [];
+    final groups = List<Group>.from(all);
     if (widget.groupId != null) {
       final idx = groups.indexWhere((g) => g.id == widget.groupId);
       if (idx > 0) groups.insert(0, groups.removeAt(idx));
     }
-
-    if (!mounted || imageId != widget.imageId) return;
-    setState(() => _postedInGroups = groups);
+    return groups;
   }
 
   Widget _frostedSurface({
