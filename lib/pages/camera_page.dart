@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:krab/l10n/l10n.dart';
 import 'package:krab/services/home_widget_updater.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -333,23 +334,49 @@ class CameraPageState extends State<CameraPage> {
     }
   }
 
+  /// Delete the just-sent photo when the user taps Undo on the snackbar.
+  Future<void> _undoSend(
+      String imageId, String removedMsg, String failedMsg) async {
+    final deleted = await deleteImage(imageId);
+    if (deleted.success) {
+      updateHomeWidget();
+      showSnackBar(removedMsg, color: Colors.green);
+    } else {
+      showSnackBar(deleted.error ?? failedMsg, color: Colors.red);
+    }
+  }
+
   Future<void> _showSendImageDialog(File imageFile) async {
     setState(() => _dialogOpen = true);
     try {
-      final response = await showDialog<SupabaseResponse<void>>(
+      final response = await showDialog<SupabaseResponse<String>>(
         context: context,
         builder: (_) => SendImageDialog(imageFile: imageFile),
       );
       if (response == null || !mounted) return;
 
-      if (response.success) updateHomeWidget();
-      await showDialog(
-        context: context,
-        builder: (_) => ImageSentDialog(
-          success: response.success,
-          errorMsg: response.error,
-        ),
-      );
+      if (response.success) {
+        updateHomeWidget();
+        // Confirm the send with a snackbar that also offers a quick Undo.
+        final l10n = context.l10n;
+        final imageId = response.data;
+        final removedMsg = l10n.photo_removed;
+        final failedMsg = l10n.failed_to_delete_photo;
+        showSnackBar(
+          l10n.photo_sent,
+          color: Colors.green,
+          actionLabel: imageId == null ? null : l10n.undo,
+          onAction: imageId == null
+              ? null
+              : () => _undoSend(imageId, removedMsg, failedMsg),
+        );
+      } else {
+        await showDialog(
+          context: context,
+          builder: (_) =>
+              ImageSentDialog(success: false, errorMsg: response.error),
+        );
+      }
     } finally {
       if (mounted) setState(() => _dialogOpen = false);
     }

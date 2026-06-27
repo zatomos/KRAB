@@ -233,7 +233,10 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   debugPrint('Background data: ${message.data}');
 
   final type = message.data['type'];
-  if (type != 'new_image' && type != 'new_comment' && type != 'group_comment') {
+  if (type != 'new_image' &&
+      type != 'new_comment' &&
+      type != 'group_comment' &&
+      type != 'image_deleted') {
     debugPrint('Background message type "$type" not handled, skipping');
     return;
   }
@@ -259,6 +262,11 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
     if (type == 'new_image') {
       await dispatchImageNotification(message.data);
+      await updateHomeWidget();
+    } else if (type == 'image_deleted') {
+      // The image is gone, clear any standing notification for it and refresh
+      // the widget so it drops out
+      await cancelImageNotification(message.data['image_id'] ?? '');
       await updateHomeWidget();
     } else {
       await dispatchCommentNotification(message.data, type);
@@ -446,6 +454,9 @@ void main() async {
           await updateHomeWidget();
         } else if (msgType == 'new_comment' || msgType == 'group_comment') {
           await dispatchCommentNotification(message.data, msgType);
+        } else if (msgType == 'image_deleted') {
+          await cancelImageNotification(message.data['image_id'] ?? '');
+          await updateHomeWidget();
         }
 
         if (message.notification != null &&

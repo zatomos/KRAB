@@ -13,6 +13,8 @@ import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/services/file_saver.dart';
 import 'package:krab/services/api/supabase.dart';
 import 'package:krab/widgets/comments_bottom_sheet.dart';
+import 'package:krab/widgets/dialogs/delete_image_dialog.dart';
+import 'package:krab/widgets/dialogs/dialogs.dart';
 import 'package:krab/widgets/soft_button.dart';
 import 'package:krab/widgets/avatars/user_avatar.dart';
 import 'package:krab/widgets/avatars/group_avatar.dart';
@@ -42,6 +44,12 @@ Future<List<Group>?> fetchPostedInGroups(String imageId) async {
   return groups;
 }
 
+/// Forget an image's cached groups so the next fetch reflects a change (e.g.
+/// after the photo is removed from some of them).
+void invalidatePostedInGroups(String imageId) {
+  _postedInGroupsCache.remove(imageId);
+}
+
 /// The non-zoomable chrome layered over the current photo in the gallery.
 class ViewerOverlay extends StatefulWidget {
   final String imageId;
@@ -67,6 +75,10 @@ class ViewerOverlay extends StatefulWidget {
 
   final void Function(int delta)? onCommentCountChanged;
 
+  /// Called after the current image is successfully deleted, so the gallery can
+  /// drop it from its list and caches.
+  final void Function(String imageId)? onImageDeleted;
+
   const ViewerOverlay({
     super.key,
     required this.imageId,
@@ -78,6 +90,7 @@ class ViewerOverlay extends StatefulWidget {
     required this.progress,
     this.flingToCommentsEnabled = true,
     this.onCommentCountChanged,
+    this.onImageDeleted,
   });
 
   @override
@@ -166,6 +179,31 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
               borderRadius: borderRadius,
             ),
             child: Opacity(opacity: progress, child: child),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// A circular frosted icon button, as used by the viewer's top action bar.
+  Widget _circleAction({
+    required IconData icon,
+    required VoidCallback onTap,
+    required double progress,
+  }) {
+    return ClipOval(
+      child: RepaintBoundary(
+        child: InkWell(
+          borderRadius: BorderRadius.circular(32),
+          onTap: onTap,
+          child: _frostedSurface(
+            borderRadius: BorderRadius.circular(999),
+            tint: Colors.white.withValues(alpha: 0.15),
+            progress: progress,
+            child: Padding(
+              padding: const EdgeInsets.all(8),
+              child: Icon(icon, color: Colors.white, size: 30),
+            ),
           ),
         ),
       ),
@@ -528,6 +566,71 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
     );
   }
 
+  bool get _isOwner =>
+      widget.imageData.uploadedBy == supabase.auth.currentUser?.id;
+
+  Future<void> _deleteImage() async {
+    final groups = await fetchPostedInGroups(widget.imageId) ?? const [];
+    if (!mounted) return;
+
+    if (groups.length <= 1) {
+      // Shared to a single group: removing it there deletes it outright
+      final confirmed = await showConfirmDialog(
+        context,
+        title: context.l10n.delete_photo,
+        message: context.l10n.delete_photo_confirm,
+        confirmLabel: context.l10n.delete,
+        destructive: true,
+      );
+      if (!confirmed || !mounted) return;
+      final res = await deleteImage(widget.imageId);
+      _afterDelete(res.success, res.error,
+          fullyDeleted: true, removedCurrent: true);
+      return;
+    }
+
+    final selected = await showDeleteImageDialog(
+      context,
+      groups: groups,
+      currentGroupId: widget.groupId,
+    );
+    if (selected == null || selected.isEmpty || !mounted) return;
+
+    final res = await removeImageFromGroups(widget.imageId, selected.toList());
+    _afterDelete(
+      res.success,
+      res.error,
+      fullyDeleted: res.data ?? false,
+      removedCurrent:
+          widget.groupId != null && selected.contains(widget.groupId),
+    );
+  }
+
+  /// Reconcile UI after a delete/removal.
+  void _afterDelete(bool success, String? error,
+      {required bool fullyDeleted, required bool removedCurrent}) {
+    if (!mounted) return;
+    if (!success) {
+      showSnackBar(error ?? context.l10n.failed_to_delete_photo,
+          color: Colors.red);
+      return;
+    }
+    // Refresh the cached pill data
+    invalidatePostedInGroups(widget.imageId);
+
+    final message =
+        fullyDeleted ? context.l10n.photo_deleted : context.l10n.photo_removed;
+    if (fullyDeleted || removedCurrent) {
+      // Close the viewer
+      Navigator.pop(context);
+      widget.onImageDeleted?.call(widget.imageId);
+    } else {
+      // Still belongs here: stay open and refresh the posted-in pill.
+      _loadPostedInGroups();
+    }
+    showSnackBar(message, color: Colors.green);
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = widget.progress;
@@ -587,23 +690,24 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
         Positioned(
           top: 60,
           right: 16,
-          child: ClipOval(
-            child: RepaintBoundary(
-              child: InkWell(
-                borderRadius: BorderRadius.circular(32),
-                onTap: _saveImage,
-                child: _frostedSurface(
-                  borderRadius: BorderRadius.circular(999),
-                  tint: Colors.white.withValues(alpha: 0.15),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Delete is only offered to the uploader.
+              if (_isOwner) ...[
+                _circleAction(
+                  icon: Symbols.delete_rounded,
+                  onTap: _deleteImage,
                   progress: t,
-                  child: const Padding(
-                    padding: EdgeInsets.all(8),
-                    child: Icon(Symbols.download_rounded,
-                        color: Colors.white, size: 30),
-                  ),
                 ),
+                const SizedBox(width: 12),
+              ],
+              _circleAction(
+                icon: Symbols.download_rounded,
+                onTap: _saveImage,
+                progress: t,
               ),
-            ),
+            ],
           ),
         ),
 

@@ -406,27 +406,90 @@ END;$$;
 -- Name: delete_image(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.delete_image(image_id uuid) RETURNS boolean
-    LANGUAGE plpgsql
+CREATE FUNCTION public.delete_image(image_id uuid) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public'
-    AS $$DECLARE
-  storage_path TEXT;
+    AS $$
+DECLARE
+  current_user_id uuid;
 BEGIN
-  -- Get the storage path
-  SELECT storage_path INTO storage_path FROM "Images" WHERE id = image_id;
+  current_user_id := auth.uid();
 
-  -- Delete from storage first
-  DELETE FROM storage.objects
-  WHERE name = storage_path;
+  IF current_user_id IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
+  END IF;
 
-  -- Delete from Images table
-  DELETE FROM "Images"
-  WHERE id = image_id;
+  IF NOT EXISTS (
+    SELECT 1 FROM "Images" i
+    WHERE i.id = delete_image.image_id
+      AND i.uploaded_by = current_user_id
+  ) THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'Image not found or permission denied'
+    );
+  END IF;
 
-  RETURN FOUND;
+  DELETE FROM "Comments" c WHERE c.image_id = delete_image.image_id;
+  DELETE FROM "ImageGroups" ig WHERE ig.image_id = delete_image.image_id;
+  DELETE FROM "Images" i WHERE i.id = delete_image.image_id;
+
+  RETURN jsonb_build_object('success', true);
 EXCEPTION WHEN OTHERS THEN
-  RETURN FALSE;
-END;$$;
+  RETURN jsonb_build_object('success', false, 'error', SQLERRM);
+END;
+$$;
+
+
+--
+-- Name: remove_image_from_groups(uuid, uuid[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.remove_image_from_groups(p_image_id uuid, p_group_ids uuid[]) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  current_user_id uuid;
+  remaining int;
+  fully_deleted boolean := false;
+BEGIN
+  current_user_id := auth.uid();
+
+  IF current_user_id IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM "Images" i
+    WHERE i.id = p_image_id
+      AND i.uploaded_by = current_user_id
+  ) THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'Image not found or permission denied'
+    );
+  END IF;
+
+  DELETE FROM "Comments"
+   WHERE image_id = p_image_id AND group_id = ANY (p_group_ids);
+  DELETE FROM "ImageGroups"
+   WHERE image_id = p_image_id AND group_id = ANY (p_group_ids);
+
+  SELECT count(*) INTO remaining
+    FROM "ImageGroups" WHERE image_id = p_image_id;
+
+  IF remaining = 0 THEN
+    DELETE FROM "Comments" WHERE image_id = p_image_id;
+    DELETE FROM "Images" WHERE id = p_image_id;
+    fully_deleted := true;
+  END IF;
+
+  RETURN jsonb_build_object('success', true, 'fully_deleted', fully_deleted);
+EXCEPTION WHEN OTHERS THEN
+  RETURN jsonb_build_object('success', false, 'error', SQLERRM);
+END;
+$$;
 
 
 --
@@ -3561,6 +3624,13 @@ CREATE TRIGGER "on-comment-insert" AFTER INSERT ON public."Comments" FOR EACH RO
 --
 
 CREATE TRIGGER "on-image-insert" AFTER INSERT ON public."ImageGroups" FOR EACH ROW EXECUTE FUNCTION supabase_functions.http_request('your_supabase_url/functions/v1/image-notification', 'POST', '{"Content-type":"application/json","Authorization":"Bearer <SERVICE_ROLE_KEY>"}', '{}', '5000');
+
+
+--
+-- Name: ImageGroups on-image-delete; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER "on-image-delete" AFTER DELETE ON public."ImageGroups" FOR EACH ROW EXECUTE FUNCTION supabase_functions.http_request('your_supabase_url/functions/v1/image-deleted-notification', 'POST', '{"Content-type":"application/json","Authorization":"Bearer <SERVICE_ROLE_KEY>"}', '{}', '5000');
 
 
 --

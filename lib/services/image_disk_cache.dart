@@ -85,6 +85,20 @@ class ImageDiskCache {
     unawaited(_maybePrune());
   }
 
+  /// Remove both variants (low/full) of a single image
+  Future<void> remove(String imageId) async {
+    try {
+      final dir = await _ensureDir();
+      for (final key in ['$imageId.low', '$imageId.full']) {
+        final file = _fileFor(dir, key);
+        if (await file.exists()) await file.delete();
+      }
+      debugPrint('[img-cache] REMOVED $imageId');
+    } catch (_) {
+      // best-effort
+    }
+  }
+
   /// Delete the whole cache.
   Future<void> clear() async {
     try {

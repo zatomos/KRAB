@@ -3,7 +3,7 @@ part of 'supabase.dart';
 /// ------------------ IMAGE FUNCTIONS ------------------
 
 /// Send an image to selected groups with an optional description.
-Future<SupabaseResponse<void>> sendImageToGroups(
+Future<SupabaseResponse<String>> sendImageToGroups(
   File imageFile,
   List<String> selectedGroups,
   String description,
@@ -20,7 +20,7 @@ Future<SupabaseResponse<void>> sendImageToGroups(
       );
     }
 
-    final imageId = uuidResponse['image_id'];
+    final String imageId = uuidResponse['image_id'] as String;
 
     // Upload image to storage
     try {
@@ -51,13 +51,38 @@ Future<SupabaseResponse<void>> sendImageToGroups(
       );
     }
 
-    return SupabaseResponse(success: true);
+    return SupabaseResponse(success: true, data: imageId);
   } catch (error) {
     return SupabaseResponse(
       success: false,
       error: "Error sending image: $error",
     );
   }
+}
+
+/// Delete an image the current user uploaded, from every group it was shared to.
+Future<SupabaseResponse<void>> deleteImage(String imageId) async {
+  final result = await _rpc<void>("delete_image",
+      params: {"image_id": imageId}, errorContext: "deleting image");
+  if (!result.success) return result;
+
+  await ImageDiskCache.instance.remove(imageId);
+  return SupabaseResponse(success: true);
+}
+
+/// Remove the current user's image from the given groups only. If that leaves it
+/// in no groups it's deleted outright. Returns whether it was fully deleted.
+Future<SupabaseResponse<bool>> removeImageFromGroups(
+    String imageId, List<String> groupIds) async {
+  final result = await _rpc<bool>("remove_image_from_groups",
+      params: {"p_image_id": imageId, "p_group_ids": groupIds},
+      errorContext: "removing image from groups",
+      parse: (r) => r is Map && r["fully_deleted"] == true);
+  // Only drop the cached bytes once the image is actually gone everywhere.
+  if (result.success && (result.data ?? false)) {
+    await ImageDiskCache.instance.remove(imageId);
+  }
+  return result;
 }
 
 /// Storage bucket holding one pre-generated thumbnail per image, keyed by the

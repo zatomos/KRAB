@@ -84,6 +84,7 @@ class ImageViewerPage extends StatefulWidget {
   final Map<String, int> commentCountCache;
   final Map<String, krab_user.User> userCache;
   final void Function(String imageId, int delta)? onCommentCountChanged;
+  final void Function(String imageId)? onImageDeleted;
 
   /// Loads the next page of images when the user swipes near the end, and
   /// reports whether more remain. images grows in place as pages load.
@@ -104,6 +105,7 @@ class ImageViewerPage extends StatefulWidget {
     required this.commentCountCache,
     required this.userCache,
     this.onCommentCountChanged,
+    this.onImageDeleted,
     this.loadMore,
     this.hasMore,
   });
@@ -406,6 +408,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
                     await widget.getCachedImage(imageId, lowRes: true),
                 onCommentCountChanged: (delta) =>
                     widget.onCommentCountChanged?.call(imageId, delta),
+                onImageDeleted: widget.onImageDeleted,
               );
             },
           ),

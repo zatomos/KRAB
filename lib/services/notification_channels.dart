@@ -44,6 +44,28 @@ AppLocalizations _l10n() {
 
 final FlutterLocalNotificationsPlugin _flnp = FlutterLocalNotificationsPlugin();
 
+/// Stable notification id for an image's "new photo" notification, so it can be
+/// cancelled later.
+int imageNotificationId(String imageId) {
+  var hash = 0x811c9dc5; // FNV-1a 32-bit offset basis
+  for (final unit in imageId.codeUnits) {
+    hash ^= unit;
+    hash = (hash * 0x01000193) & 0xFFFFFFFF;
+  }
+  return hash & 0x7FFFFFFF;
+}
+
+/// Dismiss a deleted image's notification and drop its cached big-picture file.
+Future<void> cancelImageNotification(String imageId) async {
+  await _ensureFlnpInitialized();
+  await _flnp.cancel(id: imageNotificationId(imageId));
+  try {
+    final dir = await getTemporaryDirectory();
+    final f = File('${dir.path}/notif_img_$imageId.jpg');
+    if (await f.exists()) await f.delete();
+  } catch (_) {}
+}
+
 bool _flnpInitialized = false;
 
 void Function(String payload)? _notificationTapHandler;
@@ -273,7 +295,7 @@ Future<void> showImageNotification({
       : null;
 
   await _flnp.show(
-    id: DateTime.now().millisecondsSinceEpoch & 0x7FFFFFFF,
+    id: imageNotificationId(imageId),
     title: senderUsername,
     body: _l10n().new_image_notification,
     notificationDetails: NotificationDetails(

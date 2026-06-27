@@ -125,6 +125,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
           commentCountCache: _commentCountCache,
           userCache: _userCache,
           onCommentCountChanged: _onCommentCountChanged,
+          onImageDeleted: _onImageDeleted,
           loadMore: _loadMore,
           hasMore: () => _hasMore,
         )),
@@ -216,6 +217,19 @@ class ImageFeedPageState extends State<ImageFeedPage> {
       return response.data!;
     }
     return null;
+  }
+
+  /// Drop a deleted image from the list and every cache so it disappears from
+  /// the grid.
+  void _onImageDeleted(String imageId) {
+    _lowResCache.remove(imageId);
+    _fullResCache.remove(imageId);
+    _fullResFutureCache.remove(imageId);
+    _imageFutureCache.remove(imageId);
+    _commentCountCache.remove(imageId);
+    _lruOrder.remove(imageId);
+    if (!mounted) return;
+    setState(() => _images.removeWhere((img) => img.id == imageId));
   }
 
   Future<ImageData> _getImageDataFuture(String imageId) {
@@ -483,6 +497,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
                 commentCountCache: _commentCountCache,
                 userCache: _userCache,
                 onCommentCountChanged: _onCommentCountChanged,
+                onImageDeleted: _onImageDeleted,
                 loadMore: _loadMore,
                 hasMore: () => _hasMore,
               )),
