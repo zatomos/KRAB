@@ -5,6 +5,7 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/services/api/supabase.dart';
+import 'package:krab/services/feed_events.dart';
 import 'package:krab/models/group.dart';
 import 'package:krab/models/user.dart' as krab_user;
 import 'package:krab/models/image_data.dart';
@@ -51,6 +52,10 @@ class ImageFeedPageState extends State<ImageFeedPage> {
   bool _hasMore = true;
   String? _error;
 
+  /// True once a `new_image` push lands for this feed while it's open
+  bool _hasNewPhotos = false;
+  StreamSubscription<NewImageEvent>? _newImageSub;
+
   /// Caches
   final Map<String, Uint8List> _lowResCache = {};
   final Map<String, Uint8List> _fullResCache = {};
@@ -71,7 +76,27 @@ class ImageFeedPageState extends State<ImageFeedPage> {
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    _newImageSub = FeedEvents.instance.newImages.listen(_onNewImage);
     _bootstrap();
+  }
+
+  /// Surface the new photos pill when an incoming image belongs to this feed
+  void _onNewImage(NewImageEvent event) {
+    final relevant = _groupId == null || event.groupId == _groupId;
+    if (!relevant || _hasNewPhotos || !mounted) return;
+    setState(() => _hasNewPhotos = true);
+  }
+
+  /// Refresh to the top in response to the new photos pill.
+  Future<void> _loadNewPhotos() async {
+    await _refreshGroupImages();
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    }
   }
 
   /// Fetch one page. With after set, fetches the page following that image;
@@ -227,6 +252,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
 
   @override
   void dispose() {
+    _newImageSub?.cancel();
     _scrollController.dispose();
     _lowResCache.clear();
     _fullResCache.clear();
@@ -393,6 +419,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
         ..addAll(page);
       _hasMore = page.length == _kPageSize;
       _error = null;
+      _hasNewPhotos = false;
     });
   }
 
@@ -444,7 +471,61 @@ class ImageFeedPageState extends State<ImageFeedPage> {
             ),
         ],
       ),
-      body: _buildBody(context),
+      body: Stack(
+        children: [
+          _buildBody(context),
+          Positioned(
+            top: 8,
+            left: 0,
+            right: 0,
+            child: Center(child: _newPhotosPill(context)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _newPhotosPill(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return AnimatedSlide(
+      offset: _hasNewPhotos ? Offset.zero : const Offset(0, -2),
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOut,
+      child: AnimatedOpacity(
+        opacity: _hasNewPhotos ? 1 : 0,
+        duration: const Duration(milliseconds: 250),
+        child: IgnorePointer(
+          ignoring: !_hasNewPhotos,
+          child: Material(
+            color: scheme.primary,
+            elevation: 4,
+            borderRadius: BorderRadius.circular(20),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(20),
+              onTap: _loadNewPhotos,
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Symbols.arrow_upward_rounded,
+                        size: 18, color: scheme.onPrimary),
+                    const SizedBox(width: 6),
+                    Text(
+                      context.l10n.new_photos,
+                      style: TextStyle(
+                        color: scheme.onPrimary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 

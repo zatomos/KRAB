@@ -13,6 +13,7 @@ import 'package:home_widget/home_widget.dart';
 import 'package:krab/services/api/supabase.dart';
 import 'package:krab/services/background_session.dart';
 import 'package:krab/services/fcm_helper.dart';
+import 'package:krab/services/feed_events.dart';
 import 'package:krab/services/home_widget_updater.dart';
 import 'package:krab/services/home_widget_status.dart';
 import 'package:krab/services/notification_channels.dart';
@@ -466,6 +467,11 @@ void main() async {
         if (msgType == 'new_image') {
           await dispatchImageNotification(message.data);
           await updateHomeWidget();
+          // Let an open feed surface a new photos pill without a refresh.
+          FeedEvents.instance.notifyNewImage(NewImageEvent(
+            imageId: message.data['image_id'] ?? '',
+            groupId: message.data['group_id'],
+          ));
         } else if (msgType == 'new_comment' || msgType == 'group_comment') {
           await dispatchCommentNotification(message.data, msgType);
         } else if (msgType == 'new_reaction') {
