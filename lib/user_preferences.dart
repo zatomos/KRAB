@@ -71,8 +71,11 @@ class UserPreferences {
   static Future<SharedPreferences> _prefs() async =>
       _preferences ?? await SharedPreferences.getInstance();
 
-  static Future<List<String>> getMutedGroups() async =>
-      (await _prefs()).getStringList('mutedGroups') ?? [];
+  static Future<List<String>> getMutedGroups() async {
+    final prefs = await _prefs();
+    await prefs.reload();
+    return prefs.getStringList('mutedGroups') ?? [];
+  }
 
   static Future<bool> isGroupMuted(String group) async =>
       (await getMutedGroups()).contains(group);

@@ -14,7 +14,7 @@ SUPABASE_DIR="$HOME/supabase-project"
 DB_CONTAINER="supabase-db"
 REPO_RAW="https://raw.githubusercontent.com/zatomos/KRAB/main"
 BUCKETS=(images group-icons profile-pictures)
-FN_SLUGS="new_image_notify:image-notification new_comment_notify:comment-notification"
+FN_SLUGS="new_image_notify:image-notification new_comment_notify:comment-notification new_reaction_notify:reaction-notification"
 
 log() { printf '\n==> %s\n' "$*"; }
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
@@ -125,7 +125,7 @@ done
 
 # --- 6. Deploy edge functions --------------------------------------------
 # Self-hosted edge runtime serves each subdir of volumes/functions at
-# /functions/v1/<slug>. Download the two functions under the trigger slugs.
+# /functions/v1/<slug>. Download the notification functions under their slugs.
 log "Deploying edge functions"
 fdir="$SUPABASE_DIR/volumes/functions"
 deployed=1

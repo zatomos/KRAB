@@ -217,6 +217,37 @@ Future<void> dispatchCommentNotification(
   );
 }
 
+Future<void> dispatchReactionNotification(Map<String, dynamic> data) async {
+  final imageId = data['image_id'] ?? '';
+  final reactorId = data['reactor_id'] ?? '';
+  final emoji = data['emoji'] ?? '';
+
+  if (imageId.isEmpty) return;
+
+  final ctx = await getReactionNotificationContext(imageId, reactorId);
+  if (!ctx.success || ctx.data == null) return;
+  final d = ctx.data!;
+
+  var reactorUsername = (d['reactor_username'] as String?) ?? '';
+  if (reactorUsername.isEmpty) reactorUsername = 'Someone';
+
+  final results = await Future.wait([
+    reactorId.isNotEmpty
+        ? getProfilePictureBytes(reactorId)
+        : Future.value(SupabaseResponse<Uint8List>(success: false)),
+    getImage(imageId, lowRes: true),
+  ]);
+
+  await initCommentNotifications();
+  await showReactionNotification(
+    reactorUsername: reactorUsername,
+    emoji: emoji,
+    imageId: imageId,
+    reactorAvatarBytes: results[0].data,
+    imageBytes: results[1].data,
+  );
+}
+
 Future<void> dispatchImageNotification(Map<String, dynamic> data) async {
   final groupId = data['group_id'] ?? '';
   final imageId = data['image_id'] ?? '';
@@ -359,6 +390,41 @@ Future<void> showCommentNotification({
     ),
     payload:
         jsonEncode({'type': type, 'image_id': imageId, 'group_id': groupId}),
+  );
+}
+
+
+Future<void> showReactionNotification({
+  required String reactorUsername,
+  required String emoji,
+  required String imageId,
+  Uint8List? reactorAvatarBytes,
+  Uint8List? imageBytes,
+}) async {
+  const channelId = 'reactions';
+  final channelName = _l10n().reactions_title;
+  await _ensureFlnpInitialized();
+  await _createFlnpChannel(channelId, channelName);
+
+  final compositeBytes = _buildImageLargeIcon(imageBytes, reactorAvatarBytes);
+
+  await _flnp.show(
+    id: DateTime.now().millisecondsSinceEpoch & 0x7FFFFFFF,
+    title: reactorUsername,
+    body: _l10n().new_reaction_on_your_image_notification(emoji),
+    notificationDetails: NotificationDetails(
+      android: AndroidNotificationDetails(
+        channelId,
+        channelName,
+        icon: '@drawable/ic_stat_krab_logo',
+        importance: Importance.high,
+        priority: Priority.high,
+        largeIcon: compositeBytes != null
+            ? ByteArrayAndroidBitmap(compositeBytes)
+            : null,
+      ),
+    ),
+    payload: jsonEncode({'type': 'new_reaction', 'image_id': imageId}),
   );
 }
 

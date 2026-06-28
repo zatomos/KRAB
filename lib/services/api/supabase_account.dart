@@ -356,3 +356,21 @@ Future<SupabaseResponse<bool>> getGroupCommentNotificationSetting() =>
     _rpc("get_notify_group_comments",
         errorContext: "fetching notification setting",
         parse: (r) => r['enabled'] as bool);
+
+/// Resolve the group/reactor names a reaction notification needs.
+Future<SupabaseResponse<Map<String, dynamic>>> getReactionNotificationContext(
+    String imageId, String reactorId) async {
+  try {
+    final res = await supabase.rpc('get_reaction_notification', params: {
+      'p_image_id': imageId,
+      'p_reactor_id': reactorId,
+    });
+    if (res == null || res['success'] != true) {
+      return SupabaseResponse(success: false, error: res?['error']?.toString());
+    }
+    return SupabaseResponse(success: true, data: res as Map<String, dynamic>);
+  } catch (error) {
+    return SupabaseResponse(
+        success: false, error: 'Error fetching reaction notification: $error');
+  }
+}

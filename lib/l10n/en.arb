@@ -211,7 +211,7 @@
   "manage_invites": "Manage Invites",
   "who_can_invite": "Who can invite",
   "mute_notifications": "Mute notifications",
-  "mute_notifications_subtitle": "Don't notify me about photos or comments in this group. The widget will keep being updated.",
+  "mute_notifications_subtitle": "Don't notify me about photos, comments or reactions in this group. The widget will keep being updated.",
   "invite_permission_owner": "Owner only",
   "invite_permission_admin": "Owner and admins",
   "invite_permission_everyone": "Everyone",
@@ -239,5 +239,12 @@
   "duration_days": "{count, plural, =1{1 day} other{{count} days}}",
   "@duration_days": { "placeholders": { "count": { "type": "int" } } },
   "duration_never": "Never",
-  "no_limit": "No limit"
+  "no_limit": "No limit",
+  "error_reacting": "Error adding reaction: {errorMsg}",
+  "reactions_title": "Reactions",
+  "reactions_all": "All",
+  "no_reactions": "No reactions yet.",
+  "quick_access_emoji": "Quick access",
+  "no_recents": "No recent emojis",
+  "new_reaction_on_your_image_notification": "reacted {emoji} to your image"
 }

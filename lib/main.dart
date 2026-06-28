@@ -86,21 +86,32 @@ Future<void> handleWidgetLaunch(Uri? uri) async {
 Future<void> _handleLocalNotificationTap(String payload) async {
   try {
     final data = jsonDecode(payload) as Map<String, dynamic>;
+    final type = data['type'] as String? ?? '';
     final groupId = data['group_id'] as String? ?? '';
     final imageId = data['image_id'] as String? ?? '';
-    if (groupId.isEmpty) return;
-
-    final groupResponse = await getGroupDetails(groupId);
-    if (!groupResponse.success || groupResponse.data == null) return;
 
     int attempts = 0;
     while (navigatorKey.currentState == null && attempts < 20) {
       await Future.delayed(const Duration(milliseconds: 100));
       attempts++;
     }
-    if (navigatorKey.currentState == null) return;
+    final nav = navigatorKey.currentState;
+    if (nav == null) return;
 
-    navigatorKey.currentState!.push(
+    // Reactions aren't tied to a group: open the all-groups gallery on the image.
+    if (type == 'new_reaction') {
+      if (imageId.isEmpty) return;
+      nav.push(
+        MaterialPageRoute(builder: (_) => ImageFeedPage(imageId: imageId)),
+      );
+      return;
+    }
+
+    if (groupId.isEmpty) return;
+    final groupResponse = await getGroupDetails(groupId);
+    if (!groupResponse.success || groupResponse.data == null) return;
+
+    nav.push(
       MaterialPageRoute(
         builder: (_) => ImageFeedPage(
           group: groupResponse.data!,
@@ -236,6 +247,7 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   if (type != 'new_image' &&
       type != 'new_comment' &&
       type != 'group_comment' &&
+      type != 'new_reaction' &&
       type != 'image_deleted') {
     debugPrint('Background message type "$type" not handled, skipping');
     return;
@@ -268,6 +280,8 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       // the widget so it drops out
       await cancelImageNotification(message.data['image_id'] ?? '');
       await updateHomeWidget();
+    } else if (type == 'new_reaction') {
+      await dispatchReactionNotification(message.data);
     } else {
       await dispatchCommentNotification(message.data, type);
     }
@@ -454,6 +468,8 @@ void main() async {
           await updateHomeWidget();
         } else if (msgType == 'new_comment' || msgType == 'group_comment') {
           await dispatchCommentNotification(message.data, msgType);
+        } else if (msgType == 'new_reaction') {
+          await dispatchReactionNotification(message.data);
         } else if (msgType == 'image_deleted') {
           await cancelImageNotification(message.data['image_id'] ?? '');
           await updateHomeWidget();

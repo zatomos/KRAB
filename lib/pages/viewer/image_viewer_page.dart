@@ -9,6 +9,7 @@ import 'package:krab/models/user.dart' as krab_user;
 import 'package:krab/models/image_data.dart';
 import 'package:krab/models/image_ref.dart';
 import 'package:krab/pages/viewer/viewer_overlay.dart';
+import 'package:krab/widgets/reactions_bar.dart';
 
 /// Resolves the pixel dimensions of encoded image. Used to give the
 /// viewer a stable child size before the hero flight starts, so the entry
@@ -218,10 +219,22 @@ class _ImageViewerPageState extends State<ImageViewerPage>
     for (final i in [index - 1, index + 1]) {
       if (i < 0 || i >= widget.images.length) continue;
       fetchPostedInGroups(widget.images[i].id);
+      fetchImageReactions(widget.images[i].id);
       if (_pageBytes.containsKey(i)) continue;
       _imageDataFor(i).then((data) {
         if (mounted) _cachePageBytes(i, data.imageBytes);
       });
+    }
+  }
+
+  /// A single tap anywhere toggles every piece of overlay chrome.
+  void _toggleChrome() {
+    final showing = _controlsAnim.status == AnimationStatus.forward ||
+        _controlsAnim.status == AnimationStatus.completed;
+    if (showing) {
+      _controlsAnim.reverse();
+    } else {
+      _controlsAnim.forward();
     }
   }
 
@@ -422,7 +435,9 @@ class _ImageViewerPageState extends State<ImageViewerPage>
     final viewport = MediaQuery.sizeOf(context);
     return Scaffold(
       backgroundColor: Colors.black,
-      body: Stack(
+      body: GestureDetector(
+        onTap: _toggleChrome,
+        child: Stack(
         children: [
           Positioned.fill(child: _buildBackground()),
           Positioned.fill(
@@ -456,6 +471,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
           ),
           Positioned.fill(child: _buildOverlay()),
         ],
+        ),
       ),
     );
   }

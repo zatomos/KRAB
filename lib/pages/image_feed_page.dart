@@ -13,6 +13,7 @@ import 'package:krab/pages/group_settings_page.dart';
 import 'package:krab/pages/groups_page.dart';
 import 'package:krab/pages/viewer/image_viewer_page.dart';
 import 'package:krab/widgets/avatars/user_avatar.dart';
+import 'package:krab/widgets/reactions_bar.dart';
 
 /// Number of images fetched per page in both the single-group and cross-group
 /// galleries. New pages load as the user scrolls.
@@ -57,6 +58,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
   final Map<String, Future<ImageData>> _imageFutureCache = {};
   final Map<String, krab_user.User> _userCache = {};
   final Map<String, int> _commentCountCache = {};
+  final Map<String, int> _reactionCountCache = {};
 
   /// LRU bound on how many images' decoded bytes are retained, so memory stays
   /// bounded while paging through an arbitrarily long feed. The lightweight
@@ -129,7 +131,10 @@ class ImageFeedPageState extends State<ImageFeedPage> {
           loadMore: _loadMore,
           hasMore: () => _hasMore,
         )),
-      );
+      ).then((_) {
+        // Reaction badges may have changed in the viewer; rebuild
+        if (mounted) setState(() {});
+      });
     } catch (err) {
       debugPrint("Failed to preload image: $err");
     }
@@ -199,6 +204,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
     _imageFutureCache.clear();
     _userCache.clear();
     _commentCountCache.clear();
+    _reactionCountCache.clear();
     _lruOrder.clear();
     super.dispose();
   }
@@ -227,6 +233,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
     _fullResFutureCache.remove(imageId);
     _imageFutureCache.remove(imageId);
     _commentCountCache.remove(imageId);
+    _reactionCountCache.remove(imageId);
     _lruOrder.remove(imageId);
     if (!mounted) return;
     setState(() => _images.removeWhere((img) => img.id == imageId));
@@ -280,6 +287,8 @@ class ImageFeedPageState extends State<ImageFeedPage> {
         : (_groupId != null
             ? getCommentCount(imageId, _groupId!)
             : getImageCommentCount(imageId));
+    final reactionsFuture =
+        _reactionCountCache.containsKey(imageId) ? null : getImageReactions(imageId);
 
     final imageBytes = await bytesFuture;
     if (imageBytes == null) throw Exception("Error downloading low-res image");
@@ -311,6 +320,16 @@ class ImageFeedPageState extends State<ImageFeedPage> {
               : 0;
     }
 
+    // Cache total reaction count
+    if (reactionsFuture != null) {
+      final reactionsResponse = await reactionsFuture;
+      _reactionCountCache[imageId] = (reactionsResponse.success &&
+              reactionsResponse.data != null)
+          ? reactionsResponse.data!.fold<int>(
+              0, (sum, e) => sum + ((e['count'] as num?)?.toInt() ?? 0))
+          : 0;
+    }
+
     return ImageData(
       imageBytes: imageBytes,
       uploadedBy: uploaderId,
@@ -337,6 +356,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
       _imageFutureCache.clear();
       _userCache.clear();
       _commentCountCache.clear();
+      _reactionCountCache.clear();
       _lruOrder.clear();
       _images
         ..clear()
@@ -501,7 +521,10 @@ class ImageFeedPageState extends State<ImageFeedPage> {
                 loadMore: _loadMore,
                 hasMore: () => _hasMore,
               )),
-            );
+            ).then((_) {
+              // Reaction badges may have changed in the viewer; rebuild
+              if (mounted) setState(() {});
+            });
           },
           child: ClipRRect(
             borderRadius: BorderRadius.circular(10),
@@ -528,38 +551,33 @@ class ImageFeedPageState extends State<ImageFeedPage> {
                       : 8,
                   child: UserAvatar(uploader, radius: 20),
                 ),
-                (_commentCountCache[imageId] ?? 0) > 0
-                    ? Positioned(
-                        top: 8,
-                        right: 8,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withValues(alpha: 0.6),
-                            borderRadius: BorderRadius.circular(10),
+                if (_reactionCountFor(imageId) > 0 ||
+                    (_commentCountCache[imageId] ?? 0) > 0)
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (_reactionCountFor(imageId) > 0)
+                          _countBadge(
+                            Symbols.emoji_emotions_rounded,
+                            _reactionCountFor(imageId),
+                            borderColor: const Color(0xFFFFC107).withValues(alpha: 0.8)
                           ),
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Symbols.comment_rounded,
-                                size: 12,
-                                color: Colors.white,
-                              ),
-                              const SizedBox(width: 3),
-                              Text(
-                                (_commentCountCache[imageId] ?? 0).toString(),
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
+                        if (_reactionCountFor(imageId) > 0 &&
+                            (_commentCountCache[imageId] ?? 0) > 0)
+                          const SizedBox(width: 4),
+                        if ((_commentCountCache[imageId] ?? 0) > 0)
+                          _countBadge(
+                            Symbols.comment_rounded,
+                            _commentCountCache[imageId]!,
+                            borderColor:
+                                const Color(0xFF42A5F5).withValues(alpha: 0.8),
                           ),
-                        ),
-                      )
-                    : const SizedBox.shrink(),
+                      ],
+                    ),
+                  ),
                 if (imageData.description != null &&
                     imageData.description!.isNotEmpty)
                   Positioned(
@@ -583,6 +601,38 @@ class ImageFeedPageState extends State<ImageFeedPage> {
           ),
         );
       },
+    );
+  }
+
+  /// Total reactions for an image's badge
+  int _reactionCountFor(String imageId) =>
+      cachedReactionTotal(imageId) ?? _reactionCountCache[imageId] ?? 0;
+
+  /// A small frosted count badge for the grid tile corner.
+  Widget _countBadge(IconData icon, int count, {Color? borderColor}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(10),
+        border:
+            borderColor != null ? Border.all(color: borderColor, width: 1) : null,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: Colors.white),
+          const SizedBox(width: 3),
+          Text(
+            count.toString(),
+            style: const TextStyle(
+              fontSize: 12,
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

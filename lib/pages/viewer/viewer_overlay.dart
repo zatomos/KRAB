@@ -16,6 +16,7 @@ import 'package:krab/widgets/comments_bottom_sheet.dart';
 import 'package:krab/widgets/dialogs/delete_image_dialog.dart';
 import 'package:krab/widgets/dialogs/dialogs.dart';
 import 'package:krab/widgets/soft_button.dart';
+import 'package:krab/widgets/reactions_bar.dart';
 import 'package:krab/widgets/avatars/user_avatar.dart';
 import 'package:krab/widgets/avatars/group_avatar.dart';
 import 'package:krab/themes/global_theme_data.dart';
@@ -99,6 +100,11 @@ class ViewerOverlay extends StatefulWidget {
 
 class _ViewerOverlayState extends State<ViewerOverlay> {
   late int _commentCount;
+
+  // Drives the reactions bar so it can be refreshed after the comments sheet
+  // closes, keeping the tally correct.
+  final GlobalKey<ReactionsBarState> _reactionsBarKey =
+      GlobalKey<ReactionsBarState>();
 
   // Groups this image was posted in
   List<Group> _postedInGroups = [];
@@ -434,9 +440,9 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
     );
   }
 
-  void _openComments() {
+  Future<void> _openComments() async {
     final screenHeight = MediaQuery.sizeOf(context).height;
-    showModalBottomSheet<void>(
+    await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
@@ -455,6 +461,9 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
         },
       ),
     );
+    // Reactions may have changed while the sheet was open; refresh the bar so
+    // its tally and overflow chip stay correct.
+    _reactionsBarKey.currentState?.reload();
   }
 
   void _showFullDescriptionDialog() {
@@ -730,7 +739,23 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
           bottom: 15,
           left: 10,
           right: 10,
-          child: Row(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Emoji reactions
+              if (t > 0)
+                Opacity(
+                  opacity: t,
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 18, left: 2),
+                    child: ReactionsBar(
+                      key: _reactionsBarKey,
+                      imageId: widget.imageId,
+                    ),
+                  ),
+                ),
+              Row(
             children: [
               // Image description pill
               Expanded(
@@ -796,6 +821,8 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
                 minLabelWidth: 10,
                 blurBackground: true,
                 progress: t,
+              ),
+            ],
               ),
             ],
           ),

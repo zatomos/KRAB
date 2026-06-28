@@ -56,8 +56,7 @@ CREATE TYPE storage.buckettype AS ENUM (
 CREATE FUNCTION public.add_comment(image_id uuid, group_id uuid, text text, parent_id uuid DEFAULT NULL::uuid) RETURNS jsonb
     LANGUAGE plpgsql
     SET search_path TO 'public'
-    AS $$
-DECLARE
+    AS $$DECLARE
   current_user_id UUID;
   new_comment_id UUID;
 BEGIN
@@ -129,8 +128,7 @@ EXCEPTION
       'success', false,
       'error', SQLERRM
     );
-END;
-$$;
+END;$$;
 
 
 --
@@ -140,8 +138,7 @@ $$;
 CREATE FUNCTION public.ban_user(group_id uuid, target_user_id uuid) RETURNS jsonb
     LANGUAGE plpgsql
     SET search_path TO 'public'
-    AS $$
-DECLARE
+    AS $$DECLARE
   user_role text;
   target_role text;
   rows_updated integer;
@@ -192,8 +189,7 @@ BEGIN
 EXCEPTION
   WHEN OTHERS THEN
     RETURN jsonb_build_object('success', false, 'error', SQLERRM);
-END;
-$$;
+END;$$;
 
 
 --
@@ -203,15 +199,13 @@ $$;
 CREATE FUNCTION public.check_user_in_group(user_uuid uuid, group_uuid uuid) RETURNS boolean
     LANGUAGE plpgsql
     SET search_path TO 'public'
-    AS $$
-BEGIN
+    AS $$BEGIN
   RETURN EXISTS (
     SELECT 1
     FROM "Members"
     WHERE user_id = user_uuid AND group_id = group_uuid
   );
-END;
-$$;
+END;$$;
 
 
 --
@@ -257,8 +251,7 @@ END;$$;
 CREATE FUNCTION public.create_group_invite(p_group_id uuid, p_expires_at timestamp with time zone DEFAULT NULL::timestamp with time zone, p_max_uses integer DEFAULT NULL::integer) RETURNS jsonb
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public'
-    AS $$
-DECLARE
+    AS $$DECLARE
   uid uuid := auth.uid();
   v_permission text;
   v_role text;
@@ -299,8 +292,7 @@ BEGIN
   RETURNING token INTO v_token;
 
   RETURN jsonb_build_object('success', true, 'token', v_token);
-END;
-$$;
+END;$$;
 
 
 --
@@ -310,15 +302,13 @@ $$;
 CREATE FUNCTION public.create_user_profile(username text) RETURNS boolean
     LANGUAGE plpgsql
     SET search_path TO 'public'
-    AS $$
-BEGIN
+    AS $$BEGIN
     INSERT INTO "public"."Users" (id, username)
     VALUES ((SELECT auth.uid()), username);
     RETURN TRUE;
 EXCEPTION WHEN OTHERS THEN
     RETURN FALSE;
-END;
-$$;
+END;$$;
 
 
 --
@@ -409,8 +399,7 @@ END;$$;
 CREATE FUNCTION public.delete_image(image_id uuid) RETURNS jsonb
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public'
-    AS $$
-DECLARE
+    AS $$DECLARE
   current_user_id uuid;
 BEGIN
   current_user_id := auth.uid();
@@ -430,6 +419,7 @@ BEGIN
     );
   END IF;
 
+  DELETE FROM "Reactions" r WHERE r.image_id = delete_image.image_id;
   DELETE FROM "Comments" c WHERE c.image_id = delete_image.image_id;
   DELETE FROM "ImageGroups" ig WHERE ig.image_id = delete_image.image_id;
   DELETE FROM "Images" i WHERE i.id = delete_image.image_id;
@@ -437,59 +427,7 @@ BEGIN
   RETURN jsonb_build_object('success', true);
 EXCEPTION WHEN OTHERS THEN
   RETURN jsonb_build_object('success', false, 'error', SQLERRM);
-END;
-$$;
-
-
---
--- Name: remove_image_from_groups(uuid, uuid[]); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.remove_image_from_groups(p_image_id uuid, p_group_ids uuid[]) RETURNS jsonb
-    LANGUAGE plpgsql SECURITY DEFINER
-    SET search_path TO 'public'
-    AS $$
-DECLARE
-  current_user_id uuid;
-  remaining int;
-  fully_deleted boolean := false;
-BEGIN
-  current_user_id := auth.uid();
-
-  IF current_user_id IS NULL THEN
-    RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
-  END IF;
-
-  IF NOT EXISTS (
-    SELECT 1 FROM "Images" i
-    WHERE i.id = p_image_id
-      AND i.uploaded_by = current_user_id
-  ) THEN
-    RETURN jsonb_build_object(
-      'success', false,
-      'error', 'Image not found or permission denied'
-    );
-  END IF;
-
-  DELETE FROM "Comments"
-   WHERE image_id = p_image_id AND group_id = ANY (p_group_ids);
-  DELETE FROM "ImageGroups"
-   WHERE image_id = p_image_id AND group_id = ANY (p_group_ids);
-
-  SELECT count(*) INTO remaining
-    FROM "ImageGroups" WHERE image_id = p_image_id;
-
-  IF remaining = 0 THEN
-    DELETE FROM "Comments" WHERE image_id = p_image_id;
-    DELETE FROM "Images" WHERE id = p_image_id;
-    fully_deleted := true;
-  END IF;
-
-  RETURN jsonb_build_object('success', true, 'fully_deleted', fully_deleted);
-EXCEPTION WHEN OTHERS THEN
-  RETURN jsonb_build_object('success', false, 'error', SQLERRM);
-END;
-$$;
+END;$$;
 
 
 --
@@ -499,8 +437,7 @@ $$;
 CREATE FUNCTION public.edit_username(new_username text) RETURNS void
     LANGUAGE plpgsql
     SET search_path TO 'public'
-    AS $$
-BEGIN
+    AS $$BEGIN
   -- Check if user is logged in
   IF auth.uid() IS NULL THEN
     RAISE EXCEPTION 'Not authenticated';
@@ -520,8 +457,7 @@ BEGIN
   IF NOT FOUND THEN
     RAISE EXCEPTION 'Profile not found for this user';
   END IF;
-END;
-$$;
+END;$$;
 
 
 --
@@ -589,8 +525,7 @@ END;$$;
 CREATE FUNCTION public.get_comment_count(group_id uuid, image_id uuid) RETURNS jsonb
     LANGUAGE plpgsql
     SET search_path TO 'public'
-    AS $$
-DECLARE
+    AS $$DECLARE
     current_user_id UUID;
     comment_count INTEGER;
 BEGIN
@@ -644,8 +579,7 @@ EXCEPTION
             'success', false,
             'error', SQLERRM
         );
-END;
-$$;
+END;$$;
 
 
 --
@@ -655,8 +589,7 @@ $$;
 CREATE FUNCTION public.get_comment_notification(p_comment_id uuid) RETURNS jsonb
     LANGUAGE plpgsql
     SET search_path TO 'public'
-    AS $$
-DECLARE
+    AS $$DECLARE
   uid UUID;
   r RECORD;
 BEGIN
@@ -703,8 +636,7 @@ BEGIN
 EXCEPTION
   WHEN OTHERS THEN
     RETURN jsonb_build_object('success', false, 'error', SQLERRM);
-END;
-$$;
+END;$$;
 
 
 --
@@ -803,8 +735,7 @@ END;$$;
 CREATE FUNCTION public.get_group_images(p_group_id uuid, p_limit integer DEFAULT NULL::integer, p_before_created_at timestamp with time zone DEFAULT NULL::timestamp with time zone, p_before_id uuid DEFAULT NULL::uuid) RETURNS jsonb
     LANGUAGE plpgsql
     SET search_path TO 'public'
-    AS $$
-DECLARE
+    AS $$DECLARE
   current_user_id uuid;
   images_data jsonb;
   is_member boolean;
@@ -846,8 +777,7 @@ BEGIN
   RETURN jsonb_build_object('success', true, 'images', COALESCE(images_data, '[]'::jsonb));
 EXCEPTION WHEN OTHERS THEN
   RETURN jsonb_build_object('success', false, 'error', SQLERRM);
-END;
-$$;
+END;$$;
 
 
 --
@@ -949,8 +879,7 @@ END;$$;
 CREATE FUNCTION public.get_image_comment_count(p_image_id uuid) RETURNS jsonb
     LANGUAGE plpgsql
     SET search_path TO 'public'
-    AS $$
-DECLARE
+    AS $$DECLARE
   current_user_id uuid;
   comment_count integer;
 BEGIN
@@ -974,8 +903,7 @@ BEGIN
 EXCEPTION
   WHEN OTHERS THEN
     RETURN jsonb_build_object('success', false, 'error', SQLERRM);
-END;
-$$;
+END;$$;
 
 
 --
@@ -985,8 +913,7 @@ $$;
 CREATE FUNCTION public.get_image_comments_grouped(p_image_id uuid, p_primary_group_id uuid DEFAULT NULL::uuid) RETURNS jsonb
     LANGUAGE plpgsql
     SET search_path TO 'public'
-    AS $$
-DECLARE
+    AS $$DECLARE
   current_user_id uuid;
   result jsonb;
 BEGIN
@@ -1041,8 +968,7 @@ BEGIN
 EXCEPTION
   WHEN OTHERS THEN
     RETURN jsonb_build_object('success', false, 'error', SQLERRM);
-END;
-$$;
+END;$$;
 
 
 --
@@ -1075,8 +1001,7 @@ END;$$;
 CREATE FUNCTION public.get_image_groups(p_image_id uuid) RETURNS jsonb
     LANGUAGE plpgsql
     SET search_path TO 'public'
-    AS $$
-DECLARE
+    AS $$DECLARE
   current_user_id uuid;
   result jsonb;
 BEGIN
@@ -1110,8 +1035,7 @@ BEGIN
 EXCEPTION
   WHEN OTHERS THEN
     RETURN jsonb_build_object('success', false, 'error', SQLERRM);
-END;
-$$;
+END;$$;
 
 
 --
@@ -1121,8 +1045,7 @@ $$;
 CREATE FUNCTION public.get_image_notification(p_image_id uuid, p_group_id uuid) RETURNS jsonb
     LANGUAGE plpgsql
     SET search_path TO 'public'
-    AS $$
-DECLARE
+    AS $$DECLARE
   uid UUID;
   r RECORD;
 BEGIN
@@ -1160,59 +1083,85 @@ BEGIN
 EXCEPTION
   WHEN OTHERS THEN
     RETURN jsonb_build_object('success', false, 'error', SQLERRM);
-END;
-$$;
+END;$$;
 
 
 --
--- Name: get_latest_image(); Type: FUNCTION; Schema: public; Owner: -
+-- Name: get_image_reactions(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.get_latest_image() RETURNS jsonb
+CREATE FUNCTION public.get_image_reactions(p_image_id uuid) RETURNS jsonb
     LANGUAGE plpgsql
     SET search_path TO 'public'
     AS $$DECLARE
-  current_user_id UUID;
-  latest_image JSONB;
+  current_user_id uuid;
+  result jsonb;
 BEGIN
-  -- Get the user ID from the current request
   current_user_id := auth.uid();
-
-  -- Check if user is authenticated
   IF current_user_id IS NULL THEN
-    RETURN jsonb_build_object(
-      'success', false,
-      'error', 'User not authenticated'
-    );
+    RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
   END IF;
-
-  -- Get the most recent image the user has access to
-  SELECT jsonb_build_object(
-    'id', i.id,
-    'uploaded_by', i.uploaded_by,
-    'uploaded_at', i.created_at,
-    'group_id', ig.group_id
+  SELECT COALESCE(
+    jsonb_agg(
+      jsonb_build_object('emoji', e.emoji, 'count', e.count, 'reacted_by_me', e.reacted_by_me)
+      ORDER BY e.count DESC, e.emoji ASC
+    ),
+    '[]'::jsonb
   )
-  FROM "Images" i
-  JOIN "ImageGroups" ig ON i.id = ig.image_id
-  JOIN "Members" m ON ig.group_id = m.group_id
-  WHERE m.user_id = current_user_id
-  AND m.role != 'banned'
-  ORDER BY i.created_at DESC
-  LIMIT 1
-  INTO latest_image;
+  INTO result
+  FROM (
+    SELECT r.emoji AS emoji, count(*) AS count,
+           bool_or(r.user_id = current_user_id) AS reacted_by_me
+    FROM "Reactions" r
+    WHERE r.image_id = p_image_id
+    GROUP BY r.emoji
+  ) e;
+  RETURN jsonb_build_object('success', true, 'reactions', result);
+EXCEPTION
+  WHEN OTHERS THEN
+    RETURN jsonb_build_object('success', false, 'error', SQLERRM);
+END;$$;
 
-  -- Return the result
-  RETURN jsonb_build_object(
-    'success', true,
-    'latest_image', COALESCE(latest_image, 'null'::jsonb)
-  );
-EXCEPTION WHEN OTHERS THEN
-  -- Handle any errors
-  RETURN jsonb_build_object(
-    'success', false,
-    'error', SQLERRM
-  );
+
+--
+-- Name: get_image_reactors(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.get_image_reactors(p_image_id uuid) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$DECLARE
+  current_user_id uuid;
+  result jsonb;
+BEGIN
+  current_user_id := auth.uid();
+  IF current_user_id IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM "ImageGroups" ig
+    JOIN "Members" m ON m.group_id = ig.group_id
+    WHERE ig.image_id = p_image_id
+      AND m.user_id = current_user_id
+      AND m.role <> 'banned'
+  ) THEN
+    RETURN jsonb_build_object('success', false, 'error', 'You cannot view this image');
+  END IF;
+  SELECT COALESCE(
+    jsonb_agg(
+      jsonb_build_object('emoji', r.emoji, 'user_id', r.user_id, 'username', COALESCE(u.username, ''))
+      ORDER BY r.emoji ASC, u.username ASC
+    ),
+    '[]'::jsonb
+  )
+  INTO result
+  FROM "Reactions" r
+  LEFT JOIN "Users" u ON u.id = r.user_id
+  WHERE r.image_id = p_image_id;
+  RETURN jsonb_build_object('success', true, 'reactors', result);
+EXCEPTION
+  WHEN OTHERS THEN
+    RETURN jsonb_build_object('success', false, 'error', SQLERRM);
 END;$$;
 
 
@@ -1223,8 +1172,7 @@ END;$$;
 CREATE FUNCTION public.get_latest_images(p_count integer DEFAULT 1, p_group_ids text[] DEFAULT NULL::text[], p_before_created_at timestamp with time zone DEFAULT NULL::timestamp with time zone, p_before_id uuid DEFAULT NULL::uuid) RETURNS jsonb
     LANGUAGE plpgsql
     SET search_path TO 'public'
-    AS $$
-DECLARE
+    AS $$DECLARE
   current_user_id uuid;
   images_data jsonb;
 BEGIN
@@ -1259,8 +1207,7 @@ BEGIN
   RETURN jsonb_build_object('success', true, 'images', COALESCE(images_data, '[]'::jsonb));
 EXCEPTION WHEN OTHERS THEN
   RETURN jsonb_build_object('success', false, 'error', SQLERRM);
-END;
-$$;
+END;$$;
 
 
 --
@@ -1270,8 +1217,7 @@ $$;
 CREATE FUNCTION public.get_notify_group_comments() RETURNS jsonb
     LANGUAGE plpgsql
     SET search_path TO 'public'
-    AS $$
-DECLARE
+    AS $$DECLARE
   current_user_id uuid;
   enabled_value boolean;
 BEGIN
@@ -1302,8 +1248,42 @@ BEGIN
     'success', true,
     'enabled', COALESCE(enabled_value, false)
   );
-END;
-$$;
+END;$$;
+
+
+--
+-- Name: get_reaction_notification(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.get_reaction_notification(p_image_id uuid, p_reactor_id uuid) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$DECLARE
+  uid uuid;
+  v_reactor_username text;
+BEGIN
+  uid := auth.uid();
+  IF uid IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM "ImageGroups" ig
+    JOIN "Members" m ON m.group_id = ig.group_id
+    WHERE ig.image_id = p_image_id AND m.user_id = uid AND m.role <> 'banned'
+  ) THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Not found or not a member');
+  END IF;
+  SELECT username INTO v_reactor_username FROM "Users" WHERE id = p_reactor_id;
+  RETURN jsonb_build_object(
+    'success', true,
+    'image_id', p_image_id,
+    'reactor_id', p_reactor_id,
+    'reactor_username', COALESCE(v_reactor_username, '')
+  );
+EXCEPTION
+  WHEN OTHERS THEN
+    RETURN jsonb_build_object('success', false, 'error', SQLERRM);
+END;$$;
 
 
 --
@@ -1411,8 +1391,7 @@ END;$_$;
 CREATE FUNCTION public.is_admin_or_owner(p_group_id uuid) RETURNS boolean
     LANGUAGE plpgsql
     SET search_path TO 'public'
-    AS $$
-BEGIN
+    AS $$BEGIN
   RETURN EXISTS (
     SELECT 1
     FROM "Members"
@@ -1420,8 +1399,7 @@ BEGIN
     AND user_id = auth.uid()
     AND role IN ('owner','admin')
   );
-END;
-$$;
+END;$$;
 
 
 --
@@ -1431,8 +1409,7 @@ $$;
 CREATE FUNCTION public.join_group_by_invite(p_token text) RETURNS jsonb
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public'
-    AS $$
-DECLARE
+    AS $$DECLARE
   uid uuid := auth.uid();
   v_invite "GroupInvites";
   v_existing_role text;
@@ -1473,8 +1450,7 @@ BEGIN
   UPDATE "GroupInvites" SET uses = uses + 1 WHERE token = v_invite.token;
 
   RETURN jsonb_build_object('success', true, 'group_id', v_invite.group_id);
-END;
-$$;
+END;$$;
 
 
 --
@@ -1551,8 +1527,7 @@ END;$$;
 CREATE FUNCTION public.list_group_invites(p_group_id uuid) RETURNS jsonb
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public'
-    AS $$
-DECLARE
+    AS $$DECLARE
   uid uuid := auth.uid();
   v_role text;
   v_invites jsonb;
@@ -1581,8 +1556,7 @@ BEGIN
   FROM "GroupInvites" WHERE group_id = p_group_id;
 
   RETURN jsonb_build_object('success', true, 'invites', v_invites);
-END;
-$$;
+END;$$;
 
 
 --
@@ -1816,14 +1790,65 @@ END;$$;
 
 
 --
+-- Name: remove_image_from_groups(uuid, uuid[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.remove_image_from_groups(p_image_id uuid, p_group_ids uuid[]) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$DECLARE
+  current_user_id uuid;
+  remaining int;
+  fully_deleted boolean := false;
+BEGIN
+  current_user_id := auth.uid();
+
+  IF current_user_id IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM "Images" i
+    WHERE i.id = p_image_id
+      AND i.uploaded_by = current_user_id
+  ) THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'Image not found or permission denied'
+    );
+  END IF;
+
+  DELETE FROM "Reactions"
+   WHERE image_id = p_image_id AND group_id = ANY (p_group_ids);
+  DELETE FROM "Comments"
+   WHERE image_id = p_image_id AND group_id = ANY (p_group_ids);
+  DELETE FROM "ImageGroups"
+   WHERE image_id = p_image_id AND group_id = ANY (p_group_ids);
+
+  SELECT count(*) INTO remaining
+    FROM "ImageGroups" WHERE image_id = p_image_id;
+
+  IF remaining = 0 THEN
+    DELETE FROM "Reactions" WHERE image_id = p_image_id;
+    DELETE FROM "Comments" WHERE image_id = p_image_id;
+    DELETE FROM "Images" WHERE id = p_image_id;
+    fully_deleted := true;
+  END IF;
+
+  RETURN jsonb_build_object('success', true, 'fully_deleted', fully_deleted);
+EXCEPTION WHEN OTHERS THEN
+  RETURN jsonb_build_object('success', false, 'error', SQLERRM);
+END;$$;
+
+
+--
 -- Name: request_image_uuid(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.request_image_uuid() RETURNS jsonb
     LANGUAGE plpgsql
     SET search_path TO 'public'
-    AS $$
-declare
+    AS $$declare
   current_user_id uuid;
   new_id uuid;
 begin
@@ -1832,15 +1857,14 @@ begin
     return jsonb_build_object('success', false, 'error', 'User not authenticated');
   end if;
 
-  -- Generate UUID (pgcrypto). If you prefer uuid-ossp, use: uuid_generate_v4()
+  -- Generate UUID
   new_id := gen_random_uuid();
 
   return jsonb_build_object('success', true, 'image_id', new_id);
 exception
   when others then
     return jsonb_build_object('success', false, 'error', sqlerrm);
-end;
-$$;
+end;$$;
 
 
 --
@@ -1850,8 +1874,7 @@ $$;
 CREATE FUNCTION public.revoke_group_invite(p_token text) RETURNS jsonb
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public'
-    AS $$
-DECLARE
+    AS $$DECLARE
   uid uuid := auth.uid();
   v_group_id uuid;
   v_created_by uuid;
@@ -1878,8 +1901,7 @@ BEGIN
   UPDATE "GroupInvites" SET revoked = true WHERE token = btrim(p_token);
 
   RETURN jsonb_build_object('success', true);
-END;
-$$;
+END;$$;
 
 
 --
@@ -1889,8 +1911,7 @@ $$;
 CREATE FUNCTION public.set_group_invite_permission(p_group_id uuid, p_permission text) RETURNS jsonb
     LANGUAGE plpgsql
     SET search_path TO 'public'
-    AS $$
-DECLARE
+    AS $$DECLARE
   uid uuid := auth.uid();
   v_role text;
 BEGIN
@@ -1912,8 +1933,7 @@ BEGIN
   UPDATE "Groups" SET invite_permission = p_permission WHERE id = p_group_id;
 
   RETURN jsonb_build_object('success', true, 'invite_permission', p_permission);
-END;
-$$;
+END;$$;
 
 
 --
@@ -1923,8 +1943,7 @@ $$;
 CREATE FUNCTION public.set_notify_group_comments(enabled boolean) RETURNS jsonb
     LANGUAGE plpgsql
     SET search_path TO 'public'
-    AS $$
-DECLARE
+    AS $$DECLARE
     current_user_id UUID;
 BEGIN
     current_user_id := auth.uid();
@@ -1959,8 +1978,49 @@ EXCEPTION
             'success', false,
             'error', SQLERRM
         );
-END;
-$$;
+END;$$;
+
+
+--
+-- Name: toggle_reaction(uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.toggle_reaction(p_image_id uuid, p_emoji text) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$DECLARE
+  current_user_id uuid;
+  deleted_count integer;
+BEGIN
+  current_user_id := auth.uid();
+  IF current_user_id IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
+  END IF;
+  IF p_emoji IS NULL OR char_length(p_emoji) = 0 OR char_length(p_emoji) > 16 THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Invalid emoji');
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM "ImageGroups" ig
+    JOIN "Members" m ON m.group_id = ig.group_id
+    WHERE ig.image_id = p_image_id
+      AND m.user_id = current_user_id
+      AND m.role <> 'banned'
+  ) THEN
+    RETURN jsonb_build_object('success', false, 'error', 'You cannot react to this image');
+  END IF;
+  DELETE FROM "Reactions" r
+  WHERE r.user_id = current_user_id AND r.image_id = p_image_id AND r.emoji = p_emoji;
+  GET DIAGNOSTICS deleted_count = ROW_COUNT;
+  IF deleted_count > 0 THEN
+    RETURN jsonb_build_object('success', true, 'reacted', false);
+  END IF;
+  INSERT INTO "Reactions" (user_id, image_id, emoji)
+  VALUES (current_user_id, p_image_id, p_emoji);
+  RETURN jsonb_build_object('success', true, 'reacted', true);
+EXCEPTION
+  WHEN OTHERS THEN
+    RETURN jsonb_build_object('success', false, 'error', SQLERRM);
+END;$$;
 
 
 --
@@ -2049,8 +2109,7 @@ END;$$;
 CREATE FUNCTION public.update_comment(comment_id uuid, image_id uuid, group_id uuid, text text) RETURNS jsonb
     LANGUAGE plpgsql
     SET search_path TO 'public'
-    AS $$
-DECLARE
+    AS $$DECLARE
   current_user_id UUID;
 BEGIN
   current_user_id := auth.uid();
@@ -2080,8 +2139,7 @@ BEGIN
 EXCEPTION
   WHEN OTHERS THEN
     RETURN jsonb_build_object('success', false, 'error', SQLERRM);
-END;
-$$;
+END;$$;
 
 
 --
@@ -3040,7 +3098,7 @@ CREATE FUNCTION storage.update_updated_at_column() RETURNS trigger
     AS $$
 BEGIN
     NEW.updated_at = now();
-    RETURN NEW;
+    RETURN NEW; 
 END;
 $$;
 
@@ -3147,6 +3205,25 @@ CREATE TABLE public."Members" (
     role text DEFAULT 'member'::text,
     CONSTRAINT "Members_role_check" CHECK ((role = ANY (ARRAY['owner'::text, 'admin'::text, 'member'::text, 'banned'::text])))
 );
+
+
+--
+-- Name: Reactions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."Reactions" (
+    image_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    emoji text NOT NULL,
+    CONSTRAINT "Reactions_emoji_check" CHECK ((char_length(emoji) <= 16))
+);
+
+
+--
+-- Name: TABLE "Reactions"; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public."Reactions" IS 'Emoji reactions left by users on an image';
 
 
 --
@@ -3412,6 +3489,14 @@ ALTER TABLE ONLY public."Members"
 
 
 --
+-- Name: Reactions Reactions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Reactions"
+    ADD CONSTRAINT "Reactions_pkey" PRIMARY KEY (image_id, user_id, emoji);
+
+
+--
 -- Name: Users Users_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3620,6 +3705,13 @@ CREATE TRIGGER "on-comment-insert" AFTER INSERT ON public."Comments" FOR EACH RO
 
 
 --
+-- Name: ImageGroups on-image-delete; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER "on-image-delete" AFTER DELETE ON public."ImageGroups" FOR EACH ROW EXECUTE FUNCTION supabase_functions.http_request('your_supabase_url/functions/v1/image-deleted-notification', 'POST', '{"Content-type":"application/json","Authorization":"Bearer <SERVICE_ROLE_KEY>"}', '{}', '5000');
+
+
+--
 -- Name: ImageGroups on-image-insert; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -3627,10 +3719,10 @@ CREATE TRIGGER "on-image-insert" AFTER INSERT ON public."ImageGroups" FOR EACH R
 
 
 --
--- Name: ImageGroups on-image-delete; Type: TRIGGER; Schema: public; Owner: -
+-- Name: Reactions on-reaction-insert; Type: TRIGGER; Schema: public; Owner: -
 --
 
-CREATE TRIGGER "on-image-delete" AFTER DELETE ON public."ImageGroups" FOR EACH ROW EXECUTE FUNCTION supabase_functions.http_request('your_supabase_url/functions/v1/image-deleted-notification', 'POST', '{"Content-type":"application/json","Authorization":"Bearer <SERVICE_ROLE_KEY>"}', '{}', '5000');
+CREATE TRIGGER "on-reaction-insert" AFTER INSERT ON public."Reactions" FOR EACH ROW EXECUTE FUNCTION supabase_functions.http_request('your_supabase_url/functions/v1/reaction-notification', 'POST', '{"Content-type":"application/json","Authorization":"Bearer <SERVICE_ROLE_KEY>"}', '{}', '5000');
 
 
 --
@@ -3772,6 +3864,22 @@ ALTER TABLE ONLY public."Members"
 
 
 --
+-- Name: Reactions Reactions_image_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Reactions"
+    ADD CONSTRAINT "Reactions_image_id_fkey" FOREIGN KEY (image_id) REFERENCES public."Images"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
+-- Name: Reactions Reactions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Reactions"
+    ADD CONSTRAINT "Reactions_user_id_fkey" FOREIGN KEY (user_id) REFERENCES public."Users"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
 -- Name: Users Users_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3903,6 +4011,17 @@ CREATE POLICY "Group members can see their groups" ON public."Groups" FOR SELECT
 
 
 --
+-- Name: Reactions Group members can select image reactions; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Group members can select image reactions" ON public."Reactions" FOR SELECT USING ((EXISTS ( SELECT 1
+   FROM ((public."ImageGroups" ig
+     JOIN public."Members" mc ON ((mc.group_id = ig.group_id)))
+     JOIN public."Members" mr ON ((mr.group_id = ig.group_id)))
+  WHERE ((ig.image_id = "Reactions".image_id) AND (mc.user_id = ( SELECT auth.uid() AS uid)) AND (mc.role <> 'banned'::text) AND (mr.user_id = "Reactions".user_id) AND (mr.role <> 'banned'::text)))));
+
+
+--
 -- Name: ImageGroups Group members can select images from that group; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -3961,6 +4080,16 @@ CREATE POLICY "Members can insert comments" ON public."Comments" FOR INSERT WITH
 
 
 --
+-- Name: Reactions Members can insert image reactions; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Members can insert image reactions" ON public."Reactions" FOR INSERT WITH CHECK (((user_id = ( SELECT auth.uid() AS uid)) AND (EXISTS ( SELECT 1
+   FROM (public."ImageGroups" ig
+     JOIN public."Members" m ON ((m.group_id = ig.group_id)))
+  WHERE ((ig.image_id = "Reactions".image_id) AND (m.user_id = ( SELECT auth.uid() AS uid)) AND (m.role <> 'banned'::text))))));
+
+
+--
 -- Name: ImageGroups Members can insert images to groups; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -3980,6 +4109,12 @@ CREATE POLICY "Only group members can select comments" ON public."Comments" FOR 
 
 
 --
+-- Name: Reactions; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public."Reactions" ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: Users; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -3993,6 +4128,13 @@ CREATE POLICY "Users can delete their own comments" ON public."Comments" FOR DEL
    FROM (public."ImageGroups" ig
      JOIN public."Members" m ON ((ig.group_id = m.group_id)))
   WHERE ((ig.image_id = "Comments".image_id) AND (m.user_id = ( SELECT auth.uid() AS uid)))))));
+
+
+--
+-- Name: Reactions Users can delete their own image reactions; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "Users can delete their own image reactions" ON public."Reactions" FOR DELETE USING ((user_id = ( SELECT auth.uid() AS uid)));
 
 
 --
@@ -4443,12 +4585,21 @@ GRANT ALL ON FUNCTION public.get_image_notification(p_image_id uuid, p_group_id 
 
 
 --
--- Name: FUNCTION get_latest_image(); Type: ACL; Schema: public; Owner: -
+-- Name: FUNCTION get_image_reactions(p_image_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.get_latest_image() TO anon;
-GRANT ALL ON FUNCTION public.get_latest_image() TO authenticated;
-GRANT ALL ON FUNCTION public.get_latest_image() TO service_role;
+GRANT ALL ON FUNCTION public.get_image_reactions(p_image_id uuid) TO anon;
+GRANT ALL ON FUNCTION public.get_image_reactions(p_image_id uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.get_image_reactions(p_image_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION get_image_reactors(p_image_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.get_image_reactors(p_image_id uuid) TO anon;
+GRANT ALL ON FUNCTION public.get_image_reactors(p_image_id uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.get_image_reactors(p_image_id uuid) TO service_role;
 
 
 --
@@ -4467,6 +4618,15 @@ GRANT ALL ON FUNCTION public.get_latest_images(p_count integer, p_group_ids text
 GRANT ALL ON FUNCTION public.get_notify_group_comments() TO anon;
 GRANT ALL ON FUNCTION public.get_notify_group_comments() TO authenticated;
 GRANT ALL ON FUNCTION public.get_notify_group_comments() TO service_role;
+
+
+--
+-- Name: FUNCTION get_reaction_notification(p_image_id uuid, p_reactor_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.get_reaction_notification(p_image_id uuid, p_reactor_id uuid) TO anon;
+GRANT ALL ON FUNCTION public.get_reaction_notification(p_image_id uuid, p_reactor_id uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.get_reaction_notification(p_image_id uuid, p_reactor_id uuid) TO service_role;
 
 
 --
@@ -4572,6 +4732,15 @@ GRANT ALL ON FUNCTION public.remove_group(group_id uuid) TO service_role;
 
 
 --
+-- Name: FUNCTION remove_image_from_groups(p_image_id uuid, p_group_ids uuid[]); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.remove_image_from_groups(p_image_id uuid, p_group_ids uuid[]) TO anon;
+GRANT ALL ON FUNCTION public.remove_image_from_groups(p_image_id uuid, p_group_ids uuid[]) TO authenticated;
+GRANT ALL ON FUNCTION public.remove_image_from_groups(p_image_id uuid, p_group_ids uuid[]) TO service_role;
+
+
+--
 -- Name: FUNCTION request_image_uuid(); Type: ACL; Schema: public; Owner: -
 --
 
@@ -4607,6 +4776,15 @@ GRANT ALL ON FUNCTION public.set_group_invite_permission(p_group_id uuid, p_perm
 GRANT ALL ON FUNCTION public.set_notify_group_comments(enabled boolean) TO anon;
 GRANT ALL ON FUNCTION public.set_notify_group_comments(enabled boolean) TO authenticated;
 GRANT ALL ON FUNCTION public.set_notify_group_comments(enabled boolean) TO service_role;
+
+
+--
+-- Name: FUNCTION toggle_reaction(p_image_id uuid, p_emoji text); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.toggle_reaction(p_image_id uuid, p_emoji text) TO anon;
+GRANT ALL ON FUNCTION public.toggle_reaction(p_image_id uuid, p_emoji text) TO authenticated;
+GRANT ALL ON FUNCTION public.toggle_reaction(p_image_id uuid, p_emoji text) TO service_role;
 
 
 --
@@ -4688,6 +4866,15 @@ GRANT ALL ON TABLE public."Images" TO service_role;
 GRANT ALL ON TABLE public."Members" TO anon;
 GRANT ALL ON TABLE public."Members" TO authenticated;
 GRANT ALL ON TABLE public."Members" TO service_role;
+
+
+--
+-- Name: TABLE "Reactions"; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public."Reactions" TO anon;
+GRANT ALL ON TABLE public."Reactions" TO authenticated;
+GRANT ALL ON TABLE public."Reactions" TO service_role;
 
 
 --
