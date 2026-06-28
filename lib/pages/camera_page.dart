@@ -76,10 +76,13 @@ class CameraPageState extends State<CameraPage> {
 
   /// Dispose camera resources
   Future<void> _disposeCamera() async {
-    await _controller?.dispose();
+    // Detach the controller and rebuild first, so the live CameraPreview leaves
+    // the tree before we dispose it.
+    final controller = _controller;
     _controller = null;
     _initializeControllerFuture = null;
     if (mounted) setState(() {});
+    await controller?.dispose();
   }
 
   /// Navigate to another page, disposing camera and reinitializing on return
@@ -171,7 +174,12 @@ class CameraPageState extends State<CameraPage> {
     debugPrint("Creating controller for camera[$cameraIndex]: "
         "${cams[cameraIndex].name} (${cams[cameraIndex].lensDirection})");
 
-    _controller?.dispose();
+    // Tear the old preview out of the tree before disposing its controller
+    final previous = _controller;
+    _controller = null;
+    if (mounted) setState(() {});
+    await previous?.dispose();
+
     _controller = CameraController(
       cams[cameraIndex],
       ResolutionPreset.ultraHigh,
