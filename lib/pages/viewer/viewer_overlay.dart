@@ -559,9 +559,11 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
   }
 
   Future<void> _saveImage() async {
+    final savedMessage = context.l10n.image_saved;
+    final errorMessage = context.l10n.error_saving_image;
     final bytes = await widget.loadBestBytesForSave();
     if (!mounted || bytes == null) {
-      showSnackBar("Failed to save image", color: Colors.red);
+      showSnackBar(errorMessage, color: Colors.red);
       return;
     }
     final success = await downloadImage(
@@ -570,7 +572,7 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
       widget.imageData.createdAt,
     );
     showSnackBar(
-      success ? "Image saved!" : "Failed to save image",
+      success ? savedMessage : errorMessage,
       color: success ? Colors.green : Colors.red,
     );
   }

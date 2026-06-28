@@ -302,6 +302,7 @@ class CameraPageState extends State<CameraPage> {
   // ===== Capture & gallery =====================================================
 
   Future<void> _takePicture() async {
+    final errorMessage = context.l10n.error_capturing_image;
     try {
       if (_captureInProgress) return;
       if (mounted) setState(() => _captureInProgress = true);
@@ -312,12 +313,13 @@ class CameraPageState extends State<CameraPage> {
       if (mounted) setState(() => _captureInProgress = false);
     } catch (e) {
       debugPrint("Error capturing image: $e");
-      showSnackBar("Error capturing image: $e");
+      showSnackBar(errorMessage, color: Colors.red);
       if (mounted) setState(() => _captureInProgress = false);
     }
   }
 
   Future<void> _sendPictureFromStorage() async {
+    final errorMessage = context.l10n.error_picking_image;
     try {
       final ImagePicker imagePicker = ImagePicker();
       final XFile? pickedImage =
@@ -330,7 +332,7 @@ class CameraPageState extends State<CameraPage> {
       await _showSendImageDialog(imageFile);
     } catch (e) {
       debugPrint("Error picking image: $e");
-      showSnackBar("Error picking image: $e");
+      showSnackBar(errorMessage, color: Colors.red);
     }
   }
 
@@ -695,8 +697,9 @@ class CameraPageState extends State<CameraPage> {
               ],
             );
           } else if (snapshot.hasError) {
+            debugPrint("Camera initialization failed: ${snapshot.error}");
             return Center(
-              child: Text("Error initializing camera: ${snapshot.error}",
+              child: Text(context.l10n.camera_init_failed,
                   style: const TextStyle(color: Colors.white)),
             );
           } else {

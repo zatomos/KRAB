@@ -152,6 +152,7 @@ class AccountPageState extends State<AccountPage> {
     if (!result.success) {
       showSnackBar(
         context.l10n.update_check_failed,
+        color: Colors.orangeAccent,
       );
       return;
     }
@@ -227,7 +228,7 @@ class AccountPageState extends State<AccountPage> {
       if (!mounted) return;
       if (!res.success) {
         showSnackBar(
-            "${context.l10n.error_updating_pfp}: ${context.errorOr(res.error)}",
+            context.l10n.error_updating_pfp(context.errorOr(res.error)),
             color: Colors.red);
         return;
       }
@@ -243,7 +244,7 @@ class AccountPageState extends State<AccountPage> {
       if (!mounted) return;
       if (!res.success) {
         showSnackBar(
-            "${context.l10n.error_deleting_pfp}: ${context.errorOr(res.error)}",
+            context.l10n.error_deleting_pfp(context.errorOr(res.error)),
             color: Colors.red);
         return;
       }

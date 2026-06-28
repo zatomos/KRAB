@@ -65,10 +65,9 @@ class _SendImageDialogState extends State<SendImageDialog> {
         if (snapshot.hasError ||
             !snapshot.hasData ||
             !(snapshot.data?.success ?? false)) {
-          final errorMsg = snapshot.hasError
-              ? snapshot.error.toString()
-              : (snapshot.data?.error ?? context.l10n.failed_to_load_groups);
-          return Center(child: Text("Error: $errorMsg"));
+          debugPrint(
+              "Failed to load groups: ${snapshot.error ?? snapshot.data?.error}");
+          return Center(child: Text(context.l10n.failed_to_load_groups));
         }
         final groups = snapshot.data!.data ?? [];
         if (groups.isEmpty) {

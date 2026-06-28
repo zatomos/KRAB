@@ -101,17 +101,14 @@ class GroupsPageState extends State<GroupsPage> {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
-                if (snapshot.hasError) {
-                  return Center(
-                      child: Text(context.l10n
-                          .error_loading_groups(snapshot.error.toString())));
-                }
-                if (!snapshot.hasData) {
-                  return const Center(child: Text("No groups data available."));
+                if (snapshot.hasError || !snapshot.hasData) {
+                  debugPrint("Failed to load groups: ${snapshot.error}");
+                  return Center(child: Text(context.l10n.failed_to_load_groups));
                 }
                 final response = snapshot.data!;
                 if (!response.success) {
-                  return Center(child: Text("Error: ${response.error}"));
+                  debugPrint("Failed to load groups: ${response.error}");
+                  return Center(child: Text(context.l10n.failed_to_load_groups));
                 }
                 final groups = response.data ?? [];
                 if (groups.isEmpty) {

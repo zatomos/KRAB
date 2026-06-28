@@ -59,8 +59,9 @@ class _GroupCardState extends State<GroupCard> {
   Future<int> _fetchGroupMemberCount(String groupId) async {
     final response = await getGroupMemberCount(groupId);
     if (response.error != null) {
+      debugPrint("Failed to load member count: ${response.error}");
       if (!mounted) return 0;
-      showSnackBar("${response.error}");
+      showSnackBar(context.l10n.error_loading_member_count, color: Colors.red);
       return 0;
     }
     return response.data!;
