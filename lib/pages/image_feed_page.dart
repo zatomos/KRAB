@@ -128,6 +128,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
           userCache: _userCache,
           onCommentCountChanged: _onCommentCountChanged,
           onImageDeleted: _onImageDeleted,
+          onImageChanged: _revealTile,
           loadMore: _loadMore,
           hasMore: () => _hasMore,
         )),
@@ -192,6 +193,35 @@ class ImageFeedPageState extends State<ImageFeedPage> {
     final position = _scrollController.position;
     if (position.pixels >= position.maxScrollExtent - 600) {
       _loadMore();
+    }
+  }
+
+  /// Scrolls the grid so the tile at index is on-screen, but only when it
+  /// isn't already. Called as the viewer swipes between images so closing it
+  /// always heroes back to a visible thumbnail.
+  void _revealTile(int index) {
+    if (!_scrollController.hasClients) return;
+    const crossAxisCount = 2;
+    const spacing = 4.0;
+    final width = MediaQuery.sizeOf(context).width;
+    final tile = (width - spacing * (crossAxisCount - 1)) / crossAxisCount;
+    final rowExtent = tile + spacing;
+    final rowTop = (index ~/ crossAxisCount) * rowExtent;
+    final rowBottom = rowTop + tile;
+
+    final position = _scrollController.position;
+    final viewTop = position.pixels;
+    final viewBottom = viewTop + position.viewportDimension;
+    double? target;
+    if (rowTop < viewTop) {
+      target = rowTop;
+    } else if (rowBottom > viewBottom) {
+      target = rowBottom - position.viewportDimension;
+    }
+    if (target != null) {
+      _scrollController.jumpTo(
+        target.clamp(position.minScrollExtent, position.maxScrollExtent),
+      );
     }
   }
 
@@ -518,6 +548,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
                 userCache: _userCache,
                 onCommentCountChanged: _onCommentCountChanged,
                 onImageDeleted: _onImageDeleted,
+                onImageChanged: _revealTile,
                 loadMore: _loadMore,
                 hasMore: () => _hasMore,
               )),

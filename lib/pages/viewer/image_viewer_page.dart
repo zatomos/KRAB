@@ -87,6 +87,10 @@ class ImageViewerPage extends StatefulWidget {
   final void Function(String imageId, int delta)? onCommentCountChanged;
   final void Function(String imageId)? onImageDeleted;
 
+  /// Reports the index the viewer settles on as the user swipes, so the gallery
+  /// underneath can keep that image's thumbnail on-screen for the hero return.
+  final void Function(int index)? onImageChanged;
+
   /// Loads the next page of images when the user swipes near the end, and
   /// reports whether more remain. images grows in place as pages load.
   /// Null disables pagination.
@@ -107,6 +111,7 @@ class ImageViewerPage extends StatefulWidget {
     required this.userCache,
     this.onCommentCountChanged,
     this.onImageDeleted,
+    this.onImageChanged,
     this.loadMore,
     this.hasMore,
   });
@@ -207,6 +212,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
       // A freshly settled page always starts fitted to the screen
       _isZoomed = false;
     });
+    widget.onImageChanged?.call(index);
     _maybeLoadMore();
     _prefetchNeighbors(index);
     _evictDistantPages();
@@ -636,12 +642,10 @@ class _ViewerPhotoState extends State<_ViewerPhoto>
         Center(
           child: SizedBox.fromSize(size: widget.displaySize, child: base),
         ),
-        TweenAnimationBuilder<double>(
+        AnimatedOpacity(
+          opacity: _full != null ? 1.0 : 0.0,
           duration: const Duration(milliseconds: 250),
           curve: Curves.easeOut,
-          tween: Tween<double>(begin: 0, end: 1),
-          builder: (context, value, child) =>
-              Opacity(opacity: value, child: child),
           child: ExtendedImage.memory(
             _full ?? low,
             fit: BoxFit.contain,
