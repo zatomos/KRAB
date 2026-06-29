@@ -22,11 +22,14 @@ Future<SupabaseResponse<String>> sendImageToGroups(
 
     final String imageId = uuidResponse['image_id'] as String;
 
+    // Strip EXIF metadata
+    final imageBytes = await stripImageMetadata(await imageFile.readAsBytes());
+
     // Upload image to storage
     try {
-      await _withRetry(() => supabase.storage.from("images").upload(
+      await _withRetry(() => supabase.storage.from("images").uploadBinary(
             imageId,
-            imageFile,
+            imageBytes,
             fileOptions: const FileOptions(contentType: 'image/jpeg'),
           ));
     } catch (uploadError) {
