@@ -16,7 +16,7 @@ Future<SupabaseResponse<String>> sendImageToGroups(
     if (uuidResponse['success'] == false) {
       return SupabaseResponse(
         success: false,
-        error: "Error requesting UUID: ${uuidResponse['error']}",
+        error: uuidResponse['error']?.toString(),
       );
     }
 
@@ -50,7 +50,7 @@ Future<SupabaseResponse<String>> sendImageToGroups(
     if (regResponse['success'] == false) {
       return SupabaseResponse(
         success: false,
-        error: "Error registering image in database: ${regResponse['error']}",
+        error: regResponse['error']?.toString(),
       );
     }
 

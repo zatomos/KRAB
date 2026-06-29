@@ -4,82 +4,40 @@ part of 'supabase.dart';
 
 /// Get all groups for the current user.
 Future<SupabaseResponse<List<Group>>> getUserGroups() async {
-  try {
-    final supabase = Supabase.instance.client;
-    final cache = ProfilePictureCache.of(supabase);
+  final res = await _rpc<List<Group>>("get_user_groups",
+      errorContext: "loading groups",
+      parse: (r) => (r['groups'] as List).map((g) => Group.fromJson(g)).toList());
+  if (!res.success || res.data == null) return res;
 
-    // Call RPC to get groups
-    final response = await supabase.rpc("get_user_groups");
-
-    if (response['success'] == true) {
-      final groups = response['groups'] as List;
-
-      // Resolve icon URLs in parallel from the (cached) signed-URL store.
-      final groupsList = await Future.wait(groups.map((groupJson) async {
-        final group = Group.fromJson(groupJson);
-        final iconUrl = await cache.getUrl(
-          group.id,
-          bucket: 'group-icons',
-          ttl: const Duration(hours: 1),
-        );
-        return group.copyWith(iconUrl: iconUrl ?? '');
-      }));
-
-      return SupabaseResponse(success: true, data: groupsList);
-    } else {
-      return SupabaseResponse(
-        success: false,
-        error: "Error loading groups: ${response['error'] ?? 'Unknown error'}",
-      );
-    }
-  } catch (error) {
-    return SupabaseResponse(
-      success: false,
-      error: "Error loading groups: $error",
+  // Resolve icon URLs in parallel from the (cached) signed-URL store.
+  final cache = ProfilePictureCache.of(supabase);
+  final groupsList = await Future.wait(res.data!.map((group) async {
+    final iconUrl = await cache.getUrl(
+      group.id,
+      bucket: 'group-icons',
+      ttl: const Duration(hours: 1),
     );
-  }
+    return group.copyWith(iconUrl: iconUrl ?? '');
+  }));
+  return SupabaseResponse(success: true, data: groupsList);
 }
 
 /// Get group details for a given group ID.
 Future<SupabaseResponse<Group>> getGroupDetails(String groupId) async {
-  try {
-    final supabase = Supabase.instance.client;
+  final res = await _rpc<Group>("get_group_details",
+      params: {"group_id": groupId},
+      errorContext: "loading group details",
+      parse: (r) => Group.fromJson(r['group']));
+  if (!res.success || res.data == null) return res;
 
-    // Fetch group data from RPC
-    final response =
-        await supabase.rpc("get_group_details", params: {"group_id": groupId});
-
-    if (response == null ||
-        response is! Map ||
-        response['success'] == false ||
-        response['group'] == null) {
-      return SupabaseResponse(
-        success: false,
-        error:
-            "Error loading group details: ${response?['error'] ?? 'Unknown'}",
-      );
-    }
-
-    // Parse the group
-    final group = Group.fromJson(response['group']);
-
-    // Fetch cached icon URL
-    final cache = ProfilePictureCache.of(supabase);
-    final iconUrl = await cache.getUrl(
-      group.id,
-      ttl: const Duration(hours: 1),
-      bucket: 'group-icons',
-    );
-
-    final groupWithIcon = group.copyWith(iconUrl: iconUrl ?? '');
-
-    return SupabaseResponse(success: true, data: groupWithIcon);
-  } catch (error) {
-    return SupabaseResponse(
-      success: false,
-      error: "Error loading group details: $error",
-    );
-  }
+  // Fetch cached icon URL
+  final iconUrl = await ProfilePictureCache.of(supabase).getUrl(
+    groupId,
+    ttl: const Duration(hours: 1),
+    bucket: 'group-icons',
+  );
+  return SupabaseResponse(
+      success: true, data: res.data!.copyWith(iconUrl: iconUrl ?? ''));
 }
 
 /// Get count of members for a given group.
@@ -92,38 +50,29 @@ Future<SupabaseResponse<int>> getGroupMemberCount(String groupId) =>
 /// Get members for a given group.
 Future<SupabaseResponse<List<GroupMember>>> getGroupMembers(
     String groupId) async {
-  try {
-    final response =
-        await supabase.rpc("get_group_members", params: {"group_id": groupId});
-    if (response['success'] == false) {
-      return SupabaseResponse(
-        success: false,
-        error: "Error loading group members: ${response['error']}",
-      );
-    }
-
-    final cache = ProfilePictureCache.of(supabase);
-    final members = (response['members'] as List).cast<Map<String, dynamic>>();
-    final membersList = await Future.wait(members.map((member) async {
-      final userId = member['user_id'] as String;
-      final pfpUrl = await cache.getUrl(userId, ttl: const Duration(hours: 1));
-      return GroupMember(
-        user: krab_user.User(
-          id: userId,
-          username: member['username'] as String? ?? '',
-          pfpUrl: pfpUrl ?? '',
-        ),
-        role: member['role'] as String,
-      );
-    }));
-
-    return SupabaseResponse(success: true, data: membersList);
-  } catch (error) {
-    return SupabaseResponse(
-      success: false,
-      error: "Error loading group members: $error",
-    );
+  final res = await _rpc<List<Map<String, dynamic>>>("get_group_members",
+      params: {"group_id": groupId},
+      errorContext: "loading group members",
+      parse: (r) => (r['members'] as List).cast<Map<String, dynamic>>());
+  if (!res.success || res.data == null) {
+    return SupabaseResponse(success: false, error: res.error);
   }
+
+  // Resolve each member's profile picture URL from the (cached) store.
+  final cache = ProfilePictureCache.of(supabase);
+  final membersList = await Future.wait(res.data!.map((member) async {
+    final userId = member['user_id'] as String;
+    final pfpUrl = await cache.getUrl(userId, ttl: const Duration(hours: 1));
+    return GroupMember(
+      user: krab_user.User(
+        id: userId,
+        username: member['username'] as String? ?? '',
+        pfpUrl: pfpUrl ?? '',
+      ),
+      role: member['role'] as String,
+    );
+  }));
+  return SupabaseResponse(success: true, data: membersList);
 }
 
 Future<SupabaseResponse<String>> changeMemberRole(
