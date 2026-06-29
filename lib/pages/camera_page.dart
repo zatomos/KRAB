@@ -459,6 +459,8 @@ class CameraPageState extends State<CameraPage> {
 
     final isLandscape =
         MediaQuery.of(context).orientation == Orientation.landscape;
+    final isLandscapeLeft =
+        nativeOrientation == NativeDeviceOrientation.landscapeLeft;
     final keyboardVisible = MediaQuery.of(context).viewInsets.bottom > 0;
     if (!_dialogOpen || (isLandscape && !keyboardVisible)) {
       final targetMode =
@@ -612,18 +614,8 @@ class CameraPageState extends State<CameraPage> {
                         : 10,
                     top: 0,
                     bottom: 0,
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        _navButton(child: _accountButton()),
-                        const SizedBox(height: 8),
-                        _navButton(
-                            child: IconButton(
-                          icon: const Icon(Symbols.upload_rounded,
-                              color: Colors.white, size: 30),
-                          onPressed: _sendPictureFromStorage,
-                        )),
-                        const SizedBox(height: 8),
+                    child: Builder(builder: (_) {
+                      final items = <Widget>[
                         _navButton(
                             child: IconButton(
                           icon: const Icon(Symbols.group_rounded,
@@ -631,8 +623,20 @@ class CameraPageState extends State<CameraPage> {
                           onPressed: () =>
                               _navigateWithCameraDispose(const GroupsPage()),
                         )),
-                      ],
-                    ),
+                        _navButton(
+                            child: IconButton(
+                          icon: const Icon(Symbols.upload_rounded,
+                              color: Colors.white, size: 30),
+                          onPressed: _sendPictureFromStorage,
+                        )),
+                        _navButton(child: _accountButton()),
+                      ];
+                      return Column(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children:
+                            isLandscapeLeft ? items.reversed.toList() : items,
+                      );
+                    }),
                   )
                 else ...[
                   Positioned(
@@ -679,14 +683,18 @@ class CameraPageState extends State<CameraPage> {
                         : null,
                     top: 0,
                     bottom: 0,
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        _flipButton(),
+                    child: Builder(builder: (_) {
+                      final items = <Widget>[
+                        _flashButton(),
                         _shutterButton(),
-                        _flashButton()
-                      ],
-                    ),
+                        _flipButton(),
+                      ];
+                      return Column(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children:
+                            isLandscapeLeft ? items.reversed.toList() : items,
+                      );
+                    }),
                   )
                 else
                   Positioned(
