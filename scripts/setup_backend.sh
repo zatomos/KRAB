@@ -13,8 +13,8 @@ set -uo pipefail
 SUPABASE_DIR="$HOME/supabase-project"
 DB_CONTAINER="supabase-db"
 REPO_RAW="https://raw.githubusercontent.com/zatomos/KRAB/main"
-BUCKETS=(images group-icons profile-pictures)
-FN_SLUGS="new_image_notify:image-notification new_comment_notify:comment-notification new_reaction_notify:reaction-notification"
+BUCKETS=(images group-icons profile-pictures image-thumbnails)
+FN_SLUGS="new_image_notify:image-notification new_comment_notify:comment-notification new_reaction_notify:reaction-notification image_deleted_notify:image-deleted-notification generate-thumbnail:thumbnail-generation"
 
 log() { printf '\n==> %s\n' "$*"; }
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
@@ -36,6 +36,11 @@ API_URL="$(ask 'API URL clients use' "http://${ip:-localhost}:8000")"
 DASH_USER="$(ask 'Studio dashboard username' "$(grep -E '^DASHBOARD_USERNAME=' "$ENV_FILE" | cut -d= -f2-)")"
 read -rs -p "Studio dashboard password (empty = keep auto-generated): " DASH_PASS < /dev/tty; echo
 log "Using API_URL=$API_URL"
+
+# The notification triggers authenticate to the edge functions with the service
+# role key.
+SERVICE_ROLE_KEY="$(grep -E '^SERVICE_ROLE_KEY=' "$ENV_FILE" | cut -d= -f2- | tr -d '\r"')"
+[[ -n "$SERVICE_ROLE_KEY" ]] || die "SERVICE_ROLE_KEY not found in $ENV_FILE"
 
 SCHEMA_TMP="$(mktemp)"; trap 'rm -f "$SCHEMA_TMP"' EXIT
 curl -fsSL "$REPO_RAW/supabase/schema.sql" -o "$SCHEMA_TMP" || die "Failed to download schema.sql"
@@ -106,15 +111,18 @@ done
 
 # --- 4. Load schema -------------------------------------------------------
 # The dump includes the storage schema, which already exists on a fresh
-# Supabase, so "already exists" notices are expected. Trigger URL is rewritten.
+# Supabase, so "already exists" notices are expected. The trigger URL and the
+# service-role bearer are both substituted in
 log "Loading schema (storage 'already exists' notices are expected)"
-sed "s#your_supabase_url#${API_URL}#g" "$SCHEMA_TMP" | psql_run >/dev/null 2>&1 || true
+sed -e "s#your_supabase_url#${API_URL}#g" \
+    -e "s#<SERVICE_ROLE_KEY>#${SERVICE_ROLE_KEY}#g" \
+    "$SCHEMA_TMP" | psql_run >/dev/null 2>&1 || true
 [[ "$(psql_run -tAc "select to_regclass('public.\"Groups\"') is not null")" == "t" ]] \
   || die "Schema load failed: public.Groups not found"
 log "Schema loaded (public.Groups present)"
 
-trg="$(psql_run -tAc "select count(*) from information_schema.triggers where trigger_name in ('on-image-insert','on-comment-insert');" | tr -d '[:space:]')"
-[[ "$trg" == "2" ]] || echo "  WARN: notification triggers missing ($trg/2), check supabase_functions/pg_net"
+trg="$(psql_run -tAc "select count(distinct trigger_name) from information_schema.triggers where trigger_name in ('on-image-insert','on-comment-insert','on-reaction-insert','on-image-delete','on-image-insert-thumbnail');" | tr -d '[:space:]')"
+[[ "$trg" == "5" ]] || echo "  WARN: notification/thumbnail triggers missing ($trg/5), check supabase_functions/pg_net"
 
 # --- 5. Storage buckets ---------------------------------------------------
 log "Creating storage buckets"

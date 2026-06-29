@@ -49,6 +49,7 @@ Photos shared to a group appear directly on every member's home screen.</h4>
 - 🌐 Social:
   - Create or join groups with friends using an invite system.
   - Comment on photos and reply to comments.
+  - React to photos with emojis.
 
 - 🛡️ Privacy:
   - Fully self-hostable backend.
@@ -99,7 +100,8 @@ Docker Compose plugin.
 
 Run the backend setup script `setup_backend.sh` on the server. It installs self-hosted Supabase
 (if missing), configures it for KRAB, loads the database schema, creates the storage buckets,
-and deploys the notification edge functions:
+and deploys the edge functions. It also wires the database triggers that call those functions, injecting
+your instance's service-role key as their authorization so the calls aren't rejected:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/zatomos/KRAB/main/scripts/setup_backend.sh | bash
