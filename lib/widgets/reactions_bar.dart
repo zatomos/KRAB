@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
@@ -180,20 +182,26 @@ class _Chip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: color,
-      shape: StadiumBorder(side: BorderSide(color: borderColor, width: 1)),
-      child: InkWell(
-        customBorder: const StadiumBorder(),
-        onTap: onTap,
-        onLongPress: onLongPress,
-        child: SizedBox(
-          height: _kChipHeight,
-          child: Center(
-            widthFactor: 1,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: child,
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(_kChipHeight / 2),
+      child: BackdropFilter.grouped(
+        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        child: Material(
+          color: color,
+          shape: StadiumBorder(side: BorderSide(color: borderColor, width: 1)),
+          child: InkWell(
+            customBorder: const StadiumBorder(),
+            onTap: onTap,
+            onLongPress: onLongPress,
+            child: SizedBox(
+              height: _kChipHeight,
+              child: Center(
+                widthFactor: 1,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: child,
+                ),
+              ),
             ),
           ),
         ),
