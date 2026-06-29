@@ -132,6 +132,54 @@ END;$$;
 
 
 --
+-- Name: add_image_to_groups(uuid, uuid[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.add_image_to_groups(p_image_id uuid, p_group_ids uuid[]) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$DECLARE
+  current_user_id uuid;
+  added_count int := 0;
+BEGIN
+  current_user_id := auth.uid();
+
+  IF current_user_id IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
+  END IF;
+
+  -- Only the uploader can re-share their own image.
+  IF NOT EXISTS (
+    SELECT 1 FROM "Images" i
+    WHERE i.id = p_image_id AND i.uploaded_by = current_user_id
+  ) THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Image not found or permission denied');
+  END IF;
+
+  -- Insert links only for groups the user is an active (non-banned) member of;
+  -- skip groups the image is already in.
+  WITH inserted AS (
+    INSERT INTO "ImageGroups" (image_id, group_id)
+    SELECT p_image_id, g
+    FROM unnest(p_group_ids) AS g
+    WHERE EXISTS (
+      SELECT 1 FROM "Members" m
+      WHERE m.user_id = current_user_id
+        AND m.group_id = g
+        AND m.role <> 'banned'
+    )
+    ON CONFLICT (image_id, group_id) DO NOTHING
+    RETURNING 1
+  )
+  SELECT count(*) INTO added_count FROM inserted;
+
+  RETURN jsonb_build_object('success', true, 'added', added_count);
+EXCEPTION WHEN OTHERS THEN
+  RETURN jsonb_build_object('success', false, 'error', SQLERRM);
+END;$$;
+
+
+--
 -- Name: ban_user(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -749,6 +797,7 @@ BEGIN
     SELECT 1 FROM "Members"
     WHERE user_id = current_user_id
       AND group_id = p_group_id
+      AND role <> 'banned'
   ) INTO is_member;
 
   IF NOT is_member THEN
@@ -759,18 +808,18 @@ BEGIN
     jsonb_build_object(
       'id', sub.id,
       'uploaded_by', sub.uploaded_by,
-      'uploaded_at', sub.created_at
-    ) ORDER BY sub.created_at DESC, sub.id DESC
+      'uploaded_at', sub.uploaded_at
+    ) ORDER BY sub.uploaded_at DESC, sub.id DESC
   )
   INTO images_data
   FROM (
-    SELECT i.id, i.uploaded_by, i.created_at
+    SELECT i.id, i.uploaded_by, COALESCE(ig.uploaded_at, i.created_at) AS uploaded_at
     FROM "Images" i
     JOIN "ImageGroups" ig ON i.id = ig.image_id
     WHERE ig.group_id = p_group_id
       AND (p_before_created_at IS NULL
-           OR (i.created_at, i.id) < (p_before_created_at, p_before_id))
-    ORDER BY i.created_at DESC, i.id DESC
+           OR (COALESCE(ig.uploaded_at, i.created_at), i.id) < (p_before_created_at, p_before_id))
+    ORDER BY COALESCE(ig.uploaded_at, i.created_at) DESC, i.id DESC
     LIMIT p_limit
   ) sub;
 
@@ -1185,22 +1234,23 @@ BEGIN
     jsonb_build_object(
       'id', sub.id,
       'uploaded_by', sub.uploaded_by,
-      'uploaded_at', sub.created_at
-    ) ORDER BY sub.created_at DESC, sub.id DESC
+      'uploaded_at', sub.uploaded_at
+    ) ORDER BY sub.uploaded_at DESC, sub.id DESC
   )
   INTO images_data
   FROM (
-    SELECT i.id, i.uploaded_by, i.created_at
+    SELECT i.id, i.uploaded_by,
+           MIN(COALESCE(ig.uploaded_at, i.created_at)) AS uploaded_at
     FROM "Images" i
     JOIN "ImageGroups" ig ON i.id = ig.image_id
     JOIN "Members" m ON ig.group_id = m.group_id
     WHERE m.user_id = current_user_id
       AND m.role != 'banned'
       AND (p_group_ids IS NULL OR ig.group_id = ANY(p_group_ids::uuid[]))
-      AND (p_before_created_at IS NULL
-           OR (i.created_at, i.id) < (p_before_created_at, p_before_id))
-    GROUP BY i.id, i.uploaded_by, i.created_at
-    ORDER BY i.created_at DESC, i.id DESC
+    GROUP BY i.id, i.uploaded_by
+    HAVING (p_before_created_at IS NULL
+            OR (MIN(COALESCE(ig.uploaded_at, i.created_at)), i.id) < (p_before_created_at, p_before_id))
+    ORDER BY MIN(COALESCE(ig.uploaded_at, i.created_at)) DESC, i.id DESC
     LIMIT p_count
   ) sub;
 
@@ -1710,6 +1760,7 @@ begin
       from "Members" m
       where m.user_id = current_user_id
         and m.group_id = (g)::uuid
+        and m.role <> 'banned'
     )
     on conflict do nothing
     returning 1
@@ -1818,8 +1869,6 @@ BEGIN
     );
   END IF;
 
-  DELETE FROM "Reactions"
-   WHERE image_id = p_image_id AND group_id = ANY (p_group_ids);
   DELETE FROM "Comments"
    WHERE image_id = p_image_id AND group_id = ANY (p_group_ids);
   DELETE FROM "ImageGroups"
@@ -3457,6 +3506,14 @@ ALTER TABLE ONLY public."Groups"
 
 
 --
+-- Name: ImageGroups ImageGroups_image_group_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."ImageGroups"
+    ADD CONSTRAINT "ImageGroups_image_group_key" UNIQUE (image_id, group_id);
+
+
+--
 -- Name: ImageGroups ImageGroups_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3604,13 +3661,6 @@ CREATE INDEX "GroupInvites_group_id_idx" ON public."GroupInvites" USING btree (g
 --
 
 CREATE INDEX idx_comments_image_group ON public."Comments" USING btree (image_id, group_id);
-
-
---
--- Name: idx_imagegroups_image_group; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_imagegroups_image_group ON public."ImageGroups" USING btree (image_id, group_id);
 
 
 --
@@ -4392,6 +4442,15 @@ RESET SESSION AUTHORIZATION;
 GRANT ALL ON FUNCTION public.add_comment(image_id uuid, group_id uuid, text text, parent_id uuid) TO anon;
 GRANT ALL ON FUNCTION public.add_comment(image_id uuid, group_id uuid, text text, parent_id uuid) TO authenticated;
 GRANT ALL ON FUNCTION public.add_comment(image_id uuid, group_id uuid, text text, parent_id uuid) TO service_role;
+
+
+--
+-- Name: FUNCTION add_image_to_groups(p_image_id uuid, p_group_ids uuid[]); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.add_image_to_groups(p_image_id uuid, p_group_ids uuid[]) TO anon;
+GRANT ALL ON FUNCTION public.add_image_to_groups(p_image_id uuid, p_group_ids uuid[]) TO authenticated;
+GRANT ALL ON FUNCTION public.add_image_to_groups(p_image_id uuid, p_group_ids uuid[]) TO service_role;
 
 
 --

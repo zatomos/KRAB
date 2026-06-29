@@ -85,6 +85,16 @@ Future<SupabaseResponse<bool>> removeImageFromGroups(
   return result;
 }
 
+/// Add an already-uploaded image the current user owns to more groups. Groups
+/// the image is already in are skipped.
+/// Returns how many group links were actually added.
+Future<SupabaseResponse<int>> addImageToGroups(
+        String imageId, List<String> groupIds) =>
+    _rpc<int>("add_image_to_groups",
+        params: {"p_image_id": imageId, "p_group_ids": groupIds},
+        errorContext: "adding image to groups",
+        parse: (r) => r is Map && r["added"] is int ? r["added"] as int : 0);
+
 /// Storage bucket holding one pre-generated thumbnail per image, keyed by the
 /// bare image id. The client reads them, and falls back to the full image
 /// when a thumbnail hasn't been generated.

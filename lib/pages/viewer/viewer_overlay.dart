@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'dart:ui';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:krab/l10n/l10n.dart';
@@ -13,6 +14,7 @@ import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/services/file_saver.dart';
 import 'package:krab/services/api/supabase.dart';
 import 'package:krab/widgets/comments_bottom_sheet.dart';
+import 'package:krab/widgets/dialogs/add_to_groups_dialog.dart';
 import 'package:krab/widgets/dialogs/delete_image_dialog.dart';
 import 'package:krab/widgets/dialogs/dialogs.dart';
 import 'package:krab/widgets/soft_button.dart';
@@ -51,6 +53,9 @@ void invalidatePostedInGroups(String imageId) {
   _postedInGroupsCache.remove(imageId);
 }
 
+/// Actions offered by the viewer's overflow menu.
+enum _ViewerAction { save, addToGroups, delete }
+
 /// The non-zoomable chrome layered over the current photo in the gallery.
 class ViewerOverlay extends StatefulWidget {
   final String imageId;
@@ -61,6 +66,11 @@ class ViewerOverlay extends StatefulWidget {
   final ImageData imageData;
   final krab_user.User uploader;
   final int commentCount;
+
+  /// When this image was posted to the group it was opened from.
+  /// Null in the cross-group feed or when unknown, in which case
+  /// the displayed date falls back to the image's own creation time.
+  final DateTime? uploadedAt;
 
   /// Returns the best available bytes (full-res if loaded, else low-res) to
   /// save to the gallery.
@@ -89,6 +99,7 @@ class ViewerOverlay extends StatefulWidget {
     required this.commentCount,
     required this.loadBestBytesForSave,
     required this.progress,
+    this.uploadedAt,
     this.flingToCommentsEnabled = true,
     this.onCommentCountChanged,
     this.onImageDeleted,
@@ -100,6 +111,9 @@ class ViewerOverlay extends StatefulWidget {
 
 class _ViewerOverlayState extends State<ViewerOverlay> {
   late int _commentCount;
+
+  // Anchors the frosted overflow dropdown beneath the menu button.
+  final GlobalKey _menuButtonKey = GlobalKey();
 
   // Drives the reactions bar so it can be refreshed after the comments sheet
   // closes, keeping the tally correct.
@@ -204,7 +218,7 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
           onTap: onTap,
           child: _frostedSurface(
             borderRadius: BorderRadius.circular(999),
-            tint: Colors.white.withValues(alpha: 0.15),
+            tint: Colors.black.withValues(alpha: 0.35),
             progress: progress,
             child: Padding(
               padding: const EdgeInsets.all(8),
@@ -468,9 +482,20 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
 
   void _showFullDescriptionDialog() {
     final locale = Localizations.localeOf(context).toLanguageTag();
-    final uploadDate = DateFormat.yMMMMd(locale).add_jm().format(
-          DateTime.parse(widget.imageData.createdAt).toLocal(),
-        );
+    String fmt(DateTime d) =>
+        DateFormat.yMMMMd(locale).add_jm().format(d.toLocal());
+
+    final original = DateTime.tryParse(widget.imageData.createdAt);
+    final shared = widget.uploadedAt;
+    final uploadedLabel = original != null ? fmt(original) : null;
+    // Only a reshare to the viewed group earns a second line; a normal
+    // post has its group share time equal to the upload time.
+    final sharedLabel = (widget.groupId != null &&
+            shared != null &&
+            original != null &&
+            shared.difference(original).abs() > const Duration(minutes: 1))
+        ? fmt(shared)
+        : null;
     _showFrostedDialog(
       (context) {
         return Dialog(
@@ -510,13 +535,26 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
-                              Text(
-                                uploadDate,
-                                style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.6),
-                                  fontSize: 12,
+                              if (uploadedLabel != null)
+                                Text(
+                                  context.l10n.uploaded_on(uploadedLabel),
+                                  style: TextStyle(
+                                    color: Colors.white.withValues(alpha: 0.6),
+                                    fontSize: 12,
+                                  ),
                                 ),
-                              ),
+                              if (sharedLabel != null)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 2),
+                                  child: Text(
+                                    context.l10n.shared_here_on(sharedLabel),
+                                    style: TextStyle(
+                                      color:
+                                          Colors.white.withValues(alpha: 0.6),
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
                             ],
                           ),
                         ),
@@ -556,6 +594,188 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
         );
       },
     );
+  }
+
+  /// The viewer's overflow menu: a frosted dropdown anchored under the menu
+  /// button. Save is offered to everyone; the rest are owner-only.
+  Future<void> _showActionsMenu() async {
+    final button =
+        _menuButtonKey.currentContext?.findRenderObject() as RenderBox?;
+    final overlayBox =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
+    if (button == null || overlayBox == null) return;
+
+    // Bottom-right corner of the button, in overlay coordinates.
+    final anchor = button.localToGlobal(
+      button.size.bottomRight(Offset.zero),
+      ancestor: overlayBox,
+    );
+
+    final action = await showGeneralDialog<_ViewerAction>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+      barrierColor: Colors.transparent,
+      transitionDuration: const Duration(milliseconds: 150),
+      pageBuilder: (_, __, ___) => const SizedBox.shrink(),
+      transitionBuilder: (dialogContext, animation, _, __) {
+        final curved =
+            CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
+        return Stack(
+          children: [
+            Positioned(
+              top: anchor.dy + 8,
+              right: overlayBox.size.width - anchor.dx,
+              child: FadeTransition(
+                opacity: curved,
+                child: ScaleTransition(
+                  scale: Tween<double>(begin: 0.92, end: 1).animate(curved),
+                  alignment: Alignment.topRight,
+                  child: _buildActionsMenu(dialogContext),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (action == null || !mounted) return;
+    switch (action) {
+      case _ViewerAction.save:
+        _saveImage();
+      case _ViewerAction.addToGroups:
+        _addToGroups();
+      case _ViewerAction.delete:
+        _deleteImage();
+    }
+  }
+
+  /// The panel listing the available actions.
+  Widget _buildActionsMenu(BuildContext menuContext) {
+    final divider = Container(
+      height: 1,
+      color: Colors.white.withValues(alpha: 0.08),
+    );
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+        child: Material(
+          color: Colors.black.withValues(alpha: 0.6),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: IntrinsicWidth(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _menuItem(
+                  menuContext,
+                  icon: Symbols.download_rounded,
+                  label: context.l10n.save_to_device,
+                  value: _ViewerAction.save,
+                ),
+                if (_isOwner) ...[
+                  divider,
+                  _menuItem(
+                    menuContext,
+                    icon: Symbols.group_add_rounded,
+                    label: context.l10n.add_to_group,
+                    value: _ViewerAction.addToGroups,
+                  ),
+                  divider,
+                  _menuItem(
+                    menuContext,
+                    icon: Symbols.delete_rounded,
+                    label: context.l10n.delete,
+                    value: _ViewerAction.delete,
+                    destructive: true,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _menuItem(
+    BuildContext menuContext, {
+    required IconData icon,
+    required String label,
+    required _ViewerAction value,
+    bool destructive = false,
+  }) {
+    final color = destructive ? const Color(0xFFFF6B6B) : Colors.white;
+    return InkWell(
+      onTap: () => Navigator.of(menuContext).pop(value),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 20, color: color),
+            const SizedBox(width: 12),
+            Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Share this already-uploaded photo to more of the user's groups.
+  Future<void> _addToGroups() async {
+    final userGroups = await getUserGroups();
+    if (!mounted) return;
+    if (!userGroups.success || userGroups.data == null) {
+      showSnackBar(
+        context.l10n.error_adding_to_groups(context.errorOr(userGroups.error)),
+        color: Colors.red,
+      );
+      return;
+    }
+
+    // Offer only groups the photo isn't already in.
+    final current = await fetchPostedInGroups(widget.imageId) ?? const [];
+    if (!mounted) return;
+    final currentIds = current.map((g) => g.id).toSet();
+    final eligible =
+        userGroups.data!.where((g) => !currentIds.contains(g.id)).toList();
+    if (eligible.isEmpty) {
+      showSnackBar(context.l10n.already_in_all_groups);
+      return;
+    }
+
+    final selected = await showAddToGroupsDialog(context, groups: eligible);
+    if (selected == null || selected.isEmpty || !mounted) return;
+
+    final res = await addImageToGroups(widget.imageId, selected.toList());
+    if (!mounted) return;
+    if (!res.success) {
+      showSnackBar(
+        context.l10n.error_adding_to_groups(context.errorOr(res.error)),
+        color: Colors.red,
+      );
+      return;
+    }
+
+    // Reflect the new groups in the "posted in" pill.
+    invalidatePostedInGroups(widget.imageId);
+    await _loadPostedInGroups();
+    if (!mounted) return;
+    showSnackBar(context.l10n.photo_added_success, color: Colors.green);
   }
 
   Future<void> _saveImage() async {
@@ -650,185 +870,156 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
     return BackdropGroup(
       child: Stack(
         children: [
-        // An upward fling from the bottom strip opens the comments. Sits below
-        // the buttons in paint order so taps on them still win.
-        Positioned(
-          left: 0,
-          right: 0,
-          bottom: 0,
-          height: MediaQuery.sizeOf(context).height * 0.2,
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onVerticalDragEnd: (details) {
-              if (widget.flingToCommentsEnabled &&
-                  details.velocity.pixelsPerSecond.dy < -600) {
-                _openComments();
-              }
-            },
+          // An upward fling from the bottom strip opens the comments. Sits below
+          // the buttons in paint order so taps on them still win.
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: MediaQuery.sizeOf(context).height * 0.2,
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onVerticalDragEnd: (details) {
+                if (widget.flingToCommentsEnabled &&
+                    details.velocity.pixelsPerSecond.dy < -600) {
+                  _openComments();
+                }
+              },
+            ),
           ),
-        ),
 
-        // Top Buttons
-        Positioned(
-          top: 60,
-          left: 16,
-          child: ClipOval(
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: () => Navigator.pop(context),
-                customBorder: const CircleBorder(),
-                child: RepaintBoundary(
-                  child: _frostedSurface(
-                    borderRadius: BorderRadius.circular(999),
-                    tint: Colors.white.withValues(alpha: 0.15),
-                    progress: t,
-                    child: const Padding(
-                      padding: EdgeInsets.all(8),
-                      child: Icon(
-                        Symbols.close_rounded,
-                        color: Colors.white,
-                        size: 30,
+          // Top Buttons
+          Positioned(
+            top: 60,
+            left: 16,
+            child: _circleAction(
+              icon: Symbols.close_rounded,
+              onTap: () => Navigator.pop(context),
+              progress: t,
+            ),
+          ),
+
+          Positioned(
+            top: 60,
+            right: 16,
+            child: KeyedSubtree(
+              key: _menuButtonKey,
+              child: _circleAction(
+                icon: CupertinoIcons.ellipsis_vertical,
+                onTap: _showActionsMenu,
+                progress: t,
+              ),
+            ),
+          ),
+
+          // Posted-in group avatars
+          if (_postedInGroups.isNotEmpty)
+            Positioned(
+              top: 64,
+              left: 72,
+              right: 72,
+              child: Center(
+                child: GestureDetector(
+                  onTap: _showPostedInDialog,
+                  child: _postedInBadge(progress: t),
+                ),
+              ),
+            ),
+
+          // Bottom strip
+          Positioned(
+            bottom: 15,
+            left: 10,
+            right: 10,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Emoji reactions
+                if (t > 0)
+                  Opacity(
+                    opacity: t,
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 18, left: 2),
+                      child: ReactionsBar(
+                        key: _reactionsBarKey,
+                        imageId: widget.imageId,
                       ),
                     ),
                   ),
-                ),
-              ),
-            ),
-          ),
-        ),
-
-        Positioned(
-          top: 60,
-          right: 16,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Delete is only offered to the uploader.
-              if (_isOwner) ...[
-                _circleAction(
-                  icon: Symbols.delete_rounded,
-                  onTap: _deleteImage,
-                  progress: t,
-                ),
-                const SizedBox(width: 12),
-              ],
-              _circleAction(
-                icon: Symbols.download_rounded,
-                onTap: _saveImage,
-                progress: t,
-              ),
-            ],
-          ),
-        ),
-
-        // Posted-in group avatars
-        if (_postedInGroups.isNotEmpty)
-          Positioned(
-            top: 64,
-            left: 72,
-            right: 72,
-            child: Center(
-              child: GestureDetector(
-                onTap: _showPostedInDialog,
-                child: _postedInBadge(progress: t),
-              ),
-            ),
-          ),
-
-        // Bottom strip
-        Positioned(
-          bottom: 15,
-          left: 10,
-          right: 10,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Emoji reactions
-              if (t > 0)
-                Opacity(
-                  opacity: t,
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: 18, left: 2),
-                    child: ReactionsBar(
-                      key: _reactionsBarKey,
-                      imageId: widget.imageId,
-                    ),
-                  ),
-                ),
-              Row(
-            children: [
-              // Image description pill
-              Expanded(
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(14),
-                  onTap: _showFullDescriptionDialog,
-                  // Background
-                  child: SizedBox(
-                    height: 48,
-                    child: RepaintBoundary(
-                      child: _frostedSurface(
+                Row(
+                  children: [
+                    // Image description pill
+                    Expanded(
+                      child: InkWell(
                         borderRadius: BorderRadius.circular(14),
-                        tint: Colors.black.withValues(alpha: 0.35),
-                        sigma: 10,
-                        progress: t,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          child: Row(
-                            children: [
-                              UserAvatar(widget.uploader, radius: 19),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: _description.isEmpty
-                                    ? Text(
-                                        context.l10n.no_description,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          color: Colors.white
-                                              .withValues(alpha: 0.5),
-                                          fontSize: 14,
-                                          fontStyle: FontStyle.italic,
-                                        ),
-                                      )
-                                    : Text(
-                                        _description,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
+                        onTap: _showFullDescriptionDialog,
+                        // Background
+                        child: SizedBox(
+                          height: 48,
+                          child: RepaintBoundary(
+                            child: _frostedSurface(
+                              borderRadius: BorderRadius.circular(14),
+                              tint: Colors.black.withValues(alpha: 0.35),
+                              sigma: 10,
+                              progress: t,
+                              child: Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 8),
+                                child: Row(
+                                  children: [
+                                    UserAvatar(widget.uploader, radius: 19),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: _description.isEmpty
+                                          ? Text(
+                                              context.l10n.no_description,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                color: Colors.white
+                                                    .withValues(alpha: 0.5),
+                                                fontSize: 14,
+                                                fontStyle: FontStyle.italic,
+                                              ),
+                                            )
+                                          : Text(
+                                              _description,
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                color: Colors.white,
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w500,
+                                              ),
+                                            ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ],
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
+                    const SizedBox(width: 10),
+                    // Comments button
+                    SoftButton(
+                      onPressed: _openComments,
+                      label: _commentCount.toString(),
+                      icon: Symbols.comment_rounded,
+                      color: GlobalThemeData.darkColorScheme.primary,
+                      opacity: 0.3,
+                      height: 48,
+                      minLabelWidth: 10,
+                      blurBackground: true,
+                      progress: t,
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(width: 10),
-              // Comments button
-              SoftButton(
-                onPressed: _openComments,
-                label: _commentCount.toString(),
-                icon: Symbols.comment_rounded,
-                color: GlobalThemeData.darkColorScheme.primary,
-                opacity: 0.3,
-                height: 48,
-                minLabelWidth: 10,
-                blurBackground: true,
-                progress: t,
-              ),
-            ],
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
         ],
       ),
     );

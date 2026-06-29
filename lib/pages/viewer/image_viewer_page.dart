@@ -405,7 +405,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
       builder: (context, _) {
         final t = Curves.easeOut.transform(_controlsAnim.value);
         return IgnorePointer(
-          ignoring: t == 0,
+          ignoring: t < 1,
           child: FutureBuilder<ImageData>(
             future: _imageDataFor(_currentIndex),
             builder: (context, snapshot) {
@@ -421,6 +421,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
                 uploader: uploader,
                 commentCount: widget.commentCountCache[imageId] ?? 0,
                 progress: t,
+                uploadedAt: widget.images[_currentIndex].uploadedAt,
                 flingToCommentsEnabled: !_isZoomed,
                 loadBestBytesForSave: () async =>
                     await widget.getCachedImage(imageId, lowRes: false) ??
