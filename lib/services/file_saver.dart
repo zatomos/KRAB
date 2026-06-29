@@ -18,7 +18,7 @@ Future<bool> downloadImage(
         fixedImageBytes,
         quality: 100,
         fileName: "krab_$uploadedBy-$createdAt",
-        androidRelativePath: "Pictures/krab",
+        albumPath: "Pictures/krab",
         skipIfExists: true,
       );
       debugPrint("Image saved successfully: $result");

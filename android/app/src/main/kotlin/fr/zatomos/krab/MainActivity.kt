@@ -4,12 +4,16 @@ import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import androidx.annotation.NonNull
+import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.engine.FlutterEngineCache
 import io.flutter.plugin.common.MethodChannel
+import java.io.File
 
 class MainActivity : FlutterActivity() {
 
@@ -34,7 +38,45 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+
+        // Hands a downloaded APK to the system package installer
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "krab/installer")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "installApk" -> {
+                        val path = call.argument<String>("path")
+                        if (path == null) {
+                            result.error("no_path", "Missing apk path", null)
+                        } else {
+                            result.success(installApk(path))
+                        }
+                    }
+                    else -> result.notImplemented()
+                }
+            }
     }
+
+    /** Launches the system installer for the APK at path via a FileProvider
+     *  content URI. Returns whether the installer intent was started. */
+    private fun installApk(path: String): Boolean =
+        try {
+            val uri: Uri = FileProvider.getUriForFile(
+                this,
+                "$packageName.update.fileprovider",
+                File(path)
+            )
+            startActivity(
+                Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "application/vnd.android.package-archive")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+            )
+            true
+        } catch (e: Exception) {
+            Log.e("KRAB", "installApk failed: ${e.message}", e)
+            false
+        }
 
     private fun handleWidgetPin(multi: Boolean) {
         val context = this
