@@ -82,19 +82,13 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+    return AlertDialog(
+      title: Text(context.l10n.change_password),
+      content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(context.l10n.change_password,
-                style:
-                    const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 16),
             RoundedInputField(
               controller: _currentController,
               hintText: context.l10n.current_password,
@@ -142,34 +136,29 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
                 ],
               ),
             ),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                SoftButton(
-                  onPressed: () => Navigator.pop(context),
-                  label: context.l10n.cancel,
-                  color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
-                ),
-                const SizedBox(width: 8),
-                if (_saving)
-                  const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                else
-                  SoftButton(
-                    label: context.l10n.save,
-                    onPressed: _save,
-                    color: GlobalThemeData.darkColorScheme.primary,
-                    icon: Icons.check_rounded,
-                  ),
-              ],
-            ),
           ],
         ),
       ),
+      actions: [
+        SoftButton(
+          onPressed: () => Navigator.pop(context),
+          label: context.l10n.cancel,
+          color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
+        ),
+        if (_saving)
+          const SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          )
+        else
+          SoftButton(
+            label: context.l10n.save,
+            onPressed: _save,
+            color: GlobalThemeData.darkColorScheme.primary,
+            icon: Icons.check_rounded,
+          ),
+      ],
     );
   }
 }

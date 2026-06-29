@@ -870,8 +870,6 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
     return BackdropGroup(
       child: Stack(
         children: [
-          // An upward fling from the bottom strip opens the comments. Sits below
-          // the buttons in paint order so taps on them still win.
           Positioned(
             left: 0,
             right: 0,

@@ -173,7 +173,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
 
     _controlsAnim = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 250),
+      duration: const Duration(milliseconds: 100),
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;

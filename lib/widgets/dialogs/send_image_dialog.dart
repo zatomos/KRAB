@@ -101,7 +101,6 @@ class _SendImageDialogState extends State<SendImageDialog> {
     final screenWidth = MediaQuery.sizeOf(context).width;
     final keyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
 
-    final insetV = isLandscape ? 4.0 : 24.0;
     final spacerH = (isLandscape && keyboardOpen) ? 0.0 : 8.0;
     final groupsWidget = _buildGroups();
 
@@ -141,11 +140,9 @@ class _SendImageDialogState extends State<SendImageDialog> {
     }
 
     return AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      insetPadding: EdgeInsets.symmetric(
-        horizontal: isLandscape ? 16 : 40,
-        vertical: insetV,
-      ),
+      insetPadding: isLandscape
+          ? const EdgeInsets.symmetric(horizontal: 16, vertical: 4)
+          : null,
       title: isLandscape ? null : Text(context.l10n.select_groups),
       contentPadding: (isLandscape && keyboardOpen)
           ? EdgeInsets.zero
@@ -190,6 +187,7 @@ class _SendImageDialogState extends State<SendImageDialog> {
               SoftButton(
                 onPressed: () => Navigator.of(context).pop(),
                 label: context.l10n.cancel,
+                color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
               ),
               if (_sending)
                 const Padding(
@@ -205,6 +203,7 @@ class _SendImageDialogState extends State<SendImageDialog> {
                   label: context.l10n.send,
                   color: _selectedGroups.isEmpty
                       ? GlobalThemeData.darkColorScheme.onSurfaceVariant
+                          .withValues(alpha: 0.4)
                       : GlobalThemeData.darkColorScheme.primary,
                 ),
             ],

@@ -30,6 +30,7 @@
   "join_group_first": "Please join a group first!",
   "add_description": "Add a description...",
   "cancel": "Cancel",
+  "ok": "OK",
   "error": "Error",
   "send": "Send",
   "comments": "Comments",

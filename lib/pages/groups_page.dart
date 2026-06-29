@@ -50,7 +50,7 @@ class GroupsPageState extends State<GroupsPage> {
                 showMenu(
                   context: context,
                   color: GlobalThemeData.darkColorScheme.surfaceBright,
-                  position: const RelativeRect.fromLTRB(0, 90, -1, 0),
+                  position: const RelativeRect.fromLTRB(0, 100, -1, 0),
                   items: [
                     PopupMenuItem(
                       child: ListTile(
@@ -228,15 +228,18 @@ class JoinGroupDialogState extends State<JoinGroupDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text(context.l10n.join_group),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          RoundedInputField(
-            controller: _controller,
-            hintText: context.l10n.enter_invite,
-            errorText: error,
-          ),
-        ],
+      content: SizedBox(
+        width: double.maxFinite,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            RoundedInputField(
+              controller: _controller,
+              hintText: context.l10n.enter_invite,
+              errorText: error,
+            ),
+          ],
+        ),
       ),
       actions: [
         SoftButton(
@@ -323,15 +326,18 @@ class CreateGroupDialogState extends State<CreateGroupDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text(context.l10n.create_group),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          RoundedInputField(
-            controller: _controller,
-            hintText: context.l10n.enter_group_name,
-            errorText: error,
-          ),
-        ],
+      content: SizedBox(
+        width: double.maxFinite,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            RoundedInputField(
+              controller: _controller,
+              hintText: context.l10n.enter_group_name,
+              errorText: error,
+            ),
+          ],
+        ),
       ),
       actions: [
         SoftButton(

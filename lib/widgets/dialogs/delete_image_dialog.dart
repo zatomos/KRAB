@@ -92,6 +92,7 @@ class _DeleteImageDialogState extends State<_DeleteImageDialog> {
           label: context.l10n.remove,
           color: _selected.isEmpty
               ? GlobalThemeData.darkColorScheme.onSurfaceVariant
+                  .withValues(alpha: 0.4)
               : GlobalThemeData.darkColorScheme.error,
         ),
       ],

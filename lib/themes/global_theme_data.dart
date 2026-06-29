@@ -4,6 +4,10 @@ class GlobalThemeData {
   static ThemeData darkThemeData = ThemeData(
     colorScheme: darkColorScheme,
     focusColor: _darkFocusColor,
+    dialogTheme: DialogThemeData(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+    ),
   );
 
   static const ColorScheme darkColorScheme = ColorScheme(

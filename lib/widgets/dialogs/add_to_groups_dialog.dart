@@ -81,6 +81,7 @@ class _AddToGroupsDialogState extends State<_AddToGroupsDialog> {
           label: context.l10n.add,
           color: _selected.isEmpty
               ? GlobalThemeData.darkColorScheme.onSurfaceVariant
+                  .withValues(alpha: 0.4)
               : GlobalThemeData.darkColorScheme.primary,
         ),
       ],

@@ -38,7 +38,7 @@ Future<AvatarAction?> showEditAvatarDialog(
             onPressed: () =>
                 Navigator.of(dialogContext).pop(AvatarAction.delete),
             label: dialogContext.l10n.delete,
-            color: Colors.red,
+            color: GlobalThemeData.darkColorScheme.error,
           ),
       ],
     ),

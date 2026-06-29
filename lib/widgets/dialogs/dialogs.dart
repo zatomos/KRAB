@@ -29,7 +29,7 @@ Future<bool> showConfirmDialog(
           onPressed: () => Navigator.of(context).pop(true),
           label: confirmLabel,
           color: destructive
-              ? Colors.red
+              ? GlobalThemeData.darkColorScheme.error
               : GlobalThemeData.darkColorScheme.primary,
         ),
       ],

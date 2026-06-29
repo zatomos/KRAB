@@ -23,7 +23,7 @@ class ImageSentDialog extends StatelessWidget {
       actions: [
         SoftButton(
             onPressed: () => Navigator.of(context).pop(),
-            label: "OK",
+            label: context.l10n.ok,
             color: GlobalThemeData.darkColorScheme.primary),
       ],
     );

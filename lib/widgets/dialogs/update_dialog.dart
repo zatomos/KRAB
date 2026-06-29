@@ -170,8 +170,8 @@ Future<void> showUpdateDialog({
               ),
             isDownloading
                 ? const SizedBox(
-                    width: 16,
-                    height: 16,
+                    width: 20,
+                    height: 20,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : SoftButton(
