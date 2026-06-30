@@ -1,5 +1,9 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { JWT } from 'npm:google-auth-library@9'
+import {
+    getFcmAccessToken,
+    pruneDeadTokens,
+    sendToTokens,
+} from '../_shared/fcm.ts'
 
 interface ImageGroups {
     id: string;
@@ -86,42 +90,15 @@ Deno.serve(async (req) => {
             return new Response(null, { status: 500 })
         }
 
-        const serviceAccount = JSON.parse(Deno.env.get('GOOGLE_SERVICE_ACCOUNT')!)
-        const accessToken = await getAccessToken({
-            clientEmail: serviceAccount.client_email,
-            privateKey: serviceAccount.private_key,
-        })
+        const { accessToken, projectId } = await getFcmAccessToken()
 
-        for (const user of users) {
-            if (!user.fcm_token) continue
-
-            const res = await fetch(
-                `https://fcm.googleapis.com/v1/projects/${serviceAccount.project_id}/messages:send`,
-                {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        Authorization: `Bearer ${accessToken}`,
-                    },
-                    body: JSON.stringify({
-                        message: {
-                            token: user.fcm_token,
-                            android: { priority: 'HIGH' },
-                            data: {
-                                type: 'image_deleted',
-                                image_id: imageId,
-                                group_id: groupId,
-                            },
-                        },
-                    }),
-                }
-            )
-
-            const resData = await res.json()
-            if (!res.ok) {
-                console.error(`Error sending deletion to ${user.id}:`, resData)
-            }
-        }
+        const results = await sendToTokens(
+            projectId,
+            accessToken,
+            users.map((u) => u.fcm_token),
+            { type: 'image_deleted', image_id: imageId, group_id: groupId }
+        )
+        await pruneDeadTokens(supabase, results)
 
         return new Response(JSON.stringify({ message: 'Deletion notifications sent' }), {
             headers: { 'Content-Type': 'application/json' },
@@ -131,24 +108,3 @@ Deno.serve(async (req) => {
         return new Response(null, { status: 500 })
     }
 })
-
-const getAccessToken = ({
-    clientEmail,
-    privateKey,
-}: { clientEmail: string; privateKey: string }): Promise<string> => {
-    return new Promise((resolve, reject) => {
-        const jwtClient = new JWT({
-            email: clientEmail,
-            key: privateKey,
-            scopes: ['https://www.googleapis.com/auth/firebase.messaging'],
-        })
-
-        jwtClient.authorize((err, tokens) => {
-            if (err) {
-                reject(err)
-            } else {
-                resolve(tokens!.access_token)
-            }
-        })
-    })
-}

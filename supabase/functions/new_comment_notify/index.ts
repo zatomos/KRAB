@@ -1,5 +1,10 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { JWT } from 'npm:google-auth-library@9';
+import {
+  getFcmAccessToken,
+  pruneDeadTokens,
+  sendToTokens,
+} from '../_shared/fcm.ts';
+import type { FcmResult } from '../_shared/fcm.ts';
 
 interface Comments {
   id: string;
@@ -116,87 +121,40 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Load service account
-    const serviceAccount = JSON.parse(
-      Deno.env.get('GOOGLE_SERVICE_ACCOUNT')!
-    );
+    // Whoever we notify via the reply push is excluded from the uploader and
+    // group pushes so one comment never double-notifies them.
+    const replyDedupId = parentAuthorToken ? parentAuthorId : null;
 
-    const accessToken = await getAccessToken({
-      clientEmail: serviceAccount.client_email,
-      privateKey: serviceAccount.private_key,
-    });
-
+    const { accessToken, projectId } = await getFcmAccessToken();
     console.log('Firebase access token retrieved');
+
+    const allResults: FcmResult[] = [];
 
     // Notify the parent comment's author that they were replied to.
     if (parentAuthorToken) {
       console.log('Sending reply notification to parent comment author');
-
-      const res = await fetch(
-        `https://fcm.googleapis.com/v1/projects/${serviceAccount.project_id}/messages:send`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${accessToken}`,
-          },
-          body: JSON.stringify({
-            message: {
-              token: parentAuthorToken,
-              android: { priority: 'HIGH' },
-              data: {
-                type: 'comment_reply',
-                comment_id: comment.id,
-              },
-            },
-          }),
-        }
+      allResults.push(
+        ...(await sendToTokens(projectId, accessToken, [parentAuthorToken], {
+          type: 'comment_reply',
+          comment_id: comment.id,
+        }))
       );
-
-      const resData = await res.json();
-      if (!res.ok) {
-        console.error('Error sending reply notification:', resData);
-      } else {
-        console.log('FCM reply response:', JSON.stringify(resData));
-      }
     }
 
-    // Send a push notification to uploader, unless they were already notified as
-    // the replied-to author above.
+    // Notify the uploader, unless they were already notified as the replied-to
+    // author above.
     if (
       hasUploaderToken &&
       uploaderId !== comment.user_id &&
-      uploaderId !== parentAuthorId
+      uploaderId !== replyDedupId
     ) {
       console.log('Sending notification to uploader');
-
-      const res = await fetch(
-        `https://fcm.googleapis.com/v1/projects/${serviceAccount.project_id}/messages:send`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${accessToken}`,
-          },
-          body: JSON.stringify({
-            message: {
-              token: fcmToken,
-              android: { priority: 'HIGH' },
-              data: {
-                type: 'new_comment',
-                comment_id: comment.id,
-              },
-            },
-          }),
-        }
+      allResults.push(
+        ...(await sendToTokens(projectId, accessToken, [fcmToken], {
+          type: 'new_comment',
+          comment_id: comment.id,
+        }))
       );
-
-      const resData = await res.json();
-      if (!res.ok) {
-        console.error('Error sending uploader notification:', resData);
-        return new Response(null, { status: 500 });
-      }
-      console.log('FCM uploader response:', JSON.stringify(resData));
     }
 
     // Notify group members
@@ -214,7 +172,7 @@ Deno.serve(async (req) => {
           (id) =>
             id !== comment.user_id &&
             id !== uploaderId &&
-            id !== parentAuthorId
+            id !== replyDedupId
         );
 
       if (userIds.length > 0) {
@@ -227,40 +185,20 @@ Deno.serve(async (req) => {
           console.error('Error fetching users:', usersError?.message);
         } else {
           const groupTokens = users
-            .filter(
-              (u) =>
-                u.notify_group_comments === true &&
-                u.fcm_token
-            )
+            .filter((u) => u.notify_group_comments === true && u.fcm_token)
             .map((u) => u.fcm_token);
 
-          for (const token of groupTokens) {
-            await fetch(
-              `https://fcm.googleapis.com/v1/projects/${serviceAccount.project_id}/messages:send`,
-              {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  Authorization: `Bearer ${accessToken}`,
-                },
-                body: JSON.stringify({
-                  message: {
-                    token,
-                    android: { priority: 'HIGH' },
-                    // UUID-only payload: comment_id alone; the client resolves
-                    // group/image/commenter and all text by id.
-                    data: {
-                      type: 'group_comment',
-                      comment_id: comment.id,
-                    },
-                  },
-                }),
-              }
-            );
-          }
+          allResults.push(
+            ...(await sendToTokens(projectId, accessToken, groupTokens, {
+              type: 'group_comment',
+              comment_id: comment.id,
+            }))
+          );
         }
       }
     }
+
+    await pruneDeadTokens(supabase, allResults);
 
     console.log('Webhook processing completed');
 
@@ -272,27 +210,3 @@ Deno.serve(async (req) => {
     return new Response(null, { status: 500 });
   }
 });
-
-const getAccessToken = ({
-  clientEmail,
-  privateKey,
-}: {
-  clientEmail: string;
-  privateKey: string;
-}): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const jwtClient = new JWT({
-      email: clientEmail,
-      key: privateKey,
-      scopes: ['https://www.googleapis.com/auth/firebase.messaging'],
-    });
-
-    jwtClient.authorize((err, tokens) => {
-      if (err) {
-        reject(err);
-      } else {
-        resolve(tokens!.access_token);
-      }
-    });
-  });
-};

@@ -1,5 +1,9 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { JWT } from 'npm:google-auth-library@9';
+import {
+  getFcmAccessToken,
+  pruneDeadTokens,
+  sendToTokens,
+} from '../_shared/fcm.ts';
 
 interface Reaction {
   image_id: string;
@@ -79,45 +83,21 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Load service account
-    const serviceAccount = JSON.parse(Deno.env.get('GOOGLE_SERVICE_ACCOUNT')!);
-
-    const accessToken = await getAccessToken({
-      clientEmail: serviceAccount.client_email,
-      privateKey: serviceAccount.private_key,
-    });
-
+    const { accessToken, projectId } = await getFcmAccessToken();
     console.log('Firebase access token retrieved, notifying uploader');
 
-    const res = await fetch(
-      `https://fcm.googleapis.com/v1/projects/${serviceAccount.project_id}/messages:send`,
+    const results = await sendToTokens(
+      projectId,
+      accessToken,
+      [uploaderData.fcm_token],
       {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({
-          message: {
-            token: uploaderData.fcm_token,
-            android: { priority: 'HIGH' },
-            data: {
-              type: 'new_reaction',
-              image_id: reaction.image_id,
-              reactor_id: reaction.user_id,
-              emoji: reaction.emoji,
-            },
-          },
-        }),
+        type: 'new_reaction',
+        image_id: reaction.image_id,
+        reactor_id: reaction.user_id,
+        emoji: reaction.emoji,
       }
     );
-
-    const resData = await res.json();
-    if (!res.ok) {
-      console.error('Error sending uploader notification:', resData);
-      return new Response(null, { status: 500 });
-    }
-    console.log('FCM uploader response:', JSON.stringify(resData));
+    await pruneDeadTokens(supabase, results);
 
     return new Response(JSON.stringify({ message: 'Notification sent' }), {
       headers: { 'Content-Type': 'application/json' },
@@ -127,27 +107,3 @@ Deno.serve(async (req) => {
     return new Response(null, { status: 500 });
   }
 });
-
-const getAccessToken = ({
-  clientEmail,
-  privateKey,
-}: {
-  clientEmail: string;
-  privateKey: string;
-}): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const jwtClient = new JWT({
-      email: clientEmail,
-      key: privateKey,
-      scopes: ['https://www.googleapis.com/auth/firebase.messaging'],
-    });
-
-    jwtClient.authorize((err, tokens) => {
-      if (err) {
-        reject(err);
-      } else {
-        resolve(tokens!.access_token);
-      }
-    });
-  });
-};

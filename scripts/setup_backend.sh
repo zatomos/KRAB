@@ -137,6 +137,13 @@ done
 log "Deploying edge functions"
 fdir="$SUPABASE_DIR/volumes/functions"
 deployed=1
+
+# Shared helpers
+mkdir -p "$fdir/_shared"
+curl -fsSL "$REPO_RAW/supabase/functions/_shared/fcm.ts" -o "$fdir/_shared/fcm.ts" \
+  || { echo "  WARN: failed to fetch _shared/fcm.ts"; deployed=0; }
+echo "  _shared/fcm.ts"
+
 for pair in $FN_SLUGS; do
   src="${pair%%:*}"; slug="${pair##*:}"
   mkdir -p "$fdir/$slug"
