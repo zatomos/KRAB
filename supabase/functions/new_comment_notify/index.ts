@@ -7,6 +7,7 @@ interface Comments {
   image_id: string;
   group_id: string;
   text: string;
+  parent_id: string | null;
   created_at: string;
 }
 
@@ -88,6 +89,33 @@ Deno.serve(async (req) => {
 
     const fcmToken = hasUploaderToken ? uploaderData.fcm_token : null;
 
+    // If this comment is a reply, resolve the parent comment's author.
+    let parentAuthorId: string | null = null;
+    let parentAuthorToken: string | null = null;
+    if (comment.parent_id) {
+      const { data: parent, error: parentError } = await supabase
+        .from('Comments')
+        .select('user_id')
+        .eq('id', comment.parent_id)
+        .single();
+
+      if (parentError || !parent) {
+        console.error('Error fetching parent comment:', parentError?.message);
+      } else if (parent.user_id && parent.user_id !== comment.user_id) {
+        parentAuthorId = parent.user_id;
+        const { data: parentUser, error: parentUserError } = await supabase
+          .from('Users')
+          .select('fcm_token')
+          .eq('id', parentAuthorId)
+          .single();
+        if (!parentUserError && parentUser?.fcm_token) {
+          parentAuthorToken = parentUser.fcm_token;
+        } else {
+          console.log('Parent comment author has no FCM token.');
+        }
+      }
+    }
+
     // Load service account
     const serviceAccount = JSON.parse(
       Deno.env.get('GOOGLE_SERVICE_ACCOUNT')!
@@ -100,8 +128,46 @@ Deno.serve(async (req) => {
 
     console.log('Firebase access token retrieved');
 
-    // Send a push notification to uploader
-    if (hasUploaderToken && uploaderId !== comment.user_id) {
+    // Notify the parent comment's author that they were replied to.
+    if (parentAuthorToken) {
+      console.log('Sending reply notification to parent comment author');
+
+      const res = await fetch(
+        `https://fcm.googleapis.com/v1/projects/${serviceAccount.project_id}/messages:send`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({
+            message: {
+              token: parentAuthorToken,
+              android: { priority: 'HIGH' },
+              data: {
+                type: 'comment_reply',
+                comment_id: comment.id,
+              },
+            },
+          }),
+        }
+      );
+
+      const resData = await res.json();
+      if (!res.ok) {
+        console.error('Error sending reply notification:', resData);
+      } else {
+        console.log('FCM reply response:', JSON.stringify(resData));
+      }
+    }
+
+    // Send a push notification to uploader, unless they were already notified as
+    // the replied-to author above.
+    if (
+      hasUploaderToken &&
+      uploaderId !== comment.user_id &&
+      uploaderId !== parentAuthorId
+    ) {
       console.log('Sending notification to uploader');
 
       const res = await fetch(
@@ -144,7 +210,12 @@ Deno.serve(async (req) => {
     } else {
       const userIds = members
         .map((m) => m.user_id)
-        .filter((id) => id !== comment.user_id && id !== uploaderId);
+        .filter(
+          (id) =>
+            id !== comment.user_id &&
+            id !== uploaderId &&
+            id !== parentAuthorId
+        );
 
       if (userIds.length > 0) {
         const { data: users, error: usersError } = await supabase

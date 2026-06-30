@@ -371,9 +371,11 @@ Future<void> showCommentNotification({
   await _flnp.show(
     id: DateTime.now().millisecondsSinceEpoch & 0x7FFFFFFF,
     title: commenterUsername,
-    body: (uploaderUsername != null && uploaderUsername.isNotEmpty)
-        ? _l10n().new_comment_on_someone_notification(uploaderUsername)
-        : _l10n().new_comment_on_your_image_notification,
+    body: type == 'comment_reply'
+        ? _l10n().new_reply_notification
+        : (uploaderUsername != null && uploaderUsername.isNotEmpty)
+            ? _l10n().new_comment_on_someone_notification(uploaderUsername)
+            : _l10n().new_comment_on_your_image_notification,
     notificationDetails: NotificationDetails(
       android: AndroidNotificationDetails(
         groupId,

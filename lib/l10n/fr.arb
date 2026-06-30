@@ -205,6 +205,7 @@
   "new_image_notification": "a envoyé une nouvelle image",
   "new_comment_on_someone_notification": "a commenté l'image de {uploader_username}",
   "new_comment_on_your_image_notification": "a commenté votre image",
+  "new_reply_notification": "a répondu à votre commentaire",
   "change_password": "Changer le mot de passe",
   "current_password": "Mot de passe actuel",
   "new_password": "Nouveau mot de passe",
