@@ -5,6 +5,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffXfermode
@@ -14,6 +15,7 @@ import android.util.DisplayMetrics
 import android.util.Log
 import android.view.Display
 import android.widget.RemoteViews
+import androidx.exifinterface.media.ExifInterface
 import java.io.File
 import kotlin.math.min
 import kotlinx.coroutines.Dispatchers
@@ -122,9 +124,44 @@ fun loadScaledBitmap(path: String?, maxBytes: Int): Bitmap? {
         while (rawBytes / (sampleSize.toLong() * sampleSize) > maxBytes) sampleSize *= 2
         opts.inJustDecodeBounds = false
         opts.inSampleSize = sampleSize
-        BitmapFactory.decodeFile(file.absolutePath, opts)
+        val bitmap = BitmapFactory.decodeFile(file.absolutePath, opts) ?: return null
+        bitmap.applyExifOrientation(file)
     } catch (e: Exception) {
         Log.e(TAG, "loadScaledBitmap: decode failed: $path", e)
         null
+    }
+}
+
+/**
+ * Rotates/flips the bitmap to match the EXIF orientation tag of a file.
+ */
+private fun Bitmap.applyExifOrientation(file: File): Bitmap {
+    val orientation = try {
+        ExifInterface(file.absolutePath)
+            .getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+    } catch (e: Exception) {
+        Log.w(TAG, "applyExifOrientation: read failed: ${file.absolutePath}", e)
+        return this
+    }
+
+    val matrix = Matrix()
+    when (orientation) {
+        ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+        ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+        ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+        ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.postScale(-1f, 1f)
+        ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.postScale(1f, -1f)
+        ExifInterface.ORIENTATION_TRANSPOSE -> { matrix.postRotate(90f); matrix.postScale(-1f, 1f) }
+        ExifInterface.ORIENTATION_TRANSVERSE -> { matrix.postRotate(270f); matrix.postScale(-1f, 1f) }
+        else -> return this
+    }
+
+    return try {
+        val rotated = Bitmap.createBitmap(this, 0, 0, width, height, matrix, true)
+        if (rotated != this) recycle()
+        rotated
+    } catch (e: OutOfMemoryError) {
+        Log.w(TAG, "applyExifOrientation: rotate OOM, using original", e)
+        this
     }
 }
