@@ -79,18 +79,64 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
 
   final Map<String, Future<krab_user.User>> _userCache = {};
 
+  OverlayEntry? _inputOverlay;
+
   @override
   void initState() {
     super.initState();
     // In a single-group gallery, the target group is known up front, so the
     // input is ready immediately.
     _composingGroupId = widget.primaryGroupId;
+    // Rebuild when the input gains/loses focus so that we can fade in/out.
+    _inputFocusNode.addListener(_onFocusChange);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _inputOverlay = OverlayEntry(builder: _buildInputOverlay);
+      Overlay.of(context).insert(_inputOverlay!);
+    });
     _fetchComments();
+  }
+
+  void _onFocusChange() {
+    if (mounted) setState(() {});
+  }
+
+  // The sheet's present/dismiss animation, so the overlaid input row can slide
+  // and fade together with the sheet instead of hanging in place.
+  Animation<double>? _sheetAnim;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final anim = ModalRoute.of(context)?.animation;
+    if (anim != _sheetAnim) {
+      _sheetAnim?.removeListener(_onSheetAnim);
+      _sheetAnim = anim;
+      _sheetAnim?.addListener(_onSheetAnim);
+    }
+  }
+
+  void _onSheetAnim() => _inputOverlay?.markNeedsBuild();
+
+  /// Focus the composer input. The interactive field lives in the overlay and
+  /// is disabled until a target group is known (e.g. multi-group mode before a
+  /// group is chosen). A disabled field can't take focus, so rebuild the
+  /// overlay with the now-enabled field first, then request focus after that
+  /// frame — otherwise the keyboard never opens.
+  void _focusInput() {
+    _inputOverlay?.markNeedsBuild();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _inputFocusNode.requestFocus();
+    });
   }
 
   @override
   void dispose() {
+    _sheetAnim?.removeListener(_onSheetAnim);
+    _inputOverlay?.remove();
+    _inputOverlay = null;
     _newCommentController.dispose();
+    _inputFocusNode.removeListener(_onFocusChange);
     _inputFocusNode.dispose();
     super.dispose();
   }
@@ -286,7 +332,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
       _editingGroupId = null;
     });
     _newCommentController.clear();
-    _inputFocusNode.requestFocus();
+    _focusInput();
   }
 
   void _cancelReply() {
@@ -310,7 +356,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
         offset: comment.text.length,
       );
     });
-    _inputFocusNode.requestFocus();
+    _focusInput();
   }
 
   void _cancelEdit() {
@@ -334,7 +380,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
       _expandedGroupIds.add(section.groupId);
     });
     _newCommentController.clear();
-    _inputFocusNode.requestFocus();
+    _focusInput();
   }
 
   void _toggleExpanded(String groupId) {
@@ -645,10 +691,11 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
 
   @override
   Widget build(BuildContext context) {
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _inputOverlay?.markNeedsBuild(),
+    );
     final bottomInset = MediaQuery.of(context).viewInsets.bottom +
         MediaQuery.of(context).padding.bottom;
-    final isComposingNew =
-        _editingCommentId == null && _replyingToCommentId == null;
     return Padding(
       padding: EdgeInsets.only(
         bottom: bottomInset,
@@ -686,133 +733,206 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
               ),
             ),
 
-          // Composing-in indicator: only when a new top-level comment is
-          // targeted at a group other than the one being viewed.
-          if (!_loading && isComposingNew && _showComposingBanner)
-            _composingBanner(),
-
-          // Editing indicator
-          if (_editingCommentId != null) ...[
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  Icon(Symbols.edit_rounded,
-                      size: 18,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      context.l10n.editing_comment,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                  GestureDetector(
-                    onTap: _cancelEdit,
-                    child: Icon(Symbols.close_rounded,
-                        size: 24,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-          ],
-
-          // Reply indicator
-          if (_replyingToCommentId != null)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  Icon(Symbols.reply_rounded,
-                      size: 18,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      _replyBannerText(),
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                  GestureDetector(
-                    onTap: () {
-                      _cancelReply();
-                      _inputFocusNode.unfocus();
-                    },
-                    child: Icon(Symbols.close_rounded,
-                        size: 24,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant),
-                  ),
-                ],
-              ),
-            ),
-
-          if (_replyingToCommentId != null) const SizedBox(height: 8),
-
-          // Input row
-          Row(
-            children: [
-              Expanded(
-                child: RoundedInputField(
-                  controller: _newCommentController,
-                  focusNode: _inputFocusNode,
-                  capitalizeSentences: true,
-                  enabled: _canSubmit,
-                  hintText: _editingCommentId != null
-                      ? context.l10n.edit_comment
-                      : _replyingToCommentId != null
-                          ? context.l10n.write_reply
-                          : (_canSubmit || _loading)
-                              ? context.l10n.post_comment
-                              : context.l10n.select_group_to_comment,
-                ),
-              ),
-              _isSending
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white),
-                    )
-                  : IconButton(
-                      onPressed: _canSubmit
-                          ? () {
-                              if (_editingCommentId != null) {
-                                _updateComment(
-                                    _editingCommentId!, _editingGroupId ?? '');
-                              } else {
-                                _postComment();
-                              }
-                            }
-                          : null,
-                      icon: Icon(
-                        Symbols.send_rounded,
-                        color: _canSubmit
-                            ? Colors.white
-                            : Theme.of(context).disabledColor,
-                      ),
-                    ),
-            ],
+          // Space reserved for the composer
+          Opacity(
+            opacity: 0,
+            child: IgnorePointer(child: _composer(interactive: false)),
           ),
 
           const SizedBox(height: 8),
         ],
       ),
+    );
+  }
+
+  /// The composer shown at the bottom
+  Widget _composer({required bool interactive}) {
+    final isComposingNew =
+        _editingCommentId == null && _replyingToCommentId == null;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (!_loading && isComposingNew && _showComposingBanner) ...[
+          const SizedBox(height: 8),
+          _composingBanner(),
+        ],
+        if (_editingCommentId != null) ...[
+          const SizedBox(height: 8),
+          _editBanner(),
+          const SizedBox(height: 8),
+        ],
+        if (_replyingToCommentId != null) ...[
+          const SizedBox(height: 8),
+          _replyBanner(),
+          const SizedBox(height: 8),
+        ],
+        _inputRow(interactive: interactive),
+      ],
+    );
+  }
+
+  /// "Editing comment" context banner.
+  Widget _editBanner() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Icon(Symbols.edit_rounded,
+              size: 18, color: Theme.of(context).colorScheme.onSurfaceVariant),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              context.l10n.editing_comment,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontSize: 14,
+              ),
+            ),
+          ),
+          GestureDetector(
+            onTap: _cancelEdit,
+            child: Icon(Symbols.close_rounded,
+                size: 24,
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// "Replying to …" context banner.
+  Widget _replyBanner() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          Icon(Symbols.reply_rounded,
+              size: 18, color: Theme.of(context).colorScheme.onSurfaceVariant),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _replyBannerText(),
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontSize: 14,
+              ),
+            ),
+          ),
+          GestureDetector(
+            onTap: () {
+              _cancelReply();
+              _inputFocusNode.unfocus();
+            },
+            child: Icon(Symbols.close_rounded,
+                size: 24,
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The comment input field plus send button.
+  Widget _inputRow({required bool interactive}) {
+    return Row(
+      children: [
+        Expanded(
+          child: RoundedInputField(
+            controller: interactive ? _newCommentController : null,
+            focusNode: interactive ? _inputFocusNode : null,
+            capitalizeSentences: true,
+            enabled: interactive && _canSubmit,
+            hintText: _editingCommentId != null
+                ? context.l10n.edit_comment
+                : _replyingToCommentId != null
+                    ? context.l10n.write_reply
+                    : (_canSubmit || _loading)
+                        ? context.l10n.post_comment
+                        : context.l10n.select_group_to_comment,
+          ),
+        ),
+        _isSending
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: Colors.white),
+              )
+            : IconButton(
+                onPressed: interactive && _canSubmit
+                    ? () {
+                        if (_editingCommentId != null) {
+                          _updateComment(
+                              _editingCommentId!, _editingGroupId ?? '');
+                        } else {
+                          _postComment();
+                        }
+                      }
+                    : null,
+                icon: Icon(
+                  Symbols.send_rounded,
+                  color: _canSubmit
+                      ? Colors.white
+                      : Theme.of(context).disabledColor,
+                ),
+              ),
+      ],
+    );
+  }
+
+  /// Full-screen overlay: dims the whole screen while the input is focused
+  Widget _buildInputOverlay(BuildContext context) {
+    final mq = MediaQuery.of(context);
+    final bottomInset = mq.viewInsets.bottom + mq.padding.bottom;
+    final focused = _inputFocusNode.hasFocus;
+    // Follow the sheet as it slides in/out so the bar doesn't hang mid-screen.
+    final t = (_sheetAnim?.value ?? 1.0).clamp(0.0, 1.0);
+    return Stack(
+      children: [
+        // Scrim over everything (photo + sheet); taps dismiss the keyboard.
+        Positioned.fill(
+          child: IgnorePointer(
+            ignoring: !focused,
+            child: GestureDetector(
+              onTap: _inputFocusNode.unfocus,
+              child: AnimatedOpacity(
+                opacity: focused ? t : 0,
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeOut,
+                child: ColoredBox(color: Colors.black.withValues(alpha: 0.6)),
+              ),
+            ),
+          ),
+        ),
+        // The lit input row
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: FractionalTranslation(
+            translation: Offset(0, 1 - t),
+            child: Material(
+              color: Theme.of(context).colorScheme.surface,
+              child: Padding(
+                padding: EdgeInsets.only(
+                  bottom: bottomInset + 8,
+                  left: 16,
+                  right: 16,
+                ),
+                child: _composer(interactive: true),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 

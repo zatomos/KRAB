@@ -189,8 +189,27 @@ class _ImageViewerPageState extends State<ImageViewerPage>
     });
   }
 
+  ModalRoute<dynamic>? _route;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route != _route) {
+      _route?.animation?.removeStatusListener(_onRouteStatus);
+      _route = route;
+      _route?.animation?.addStatusListener(_onRouteStatus);
+    }
+  }
+
+  /// Hide the overlay chrome the moment the page starts popping
+  void _onRouteStatus(AnimationStatus status) {
+    if (status == AnimationStatus.reverse) _controlsAnim.value = 0;
+  }
+
   @override
   void dispose() {
+    _route?.animation?.removeStatusListener(_onRouteStatus);
     _pageController.removeListener(_onScroll);
     _pageController.dispose();
     _controlsAnim.dispose();
@@ -442,6 +461,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
     final viewport = MediaQuery.sizeOf(context);
     return Scaffold(
       backgroundColor: Colors.black,
+      resizeToAvoidBottomInset: false,
       body: GestureDetector(
         onTap: _toggleChrome,
         child: Stack(

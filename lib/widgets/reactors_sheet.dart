@@ -66,6 +66,10 @@ class _ReactorsSheet extends StatefulWidget {
 }
 
 class _ReactorsSheetState extends State<_ReactorsSheet> {
+  static const double _avatarRadius = 20;
+  static const double _rowVerticalPadding = 12;
+  static double get _rowHeight => _avatarRadius * 2 + _rowVerticalPadding * 2;
+
   List<_Reactor> _reactors = const [];
 
   /// Distinct emojis ordered by how many used them
@@ -156,12 +160,13 @@ class _ReactorsSheetState extends State<_ReactorsSheet> {
       );
     }
 
-    const double rowHeight = 52;
     const double minListHeight = 200;
     final allRows = _rowsFor(null);
-    final listHeight =
-        math.max(math.min(allRows.length, 6) * rowHeight, minListHeight)
-            .toDouble();
+    final maxListHeight =
+        math.max(MediaQuery.sizeOf(context).height * 0.7 - 140, minListHeight);
+    final listHeight = (allRows.length * _rowHeight)
+        .toDouble()
+        .clamp(minListHeight, maxListHeight);
 
     // "All" tab first, then one tab per emoji
     return DefaultTabController(
@@ -193,8 +198,9 @@ class _ReactorsSheetState extends State<_ReactorsSheet> {
               height: listHeight,
               child: TabBarView(
                 children: [
-                  _reactorList(allRows),
-                  for (final emoji in _emojis) _reactorList(_rowsFor(emoji)),
+                  _reactorList(allRows, listHeight),
+                  for (final emoji in _emojis)
+                    _reactorList(_rowsFor(emoji), listHeight),
                 ],
               ),
             ),
@@ -204,9 +210,10 @@ class _ReactorsSheetState extends State<_ReactorsSheet> {
     );
   }
 
-  Widget _reactorList(List<_ReactorRow> rows) {
+  Widget _reactorList(List<_ReactorRow> rows, double listHeight) {
+    final fits = rows.length * _rowHeight <= listHeight;
     return ListView.builder(
-      physics: rows.length <= 6
+      physics: fits
           ? const NeverScrollableScrollPhysics()
           : const ClampingScrollPhysics(),
       padding: EdgeInsets.zero,
@@ -219,10 +226,11 @@ class _ReactorsSheetState extends State<_ReactorsSheet> {
           pfpUrl: _pfpUrls[row.userId] ?? '',
         );
         return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 12),
+          padding:
+              const EdgeInsets.symmetric(vertical: _rowVerticalPadding),
           child: Row(
             children: [
-              UserAvatar(user, radius: 20),
+              UserAvatar(user, radius: _avatarRadius),
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
