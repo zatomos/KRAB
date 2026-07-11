@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import 'package:krab/main.dart';
+import 'package:krab/app_globals.dart';
 
 void showSnackBar(
   String message, {
