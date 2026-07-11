@@ -59,7 +59,20 @@ set_env API_EXTERNAL_URL "$API_URL"
 set_env DASHBOARD_USERNAME "$DASH_USER"
 [[ -n "$DASH_PASS" ]] && set_env DASHBOARD_PASSWORD "$DASH_PASS"
 
-# --- 1b. Firebase service account for push functions --------------------
+# --- 1b. docker-compose override: auth refresh-token config + Firebase --
+OVERRIDE_FILE="$SUPABASE_DIR/docker-compose.override.yml"
+cat > "$OVERRIDE_FILE" <<'YML'
+# Added by KRAB setup_backend.sh. Do not edit; re-run the script to regenerate.
+services:
+  auth:
+    environment:
+      GOTRUE_SECURITY_REFRESH_TOKEN_REUSE_INTERVAL: "10"
+      GOTRUE_SECURITY_REFRESH_TOKEN_ALGORITHM_VERSION: "2"
+      GOTRUE_SECURITY_REFRESH_TOKEN_UPGRADE_PERCENTAGE: "100"
+YML
+echo "  wrote auth refresh-token config to docker-compose.override.yml"
+
+# Firebase service account for the push edge functions (optional).
 printf '\nPaste the Firebase service-account JSON, then Ctrl-D (Ctrl-D alone to skip).\n> '
 sa_json="$(cat /dev/tty)"
 if [[ -n "${sa_json//[[:space:]]/}" ]]; then
@@ -68,21 +81,23 @@ if [[ -n "${sa_json//[[:space:]]/}" ]]; then
   grep -v '^GOOGLE_SERVICE_ACCOUNT=' "$ENV_FILE" > "$ENV_FILE.tmp" && mv "$ENV_FILE.tmp" "$ENV_FILE"
   printf "GOOGLE_SERVICE_ACCOUNT='%s'\n" "$sa_json" >> "$ENV_FILE"
   echo "  set GOOGLE_SERVICE_ACCOUNT"
+fi
 
-  # Expose it to the edge-functions container via a compose override so the
-  # upstream docker-compose.yml (re-downloaded on updates) stays clean.
-  cat > "$SUPABASE_DIR/docker-compose.override.yml" <<'YML'
-# Added by KRAB setup: pass the Firebase service account to the edge functions.
-services:
+# If a service account is present (just pasted, or kept from a previous run),
+# expose it to the edge-functions container via the same override.
+if grep -q '^GOOGLE_SERVICE_ACCOUNT=' "$ENV_FILE"; then
+  cat >> "$OVERRIDE_FILE" <<'YML'
   functions:
     environment:
       GOOGLE_SERVICE_ACCOUNT: ${GOOGLE_SERVICE_ACCOUNT}
 YML
-  if grep -q '^COMPOSE_FILE=' "$ENV_FILE" \
-     && ! grep '^COMPOSE_FILE=' "$ENV_FILE" | grep -q 'docker-compose.override.yml'; then
-    sed -i 's#^COMPOSE_FILE=.*#&:docker-compose.override.yml#' "$ENV_FILE"
-  fi
-  echo "  wrote docker-compose.override.yml (functions env)"
+  echo "  added functions env to docker-compose.override.yml"
+fi
+
+if grep -q '^COMPOSE_FILE=' "$ENV_FILE" \
+   && ! grep '^COMPOSE_FILE=' "$ENV_FILE" | grep -q 'docker-compose.override.yml'; then
+  sed -i 's#^COMPOSE_FILE=.*#&:docker-compose.override.yml#' "$ENV_FILE"
+  echo "  wired docker-compose.override.yml into COMPOSE_FILE"
 fi
 
 # --- 2. Start the stack ---------------------------------------------------

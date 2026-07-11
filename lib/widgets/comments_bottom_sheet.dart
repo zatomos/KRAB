@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'package:krab/services/auth/app_auth.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:krab/l10n/l10n.dart';
@@ -385,7 +386,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
   }
 
   Widget _buildCommentItem(Comment comment, String groupId, {int depth = 0}) {
-    final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+    final currentUserId = AppAuth.instance.currentUserId;
     final isCurrentUser = comment.userId == currentUserId;
     final maxDepth = 3; // Limit visual nesting depth
     final effectiveDepth = depth > maxDepth ? maxDepth : depth;

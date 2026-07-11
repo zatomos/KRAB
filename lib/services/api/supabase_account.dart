@@ -12,7 +12,7 @@ Future<SupabaseResponse<void>> fcmTokenHandler({String? username}) async {
       return SupabaseResponse(success: false, error: "Error getting FCM token");
     }
 
-    if (supabase.auth.currentUser == null) {
+    if (!AppAuth.instance.isLoggedIn) {
       return SupabaseResponse(success: false, error: "No authenticated user");
     }
 
@@ -34,9 +34,11 @@ Future<SupabaseResponse<void>> fcmTokenHandler({String? username}) async {
   }
 }
 
-String _authError(AuthException e) {
-  switch (e.code) {
+/// Map a GoTrue error code to the app's localized error keys.
+String _mapAuthError(String? code) {
+  switch (code) {
     case 'invalid_credentials':
+    case 'invalid_grant':
       return 'invalid_email_or_password';
     case 'user_already_exists':
     case 'email_exists':
@@ -44,7 +46,7 @@ String _authError(AuthException e) {
     case 'weak_password':
       return 'password_too_weak';
     default:
-      return e.message;
+      return code ?? 'auth_error';
   }
 }
 
@@ -52,59 +54,22 @@ String _authError(AuthException e) {
 Future<SupabaseResponse<void>> registerUser(
     String username, String email, String password) async {
   debugPrint("Registering user: $username, $email");
-  try {
-    final authResponse =
-        await supabase.auth.signUp(email: email, password: password);
-
-    if (authResponse.user == null) {
-      return SupabaseResponse(
-          success: false, error: "No user returned during sign up");
-    }
-
-    // Sign in the user
-    final signInResponse = await supabase.auth
-        .signInWithPassword(email: email, password: password);
-
-    if (signInResponse.user == null) {
-      return SupabaseResponse(
-          success: false, error: "Failed to sign in after sign up");
-    }
-
-    // Mint the independent background session so they never rotate the
-    // interactive session's token
-    await BackgroundSession.mintAndStore(email, password);
-
-    // Handle FCM token registration
-    await fcmTokenHandler(username: username);
-
-    return SupabaseResponse(success: true);
-  } catch (error) {
-    final message = error is AuthException
-        ? _authError(error)
-        : 'Error registering user: $error';
-    return SupabaseResponse(success: false, error: message);
+  final res = await AppAuth.instance.register(email, password);
+  if (!res.success) {
+    return SupabaseResponse(success: false, error: _mapAuthError(res.error));
   }
+  await fcmTokenHandler(username: username);
+  return SupabaseResponse(success: true);
 }
 
 /// Log in an existing user.
 Future<SupabaseResponse<void>> loginUser(String email, String password) async {
-  try {
-    final authResponse = await supabase.auth
-        .signInWithPassword(email: email, password: password);
-    if (authResponse.user == null) {
-      return SupabaseResponse(
-          success: false, error: "No user returned during login");
-    }
-    // Mint the independent background session so they never rotate the
-    // interactive session's token
-    await BackgroundSession.mintAndStore(email, password);
-    await fcmTokenHandler();
-    return SupabaseResponse(success: true);
-  } catch (error) {
-    final message =
-        error is AuthException ? _authError(error) : 'Error logging in: $error';
-    return SupabaseResponse(success: false, error: message);
+  final res = await AppAuth.instance.login(email, password);
+  if (!res.success) {
+    return SupabaseResponse(success: false, error: _mapAuthError(res.error));
   }
+  await fcmTokenHandler();
+  return SupabaseResponse(success: true);
 }
 
 /// Log out the current user.
@@ -116,16 +81,13 @@ Future<SupabaseResponse<void>> logOut() async {
     // Clean up FCM listeners
     await FcmHelper.dispose();
 
-    // Clear the independent background session
-    await BackgroundSession.clear();
-
     // Clear profile picture cache
     await ProfilePictureCache.of(supabase).clear();
     // Clear cached image bytes
     await ImageDiskCache.instance.clear();
 
-    // Sign out
-    await supabase.auth.signOut();
+    // Revoke server-side + clear the shared session.
+    await AppAuth.instance.logout();
     return SupabaseResponse(success: true);
   } catch (error) {
     // Reset the flag if logout fails
@@ -207,8 +169,7 @@ Future<SupabaseResponse<Map<String, dynamic>>> getCommentNotificationContext(
 /// Edit the username of the current user.
 Future<SupabaseResponse<void>> editUsername(String newUsername) async {
   try {
-    final user = supabase.auth.currentUser;
-    if (user == null) {
+    if (!AppAuth.instance.isLoggedIn) {
       return SupabaseResponse(success: false, error: "No current user");
     }
 
@@ -228,22 +189,22 @@ Future<SupabaseResponse<void>> editUsername(String newUsername) async {
 /// Edit the profile picture of the current user.
 Future<SupabaseResponse<void>> editProfilePicture(File imageFile) async {
   try {
-    final user = supabase.auth.currentUser;
-    if (user == null) {
+    final userId = AppAuth.instance.currentUserId;
+    if (userId == null) {
       return SupabaseResponse(success: false, error: "No current user");
     }
 
     // Check if a profile picture already exists
-    if (await supabase.storage.from("profile-pictures").exists(user.id)) {
-      await supabase.storage.from("profile-pictures").update(user.id, imageFile,
+    if (await supabase.storage.from("profile-pictures").exists(userId)) {
+      await supabase.storage.from("profile-pictures").update(userId, imageFile,
           fileOptions: const FileOptions(contentType: 'image/jpeg'));
     } else {
-      await supabase.storage.from("profile-pictures").upload(user.id, imageFile,
+      await supabase.storage.from("profile-pictures").upload(userId, imageFile,
           fileOptions: const FileOptions(contentType: 'image/jpeg'));
     }
 
-    await ProfilePictureCache.of(supabase).refresh(user.id);
-    await evictAvatar(user.id);
+    await ProfilePictureCache.of(supabase).refresh(userId);
+    await evictAvatar(userId);
 
     return SupabaseResponse(success: true);
   } catch (error) {
@@ -268,13 +229,13 @@ Future<SupabaseResponse<String>> getProfilePictureUrl(String userId) async {
 /// Delete the profile picture of the current user.
 Future<SupabaseResponse<void>> deleteProfilePicture() async {
   try {
-    final user = supabase.auth.currentUser;
-    if (user == null) {
+    final userId = AppAuth.instance.currentUserId;
+    if (userId == null) {
       return SupabaseResponse(success: false, error: "No current user");
     }
-    await supabase.storage.from("profile-pictures").remove([user.id]);
-    await ProfilePictureCache.of(supabase).refresh(user.id);
-    await evictAvatar(user.id);
+    await supabase.storage.from("profile-pictures").remove([userId]);
+    await ProfilePictureCache.of(supabase).refresh(userId);
+    await evictAvatar(userId);
     return SupabaseResponse(success: true);
   } catch (error) {
     return SupabaseResponse(
@@ -287,11 +248,11 @@ Future<SupabaseResponse<void>> deleteProfilePicture() async {
 /// Get the email of the current user.
 Future<SupabaseResponse<String>> getEmail() async {
   try {
-    final user = supabase.auth.currentUser;
-    if (user == null) {
+    final email = AppAuth.instance.currentUserEmail;
+    if (email == null) {
       return SupabaseResponse(success: false, error: "No current user");
     }
-    return SupabaseResponse(success: true, data: user.email);
+    return SupabaseResponse(success: true, data: email);
   } catch (error) {
     return SupabaseResponse(
         success: false, error: "Error getting email: $error");
@@ -301,25 +262,12 @@ Future<SupabaseResponse<String>> getEmail() async {
 /// Change the password of the current user, verifying the current password first.
 Future<SupabaseResponse<void>> changePassword(
     String currentPassword, String newPassword) async {
-  try {
-    final email = supabase.auth.currentUser?.email;
-    if (email == null) {
-      return SupabaseResponse(success: false, error: 'No authenticated user.');
-    }
-    await supabase.auth
-        .signInWithPassword(email: email, password: currentPassword);
-    await supabase.auth.updateUser(UserAttributes(password: newPassword));
-    // Revoke the old background sessions server-side, then re-mint with the new
-    // password so no stale background tokens linger after a password change.
-    await BackgroundSession.clear();
-    await BackgroundSession.mintAndStore(email, newPassword);
-    return SupabaseResponse(success: true);
-  } catch (error) {
-    final message = error is AuthException
-        ? _authError(error)
-        : 'Error changing password: $error';
-    return SupabaseResponse(success: false, error: message);
+  final res =
+      await AppAuth.instance.changePassword(currentPassword, newPassword);
+  if (!res.success) {
+    return SupabaseResponse(success: false, error: _mapAuthError(res.error));
   }
+  return SupabaseResponse(success: true);
 }
 
 /// Whether the password reset feature is enabled via the .env configuration.
@@ -332,17 +280,14 @@ Future<SupabaseResponse<void>> sendPasswordResetEmail(String email) async {
   if (!isPasswordResetEnabled) {
     return SupabaseResponse(success: false, error: 'Password reset is disabled');
   }
-  try {
-    final redirectUrl = dotenv.env['PASSWORD_RESET_URL'] ??
-        'https://your-domain.com/reset-password.html';
-    await supabase.auth.resetPasswordForEmail(email, redirectTo: redirectUrl);
-    return SupabaseResponse(success: true);
-  } catch (error) {
-    final message = error is AuthException
-        ? _authError(error)
-        : 'Error sending password reset email: $error';
-    return SupabaseResponse(success: false, error: message);
+  final redirectUrl = dotenv.env['PASSWORD_RESET_URL'] ??
+      'https://your-domain.com/reset-password.html';
+  final res =
+      await AppAuth.instance.sendPasswordReset(email, redirectTo: redirectUrl);
+  if (!res.success) {
+    return SupabaseResponse(success: false, error: _mapAuthError(res.error));
   }
+  return SupabaseResponse(success: true);
 }
 
 /// Set setting to receive notifications about new comments under other users' images.

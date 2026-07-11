@@ -3,12 +3,13 @@ import 'package:flutter/foundation.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../user_preferences.dart';
+import 'auth/app_auth.dart';
 import 'debug_notifier.dart';
 
 class FcmHelper {
   static bool _listenersWired = false;
   static StreamSubscription<String>? _tokenRefreshSubscription;
-  static StreamSubscription<AuthState>? _authStateSubscription;
+  static StreamSubscription<AppAuthStatus>? _authStateSubscription;
 
   /// Dispose all subscriptions
   static Future<void> dispose() async {
@@ -56,8 +57,7 @@ class FcmHelper {
         });
 
         // Auth changes
-        _authStateSubscription =
-            Supabase.instance.client.auth.onAuthStateChange.listen((_) async {
+        _authStateSubscription = AppAuth.instance.events.listen((_) async {
           final t = await FirebaseMessaging.instance.getToken();
           debugPrint('FCM: auth state changed; pushing latest token = $t');
           if (t != null) {
@@ -78,17 +78,17 @@ class FcmHelper {
         debugPrint('FCM: Supabase not configured; skipping token push.');
         return;
       }
-      final user = Supabase.instance.client.auth.currentUser;
-      if (user == null) {
+      final userId = AppAuth.instance.currentUserId;
+      if (userId == null) {
         debugPrint('FCM: no logged-in user; skipping token push.');
         return;
       }
 
       await Supabase.instance.client.from('Users').upsert({
-        'id': user.id,
+        'id': userId,
         'fcm_token': token,
       });
-      debugPrint('FCM: token pushed to Supabase for user ${user.id}');
+      debugPrint('FCM: token pushed to Supabase for user $userId');
       await DebugNotifier.instance.notifyFcmTokenPushed();
     } catch (e, st) {
       debugPrint('FCM: failed to push token: $e');

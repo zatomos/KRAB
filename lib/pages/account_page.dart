@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'package:krab/services/auth/app_auth.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
@@ -59,10 +60,9 @@ class AccountPageState extends State<AccountPage> {
       _isLoading = true;
     });
 
-    final supabase = Supabase.instance.client;
-    final authUser = supabase.auth.currentUser;
+    final userId = AppAuth.instance.currentUserId;
 
-    if (authUser == null) {
+    if (userId == null) {
       setState(() {
         _isLoading = false;
       });
@@ -70,7 +70,7 @@ class AccountPageState extends State<AccountPage> {
       return;
     }
 
-    final userResponse = await getUserDetails(authUser.id);
+    final userResponse = await getUserDetails(userId);
     final emailResponse = await getEmail();
 
     // Check auto image save preference

@@ -1,0 +1,283 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'package:krab/services/auth/gotrue_api.dart';
+import 'package:krab/services/auth/jwt.dart';
+import 'package:krab/user_preferences.dart';
+
+enum AppAuthStatus { signedIn, signedOut, tokenRefreshed }
+
+/// Result of an auth action. error is a GoTrue error code when success is false
+class AuthResult {
+  const AuthResult(this.success, [this.error]);
+  final bool success;
+  final String? error;
+}
+
+/// The single source of truth for the user's session, shared by every isolate.
+///
+/// KRAB uses supabase_flutter's accessToken hook: the Supabase clients hold
+/// no session of their own; they call [getValidToken] for every request.
+/// So there is exactly one refresh chain, owned here, and none of
+/// supabase_flutter's session lifecycle is in play.
+/// Refresh is single-flight across isolates via a file lock, and only
+/// the GoTrue REST API is touched.
+class AppAuth {
+  AppAuth._();
+  static final AppAuth instance = AppAuth._();
+
+  static const FlutterSecureStorage _storage = FlutterSecureStorage();
+  static const String _sessionKey = 'krab_session';
+
+  /// Refresh this many seconds before the access token expires.
+  static const int _refreshMarginSeconds = 300;
+
+  final StreamController<AppAuthStatus> _events =
+      StreamController<AppAuthStatus>.broadcast();
+
+  // In-memory view of the current session.
+  String? _accessToken;
+  String? _refreshToken;
+  int? _expiresAt; // epoch seconds
+  Map<String, dynamic>? _claims;
+
+  // Serialization of refreshes; the file lock serializes across.
+  Future<void> _chain = Future<void>.value();
+
+  GotrueApi get _api =>
+      GotrueApi(UserPreferences.supabaseUrl, UserPreferences.supabaseAnonKey);
+
+  /// Emits when the user signs in/out or the token is refreshed.
+  Stream<AppAuthStatus> get events => _events.stream;
+
+  bool get isLoggedIn => _refreshToken != null;
+  String? get currentUserId => _claims?['sub'] as String?;
+  String? get currentUserEmail => _claims?['email'] as String?;
+
+  /// Load the persisted session into memory. Call once per isolate at startup,
+  /// before initializing Supabase. Only reads storage.
+  Future<void> load() async {
+    try {
+      var raw = await _storage.read(key: _sessionKey);
+      raw ??= await _migrateLegacySession();
+      if (raw != null && raw.isNotEmpty) {
+        await _apply(jsonDecode(raw) as Map<String, dynamic>, persist: false);
+      }
+    } catch (e) {
+      debugPrint('AppAuth.load failed: $e');
+    }
+  }
+
+  /// One-time migration for users logged in on the previous build.
+  Future<String?> _migrateLegacySession() async {
+    try {
+      final url = UserPreferences.supabaseUrl;
+      if (url.isEmpty) return null;
+      final host = Uri.parse(url).host;
+      if (host.isEmpty) return null;
+      final legacyKey = 'sb-${host.split('.').first}-auth-token';
+      final prefs = await SharedPreferences.getInstance();
+      final legacy = prefs.getString(legacyKey);
+      if (legacy == null || legacy.isEmpty) return null;
+      await _storage.write(key: _sessionKey, value: legacy);
+      debugPrint('AppAuth: migrated legacy session from SharedPreferences.');
+      return legacy;
+    } catch (e) {
+      debugPrint('AppAuth: legacy migration failed: $e');
+      return null;
+    }
+  }
+
+  /// The `accessToken` callback wired into every Supabase client. Returns a
+  /// valid JWT, refreshing if near expiry, or null when logged out.
+  Future<String?> getValidToken() async {
+    if (_refreshToken == null) return null;
+    if (_accessToken != null && !_isNearExpiry()) return _accessToken;
+    await _ensureFresh();
+    return _accessToken;
+  }
+
+  bool _isNearExpiry() {
+    if (_expiresAt == null) return true;
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    return _expiresAt! - now <= _refreshMarginSeconds;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Auth actions (GoTrue REST)
+  // ---------------------------------------------------------------------------
+
+  Future<AuthResult> login(String email, String password) =>
+      _runAction(() async {
+        await _apply(await _api.passwordGrant(email, password), persist: true);
+        _events.add(AppAuthStatus.signedIn);
+      });
+
+  Future<AuthResult> register(String email, String password) =>
+      _runAction(() async {
+        await _api.signUp(email, password);
+        // Login
+        await _apply(await _api.passwordGrant(email, password), persist: true);
+        _events.add(AppAuthStatus.signedIn);
+      });
+
+  Future<AuthResult> changePassword(
+          String currentPassword, String newPassword) =>
+      _runAction(() async {
+        final email = currentUserEmail;
+        if (email == null) throw const GotrueAuthException('no_current_user');
+        // Verify the current password and obtain a fresh token to authorize the
+        // change, then re-grant on the new password so the stored session stays
+        // valid.
+        await _apply(await _api.passwordGrant(email, currentPassword),
+            persist: true);
+        await _api.updatePassword(_accessToken!, newPassword);
+        await _apply(await _api.passwordGrant(email, newPassword),
+            persist: true);
+        _events.add(AppAuthStatus.tokenRefreshed);
+      });
+
+  Future<AuthResult> sendPasswordReset(String email, {String? redirectTo}) =>
+      _runAction(() => _api.recover(email, redirectTo: redirectTo));
+
+  /// Sign out: revoke server-side (best-effort) and clear local state.
+  Future<void> logout() async {
+    final token = _accessToken;
+    if (token != null) await _api.logout(token);
+    await _clear();
+  }
+
+  Future<AuthResult> _runAction(Future<void> Function() action) async {
+    try {
+      await action();
+      return const AuthResult(true);
+    } on GotrueAuthException catch (e) {
+      return AuthResult(false, e.code);
+    } on GotrueNetworkException {
+      return const AuthResult(false, 'network_error');
+    } catch (e) {
+      return AuthResult(false, e.toString());
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Refresh (single-flight, cross-isolate)
+  // ---------------------------------------------------------------------------
+
+  Future<void> _ensureFresh() {
+    final next = _chain.then((_) => _refreshLocked());
+    _chain = next.catchError((_) {});
+    return next;
+  }
+
+  Future<void> _refreshLocked() async {
+    RandomAccessFile? lock;
+    try {
+      lock = await _acquireLock();
+
+      // Another isolate may have refreshed while we waited for the lock; adopt
+      // whatever is now persisted before deciding to refresh.
+      await _reloadFromStore();
+      if (_refreshToken == null || !_isNearExpiry()) return;
+
+      try {
+        await _apply(await _api.refreshGrant(_refreshToken!), persist: true);
+        _events.add(AppAuthStatus.tokenRefreshed);
+      } on GotrueNetworkException {
+        // Transient; keep the session and try again next time.
+        debugPrint('AppAuth: refresh skipped (offline)');
+      } on GotrueAuthException catch (e) {
+        // The refresh token is genuinely invalid -> sign out.
+        debugPrint('AppAuth: refresh rejected (${e.code}); signing out');
+        await _clear();
+      }
+    } catch (e) {
+      debugPrint('AppAuth._refreshLocked failed: $e');
+    } finally {
+      if (lock != null) {
+        try {
+          await lock.unlock();
+          await lock.close();
+        } catch (_) {}
+      }
+    }
+  }
+
+  Future<void> _reloadFromStore() async {
+    try {
+      final raw = await _storage.read(key: _sessionKey);
+      if (raw == null || raw.isEmpty) {
+        _accessToken = _refreshToken = null;
+        _expiresAt = null;
+        _claims = null;
+        return;
+      }
+      _apply(jsonDecode(raw) as Map<String, dynamic>, persist: false);
+    } catch (_) {}
+  }
+
+  /// Apply a GoTrue session JSON to memory and optionally persist it.
+  ///
+  /// When persist is true, the Keystore write is AWAITED, so a login or
+  /// refresh cannot be lost if the process dies immediately afterwards.
+  Future<void> _apply(Map<String, dynamic> session,
+      {required bool persist}) async {
+    final access = session['access_token'] as String?;
+    final refresh = session['refresh_token'] as String?;
+    if (access == null || refresh == null) {
+      throw const GotrueAuthException('no_session_in_response');
+    }
+    _accessToken = access;
+    _refreshToken = refresh;
+    _claims = decodeJwtPayload(access);
+    final expiresAt = session['expires_at'];
+    if (expiresAt is int) {
+      _expiresAt = expiresAt;
+    } else if (session['expires_in'] is int) {
+      _expiresAt = (DateTime.now().millisecondsSinceEpoch ~/ 1000) +
+          (session['expires_in'] as int);
+    } else {
+      _expiresAt = _claims?['exp'] as int?;
+    }
+    if (persist) {
+      // Persist the exact GoTrue session shape so any isolate can reload it.
+      await _storage.write(key: _sessionKey, value: jsonEncode(session));
+    }
+  }
+
+  Future<void> _clear() async {
+    _accessToken = _refreshToken = null;
+    _expiresAt = null;
+    _claims = null;
+    try {
+      await _storage.delete(key: _sessionKey);
+    } catch (_) {}
+    _events.add(AppAuthStatus.signedOut);
+  }
+
+  /// Best-effort cross-process exclusive lock. On timeout, returns null and the
+  /// caller proceeds unlocked (the server should absorb the rare
+  /// concurrent refresh); a stuck lock must never hang the app.
+  Future<RandomAccessFile?> _acquireLock() async {
+    try {
+      final file = File('${Directory.systemTemp.path}/krab_auth.lock');
+      final raf = await file.open(mode: FileMode.write);
+      try {
+        await raf.lock(FileLock.exclusive).timeout(const Duration(seconds: 8));
+        return raf;
+      } catch (e) {
+        await raf.close();
+        debugPrint('AppAuth: proceeding without lock: $e');
+        return null;
+      }
+    } catch (e) {
+      debugPrint('AppAuth: lock unavailable: $e');
+      return null;
+    }
+  }
+}
