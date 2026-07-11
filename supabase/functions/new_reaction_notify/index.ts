@@ -4,6 +4,7 @@ import {
   pruneDeadTokens,
   sendToTokens,
 } from '../_shared/fcm.ts';
+import type { FcmResult } from '../_shared/fcm.ts';
 
 interface Reaction {
   image_id: string;
@@ -58,46 +59,116 @@ Deno.serve(async (req) => {
 
     const uploaderId = imageData.uploaded_by;
 
-    // Never notify someone for reacting to their own image.
-    if (uploaderId === reaction.user_id) {
-      return new Response(JSON.stringify({ message: 'Self reaction, skipped' }), {
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-
-    const { data: uploaderData, error: uploaderError } = await supabase
-      .from('Users')
-      .select('fcm_token')
-      .eq('id', uploaderId)
-      .single();
-
-    if (uploaderError || !uploaderData) {
-      console.error('Error fetching uploader info:', uploaderError?.message);
-      return new Response(null, { status: 500 });
-    }
-
-    if (!uploaderData.fcm_token) {
-      console.log('Uploader has no FCM token.');
-      return new Response(JSON.stringify({ message: 'No notification sent' }), {
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-
     const { accessToken, projectId } = await getFcmAccessToken();
-    console.log('Firebase access token retrieved, notifying uploader');
+    console.log('Firebase access token retrieved');
 
-    const results = await sendToTokens(
-      projectId,
-      accessToken,
-      [uploaderData.fcm_token],
-      {
-        type: 'new_reaction',
-        image_id: reaction.image_id,
-        reactor_id: reaction.user_id,
-        emoji: reaction.emoji,
+    const allResults: FcmResult[] = [];
+
+    // Notify the uploader, unless they reacted to their own image.
+    if (uploaderId !== reaction.user_id) {
+      const { data: uploaderData, error: uploaderError } = await supabase
+        .from('Users')
+        .select('fcm_token')
+        .eq('id', uploaderId)
+        .single();
+
+      if (uploaderError || !uploaderData) {
+        console.error('Error fetching uploader info:', uploaderError?.message);
+      } else if (uploaderData.fcm_token) {
+        console.log('Sending notification to uploader');
+        allResults.push(
+          ...(await sendToTokens(
+            projectId,
+            accessToken,
+            [uploaderData.fcm_token],
+            {
+              type: 'new_reaction',
+              image_id: reaction.image_id,
+              reactor_id: reaction.user_id,
+              emoji: reaction.emoji,
+            }
+          ))
+        );
+      } else {
+        console.log('Uploader has no FCM token.');
       }
-    );
-    await pruneDeadTokens(supabase, results);
+    }
+
+    // Notify opted-in members of the groups the reactor actually shares with
+    // them
+    const { data: imageGroups, error: groupsError } = await supabase
+      .from('ImageGroups')
+      .select('group_id')
+      .eq('image_id', reaction.image_id);
+
+    if (groupsError || !imageGroups) {
+      console.error('Error fetching image groups:', groupsError?.message);
+    } else {
+      const imageGroupIds = imageGroups.map((g) => g.group_id);
+
+      // Restrict to the image's groups the reactor is a member of.
+      const { data: reactorGroups, error: reactorGroupsError } =
+        imageGroupIds.length > 0
+          ? await supabase
+              .from('Members')
+              .select('group_id')
+              .eq('user_id', reaction.user_id)
+              .neq('role', 'banned')
+              .in('group_id', imageGroupIds)
+          : { data: [], error: null };
+
+      if (reactorGroupsError) {
+        console.error(
+          'Error fetching reactor memberships:',
+          reactorGroupsError.message
+        );
+      }
+
+      const groupIds = (reactorGroups ?? []).map((g) => g.group_id);
+
+      if (groupIds.length > 0) {
+        const { data: members, error: membersError } = await supabase
+          .from('Members')
+          .select('user_id')
+          .in('group_id', groupIds);
+
+        if (membersError || !members) {
+          console.error('Error fetching group members:', membersError?.message);
+        } else {
+          // Dedupe members that share more than one of the image's groups, and
+          // exclude the reactor and the uploader
+          const userIds = [...new Set(members.map((m) => m.user_id))].filter(
+            (id) => id !== reaction.user_id && id !== uploaderId
+          );
+
+          if (userIds.length > 0) {
+            const { data: users, error: usersError } = await supabase
+              .from('Users')
+              .select('id, fcm_token, notify_group_reactions')
+              .in('id', userIds);
+
+            if (usersError || !users) {
+              console.error('Error fetching users:', usersError?.message);
+            } else {
+              const groupTokens = users
+                .filter((u) => u.notify_group_reactions === true && u.fcm_token)
+                .map((u) => u.fcm_token);
+
+              allResults.push(
+                ...(await sendToTokens(projectId, accessToken, groupTokens, {
+                  type: 'group_reaction',
+                  image_id: reaction.image_id,
+                  reactor_id: reaction.user_id,
+                  emoji: reaction.emoji,
+                }))
+              );
+            }
+          }
+        }
+      }
+    }
+
+    await pruneDeadTokens(supabase, allResults);
 
     return new Response(JSON.stringify({ message: 'Notification sent' }), {
       headers: { 'Content-Type': 'application/json' },

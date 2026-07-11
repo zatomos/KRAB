@@ -39,6 +39,7 @@ class AccountPageState extends State<AccountPage> {
 
   bool autoImageSave = false;
   bool receiveAllGroupComments = false;
+  bool receiveAllGroupReactions = false;
   bool debugNotificationsEnabled = false;
   bool updateNotificationsEnabled = true;
   bool _isCheckingForUpdates = false;
@@ -96,15 +97,25 @@ class AccountPageState extends State<AccountPage> {
           color: Colors.red);
     }
 
-    // Load group comment notification setting
+    // Load group comment and reaction notification settings
     final groupCommentSettingResponse =
         await getGroupCommentNotificationSetting();
+    final groupReactionSettingResponse =
+        await getGroupReactionNotificationSetting();
     if (!mounted) return;
 
     if (!groupCommentSettingResponse.success) {
       showSnackBar(
         context.l10n.error_loading_notification_setting(
             context.errorOr(groupCommentSettingResponse.error)),
+        color: Colors.red,
+      );
+    }
+
+    if (!groupReactionSettingResponse.success) {
+      showSnackBar(
+        context.l10n.error_loading_notification_setting(
+            context.errorOr(groupReactionSettingResponse.error)),
         color: Colors.red,
       );
     }
@@ -120,6 +131,11 @@ class AccountPageState extends State<AccountPage> {
       if (groupCommentSettingResponse.success &&
           groupCommentSettingResponse.data != null) {
         receiveAllGroupComments = groupCommentSettingResponse.data!;
+      }
+
+      if (groupReactionSettingResponse.success &&
+          groupReactionSettingResponse.data != null) {
+        receiveAllGroupReactions = groupReactionSettingResponse.data!;
       }
 
       _isLoading = false;
@@ -402,6 +418,30 @@ class AccountPageState extends State<AccountPage> {
                               if (res.success) {
                                 if (!mounted) return;
                                 setState(() => receiveAllGroupComments = value);
+                              } else {
+                                showSnackBar(
+                                    l10n.error_updating_setting(
+                                        res.error ?? l10n.unknown_error),
+                                    color: Colors.red);
+                              }
+                            });
+                          },
+                        ),
+                        SwitchListTile(
+                          title:
+                              Text(context.l10n.group_reaction_notifications),
+                          subtitle: Text(context
+                              .l10n.group_reaction_notifications_description),
+                          value: receiveAllGroupReactions,
+                          onChanged: (value) {
+                            final l10n = context.l10n;
+                            final response =
+                                setGroupReactionNotificationSetting(value);
+                            response.then((res) {
+                              if (res.success) {
+                                if (!mounted) return;
+                                setState(
+                                    () => receiveAllGroupReactions = value);
                               } else {
                                 showSnackBar(
                                     l10n.error_updating_setting(

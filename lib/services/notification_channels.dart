@@ -217,7 +217,8 @@ Future<void> dispatchCommentNotification(
   );
 }
 
-Future<void> dispatchReactionNotification(Map<String, dynamic> data) async {
+Future<void> dispatchReactionNotification(Map<String, dynamic> data,
+    [String type = 'new_reaction']) async {
   final imageId = data['image_id'] ?? '';
   final reactorId = data['reactor_id'] ?? '';
   final emoji = data['emoji'] ?? '';
@@ -231,6 +232,9 @@ Future<void> dispatchReactionNotification(Map<String, dynamic> data) async {
   var reactorUsername = (d['reactor_username'] as String?) ?? '';
   if (reactorUsername.isEmpty) reactorUsername = 'Someone';
 
+  final uploaderUsername =
+      type == 'group_reaction' ? d['uploader_username'] as String? : null;
+
   final results = await Future.wait([
     reactorId.isNotEmpty
         ? getProfilePictureBytes(reactorId)
@@ -243,6 +247,7 @@ Future<void> dispatchReactionNotification(Map<String, dynamic> data) async {
     reactorUsername: reactorUsername,
     emoji: emoji,
     imageId: imageId,
+    uploaderUsername: uploaderUsername,
     reactorAvatarBytes: results[0].data,
     imageBytes: results[1].data,
   );
@@ -400,6 +405,7 @@ Future<void> showReactionNotification({
   required String reactorUsername,
   required String emoji,
   required String imageId,
+  String? uploaderUsername,
   Uint8List? reactorAvatarBytes,
   Uint8List? imageBytes,
 }) async {
@@ -413,7 +419,9 @@ Future<void> showReactionNotification({
   await _flnp.show(
     id: DateTime.now().millisecondsSinceEpoch & 0x7FFFFFFF,
     title: reactorUsername,
-    body: _l10n().new_reaction_on_your_image_notification(emoji),
+    body: (uploaderUsername != null && uploaderUsername.isNotEmpty)
+        ? _l10n().new_reaction_on_someone_notification(emoji, uploaderUsername)
+        : _l10n().new_reaction_on_your_image_notification(emoji),
     notificationDetails: NotificationDetails(
       android: AndroidNotificationDetails(
         channelId,

@@ -194,6 +194,8 @@
   "got_it": "Got it!",
   "group_comment_notifications": "Group comment notifications",
   "group_comment_notifications_description": "Get notified when someone comments on a group image you didn't upload.",
+  "group_reaction_notifications": "Group reaction notifications",
+  "group_reaction_notifications_description": "Get notified when someone reacts to an image you didn't upload.",
   "replying_to": "Replying to",
   "write_reply": "Write a reply...",
   "confirm_delete_comment": "Are you sure you want to delete this comment?",
@@ -227,7 +229,7 @@
   "manage_invites": "Manage Invites",
   "who_can_invite": "Who can invite",
   "mute_notifications": "Mute notifications",
-  "mute_notifications_subtitle": "Don't notify me about photos, comments or reactions in this group. The widget will keep being updated.",
+  "mute_notifications_subtitle": "Don't notify me about photos or comments in this group. The widget will keep being updated.",
   "invite_permission_owner": "Owner only",
   "invite_permission_admin": "Owner and admins",
   "invite_permission_everyone": "Everyone",
@@ -262,5 +264,6 @@
   "no_reactions": "No reactions yet.",
   "quick_access_emoji": "Quick access",
   "no_recents": "No recent emojis",
-  "new_reaction_on_your_image_notification": "reacted {emoji} to your image"
+  "new_reaction_on_your_image_notification": "reacted {emoji} to your image",
+  "new_reaction_on_someone_notification": "reacted {emoji} to {uploader_username}'s image"
 }

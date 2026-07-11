@@ -128,8 +128,8 @@ void _listenToForegroundMessages() {
           msgType == 'group_comment' ||
           msgType == 'comment_reply') {
         await dispatchCommentNotification(message.data, msgType);
-      } else if (msgType == 'new_reaction') {
-        await dispatchReactionNotification(message.data);
+      } else if (msgType == 'new_reaction' || msgType == 'group_reaction') {
+        await dispatchReactionNotification(message.data, msgType);
       } else if (msgType == 'image_deleted') {
         await cancelImageNotification(message.data['image_id'] ?? '');
         await updateHomeWidget();

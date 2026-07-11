@@ -194,6 +194,8 @@
   "got_it": "Compris!",
   "group_comment_notifications": "Notifications de commentaires de groupe",
   "group_comment_notifications_description": "Soyez notifié lorsqu'un membre commente une image de groupe que vous n'avez pas publiée.",
+  "group_reaction_notifications": "Notifications de réactions de groupe",
+  "group_reaction_notifications_description": "Soyez notifié lorsqu'un membre réagit à une image que vous n'avez pas publiée.",
   "replying_to": "En réponse à",
   "write_reply": "Écrire une réponse...",
   "confirm_delete_comment": "Êtes-vous sûr de vouloir supprimer ce commentaire?",
@@ -227,7 +229,7 @@
   "manage_invites": "Gérer les invitations",
   "who_can_invite": "Qui peut inviter",
   "mute_notifications": "Mettre en sourdine",
-  "mute_notifications_subtitle": "Ne plus me notifier des photos, commentaires ou réactions de ce groupe. Le widget se mettra toujours à jour.",
+  "mute_notifications_subtitle": "Ne plus me notifier des photos ou commentaires de ce groupe. Le widget se mettra toujours à jour.",
   "invite_permission_owner": "Propriétaire uniquement",
   "invite_permission_admin": "Propriétaire et admins",
   "invite_permission_everyone": "Tout le monde",
@@ -262,5 +264,6 @@
   "no_reactions": "Aucune réaction pour l'instant.",
   "quick_access_emoji": "Accès rapide",
   "no_recents": "Aucun emoji récent",
-  "new_reaction_on_your_image_notification": "a réagi {emoji} à votre image"
+  "new_reaction_on_your_image_notification": "a réagi {emoji} à votre image",
+  "new_reaction_on_someone_notification": "a réagi {emoji} à l'image de {uploader_username}"
 }

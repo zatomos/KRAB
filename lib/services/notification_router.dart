@@ -133,6 +133,7 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       type != 'group_comment' &&
       type != 'comment_reply' &&
       type != 'new_reaction' &&
+      type != 'group_reaction' &&
       type != 'image_deleted') {
     debugPrint('Background message type "$type" not handled, skipping');
     return;
@@ -164,8 +165,8 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       // the widget so it drops out
       await cancelImageNotification(message.data['image_id'] ?? '');
       await updateHomeWidget();
-    } else if (type == 'new_reaction') {
-      await dispatchReactionNotification(message.data);
+    } else if (type == 'new_reaction' || type == 'group_reaction') {
+      await dispatchReactionNotification(message.data, type);
     } else {
       await dispatchCommentNotification(message.data, type);
     }

@@ -1302,6 +1302,47 @@ END;$$;
 
 
 --
+-- Name: get_notify_group_reactions(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.get_notify_group_reactions() RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$DECLARE
+  current_user_id uuid;
+  enabled_value boolean;
+BEGIN
+  current_user_id := auth.uid();
+
+  -- Check authentication
+  IF current_user_id IS NULL THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'User not authenticated'
+    );
+  END IF;
+
+  -- Fetch the setting
+  SELECT notify_group_reactions
+  INTO enabled_value
+  FROM "Users"
+  WHERE id = current_user_id;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object(
+      'success', false,
+      'error', 'User not found'
+    );
+  END IF;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'enabled', COALESCE(enabled_value, false)
+  );
+END;$$;
+
+
+--
 -- Name: get_reaction_notification(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1311,6 +1352,7 @@ CREATE FUNCTION public.get_reaction_notification(p_image_id uuid, p_reactor_id u
     AS $$DECLARE
   uid uuid;
   v_reactor_username text;
+  v_uploader_username text;
 BEGIN
   uid := auth.uid();
   IF uid IS NULL THEN
@@ -1324,11 +1366,16 @@ BEGIN
     RETURN jsonb_build_object('success', false, 'error', 'Not found or not a member');
   END IF;
   SELECT username INTO v_reactor_username FROM "Users" WHERE id = p_reactor_id;
+  SELECT u.username INTO v_uploader_username
+  FROM "Images" i
+  JOIN "Users" u ON u.id = i.uploaded_by
+  WHERE i.id = p_image_id;
   RETURN jsonb_build_object(
     'success', true,
     'image_id', p_image_id,
     'reactor_id', p_reactor_id,
-    'reactor_username', COALESCE(v_reactor_username, '')
+    'reactor_username', COALESCE(v_reactor_username, ''),
+    'uploader_username', COALESCE(v_uploader_username, '')
   );
 EXCEPTION
   WHEN OTHERS THEN
@@ -2019,6 +2066,51 @@ BEGIN
     RETURN jsonb_build_object(
         'success', true,
         'notify_group_comments', enabled
+    );
+
+EXCEPTION
+    WHEN OTHERS THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'error', SQLERRM
+        );
+END;$$;
+
+
+--
+-- Name: set_notify_group_reactions(boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.set_notify_group_reactions(enabled boolean) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$DECLARE
+    current_user_id UUID;
+BEGIN
+    current_user_id := auth.uid();
+
+    -- Check if user is authenticated
+    IF current_user_id IS NULL THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'error', 'User not authenticated'
+        );
+    END IF;
+
+    UPDATE "Users"
+    SET notify_group_reactions = enabled
+    WHERE id = current_user_id;
+
+    IF NOT FOUND THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'error', 'User not found'
+        );
+    END IF;
+
+    RETURN jsonb_build_object(
+        'success', true,
+        'notify_group_reactions', enabled
     );
 
 EXCEPTION
@@ -3284,6 +3376,7 @@ CREATE TABLE public."Users" (
     id uuid NOT NULL,
     fcm_token text,
     notify_group_comments boolean DEFAULT false NOT NULL,
+    notify_group_reactions boolean DEFAULT false NOT NULL,
     CONSTRAINT "Users_username_check" CHECK ((length(username) < 20))
 );
 
@@ -3300,6 +3393,13 @@ COMMENT ON TABLE public."Users" IS 'contains usernames';
 --
 
 COMMENT ON COLUMN public."Users".notify_group_comments IS 'Users can choose whether they want to receive notifications about comment posted under other user''s images';
+
+
+--
+-- Name: COLUMN "Users".notify_group_reactions; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public."Users".notify_group_reactions IS 'Users can choose whether they want to receive notifications about reactions posted on other user''s images';
 
 
 --
@@ -4680,6 +4780,15 @@ GRANT ALL ON FUNCTION public.get_notify_group_comments() TO service_role;
 
 
 --
+-- Name: FUNCTION get_notify_group_reactions(); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.get_notify_group_reactions() TO anon;
+GRANT ALL ON FUNCTION public.get_notify_group_reactions() TO authenticated;
+GRANT ALL ON FUNCTION public.get_notify_group_reactions() TO service_role;
+
+
+--
 -- Name: FUNCTION get_reaction_notification(p_image_id uuid, p_reactor_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
@@ -4835,6 +4944,15 @@ GRANT ALL ON FUNCTION public.set_group_invite_permission(p_group_id uuid, p_perm
 GRANT ALL ON FUNCTION public.set_notify_group_comments(enabled boolean) TO anon;
 GRANT ALL ON FUNCTION public.set_notify_group_comments(enabled boolean) TO authenticated;
 GRANT ALL ON FUNCTION public.set_notify_group_comments(enabled boolean) TO service_role;
+
+
+--
+-- Name: FUNCTION set_notify_group_reactions(enabled boolean); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.set_notify_group_reactions(enabled boolean) TO anon;
+GRANT ALL ON FUNCTION public.set_notify_group_reactions(enabled boolean) TO authenticated;
+GRANT ALL ON FUNCTION public.set_notify_group_reactions(enabled boolean) TO service_role;
 
 
 --

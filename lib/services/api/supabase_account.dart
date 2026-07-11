@@ -302,6 +302,18 @@ Future<SupabaseResponse<bool>> getGroupCommentNotificationSetting() =>
         errorContext: "fetching notification setting",
         parse: (r) => r['enabled'] as bool);
 
+/// Set setting to receive notifications about new reactions on other users' images.
+Future<SupabaseResponse<void>> setGroupReactionNotificationSetting(
+        bool enabled) =>
+    _rpc("set_notify_group_reactions",
+        params: {"enabled": enabled},
+        errorContext: "updating notification setting");
+
+Future<SupabaseResponse<bool>> getGroupReactionNotificationSetting() =>
+    _rpc("get_notify_group_reactions",
+        errorContext: "fetching notification setting",
+        parse: (r) => r['enabled'] as bool);
+
 /// Resolve the group/reactor names a reaction notification needs.
 Future<SupabaseResponse<Map<String, dynamic>>> getReactionNotificationContext(
     String imageId, String reactorId) async {
