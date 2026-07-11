@@ -11,7 +11,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:home_widget/home_widget.dart';
 
 import 'package:krab/services/api/supabase.dart';
-import 'package:krab/services/background_session.dart';
+import 'package:krab/services/auth/app_auth.dart';
 import 'package:krab/services/fcm_helper.dart';
 import 'package:krab/services/feed_events.dart';
 import 'package:krab/services/home_widget_updater.dart';
@@ -27,7 +27,6 @@ import 'package:krab/pages/camera_page.dart';
 import 'package:krab/pages/image_feed_page.dart';
 import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
-import 'package:krab/widgets/dialogs/reauth_prompt.dart';
 import 'package:krab/widgets/update_checker.dart';
 import 'package:krab/l10n/l10n.dart';
 import 'user_preferences.dart';
@@ -61,8 +60,7 @@ Future<void> handleWidgetLaunch(Uri? uri) async {
     if (nav == null) return;
 
     // Only act on an authenticated session; otherwise the app just opens
-    if (!isSupabaseInitialized ||
-        Supabase.instance.client.auth.currentUser == null) {
+    if (!isSupabaseInitialized || !AppAuth.instance.isLoggedIn) {
       return;
     }
 
@@ -149,12 +147,14 @@ Future<bool> initializeSupabaseIfNeeded() async {
   }
 
   try {
+    // Load the shared session before init so the accessToken hook can serve it.
+    await AppAuth.instance.load();
     await Supabase.initialize(
       url: url,
       anonKey: anon,
-      authOptions: const FlutterAuthClientOptions(
-        authFlowType: AuthFlowType.implicit,
-      ),
+      // Third-party-auth mode: supabase_flutter holds NO session; every request
+      // asks AppAuth for a valid token. One refresh chain, owned by AppAuth.
+      accessToken: AppAuth.instance.getValidToken,
     );
     isSupabaseInitialized = true;
     debugPrint('Supabase initialized successfully');
@@ -169,8 +169,9 @@ Future<bool> initializeSupabaseIfNeeded() async {
   }
 }
 
-/// Initialize Supabase for a background isolate
-Future<bool> initializeBackgroundSupabase(LocalStorage storage) async {
+/// Initialize Supabase for a background isolate against the single shared
+/// session owned by [AppAuth].
+Future<bool> initializeBackgroundSupabase() async {
   if (isSupabaseInitialized) return true;
 
   final url = UserPreferences.supabaseUrl;
@@ -182,16 +183,14 @@ Future<bool> initializeBackgroundSupabase(LocalStorage storage) async {
   }
 
   try {
+    await AppAuth.instance.load();
     await Supabase.initialize(
       url: url,
       anonKey: anon,
-      authOptions: FlutterAuthClientOptions(
-        authFlowType: AuthFlowType.implicit,
-        localStorage: storage,
-      ),
+      accessToken: AppAuth.instance.getValidToken,
     );
     isSupabaseInitialized = true;
-    debugPrint('Background Supabase initialized (isolated session)');
+    debugPrint('Background Supabase initialized (shared session)');
     return true;
   } catch (e) {
     debugPrint('Background Supabase init failed: $e');
@@ -218,15 +217,13 @@ void workmanagerCallbackDispatcher() {
       // Piggyback a throttled app-update check on this wakeup
       await UpdateService.maybeCheckAndNotifyUpdate();
 
-      // This isolate owns its own background session and refreshes it itself
-      final supabaseOk = await initializeBackgroundSupabase(
-          BackgroundSession.workmanagerStorage);
+      final supabaseOk = await initializeBackgroundSupabase();
       if (!supabaseOk) {
         debugPrint('WorkManager: Supabase init failed, skipping widget update');
         return Future.value(false);
       }
-      if (!await BackgroundSession.recoverOrClear(
-          BackgroundSession.workmanagerStorage)) {
+      if (await AppAuth.instance.getValidToken() == null) {
+        debugPrint('WorkManager: no valid session, skipping widget update');
         return Future.value(true);
       }
 
@@ -259,8 +256,7 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     await _bootstrapBackgroundIsolate();
     await DebugNotifier.instance.notifyBackgroundTaskStarted();
 
-    final supabaseOk =
-        await initializeBackgroundSupabase(BackgroundSession.fcmStorage);
+    final supabaseOk = await initializeBackgroundSupabase();
     if (!supabaseOk) {
       debugPrint('Supabase not initialized (background)');
       await DebugNotifier.instance
@@ -268,9 +264,9 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       return;
     }
 
-    if (!await BackgroundSession.recoverOrClear(BackgroundSession.fcmStorage)) {
+    if (await AppAuth.instance.getValidToken() == null) {
       await DebugNotifier.instance.notifyBackgroundTaskFailed(
-          'Background session expired, reopen the app to re-authenticate');
+          'Background session unavailable, reopen the app to re-authenticate');
       return;
     }
 
@@ -422,12 +418,10 @@ void main() async {
       await cacheUserGroupsForWidget();
 
       // Monitor auth state changes
-      Supabase.instance.client.auth.onAuthStateChange.listen((data) async {
-        final event = data.event;
-        debugPrint('Auth state changed: $event');
-
-        switch (event) {
-          case AuthChangeEvent.signedOut:
+      AppAuth.instance.events.listen((status) async {
+        debugPrint('Auth state changed: $status');
+        switch (status) {
+          case AppAuthStatus.signedOut:
             if (DebugNotifier.instance.isIntentionalLogout) {
               await DebugNotifier.instance
                   .notifyAuthSignedOut(unexpected: false);
@@ -439,18 +433,14 @@ void main() async {
               );
             }
             break;
-          case AuthChangeEvent.tokenRefreshed:
+          case AppAuthStatus.tokenRefreshed:
             await DebugNotifier.instance.notifyAuthTokenRefreshed();
             break;
-          case AuthChangeEvent.signedIn:
-            await DebugNotifier.instance.notifyAuthStateChanged(event.name);
-            // The cold-start widget refresh (app resume) can fire before the
-            // session is restored, failing with "User not authenticated". Now
-            // that we're authenticated, refresh so the widget actually fills in
+          case AppAuthStatus.signedIn:
+            await DebugNotifier.instance.notifyAuthStateChanged('signedIn');
+            // Now that we're authenticated, refresh so the widget fills in.
             unawaited(updateHomeWidget());
             break;
-          default:
-            await DebugNotifier.instance.notifyAuthStateChanged(event.name);
         }
       });
     } else {
@@ -556,12 +546,6 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
         pendingWidgetUri = null;
       }
 
-      // One-time prompt to establish the background session for users who were
-      // already logged in before it existed
-      if (isSupabaseInitialized && navigatorKey.currentContext != null) {
-        await showReauthPromptIfNeeded(navigatorKey.currentContext!);
-      }
-
       // Show widget prompt if not first launch
       if (!UserPreferences.isFirstLaunch &&
           navigatorKey.currentContext != null) {
@@ -582,11 +566,10 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
     if (state != AppLifecycleState.resumed) return;
     if (!isSupabaseInitialized) return;
 
-    // Re-establish the background session if it was dropped while we were away
-    final ctx = navigatorKey.currentContext;
-    if (ctx != null) {
-      showReauthPromptIfNeeded(ctx);
-    }
+    // Warm the token so the first post-resume request (and the widget refresh
+    // below) don't have to wait on a refresh. On-demand refresh still covers
+    // everything else via the accessToken hook.
+    AppAuth.instance.getValidToken();
 
     final now = DateTime.now();
     final canRefresh = _lastWidgetRefresh == null ||
@@ -668,8 +651,9 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
         return const LoginPage();
       }
 
-      final isLoggedIn = Supabase.instance.client.auth.currentUser != null;
-      return isLoggedIn ? const CameraPage() : const LoginPage();
+      return AppAuth.instance.isLoggedIn
+          ? const CameraPage()
+          : const LoginPage();
     } catch (e, st) {
       debugPrint('Error determining home page: $e');
       debugPrint(st.toString());

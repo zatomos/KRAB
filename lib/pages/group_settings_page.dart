@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'package:krab/services/auth/app_auth.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:krab/services/home_widget_updater.dart';
@@ -39,7 +40,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
     super.initState();
     _group = widget.group;
     _membersFuture = getGroupMembers(_group.id);
-    _currentUserId = Supabase.instance.client.auth.currentUser?.id;
+    _currentUserId = AppAuth.instance.currentUserId;
     UserPreferences.isGroupMuted(_group.id).then((muted) {
       if (mounted) setState(() => _muted = muted);
     });

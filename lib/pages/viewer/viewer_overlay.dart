@@ -2,6 +2,8 @@ import 'dart:typed_data';
 import 'dart:ui';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+
+import 'package:krab/services/auth/app_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:krab/l10n/l10n.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -798,7 +800,7 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
   }
 
   bool get _isOwner =>
-      widget.imageData.uploadedBy == supabase.auth.currentUser?.id;
+      widget.imageData.uploadedBy == AppAuth.instance.currentUserId;
 
   Future<void> _deleteImage() async {
     final groups = await fetchPostedInGroups(widget.imageId) ?? const [];
