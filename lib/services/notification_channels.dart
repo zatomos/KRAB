@@ -258,14 +258,35 @@ Future<void> dispatchImageNotification(Map<String, dynamic> data) async {
   final imageId = data['image_id'] ?? '';
 
   if (groupId.isEmpty || imageId.isEmpty) return;
-  // Skip the notification if the user muted this group.
-  if (await UserPreferences.isGroupMuted(groupId)) return;
 
-  final ctx = await getImageNotificationContext(imageId, groupId);
+  final ctx = await getImageNotificationContext(imageId);
   if (!ctx.success || ctx.data == null) return;
 
-  final groupName = (ctx.data!['group_name'] as String?) ?? '';
-  if (groupName.isEmpty) return;
+  // Every group the image was sent to that the user can see. An image shared to
+  // several groups yields a single notification that names all of them.
+  final rawGroups = (ctx.data!['groups'] as List?) ?? const [];
+  final groups = rawGroups
+      .whereType<Map>()
+      .map((g) => (
+            id: (g['id'] as String?) ?? '',
+            name: (g['name'] as String?) ?? '',
+          ))
+      .where((g) => g.id.isNotEmpty && g.name.isNotEmpty)
+      .toList();
+  if (groups.isEmpty) return;
+
+  // Drop muted groups; only suppress the notification if every group is muted.
+  final unmuted = <({String id, String name})>[];
+  for (final g in groups) {
+    if (!await UserPreferences.isGroupMuted(g.id)) unmuted.add(g);
+  }
+  if (unmuted.isEmpty) return;
+
+  // Use the triggering group for the notification channel when it survived the
+  // mute filter, otherwise the first visible group. The subtext lists them all.
+  final channel =
+      unmuted.firstWhere((g) => g.id == groupId, orElse: () => unmuted.first);
+  final groupsDisplay = unmuted.map((g) => g.name).join(', ');
 
   final senderId = (ctx.data!['sender_id'] as String?) ?? '';
   var senderUsername = (ctx.data!['sender_username'] as String?) ?? '';
@@ -281,8 +302,9 @@ Future<void> dispatchImageNotification(Map<String, dynamic> data) async {
 
   await initCommentNotifications();
   await showImageNotification(
-    groupId: groupId,
-    groupName: groupName,
+    groupId: channel.id,
+    groupName: channel.name,
+    groupsDisplay: groupsDisplay,
     senderUsername: senderUsername,
     imageId: imageId,
     imageDescription: imageDescription,
@@ -296,12 +318,18 @@ Future<void> showImageNotification({
   required String groupName,
   required String senderUsername,
   required String imageId,
+  String? groupsDisplay,
   String imageDescription = '',
   Uint8List? senderAvatarBytes,
   Uint8List? imageBytes,
 }) async {
   await _ensureFlnpInitialized();
   await _createFlnpChannel(groupId, groupName);
+
+  // Shown on the notification itself; lists every group the image was sent to.
+  final subText = (groupsDisplay != null && groupsDisplay.isNotEmpty)
+      ? groupsDisplay
+      : groupName;
 
   final compositeBytes = _buildImageLargeIcon(imageBytes, senderAvatarBytes);
 
@@ -343,7 +371,7 @@ Future<void> showImageNotification({
         groupId,
         groupName,
         icon: '@drawable/ic_stat_krab_logo',
-        subText: groupName,
+        subText: subText,
         importance: Importance.high,
         priority: Priority.high,
         largeIcon: compositeBytes != null

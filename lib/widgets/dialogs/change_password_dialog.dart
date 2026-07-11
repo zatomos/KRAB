@@ -84,59 +84,62 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text(context.l10n.change_password),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            RoundedInputField(
-              controller: _currentController,
-              hintText: context.l10n.current_password,
-              obscureText: !_showCurrent,
-              icon: const Icon(Icons.lock_rounded),
-              suffixIcon: IconButton(
-                icon: Icon(_showCurrent
-                    ? Icons.visibility_off_rounded
-                    : Icons.visibility_rounded),
-                onPressed: () => setState(() => _showCurrent = !_showCurrent),
+      content: SizedBox(
+        width: MediaQuery.sizeOf(context).width,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              RoundedInputField(
+                controller: _currentController,
+                hintText: context.l10n.current_password,
+                obscureText: !_showCurrent,
+                icon: const Icon(Icons.lock_rounded),
+                suffixIcon: IconButton(
+                  icon: Icon(_showCurrent
+                      ? Icons.visibility_off_rounded
+                      : Icons.visibility_rounded),
+                  onPressed: () => setState(() => _showCurrent = !_showCurrent),
+                ),
               ),
-            ),
-            AutofillGroup(
-              onDisposeAction: AutofillContextAction.cancel,
-              child: Column(
-                children: [
-                  RoundedInputField(
-                    controller: _newController,
-                    hintText: context.l10n.new_password,
-                    obscureText: !_showNew,
-                    icon: const Icon(Icons.key_rounded),
-                    autofillHints: const [AutofillHints.newPassword],
-                    suffixIcon: IconButton(
-                      icon: Icon(_showNew
-                          ? Icons.visibility_off_rounded
-                          : Icons.visibility_rounded),
-                      onPressed: () => setState(() => _showNew = !_showNew),
+              AutofillGroup(
+                onDisposeAction: AutofillContextAction.cancel,
+                child: Column(
+                  children: [
+                    RoundedInputField(
+                      controller: _newController,
+                      hintText: context.l10n.new_password,
+                      obscureText: !_showNew,
+                      icon: const Icon(Icons.key_rounded),
+                      autofillHints: const [AutofillHints.newPassword],
+                      suffixIcon: IconButton(
+                        icon: Icon(_showNew
+                            ? Icons.visibility_off_rounded
+                            : Icons.visibility_rounded),
+                        onPressed: () => setState(() => _showNew = !_showNew),
+                      ),
                     ),
-                  ),
-                  RoundedInputField(
-                    controller: _confirmController,
-                    hintText: context.l10n.confirm_new_password,
-                    obscureText: !_showConfirm,
-                    errorText: _error,
-                    icon: const Icon(Icons.check_rounded),
-                    autofillHints: const [AutofillHints.newPassword],
-                    suffixIcon: IconButton(
-                      icon: Icon(_showConfirm
-                          ? Icons.visibility_off_rounded
-                          : Icons.visibility_rounded),
-                      onPressed: () =>
-                          setState(() => _showConfirm = !_showConfirm),
+                    RoundedInputField(
+                      controller: _confirmController,
+                      hintText: context.l10n.confirm_new_password,
+                      obscureText: !_showConfirm,
+                      errorText: _error,
+                      icon: const Icon(Icons.check_rounded),
+                      autofillHints: const [AutofillHints.newPassword],
+                      suffixIcon: IconButton(
+                        icon: Icon(_showConfirm
+                            ? Icons.visibility_off_rounded
+                            : Icons.visibility_rounded),
+                        onPressed: () =>
+                            setState(() => _showConfirm = !_showConfirm),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
       actions: [

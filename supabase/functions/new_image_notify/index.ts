@@ -94,13 +94,38 @@ Deno.serve(async (req) => {
             return new Response(null, { status: 500 })
         }
 
+        const usersWithToken = users.filter((u) => u.fcm_token)
+
+        // Claim each user in the dedup ledger so we notify them at most once per
+        // image, even when the image is shared to several groups at once
+        const { data: claimed, error: claimError } = await supabase
+            .from('NotifiedImageUsers')
+            .upsert(
+                usersWithToken.map((u) => ({ image_id: imageId, user_id: u.id })),
+                { onConflict: 'image_id,user_id', ignoreDuplicates: true }
+            )
+            .select('user_id')
+
+        if (claimError) {
+            console.error('Error claiming notification ledger:', claimError.message)
+            return new Response(null, { status: 500 })
+        }
+
+        const claimedIds = new Set((claimed ?? []).map((c) => c.user_id))
+        const usersToNotify = usersWithToken.filter((u) => claimedIds.has(u.id))
+
+        if (usersToNotify.length === 0) {
+            console.log('All members already notified for this image.')
+            return new Response(null, { status: 200 })
+        }
+
         const { accessToken, projectId } = await getFcmAccessToken()
         console.log('Firebase access token retrieved')
 
         const results = await sendToTokens(
             projectId,
             accessToken,
-            users.map((u) => u.fcm_token),
+            usersToNotify.map((u) => u.fcm_token),
             { type: 'new_image', image_id: imageId, group_id: groupId }
         )
         await pruneDeadTokens(supabase, results)

@@ -1088,46 +1088,55 @@ END;$$;
 
 
 --
--- Name: get_image_notification(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+-- Name: get_image_notification(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.get_image_notification(p_image_id uuid, p_group_id uuid) RETURNS jsonb
+CREATE FUNCTION public.get_image_notification(p_image_id uuid) RETURNS jsonb
     LANGUAGE plpgsql
     SET search_path TO 'public'
-    AS $$DECLARE
+    AS $$
+DECLARE
   uid UUID;
-  r RECORD;
+  v_sender_id UUID;
+  v_sender_username TEXT;
+  v_description TEXT;
+  v_groups JSONB;
 BEGIN
   uid := auth.uid();
   IF uid IS NULL THEN
     RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
   END IF;
 
-  SELECT g.name        AS group_name,
-         i.uploaded_by AS sender_id,
-         u.username    AS sender_username,
-         i.description AS description
-  INTO r
+  SELECT i.uploaded_by, u.username, i.description
+  INTO v_sender_id, v_sender_username, v_description
+  FROM "Images" i
+  LEFT JOIN "Users" u ON u.id = i.uploaded_by
+  WHERE i.id = p_image_id;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Image not found');
+  END IF;
+
+  -- Every group this image was sent to that the caller is a non-banned member of.
+  SELECT jsonb_agg(jsonb_build_object('id', g.id, 'name', g.name) ORDER BY g.name)
+  INTO v_groups
   FROM "Groups" g
   JOIN "ImageGroups" ig ON ig.group_id = g.id AND ig.image_id = p_image_id
-  JOIN "Images" i       ON i.id = p_image_id
-  LEFT JOIN "Users" u   ON u.id = i.uploaded_by
-  WHERE g.id = p_group_id
-    AND EXISTS (
-      SELECT 1 FROM "Members" m
-      WHERE m.group_id = g.id AND m.user_id = uid AND m.role != 'banned'
-    );
+  WHERE EXISTS (
+    SELECT 1 FROM "Members" m
+    WHERE m.group_id = g.id AND m.user_id = uid AND m.role != 'banned'
+  );
 
-  IF r IS NULL THEN
+  IF v_groups IS NULL THEN
     RETURN jsonb_build_object('success', false, 'error', 'Not found or not a member');
   END IF;
 
   RETURN jsonb_build_object(
     'success', true,
-    'group_name', r.group_name,
-    'sender_id', r.sender_id,
-    'sender_username', COALESCE(r.sender_username, ''),
-    'description', COALESCE(r.description, '')
+    'groups', v_groups,
+    'sender_id', v_sender_id,
+    'sender_username', COALESCE(v_sender_username, ''),
+    'description', COALESCE(v_description, '')
   );
 EXCEPTION
   WHEN OTHERS THEN
@@ -1314,31 +1323,20 @@ CREATE FUNCTION public.get_notify_group_reactions() RETURNS jsonb
 BEGIN
   current_user_id := auth.uid();
 
-  -- Check authentication
   IF current_user_id IS NULL THEN
-    RETURN jsonb_build_object(
-      'success', false,
-      'error', 'User not authenticated'
-    );
+    RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
   END IF;
 
-  -- Fetch the setting
   SELECT notify_group_reactions
   INTO enabled_value
   FROM "Users"
   WHERE id = current_user_id;
 
   IF NOT FOUND THEN
-    RETURN jsonb_build_object(
-      'success', false,
-      'error', 'User not found'
-    );
+    RETURN jsonb_build_object('success', false, 'error', 'User not found');
   END IF;
 
-  RETURN jsonb_build_object(
-    'success', true,
-    'enabled', COALESCE(enabled_value, false)
-  );
+  RETURN jsonb_build_object('success', true, 'enabled', COALESCE(enabled_value, false));
 END;$$;
 
 
@@ -2089,12 +2087,8 @@ CREATE FUNCTION public.set_notify_group_reactions(enabled boolean) RETURNS jsonb
 BEGIN
     current_user_id := auth.uid();
 
-    -- Check if user is authenticated
     IF current_user_id IS NULL THEN
-        RETURN jsonb_build_object(
-            'success', false,
-            'error', 'User not authenticated'
-        );
+        RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
     END IF;
 
     UPDATE "Users"
@@ -2102,23 +2096,14 @@ BEGIN
     WHERE id = current_user_id;
 
     IF NOT FOUND THEN
-        RETURN jsonb_build_object(
-            'success', false,
-            'error', 'User not found'
-        );
+        RETURN jsonb_build_object('success', false, 'error', 'User not found');
     END IF;
 
-    RETURN jsonb_build_object(
-        'success', true,
-        'notify_group_reactions', enabled
-    );
+    RETURN jsonb_build_object('success', true, 'notify_group_reactions', enabled);
 
 EXCEPTION
     WHEN OTHERS THEN
-        RETURN jsonb_build_object(
-            'success', false,
-            'error', SQLERRM
-        );
+        RETURN jsonb_build_object('success', false, 'error', SQLERRM);
 END;$$;
 
 
@@ -3349,6 +3334,17 @@ CREATE TABLE public."Members" (
 
 
 --
+-- Name: NotifiedImageUsers; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public."NotifiedImageUsers" (
+    image_id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: Reactions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3643,6 +3639,14 @@ ALTER TABLE ONLY public."Members"
 
 ALTER TABLE ONLY public."Members"
     ADD CONSTRAINT "Members_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: NotifiedImageUsers NotifiedImageUsers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."NotifiedImageUsers"
+    ADD CONSTRAINT "NotifiedImageUsers_pkey" PRIMARY KEY (image_id, user_id);
 
 
 --
@@ -4014,6 +4018,22 @@ ALTER TABLE ONLY public."Members"
 
 
 --
+-- Name: NotifiedImageUsers NotifiedImageUsers_image_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."NotifiedImageUsers"
+    ADD CONSTRAINT "NotifiedImageUsers_image_id_fkey" FOREIGN KEY (image_id) REFERENCES public."Images"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
+-- Name: NotifiedImageUsers NotifiedImageUsers_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."NotifiedImageUsers"
+    ADD CONSTRAINT "NotifiedImageUsers_user_id_fkey" FOREIGN KEY (user_id) REFERENCES public."Users"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+
+
+--
 -- Name: Reactions Reactions_image_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4247,6 +4267,12 @@ CREATE POLICY "Members can insert images to groups" ON public."ImageGroups" FOR 
    FROM public."Members" m
   WHERE ((m.group_id = "ImageGroups".group_id) AND (m.user_id = ( SELECT auth.uid() AS uid)) AND (m.role <> 'banned'::text)))));
 
+
+--
+-- Name: NotifiedImageUsers; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public."NotifiedImageUsers" ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: Comments Only group members can select comments; Type: POLICY; Schema: public; Owner: -
@@ -4735,12 +4761,12 @@ GRANT ALL ON FUNCTION public.get_image_groups(p_image_id uuid) TO service_role;
 
 
 --
--- Name: FUNCTION get_image_notification(p_image_id uuid, p_group_id uuid); Type: ACL; Schema: public; Owner: -
+-- Name: FUNCTION get_image_notification(p_image_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.get_image_notification(p_image_id uuid, p_group_id uuid) TO anon;
-GRANT ALL ON FUNCTION public.get_image_notification(p_image_id uuid, p_group_id uuid) TO authenticated;
-GRANT ALL ON FUNCTION public.get_image_notification(p_image_id uuid, p_group_id uuid) TO service_role;
+GRANT ALL ON FUNCTION public.get_image_notification(p_image_id uuid) TO anon;
+GRANT ALL ON FUNCTION public.get_image_notification(p_image_id uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.get_image_notification(p_image_id uuid) TO service_role;
 
 
 --
@@ -5043,6 +5069,15 @@ GRANT ALL ON TABLE public."Images" TO service_role;
 GRANT ALL ON TABLE public."Members" TO anon;
 GRANT ALL ON TABLE public."Members" TO authenticated;
 GRANT ALL ON TABLE public."Members" TO service_role;
+
+
+--
+-- Name: TABLE "NotifiedImageUsers"; Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON TABLE public."NotifiedImageUsers" TO anon;
+GRANT ALL ON TABLE public."NotifiedImageUsers" TO authenticated;
+GRANT ALL ON TABLE public."NotifiedImageUsers" TO service_role;
 
 
 --

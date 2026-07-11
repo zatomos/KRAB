@@ -136,10 +136,10 @@ Future<SupabaseResponse<krab_user.User>> getUserDetails(String userId) async {
 
 /// Resolve everything an image notification needs in a single RPC call
 Future<SupabaseResponse<Map<String, dynamic>>> getImageNotificationContext(
-    String imageId, String groupId) async {
+    String imageId) async {
   try {
     final res = await supabase.rpc('get_image_notification',
-        params: {'p_image_id': imageId, 'p_group_id': groupId});
+        params: {'p_image_id': imageId});
     if (res == null || res['success'] != true) {
       return SupabaseResponse(success: false, error: res?['error']?.toString());
     }
