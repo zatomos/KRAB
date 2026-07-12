@@ -85,6 +85,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
         hintText: context.l10n.new_group_name,
         initialValue: _group.name,
         emptyError: context.l10n.group_name_empty,
+        maxLength: 19,
         onSubmit: (value) async {
           final res = await updateGroupName(_group.id, value);
           return res.success ? null : res.error.toString();

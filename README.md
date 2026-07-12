@@ -148,6 +148,9 @@ You'll also want to put your API URL behind HTTPS for production use.
    # Optional: password reset
    PASSWORD_RESET_URL='https://your-domain/reset-password.html'
 
+   # Optional: email verification
+   EMAIL_CONFIRM_URL='https://your-domain/confirmed.html'
+
    # Optional: auto-updates
    MANIFEST_URL='YOUR_MANIFEST_URL'
    ENABLE_AUTO_UPDATE='false'
@@ -170,7 +173,9 @@ It needs a publicly reachable page and an SMTP server to send the email.
    ```bash
    curl -fsSL https://raw.githubusercontent.com/zatomos/KRAB/main/scripts/reset_password/setup-reset-pwd-page.sh | sudo bash
    ```
-   It asks for your Supabase URL, the public page URL, the anon key, the LAN IP the auth container uses to fetch the email template, and your **SMTP host / port / user / password**. It then serves the page, whitelists the redirect, installs the branded email template, and configures SMTP.
+   It asks for your Supabase URL, the public page URL, the anon key, the LAN IP the auth container
+   uses to fetch the email template, and your **SMTP host / port / user / password**. It then serves
+   the page, whitelists the redirect, installs the branded email template, and configures SMTP.
 4. Set `PASSWORD_RESET_URL` in the app's `.env` to the page URL.
 
 ### 5. Auto-update the app (optional)
@@ -178,6 +183,28 @@ It needs a publicly reachable page and an SMTP server to send the email.
 The app can check a manifest and prompt users to update. Host a `manifest.json` (template: `manifest.json.example`) listing your releases and their APK download URLs, then set `MANIFEST_URL` and `ENABLE_AUTO_UPDATE='true'` in the app `.env`.
 
 A helper to publish APKs + manifest to a Nextcloud instance is provided (`scripts/release.sh`).
+
+### 6. Email verification (optional)
+
+When enabled, signing up sends a confirmation email and the account can't log in until the link
+is clicked.
+
+It reuses the same infrastructure as password reset, so set that up first; it needs a publicly
+reachable page and a working **SMTP** server.
+
+Run the setup script on the server:
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/zatomos/KRAB/main/scripts/email_confirmation/setup-email-confirmation.sh | sudo bash
+   ```
+   It serves an "email confirmed" landing page, whitelists the redirect, installs the confirmation
+   email template, and sets `GOTRUE_MAILER_AUTOCONFIRM=false` on the auth container.
+
+Then set `EMAIL_CONFIRM_URL` in the app's `.env` to that confirmed-page URL (e.g.
+`https://krab.example.com/confirmed.html`) so the confirmation link lands there instead of on the
+API host.
+
+To turn it back off, remove the `docker-compose.krab-confirm.yml` override from `COMPOSE_FILE` in
+your `.env` (or set `GOTRUE_MAILER_AUTOCONFIRM=true`) and re-run `docker compose up -d auth`.
 
 ---
 

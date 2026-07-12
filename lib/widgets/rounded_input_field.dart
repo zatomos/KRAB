@@ -52,6 +52,12 @@ class RoundedInputField extends StatelessWidget {
             ? TextCapitalization.sentences
             : TextCapitalization.none,
         maxLength: maxLength,
+        // Enforce the limit without showing the counter.
+        buildCounter: (_,
+                {required int currentLength,
+                required bool isFocused,
+                int? maxLength}) =>
+            null,
         decoration: InputDecoration(
           icon: icon,
           labelText: hintText,

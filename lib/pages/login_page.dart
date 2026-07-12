@@ -34,9 +34,25 @@ class LoginPageState extends State<LoginPage> {
         return context.l10n.email_already_exists;
       case 'password_too_weak':
         return context.l10n.password_too_weak;
+      case 'email_not_confirmed':
+        return context.l10n.email_not_confirmed;
       default:
         return error ?? '';
     }
+  }
+
+  /// Shown under the error when a login is blocked by an unconfirmed email, so
+  /// the user can trigger a fresh confirmation link.
+  bool _showResendConfirmation = false;
+
+  Future<void> _resendConfirmation() async {
+    final email = _emailController.text.trim();
+    if (email.isEmpty) return;
+    final res = await resendConfirmationEmail(email);
+    if (!mounted) return;
+    showSnackBar(res.success
+        ? context.l10n.confirmation_email_resent
+        : _localizeAuthError(res.error));
   }
 
   bool _isSigningUp = false;
@@ -77,20 +93,35 @@ class LoginPageState extends State<LoginPage> {
     });
     final response = await registerUser(username, email, password);
     if (!mounted) return;
-    if (response.success) {
-      // Cache groups so the widget configure screen can offer a group filter
-      unawaited(cacheUserGroupsForWidget());
-      TextInput.finishAutofillContext(shouldSave: true);
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (context) => const CameraPage()),
-      );
-      showSnackBar(context.l10n.register_user_success);
-    } else {
+    if (!response.success) {
       setState(() {
         _isLoading = false;
         _errorMessage = _localizeAuthError(response.error);
       });
+      return;
     }
+
+    // data == false means a confirmation email was sent and the account isn't
+    // logged in yet. Send the user back to the login screen to confirm first.
+    if (response.data == false) {
+      TextInput.finishAutofillContext(shouldSave: true);
+      setState(() {
+        _isLoading = false;
+        _isSigningUp = false;
+        _passwordController.clear();
+        _passwordConfirmController.clear();
+      });
+      showSnackBar(context.l10n.verification_email_sent(email));
+      return;
+    }
+
+    // Auto-confirm path: already logged in.
+    unawaited(cacheUserGroupsForWidget());
+    TextInput.finishAutofillContext(shouldSave: true);
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (context) => const CameraPage()),
+    );
+    showSnackBar(context.l10n.register_user_success);
   }
 
   Future<void> _logIn() async {
@@ -106,6 +137,7 @@ class LoginPageState extends State<LoginPage> {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
+      _showResendConfirmation = false;
     });
     final response = await loginUser(email, password);
     if (!mounted) return;
@@ -120,6 +152,7 @@ class LoginPageState extends State<LoginPage> {
       setState(() {
         _isLoading = false;
         _errorMessage = _localizeAuthError(response.error);
+        _showResendConfirmation = response.error == 'email_not_confirmed';
       });
     }
   }
@@ -145,6 +178,7 @@ class LoginPageState extends State<LoginPage> {
                     hintText: context.l10n.email,
                     errorText: dialogError,
                     icon: const Icon(Icons.email_rounded),
+                    keyboardType: TextInputType.emailAddress,
                   ),
                 ],
               ),
@@ -227,11 +261,13 @@ class LoginPageState extends State<LoginPage> {
                           hintText: context.l10n.username,
                           icon: const Icon(Icons.person_rounded),
                           autofillHints: const [AutofillHints.username],
+                          maxLength: 19,
                         ),
                       RoundedInputField(
                         controller: _emailController,
                         hintText: context.l10n.email,
                         icon: const Icon(Icons.email_rounded),
+                        keyboardType: TextInputType.emailAddress,
                         autofillHints: const [AutofillHints.email],
                       ),
                       RoundedInputField(
@@ -270,6 +306,14 @@ class LoginPageState extends State<LoginPage> {
                 ),
               ),
               if (_errorMessage != null) _buildError(),
+              if (_showResendConfirmation)
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: _resendConfirmation,
+                    child: Text(context.l10n.resend_confirmation),
+                  ),
+                ),
               const SizedBox(height: 20),
               _buildButton(),
               if (!_isSigningUp && isPasswordResetEnabled)

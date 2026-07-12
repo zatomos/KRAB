@@ -17,6 +17,7 @@ import 'package:krab/widgets/rectangle_button.dart';
 import 'package:krab/widgets/avatars/user_avatar.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/widgets/dialogs/change_password_dialog.dart';
+import 'package:krab/widgets/dialogs/delete_account_dialog.dart';
 import 'package:krab/widgets/dialogs/edit_avatar_dialog.dart';
 import 'package:krab/widgets/dialogs/rename_dialog.dart';
 import 'package:krab/widgets/dialogs/update_dialog.dart';
@@ -157,6 +158,31 @@ class AccountPageState extends State<AccountPage> {
     );
   }
 
+  Future<void> _deleteAccount() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => DeleteAccountDialog(username: user.username),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final res = await deleteAccount();
+    if (!mounted) return;
+
+    if (!res.success) {
+      // The server refuses while the user still owns a group
+      final message = res.error == 'owns_groups'
+          ? context.l10n.delete_account_owns_groups
+          : context.l10n.error_deleting_account(context.errorOr(res.error));
+      showSnackBar(message, color: Colors.red);
+      return;
+    }
+
+    showSnackBar(context.l10n.account_deleted_success, color: Colors.green);
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (context) => const LoginPage()),
+    );
+  }
+
   Future<void> _checkForUpdates() async {
     if (_isCheckingForUpdates) return;
 
@@ -214,6 +240,7 @@ class AccountPageState extends State<AccountPage> {
         title: context.l10n.edit_username,
         hintText: context.l10n.username,
         initialValue: user.username,
+        maxLength: 19,
         onSubmit: (value) async {
           final l10n = context.l10n;
           final res = await editUsername(value);
@@ -540,6 +567,17 @@ class AccountPageState extends State<AccountPage> {
                           icon: Symbols.logout_rounded,
                           onPressed: _logout,
                           backgroundColor: Colors.red,
+                        ),
+                        const SizedBox(height: 8),
+                        TextButton.icon(
+                          onPressed: _deleteAccount,
+                          icon: const Icon(Symbols.delete_forever_rounded,
+                              size: 20),
+                          label: Text(context.l10n.delete_account),
+                          style: TextButton.styleFrom(
+                            foregroundColor:
+                                GlobalThemeData.darkColorScheme.error,
+                          ),
                         ),
                       ],
                     ),

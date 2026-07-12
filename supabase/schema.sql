@@ -360,6 +360,52 @@ END;$$;
 
 
 --
+-- Name: delete_account(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.delete_account() RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+DECLARE
+  current_user_id uuid;
+BEGIN
+  current_user_id := auth.uid();
+
+  IF current_user_id IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
+  END IF;
+
+  -- Owners must hand off or delete their groups first
+  IF EXISTS (
+    SELECT 1 FROM "Members" m
+    WHERE m.user_id = current_user_id AND m.role = 'owner'
+  ) THEN
+    RETURN jsonb_build_object('success', false, 'error', 'owns_groups');
+  END IF;
+
+  -- Remove the user's photos from every group they were shared to
+  DELETE FROM "ImageGroups" ig
+    USING "Images" i
+   WHERE ig.image_id = i.id
+     AND i.uploaded_by = current_user_id;
+
+  -- Clear user's membership
+  DELETE FROM "Members" m WHERE m.user_id = current_user_id;
+
+  -- Deleting the auth user cascades to public."Users" and from there
+  -- to Comments, Reactions, NotifiedImageUsers and GroupInvites, plus the
+  -- user's now-groupless Images.
+  DELETE FROM auth.users WHERE id = current_user_id;
+
+  RETURN jsonb_build_object('success', true);
+EXCEPTION WHEN OTHERS THEN
+  RETURN jsonb_build_object('success', false, 'error', SQLERRM);
+END;
+$$;
+
+
+--
 -- Name: delete_comment(uuid, uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1452,6 +1498,23 @@ BEGIN
 
     RETURN username;
 END;$$;
+
+
+--
+-- Name: handle_new_user(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.handle_new_user() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+BEGIN
+  INSERT INTO public."Users" (id, username)
+  VALUES (NEW.id, COALESCE(NEW.raw_user_meta_data->>'username', ''))
+  ON CONFLICT (id) DO NOTHING;
+  RETURN NEW;
+END;
+$$;
 
 
 --
@@ -4626,6 +4689,15 @@ GRANT ALL ON FUNCTION public.create_user_profile(username text) TO service_role;
 
 
 --
+-- Name: FUNCTION delete_account(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.delete_account() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.delete_account() TO authenticated;
+GRANT ALL ON FUNCTION public.delete_account() TO service_role;
+
+
+--
 -- Name: FUNCTION delete_comment(comment_id uuid, image_id uuid, group_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
@@ -4839,6 +4911,15 @@ GRANT ALL ON FUNCTION public.get_user_groups() TO service_role;
 GRANT ALL ON FUNCTION public.get_username(user_id text) TO anon;
 GRANT ALL ON FUNCTION public.get_username(user_id text) TO authenticated;
 GRANT ALL ON FUNCTION public.get_username(user_id text) TO service_role;
+
+
+--
+-- Name: FUNCTION handle_new_user(); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.handle_new_user() TO anon;
+GRANT ALL ON FUNCTION public.handle_new_user() TO authenticated;
+GRANT ALL ON FUNCTION public.handle_new_user() TO service_role;
 
 
 --

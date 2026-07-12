@@ -63,7 +63,7 @@ class Group {
       'name': name,
       'icon_url': iconUrl,
       'created_at': createdAt,
-      'latest_image_at': latestImageAt,
+      'latest_image_at': latestImageAt?.toIso8601String(),
       'invite_permission': invitePermission,
       'role': role,
     };

@@ -335,6 +335,7 @@ class CreateGroupDialogState extends State<CreateGroupDialog> {
               controller: _controller,
               hintText: context.l10n.enter_group_name,
               errorText: error,
+              maxLength: 19,
             ),
           ],
         ),

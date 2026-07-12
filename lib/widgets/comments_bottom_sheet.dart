@@ -857,6 +857,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
                     : (_canSubmit || _loading)
                         ? context.l10n.post_comment
                         : context.l10n.select_group_to_comment,
+            maxLength: 199,
           ),
         ),
         _isSending

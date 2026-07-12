@@ -12,6 +12,40 @@ import 'package:krab/user_preferences.dart';
 
 enum AppAuthStatus { signedIn, signedOut, tokenRefreshed }
 
+/// Derive a session's absolute expiry from a GoTrue session JSON.
+///
+/// Preference order:
+///  1. explicit `expires_at` (already absolute)
+///  2. `expires_in` seconds, added to nowEpochSeconds
+///  3. the access token's `exp` claim (from [claims])
+///
+/// Returns null when none are present or well-formed, which callers treat as
+/// "unknown expiry" -> always refresh.
+int? deriveExpiresAt(
+  Map<String, dynamic> session,
+  Map<String, dynamic>? claims,
+  int nowEpochSeconds,
+) {
+  final expiresAt = session['expires_at'];
+  if (expiresAt is int) return expiresAt;
+
+  final expiresIn = session['expires_in'];
+  if (expiresIn is int) return nowEpochSeconds + expiresIn;
+
+  final exp = claims?['exp'];
+  return exp is int ? exp : null;
+}
+
+/// Whether a token expiring at expiresAt should be refreshed now.
+///
+/// A null expiry always counts as near-expiry. Otherwise it's near-expiry
+/// once we are within marginSeconds of the expiry instant,
+/// including already past it.
+bool isNearExpiry(int? expiresAt, int nowEpochSeconds, int marginSeconds) {
+  if (expiresAt == null) return true;
+  return expiresAt - nowEpochSeconds <= marginSeconds;
+}
+
 /// Result of an auth action. error is a GoTrue error code when success is false
 class AuthResult {
   const AuthResult(this.success, [this.error]);
@@ -102,11 +136,11 @@ class AppAuth {
     return _accessToken;
   }
 
-  bool _isNearExpiry() {
-    if (_expiresAt == null) return true;
-    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-    return _expiresAt! - now <= _refreshMarginSeconds;
-  }
+  bool _isNearExpiry() => isNearExpiry(
+        _expiresAt,
+        DateTime.now().millisecondsSinceEpoch ~/ 1000,
+        _refreshMarginSeconds,
+      );
 
   // ---------------------------------------------------------------------------
   // Auth actions (GoTrue REST)
@@ -118,13 +152,42 @@ class AppAuth {
         _events.add(AppAuthStatus.signedIn);
       });
 
-  Future<AuthResult> register(String email, String password) =>
+  /// Register a new account. The username is stored in signup metadata so the
+  /// profile can be created server-side even before email confirmation.
+  ///
+  /// If email confirmation is disabled the signup response includes a session
+  /// and we sign in immediately; otherwise no session is returned and the caller
+  /// must have the user confirm their email before logging in.
+  Future<AuthResult> register(String email, String password,
+          {String? username, String? redirectTo}) =>
       _runAction(() async {
-        await _api.signUp(email, password);
-        // Login
-        await _apply(await _api.passwordGrant(email, password), persist: true);
-        _events.add(AppAuthStatus.signedIn);
+        final res = await _api.signUp(email, password,
+            data: username == null ? null : {'username': username},
+            redirectTo: redirectTo);
+
+        // Email confirmation disabled: signup returns a session, sign in now.
+        if (res['access_token'] != null && res['refresh_token'] != null) {
+          await _apply(res, persist: true);
+          _events.add(AppAuthStatus.signedIn);
+          return;
+        }
+
+        // No session in the signup response. Either confirmation is required, or
+        // this server auto-confirms but doesn't return a session on signup. Try
+        // to log in: success means we're auto-confirmed; email_not_confirmed
+        // means the user must verify first.
+        try {
+          await _apply(await _api.passwordGrant(email, password),
+              persist: true);
+          _events.add(AppAuthStatus.signedIn);
+        } on GotrueAuthException catch (e) {
+          if (e.code != 'email_not_confirmed') rethrow;
+        }
       });
+
+  /// Re-send the signup confirmation email for an unconfirmed account.
+  Future<AuthResult> resendConfirmation(String email, {String? redirectTo}) =>
+      _runAction(() => _api.resendSignup(email, redirectTo: redirectTo));
 
   Future<AuthResult> changePassword(
           String currentPassword, String newPassword) =>
@@ -235,15 +298,11 @@ class AppAuth {
     _accessToken = access;
     _refreshToken = refresh;
     _claims = decodeJwtPayload(access);
-    final expiresAt = session['expires_at'];
-    if (expiresAt is int) {
-      _expiresAt = expiresAt;
-    } else if (session['expires_in'] is int) {
-      _expiresAt = (DateTime.now().millisecondsSinceEpoch ~/ 1000) +
-          (session['expires_in'] as int);
-    } else {
-      _expiresAt = _claims?['exp'] as int?;
-    }
+    _expiresAt = deriveExpiresAt(
+      session,
+      _claims,
+      DateTime.now().millisecondsSinceEpoch ~/ 1000,
+    );
     if (persist) {
       // Persist the exact GoTrue session shape so any isolate can reload it.
       await _storage.write(key: _sessionKey, value: jsonEncode(session));

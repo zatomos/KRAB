@@ -16,6 +16,7 @@ class RenameDialog extends StatefulWidget {
   final String hintText;
   final String initialValue;
   final String? emptyError;
+  final int? maxLength;
   final Future<String?> Function(String value) onSubmit;
 
   const RenameDialog({
@@ -25,6 +26,7 @@ class RenameDialog extends StatefulWidget {
     required this.initialValue,
     required this.onSubmit,
     this.emptyError,
+    this.maxLength,
   });
 
   @override
@@ -76,6 +78,7 @@ class _RenameDialogState extends State<RenameDialog> {
           RoundedInputField(
             controller: _controller,
             hintText: widget.hintText,
+            maxLength: widget.maxLength,
           ),
           if (_error != null)
             Padding(

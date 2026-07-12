@@ -45,21 +45,45 @@ String _mapAuthError(String? code) {
       return 'email_already_exists';
     case 'weak_password':
       return 'password_too_weak';
+    case 'email_not_confirmed':
+      return 'email_not_confirmed';
     default:
       return code ?? 'auth_error';
   }
 }
 
 /// Register a new user.
-Future<SupabaseResponse<void>> registerUser(
+///
+/// Returns `data: true` when the account is immediately logged in,
+/// or `data: false` when a confirmation email was sent and the user
+/// must verify before logging in.
+Future<SupabaseResponse<bool>> registerUser(
     String username, String email, String password) async {
   debugPrint("Registering user: $username, $email");
-  final res = await AppAuth.instance.register(email, password);
+  // After confirming, GoTrue redirects here. When unset it falls back to the
+  // server's SITE_URL. Must be allowlisted in ADDITIONAL_REDIRECT_URLS.
+  final confirmUrl = dotenv.env['EMAIL_CONFIRM_URL'];
+  final res = await AppAuth.instance
+      .register(email, password, username: username, redirectTo: confirmUrl);
   if (!res.success) {
     return SupabaseResponse(success: false, error: _mapAuthError(res.error));
   }
-  await fcmTokenHandler(username: username);
-  return SupabaseResponse(success: true);
+  if (AppAuth.instance.isLoggedIn) {
+    await fcmTokenHandler(username: username);
+    return SupabaseResponse(success: true, data: true);
+  }
+  // Verification required; the username was stored via signup metadata and the
+  // profile is created server-side, so nothing else to do until they confirm.
+  return SupabaseResponse(success: true, data: false);
+}
+
+/// Re-send the signup confirmation email to an unconfirmed account.
+Future<SupabaseResponse<void>> resendConfirmationEmail(String email) async {
+  final res = await AppAuth.instance
+      .resendConfirmation(email, redirectTo: dotenv.env['EMAIL_CONFIRM_URL']);
+  return res.success
+      ? SupabaseResponse(success: true)
+      : SupabaseResponse(success: false, error: _mapAuthError(res.error));
 }
 
 /// Log in an existing user.
@@ -93,6 +117,36 @@ Future<SupabaseResponse<void>> logOut() async {
     // Reset the flag if logout fails
     DebugNotifier.instance.resetIntentionalLogout();
     return SupabaseResponse(success: false, error: "Error signing out: $error");
+  }
+}
+
+/// Permanently delete the current user's account and all their data. On success
+/// the local session and caches are cleared, exactly as with a normal logout.
+Future<SupabaseResponse<void>> deleteAccount() async {
+  try {
+    final userId = AppAuth.instance.currentUserId;
+    if (userId == null || !AppAuth.instance.isLoggedIn) {
+      return SupabaseResponse(success: false, error: "No current user");
+    }
+
+    final res = await supabase.rpc("delete_account");
+    if (res is Map && res['success'] != true) {
+      // Deletion refused, leave everything intact.
+      return SupabaseResponse(success: false, error: res['error']?.toString());
+    }
+
+    // Account is gone; best-effort remove the profile picture from storage.
+    // The JWT is still valid at this point.
+    try {
+      await supabase.storage.from("profile-pictures").remove([userId]);
+    } catch (_) {}
+
+    // Tear down the local session and caches
+    await logOut();
+    return SupabaseResponse(success: true);
+  } catch (error) {
+    return SupabaseResponse(
+        success: false, error: "Error deleting account: $error");
   }
 }
 
