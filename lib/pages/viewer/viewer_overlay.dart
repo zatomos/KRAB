@@ -55,6 +55,19 @@ void invalidatePostedInGroups(String imageId) {
   _postedInGroupsCache.remove(imageId);
 }
 
+/// Whether the user moderates a given group.
+final Map<String, bool> _moderatedGroupsCache = {};
+
+Future<bool> _canModerateGroup(String groupId) async {
+  final cached = _moderatedGroupsCache[groupId];
+  if (cached != null) return cached;
+
+  final res = await isGroupAdminOrOwner(groupId);
+  if (!res.success || res.data == null) return false;
+  _moderatedGroupsCache[groupId] = res.data!;
+  return res.data!;
+}
+
 /// Actions offered by the viewer's overflow menu.
 enum _ViewerAction { save, addToGroups, delete }
 
@@ -125,6 +138,9 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
   // Groups this image was posted in
   List<Group> _postedInGroups = [];
 
+  // Whether the user moderates the group the image was opened from.
+  bool _canModerate = false;
+
   String get _description => widget.imageData.description ?? '';
 
   @override
@@ -132,6 +148,18 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
     super.initState();
     _commentCount = widget.commentCount;
     _initPostedInGroups();
+    _initModeration();
+  }
+
+  /// Group owners and admins may delete anyone's photo from their group.
+  void _initModeration() {
+    final groupId = widget.groupId;
+    if (groupId == null) return;
+    _canModerateGroup(groupId).then((canModerate) {
+      if (mounted && canModerate != _canModerate) {
+        setState(() => _canModerate = canModerate);
+      }
+    });
   }
 
   @override
@@ -689,6 +717,8 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
                     label: context.l10n.add_to_group,
                     value: _ViewerAction.addToGroups,
                   ),
+                ],
+                if (_isOwner || _canModerate) ...[
                   divider,
                   _menuItem(
                     menuContext,
@@ -803,6 +833,25 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
       widget.imageData.uploadedBy == AppAuth.instance.currentUserId;
 
   Future<void> _deleteImage() async {
+    // A moderator can only remove someone else's photo from the group they
+    // moderate, never from the other groups it was shared to.
+    if (!_isOwner) {
+      final groupId = widget.groupId;
+      if (groupId == null) return;
+      final confirmed = await showConfirmDialog(
+        context,
+        title: context.l10n.delete_photo,
+        message: context.l10n.delete_photo_group_confirm,
+        confirmLabel: context.l10n.delete,
+        destructive: true,
+      );
+      if (!confirmed || !mounted) return;
+      final res = await removeImageFromGroups(widget.imageId, [groupId]);
+      _afterDelete(res.success, res.error,
+          fullyDeleted: res.data ?? false, removedCurrent: true);
+      return;
+    }
+
     final groups = await fetchPostedInGroups(widget.imageId) ?? const [];
     if (!mounted) return;
 

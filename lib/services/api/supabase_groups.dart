@@ -40,6 +40,13 @@ Future<SupabaseResponse<Group>> getGroupDetails(String groupId) async {
       success: true, data: res.data!.copyWith(iconUrl: iconUrl ?? ''));
 }
 
+/// Whether the current user is an owner or admin of the group.
+Future<SupabaseResponse<bool>> isGroupAdminOrOwner(String groupId) =>
+    _rpc<bool>("is_admin_or_owner",
+        params: {"p_group_id": groupId},
+        errorContext: "loading group role",
+        parse: (r) => r == true);
+
 /// Get count of members for a given group.
 Future<SupabaseResponse<int>> getGroupMemberCount(String groupId) =>
     _rpc("get_group_members_count",

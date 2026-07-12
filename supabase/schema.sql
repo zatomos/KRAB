@@ -1957,6 +1957,8 @@ CREATE FUNCTION public.remove_image_from_groups(p_image_id uuid, p_group_ids uui
     SET search_path TO 'public'
     AS $$DECLARE
   current_user_id uuid;
+  is_uploader boolean;
+  allowed_group_ids uuid[];
   remaining int;
   fully_deleted boolean := false;
 BEGIN
@@ -1966,10 +1968,24 @@ BEGIN
     RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
   END IF;
 
-  IF NOT EXISTS (
+  SELECT EXISTS (
     SELECT 1 FROM "Images" i
     WHERE i.id = p_image_id
       AND i.uploaded_by = current_user_id
+  ) INTO is_uploader;
+
+  IF is_uploader THEN
+    allowed_group_ids := p_group_ids;
+  ELSE
+    -- Owners and admins can remove anyone's photo from the groups they moderate
+    SELECT coalesce(array_agg(g), '{}'::uuid[])
+      INTO allowed_group_ids
+      FROM unnest(p_group_ids) AS g
+     WHERE public.is_admin_or_owner(g);
+  END IF;
+
+  IF cardinality(allowed_group_ids) = 0 OR NOT EXISTS (
+    SELECT 1 FROM "Images" i WHERE i.id = p_image_id
   ) THEN
     RETURN jsonb_build_object(
       'success', false,
@@ -1978,9 +1994,9 @@ BEGIN
   END IF;
 
   DELETE FROM "Comments"
-   WHERE image_id = p_image_id AND group_id = ANY (p_group_ids);
+   WHERE image_id = p_image_id AND group_id = ANY (allowed_group_ids);
   DELETE FROM "ImageGroups"
-   WHERE image_id = p_image_id AND group_id = ANY (p_group_ids);
+   WHERE image_id = p_image_id AND group_id = ANY (allowed_group_ids);
 
   SELECT count(*) INTO remaining
     FROM "ImageGroups" WHERE image_id = p_image_id;
@@ -4767,6 +4783,7 @@ GRANT ALL ON FUNCTION public.get_comments(image_id uuid, group_id uuid) TO servi
 GRANT ALL ON FUNCTION public.get_group_details(group_id uuid) TO anon;
 GRANT ALL ON FUNCTION public.get_group_details(group_id uuid) TO authenticated;
 GRANT ALL ON FUNCTION public.get_group_details(group_id uuid) TO service_role;
+
 
 
 --

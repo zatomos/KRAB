@@ -8,6 +8,7 @@ import 'package:krab/services/image_crop_helper.dart';
 import 'package:krab/widgets/avatars/group_avatar.dart';
 import 'package:krab/widgets/avatars/user_avatar.dart';
 import 'package:krab/widgets/dialogs/dialogs.dart';
+import 'package:krab/widgets/dialogs/member_roles_dialog.dart';
 import 'package:krab/widgets/dialogs/edit_avatar_dialog.dart';
 import 'package:krab/widgets/dialogs/rename_dialog.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
@@ -371,13 +372,25 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                 ),
 
                 /// Members List
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    context.l10n.members,
-                    style: const TextStyle(
-                        fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        context.l10n.members,
+                        style: const TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(
+                        Symbols.info_rounded,
+                        size: 20,
+                        color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
+                      ),
+                      tooltip: context.l10n.member_roles_title,
+                      onPressed: () => showMemberRolesDialog(context),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 8),
 
