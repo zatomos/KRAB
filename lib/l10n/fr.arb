@@ -73,6 +73,7 @@
   "delete_photo_group_confirm": "Supprimer cette photo de ce groupe ? Cette action est irréversible.",
   "photo_deleted": "Photo supprimée",
   "photo_sent": "Photo envoyée",
+  "photo_queued_offline": "En attente ; sera envoyée dès le retour de la connexion",
   "photo_removed": "Photo retirée",
   "failed_to_delete_photo": "Échec de la suppression de la photo",
   "image_saved": "Image enregistrée !",

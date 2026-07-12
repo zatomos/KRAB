@@ -67,6 +67,17 @@ posted.
 - When a photo or comment is posted, the database automatically triggers a function that pushes a
   notification (via Firebase) to the other group members, whose apps then refresh their widget.
 
+### Uploading
+
+Sending a photo takes two steps, and the database closes the gap between them:
+
+1. `request_image_upload` checks the user may post to those groups, then records the photo and the
+   groups it is about to belong to.
+2. The app uploads the bytes under the id it got back. A trigger on the storage insert turns those
+   staged groups into real ones in the same transaction as the upload.
+
+So the bytes and their group links commit together or not at all. A photo that belongs to no group
+can't exist, which means a send that dies partway through leaves nothing behind.
 ---
 
 ## 🚀 Setup

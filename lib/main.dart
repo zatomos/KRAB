@@ -21,6 +21,7 @@ import 'package:krab/services/notification_channels.dart';
 import 'package:krab/services/notification_router.dart';
 import 'package:krab/services/profile_picture_cache.dart';
 import 'package:krab/services/supabase_bootstrap.dart';
+import 'package:krab/services/upload_outbox.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/pages/login_page.dart';
 import 'package:krab/user_preferences.dart';
@@ -64,6 +65,8 @@ void main() async {
       await ProfilePictureCache.of(Supabase.instance.client).hydrate();
       // Cache groups so the widget configure screen can offer a group filter
       await cacheUserGroupsForWidget();
+      // Photos queued while offline go out as soon as we're up again.
+      unawaited(UploadOutbox.instance.flush());
       _listenToAuthEvents();
     } else {
       debugPrint('Skipping FCM/cache init, Supabase not initialized');

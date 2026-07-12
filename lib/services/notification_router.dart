@@ -13,6 +13,7 @@ import 'package:krab/services/home_widget_updater.dart';
 import 'package:krab/services/notification_channels.dart';
 import 'package:krab/services/supabase_bootstrap.dart';
 import 'package:krab/services/update_service.dart';
+import 'package:krab/services/upload_outbox.dart';
 import 'package:krab/pages/image_feed_page.dart';
 
 /// Waits for the navigator to mount and returns it, or null if it never comes up
@@ -68,8 +69,11 @@ Future<void> handleLocalNotificationTap(String payload) async {
     final nav = await _awaitNavigator();
     if (nav == null) return;
 
-    // Reactions aren't tied to a group: open the all-groups gallery on the image
-    if (type == 'new_reaction') {
+    // Nothing here belongs to a single group: a reaction isn't tied to one at
+    // all, and a photo delivered to the user through several groups at once has
+    // no one group to open. dispatchImageNotification leaves group_id empty to
+    // say so. Both open the all-groups gallery, on the image.
+    if (type == 'new_reaction' || (type == 'new_image' && groupId.isEmpty)) {
       if (imageId.isEmpty) return;
       nav.push(
         MaterialPageRoute(builder: (_) => ImageFeedPage(imageId: imageId)),
@@ -100,19 +104,32 @@ void workmanagerCallbackDispatcher() {
     try {
       await bootstrapBackgroundIsolate();
 
-      // Piggyback a throttled app-update check on this wakeup
-      await UpdateService.maybeCheckAndNotifyUpdate();
+      final isOutboxFlush = taskName == outboxFlushTask;
+
+      // Piggyback a throttled app-update check on the periodic wakeup
+      if (!isOutboxFlush) {
+        await UpdateService.maybeCheckAndNotifyUpdate();
+      }
 
       final supabaseOk = await initializeBackgroundSupabase();
       if (!supabaseOk) {
-        debugPrint('WorkManager: Supabase init failed, skipping widget update');
+        debugPrint('WorkManager: Supabase init failed, nothing to do');
         return Future.value(false);
       }
       if (await AppAuth.instance.getValidToken() == null) {
-        debugPrint('WorkManager: no valid session, skipping widget update');
+        // Queued photos keep until the user reopens the app and
+        // re-authenticates.
+        debugPrint('WorkManager: no valid session, skipping');
         return Future.value(true);
       }
 
+      // Reporting failure here is what earns the WorkManager retry, so the
+      // queue keeps draining on its own once the connection is back.
+      if (isOutboxFlush) {
+        return Future.value(await UploadOutbox.instance.flush());
+      }
+
+      await UploadOutbox.instance.flush();
       await updateHomeWidget();
       return Future.value(true);
     } catch (e, st) {

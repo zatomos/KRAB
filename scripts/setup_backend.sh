@@ -13,7 +13,13 @@ set -uo pipefail
 SUPABASE_DIR="$HOME/supabase-project"
 DB_CONTAINER="supabase-db"
 REPO_RAW="https://raw.githubusercontent.com/zatomos/KRAB/main"
-BUCKETS=(images group-icons profile-pictures image-thumbnails)
+# bucket:size-limit-in-bytes:allowed-mime-types.
+BUCKETS=(
+  "images:15728640:image/*"
+  "group-icons:1048576:image/*"
+  "profile-pictures:1048576:image/*"
+  "image-thumbnails:1048576:image/*"
+)
 FN_SLUGS="new_image_notify:image-notification new_comment_notify:comment-notification new_reaction_notify:reaction-notification image_deleted_notify:image-deleted-notification generate-thumbnail:thumbnail-generation"
 
 log() { printf '\n==> %s\n' "$*"; }
@@ -141,9 +147,16 @@ trg="$(psql_run -tAc "select count(distinct trigger_name) from information_schem
 
 # --- 5. Storage buckets ---------------------------------------------------
 log "Creating storage buckets"
-for b in "${BUCKETS[@]}"; do
-  psql_run -c "insert into storage.buckets (id, name, public) values ('$b','$b',false) on conflict (id) do nothing;" >/dev/null
-  echo "  bucket $b"
+for spec in "${BUCKETS[@]}"; do
+  b="${spec%%:*}"; rest="${spec#*:}"
+  limit="${rest%%:*}"; mimes="${rest#*:}"
+  mime_arr="ARRAY['${mimes//,/\',\'}']"
+  psql_run -c "insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+               values ('$b','$b',false,$limit,$mime_arr)
+               on conflict (id) do update
+                 set file_size_limit = excluded.file_size_limit,
+                     allowed_mime_types = excluded.allowed_mime_types;" >/dev/null
+  echo "  bucket $b (max $((limit / 1048576))MB, $mimes)"
 done
 
 # --- 6. Deploy edge functions --------------------------------------------

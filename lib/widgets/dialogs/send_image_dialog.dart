@@ -4,10 +4,34 @@ import 'package:flutter/material.dart';
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/models/group.dart';
 import 'package:krab/services/api/supabase.dart';
+import 'package:krab/services/upload_outbox.dart';
 import 'package:krab/user_preferences.dart';
 import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/widgets/rounded_input_field.dart';
 import 'package:krab/widgets/soft_button.dart';
+
+/// How a send ended: it went out, it was held for later because the device is
+/// offline, or it failed for a reason the user has to see.
+enum SendOutcome { sent, queued, failed }
+
+class SendImageResult {
+  final SendOutcome outcome;
+
+  /// Set when the photo went out, so the caller can offer to undo it.
+  final String? imageId;
+  final String? error;
+
+  const SendImageResult.sent(this.imageId)
+      : outcome = SendOutcome.sent,
+        error = null;
+  const SendImageResult.queued()
+      : outcome = SendOutcome.queued,
+        imageId = null,
+        error = null;
+  const SendImageResult.failed(this.error)
+      : outcome = SendOutcome.failed,
+        imageId = null;
+}
 
 /// Group picker and description dialog for sending a captured image.
 class SendImageDialog extends StatefulWidget {
@@ -43,13 +67,39 @@ class _SendImageDialogState extends State<SendImageDialog> {
   Future<void> _send() async {
     if (_selectedGroups.isEmpty || _sending) return;
     setState(() => _sending = true);
+
+    final groups = _selectedGroups.toList();
+
+    // If the send got as far as reserving an id, the outbox must retry under
+    // that same one. The bytes may already have reached storage, and only the
+    // reply been lost; resuming recognises that, while a fresh id would send the
+    // photo a second time.
+    String? reserved;
+
     final response = await sendImageToGroups(
       widget.imageFile,
-      _selectedGroups.toList(),
+      groups,
       _description.text,
+      onReserved: (imageId) async => reserved = imageId,
     );
+
+    // Couldn't reach the server: hold the photo and send it when we can
+    if (!response.success && response.offline) {
+      await UploadOutbox.instance.enqueue(
+        widget.imageFile,
+        groups,
+        _description.text,
+        reservedImageId: reserved,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop(const SendImageResult.queued());
+      return;
+    }
+
     if (!mounted) return;
-    Navigator.of(context).pop(response);
+    Navigator.of(context).pop(response.success
+        ? SendImageResult.sent(response.data)
+        : SendImageResult.failed(response.error));
   }
 
   Widget _buildGroups() {

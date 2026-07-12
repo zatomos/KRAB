@@ -2,62 +2,82 @@ part of 'supabase.dart';
 
 /// ------------------ IMAGE FUNCTIONS ------------------
 
+/// Largest photo the server will accept
+const int maxImageUploadBytes = 15 * 1024 * 1024;
+
+/// The bytes are already in storage under this name.
+///
+/// Storage refuses to overwrite an existing object, so this is the answer to
+/// "did my upload land?" when the reply to it never came back. It means yes.
+bool _isAlreadyUploaded(Object error) =>
+    error is StorageException &&
+    (error.statusCode == '409' || error.error == 'Duplicate');
+
 /// Send an image to selected groups with an optional description.
+///
+/// The server records the photo and the groups it is about to belong to,
+/// then the bytes go up under the id it hands back.
+///
+/// Sending the same photo twice is guarded against by the id itself.
 Future<SupabaseResponse<String>> sendImageToGroups(
   File imageFile,
   List<String> selectedGroups,
-  String description,
-) async {
+  String description, {
+  String? resumeImageId,
+  Future<void> Function(String imageId)? onReserved,
+}) async {
   try {
-    // Request UUID
-    final uuidResponse =
-        await _withRetry(() => supabase.rpc("request_image_uuid"));
-
-    if (uuidResponse['success'] == false) {
-      return SupabaseResponse(
-        success: false,
-        error: uuidResponse['error']?.toString(),
-      );
-    }
-
-    final String imageId = uuidResponse['image_id'] as String;
-
     // Strip EXIF metadata
     final imageBytes = await stripImageMetadata(await imageFile.readAsBytes());
 
-    // Upload image to storage
-    try {
-      await _withRetry(() => supabase.storage.from("images").uploadBinary(
-            imageId,
-            imageBytes,
-            fileOptions: const FileOptions(contentType: 'image/jpeg'),
-          ));
-    } catch (uploadError) {
+    if (imageBytes.length > maxImageUploadBytes) {
       return SupabaseResponse(
         success: false,
-        error: "Error uploading image: $uploadError",
+        error: "Photo is too large (max "
+            "${maxImageUploadBytes ~/ (1024 * 1024)} MB)",
       );
     }
 
-    // Register image in database
-    final regResponse =
-        await _withRetry(() => supabase.rpc("register_uploaded_image", params: {
-              "image_id": imageId,
-              "group_ids": selectedGroups,
-              "image_description": description,
-            }));
+    var imageId = resumeImageId;
 
-    if (regResponse['success'] == false) {
-      return SupabaseResponse(
-        success: false,
-        error: regResponse['error']?.toString(),
-      );
+    if (imageId == null) {
+      // Open the upload: checks the groups, and reserves the id to store under
+      final opened =
+          await _withRetry(() => supabase.rpc("request_image_upload", params: {
+                "p_group_ids": selectedGroups,
+                "p_description": description,
+              }));
+
+      if (opened['success'] == false) {
+        return SupabaseResponse(
+          success: false,
+          error: opened['error']?.toString(),
+        );
+      }
+
+      imageId = opened['image_id'] as String;
+      await onReserved?.call(imageId);
+    }
+
+    // Landing the bytes is what sends the photo.
+    try {
+      await _withRetry(() => supabase.storage.from("images").uploadBinary(
+            imageId!,
+            imageBytes,
+            fileOptions: const FileOptions(contentType: 'image/jpeg'),
+          ));
+    } catch (error) {
+      // The photo is already there: an earlier attempt landed and only its reply
+      // went missing. The trigger ran with it, so the photo is sent.
+      if (!_isAlreadyUploaded(error)) rethrow;
+      debugPrint("Image $imageId was already uploaded, treating as sent");
     }
 
     return SupabaseResponse(success: true, data: imageId);
   } catch (error) {
     return SupabaseResponse(
       success: false,
+      offline: _isTransientError(error),
       error: "Error sending image: $error",
     );
   }

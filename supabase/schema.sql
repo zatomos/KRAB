@@ -1518,28 +1518,39 @@ $$;
 
 
 --
--- Name: handle_storage_delete(); Type: FUNCTION; Schema: public; Owner: -
+-- Name: image_rate_limit_error(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.handle_storage_delete() RETURNS trigger
+CREATE FUNCTION public.image_rate_limit_error(p_user_id uuid) RETURNS text
     LANGUAGE plpgsql
     SET search_path TO 'public'
-    AS $_$BEGIN
-  -- Delete the corresponding record from the Images table
-  DELETE FROM "Images"
-  WHERE id = (
-    SELECT uuid(
-      regexp_replace(
-        OLD.name,
-        '^.*?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}).*$',
-        '\1'
-      )
-    )
-  )
-  AND uploaded_by = auth.uid();
+    AS $$DECLARE
+  recent_count integer;
+  pending_count integer;
+BEGIN
+  SELECT count(*) INTO recent_count
+    FROM "Images"
+   WHERE uploaded_by = p_user_id
+     AND created_at > now() - interval '1 hour';
 
-  RETURN OLD;
-END;$_$;
+  IF recent_count >= 120 THEN
+    RETURN 'Too many photos sent recently, try again later';
+  END IF;
+
+  -- Photos opened but never uploaded. Capped so a client that only ever opens
+  -- uploads, and never finishes one, cannot keep claiming slots.
+  SELECT count(*) INTO pending_count
+    FROM "Images" i
+   WHERE i.uploaded_by = p_user_id
+     AND i.created_at > now() - interval '24 hours'
+     AND NOT EXISTS (SELECT 1 FROM "ImageGroups" g WHERE g.image_id = i.id);
+
+  IF pending_count >= 20 THEN
+    RETURN 'Too many unfinished uploads, try again later';
+  END IF;
+
+  RETURN NULL;
+END;$$;
 
 
 --
@@ -1814,6 +1825,37 @@ END;$$;
 
 
 --
+-- Name: promote_pending_image(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.promote_pending_image() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$DECLARE
+  v_image_id uuid;
+BEGIN
+  IF NEW.bucket_id <> 'images' THEN
+    RETURN NEW;
+  END IF;
+
+  v_image_id := public.safe_uuid(NEW.name);
+  IF v_image_id IS NULL THEN
+    RETURN NEW;
+  END IF;
+
+  INSERT INTO "ImageGroups" (image_id, group_id)
+  SELECT p.image_id, p.group_id
+    FROM "PendingImageGroups" p
+   WHERE p.image_id = v_image_id
+  ON CONFLICT DO NOTHING;
+
+  DELETE FROM "PendingImageGroups" WHERE image_id = v_image_id;
+
+  RETURN NEW;
+END;$$;
+
+
+--
 -- Name: register_fcm_token(text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1853,12 +1895,17 @@ begin
     return jsonb_build_object('success', false, 'error', 'User not authenticated');
   end if;
 
-  -- Insert/ensure image metadata
-  insert into "Images" (id, uploaded_by, description)
-  values (register_uploaded_image.image_id, current_user_id, register_uploaded_image.image_description)
-  on conflict (id) do nothing;
+  -- The row was reserved by request_image_uuid, so registering is an update.
+  -- A caller cannot use an image id it does not own.
+  update "Images"
+  set description = register_uploaded_image.image_description
+  where id = register_uploaded_image.image_id
+    and uploaded_by = current_user_id;
 
-  -- Insert all authorized group links in one go
+  if not found then
+    return jsonb_build_object('success', false, 'error', 'Image not found or permission denied');
+  end if;
+
   with inserted as (
     insert into "ImageGroups" (image_id, group_id)
     select register_uploaded_image.image_id, (g)::uuid
@@ -1880,7 +1927,6 @@ begin
     'image_id', register_uploaded_image.image_id,
     'authorized_groups', authorized_count
   );
-
 exception
   when others then
     return jsonb_build_object('success', false, 'error', sqlerrm);
@@ -2015,6 +2061,63 @@ END;$$;
 
 
 --
+-- Name: request_image_upload(text[], text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.request_image_upload(p_group_ids text[], p_description text DEFAULT NULL::text) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$DECLARE
+  uid uuid := auth.uid();
+  new_id uuid;
+  limit_error text;
+  authorized uuid[];
+BEGIN
+  IF uid IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
+  END IF;
+
+  -- Clear the caller's own abandoned sends first, so a photo they gave up on
+  -- doesn't count against their quota forever. A staged row still being there
+  -- proves the bytes never landed, so there is no blob to strand.
+  DELETE FROM "Images" i
+   WHERE i.uploaded_by = uid
+     AND i.created_at < now() - interval '1 hour'
+     AND EXISTS (SELECT 1 FROM "PendingImageGroups" p WHERE p.image_id = i.id)
+     AND NOT EXISTS (SELECT 1 FROM "ImageGroups" g WHERE g.image_id = i.id);
+
+  limit_error := public.image_rate_limit_error(uid);
+  IF limit_error IS NOT NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', limit_error);
+  END IF;
+
+  SELECT coalesce(array_agg(DISTINCT m.group_id), '{}'::uuid[])
+    INTO authorized
+    FROM "Members" m
+   WHERE m.user_id = uid
+     AND m.role <> 'banned'
+     AND m.group_id IN (SELECT public.safe_uuid(g) FROM unnest(p_group_ids) AS g);
+
+  IF cardinality(authorized) = 0 THEN
+    RETURN jsonb_build_object('success', false, 'error', 'No group you can post to');
+  END IF;
+
+  new_id := gen_random_uuid();
+  INSERT INTO "Images" (id, uploaded_by, description) VALUES (new_id, uid, p_description);
+  INSERT INTO "PendingImageGroups" (image_id, group_id)
+  SELECT new_id, g FROM unnest(authorized) AS g;
+
+  RETURN jsonb_build_object(
+    'success', true,
+    'image_id', new_id,
+    'authorized_groups', cardinality(authorized)
+  );
+EXCEPTION WHEN others THEN
+  RETURN jsonb_build_object('success', false, 'error', sqlerrm);
+END;$$;
+
+
+--
 -- Name: request_image_uuid(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -2030,8 +2133,12 @@ begin
     return jsonb_build_object('success', false, 'error', 'User not authenticated');
   end if;
 
-  -- Generate UUID
+  if public.image_rate_limit_error(current_user_id) is not null then
+    return jsonb_build_object('success', false, 'error', public.image_rate_limit_error(current_user_id));
+  end if;
+
   new_id := gen_random_uuid();
+  insert into "Images" (id, uploaded_by) values (new_id, current_user_id);
 
   return jsonb_build_object('success', true, 'image_id', new_id);
 exception
@@ -2074,6 +2181,20 @@ BEGIN
   UPDATE "GroupInvites" SET revoked = true WHERE token = btrim(p_token);
 
   RETURN jsonb_build_object('success', true);
+END;$$;
+
+
+--
+-- Name: safe_uuid(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.safe_uuid(p_text text) RETURNS uuid
+    LANGUAGE plpgsql IMMUTABLE
+    SET search_path TO ''
+    AS $$BEGIN
+  RETURN p_text::uuid;
+EXCEPTION WHEN others THEN
+  RETURN NULL;
 END;$$;
 
 
@@ -3413,13 +3534,12 @@ CREATE TABLE public."Members" (
 
 
 --
--- Name: NotifiedImageUsers; Type: TABLE; Schema: public; Owner: -
+-- Name: PendingImageGroups; Type: TABLE; Schema: public; Owner: -
 --
 
-CREATE TABLE public."NotifiedImageUsers" (
+CREATE TABLE public."PendingImageGroups" (
     image_id uuid NOT NULL,
-    user_id uuid NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    group_id uuid NOT NULL
 );
 
 
@@ -3721,11 +3841,11 @@ ALTER TABLE ONLY public."Members"
 
 
 --
--- Name: NotifiedImageUsers NotifiedImageUsers_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+-- Name: PendingImageGroups PendingImageGroups_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public."NotifiedImageUsers"
-    ADD CONSTRAINT "NotifiedImageUsers_pkey" PRIMARY KEY (image_id, user_id);
+ALTER TABLE ONLY public."PendingImageGroups"
+    ADD CONSTRAINT "PendingImageGroups_pkey" PRIMARY KEY (image_id, group_id);
 
 
 --
@@ -3837,6 +3957,27 @@ ALTER TABLE ONLY storage.vector_indexes
 --
 
 CREATE INDEX "GroupInvites_group_id_idx" ON public."GroupInvites" USING btree (group_id);
+
+
+--
+-- Name: ImageGroups_group_id_uploaded_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX "ImageGroups_group_id_uploaded_at_idx" ON public."ImageGroups" USING btree (group_id, uploaded_at DESC);
+
+
+--
+-- Name: Images_uploaded_by_created_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX "Images_uploaded_by_created_at_idx" ON public."Images" USING btree (uploaded_by, created_at DESC);
+
+
+--
+-- Name: Members_user_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX "Members_user_id_idx" ON public."Members" USING btree (user_id);
 
 
 --
@@ -3973,10 +4114,10 @@ CREATE TRIGGER "on-image-insert-thumbnail" AFTER INSERT ON storage.objects FOR E
 
 
 --
--- Name: objects on_storage_object_delete; Type: TRIGGER; Schema: storage; Owner: -
+-- Name: objects on-image-upload-register; Type: TRIGGER; Schema: storage; Owner: -
 --
 
-CREATE TRIGGER on_storage_object_delete AFTER DELETE ON storage.objects FOR EACH ROW EXECUTE FUNCTION public.handle_storage_delete();
+CREATE TRIGGER "on-image-upload-register" AFTER INSERT ON storage.objects FOR EACH ROW EXECUTE FUNCTION public.promote_pending_image();
 
 
 --
@@ -4097,19 +4238,19 @@ ALTER TABLE ONLY public."Members"
 
 
 --
--- Name: NotifiedImageUsers NotifiedImageUsers_image_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: PendingImageGroups PendingImageGroups_group_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public."NotifiedImageUsers"
-    ADD CONSTRAINT "NotifiedImageUsers_image_id_fkey" FOREIGN KEY (image_id) REFERENCES public."Images"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+ALTER TABLE ONLY public."PendingImageGroups"
+    ADD CONSTRAINT "PendingImageGroups_group_id_fkey" FOREIGN KEY (group_id) REFERENCES public."Groups"(id) ON DELETE CASCADE;
 
 
 --
--- Name: NotifiedImageUsers NotifiedImageUsers_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+-- Name: PendingImageGroups PendingImageGroups_image_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
-ALTER TABLE ONLY public."NotifiedImageUsers"
-    ADD CONSTRAINT "NotifiedImageUsers_user_id_fkey" FOREIGN KEY (user_id) REFERENCES public."Users"(id) ON UPDATE CASCADE ON DELETE CASCADE;
+ALTER TABLE ONLY public."PendingImageGroups"
+    ADD CONSTRAINT "PendingImageGroups_image_id_fkey" FOREIGN KEY (image_id) REFERENCES public."Images"(id) ON DELETE CASCADE;
 
 
 --
@@ -4348,12 +4489,6 @@ CREATE POLICY "Members can insert images to groups" ON public."ImageGroups" FOR 
 
 
 --
--- Name: NotifiedImageUsers; Type: ROW SECURITY; Schema: public; Owner: -
---
-
-ALTER TABLE public."NotifiedImageUsers" ENABLE ROW LEVEL SECURITY;
-
---
 -- Name: Comments Only group members can select comments; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -4362,6 +4497,12 @@ CREATE POLICY "Only group members can select comments" ON public."Comments" FOR 
      JOIN public."Members" m ON ((ig.group_id = m.group_id)))
   WHERE ((ig.image_id = "Comments".image_id) AND (m.user_id = ( SELECT auth.uid() AS uid))))));
 
+
+--
+-- Name: PendingImageGroups; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public."PendingImageGroups" ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: Reactions; Type: ROW SECURITY; Schema: public; Owner: -
@@ -4440,13 +4581,6 @@ CREATE POLICY allow_admins_owners_update_roles ON public."Members" FOR UPDATE TO
 --
 
 CREATE POLICY members_read ON public."Members" FOR SELECT USING (((role <> 'banned'::text) OR public.is_admin_or_owner(group_id)));
-
-
---
--- Name: objects Give users authenticated access to insert; Type: POLICY; Schema: storage; Owner: -
---
-
-CREATE POLICY "Give users authenticated access to insert" ON storage.objects FOR INSERT TO authenticated WITH CHECK (((auth.uid() IS NOT NULL) AND (bucket_id = 'images'::text)));
 
 
 --
@@ -4538,6 +4672,15 @@ CREATE POLICY "Users can see their pfps and users in their group" ON storage.obj
    FROM (public."Members" gm1
      JOIN public."Members" gm2 ON ((gm1.group_id = gm2.group_id)))
   WHERE ((gm1.user_id = auth.uid()) AND (gm2.user_id = (objects.name)::uuid)))))));
+
+
+--
+-- Name: objects Users can upload an image they reserved; Type: POLICY; Schema: storage; Owner: -
+--
+
+CREATE POLICY "Users can upload an image they reserved" ON storage.objects FOR INSERT TO authenticated WITH CHECK (((bucket_id = 'images'::text) AND (EXISTS ( SELECT 1
+   FROM public."Images" i
+  WHERE ((i.id = public.safe_uuid(objects.name)) AND (i.uploaded_by = ( SELECT auth.uid() AS uid)))))));
 
 
 --
@@ -4653,7 +4796,6 @@ GRANT ALL ON FUNCTION public.add_comment(image_id uuid, group_id uuid, text text
 -- Name: FUNCTION add_image_to_groups(p_image_id uuid, p_group_ids uuid[]); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.add_image_to_groups(p_image_id uuid, p_group_ids uuid[]) TO anon;
 GRANT ALL ON FUNCTION public.add_image_to_groups(p_image_id uuid, p_group_ids uuid[]) TO authenticated;
 GRANT ALL ON FUNCTION public.add_image_to_groups(p_image_id uuid, p_group_ids uuid[]) TO service_role;
 
@@ -4690,7 +4832,6 @@ GRANT ALL ON FUNCTION public.create_group(group_name text) TO service_role;
 --
 
 REVOKE ALL ON FUNCTION public.create_group_invite(p_group_id uuid, p_expires_at timestamp with time zone, p_max_uses integer) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.create_group_invite(p_group_id uuid, p_expires_at timestamp with time zone, p_max_uses integer) TO anon;
 GRANT ALL ON FUNCTION public.create_group_invite(p_group_id uuid, p_expires_at timestamp with time zone, p_max_uses integer) TO authenticated;
 GRANT ALL ON FUNCTION public.create_group_invite(p_group_id uuid, p_expires_at timestamp with time zone, p_max_uses integer) TO service_role;
 
@@ -4726,7 +4867,6 @@ GRANT ALL ON FUNCTION public.delete_comment(comment_id uuid, image_id uuid, grou
 -- Name: FUNCTION delete_image(image_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.delete_image(image_id uuid) TO anon;
 GRANT ALL ON FUNCTION public.delete_image(image_id uuid) TO authenticated;
 GRANT ALL ON FUNCTION public.delete_image(image_id uuid) TO service_role;
 
@@ -4783,7 +4923,6 @@ GRANT ALL ON FUNCTION public.get_comments(image_id uuid, group_id uuid) TO servi
 GRANT ALL ON FUNCTION public.get_group_details(group_id uuid) TO anon;
 GRANT ALL ON FUNCTION public.get_group_details(group_id uuid) TO authenticated;
 GRANT ALL ON FUNCTION public.get_group_details(group_id uuid) TO service_role;
-
 
 
 --
@@ -4934,18 +5073,18 @@ GRANT ALL ON FUNCTION public.get_username(user_id text) TO service_role;
 -- Name: FUNCTION handle_new_user(); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.handle_new_user() TO anon;
-GRANT ALL ON FUNCTION public.handle_new_user() TO authenticated;
+REVOKE ALL ON FUNCTION public.handle_new_user() FROM PUBLIC;
 GRANT ALL ON FUNCTION public.handle_new_user() TO service_role;
 
 
 --
--- Name: FUNCTION handle_storage_delete(); Type: ACL; Schema: public; Owner: -
+-- Name: FUNCTION image_rate_limit_error(p_user_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.handle_storage_delete() TO anon;
-GRANT ALL ON FUNCTION public.handle_storage_delete() TO authenticated;
-GRANT ALL ON FUNCTION public.handle_storage_delete() TO service_role;
+REVOKE ALL ON FUNCTION public.image_rate_limit_error(p_user_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.image_rate_limit_error(p_user_id uuid) TO anon;
+GRANT ALL ON FUNCTION public.image_rate_limit_error(p_user_id uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.image_rate_limit_error(p_user_id uuid) TO service_role;
 
 
 --
@@ -4962,7 +5101,6 @@ GRANT ALL ON FUNCTION public.is_admin_or_owner(p_group_id uuid) TO service_role;
 --
 
 REVOKE ALL ON FUNCTION public.join_group_by_invite(p_token text) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.join_group_by_invite(p_token text) TO anon;
 GRANT ALL ON FUNCTION public.join_group_by_invite(p_token text) TO authenticated;
 GRANT ALL ON FUNCTION public.join_group_by_invite(p_token text) TO service_role;
 
@@ -4981,7 +5119,6 @@ GRANT ALL ON FUNCTION public.leave_group(group_id uuid) TO service_role;
 --
 
 REVOKE ALL ON FUNCTION public.list_group_invites(p_group_id uuid) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.list_group_invites(p_group_id uuid) TO anon;
 GRANT ALL ON FUNCTION public.list_group_invites(p_group_id uuid) TO authenticated;
 GRANT ALL ON FUNCTION public.list_group_invites(p_group_id uuid) TO service_role;
 
@@ -4993,6 +5130,14 @@ GRANT ALL ON FUNCTION public.list_group_invites(p_group_id uuid) TO service_role
 GRANT ALL ON FUNCTION public.manage_member_role(group_id uuid, target_user_id uuid, action text) TO anon;
 GRANT ALL ON FUNCTION public.manage_member_role(group_id uuid, target_user_id uuid, action text) TO authenticated;
 GRANT ALL ON FUNCTION public.manage_member_role(group_id uuid, target_user_id uuid, action text) TO service_role;
+
+
+--
+-- Name: FUNCTION promote_pending_image(); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.promote_pending_image() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.promote_pending_image() TO service_role;
 
 
 --
@@ -5027,9 +5172,17 @@ GRANT ALL ON FUNCTION public.remove_group(group_id uuid) TO service_role;
 -- Name: FUNCTION remove_image_from_groups(p_image_id uuid, p_group_ids uuid[]); Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON FUNCTION public.remove_image_from_groups(p_image_id uuid, p_group_ids uuid[]) TO anon;
 GRANT ALL ON FUNCTION public.remove_image_from_groups(p_image_id uuid, p_group_ids uuid[]) TO authenticated;
 GRANT ALL ON FUNCTION public.remove_image_from_groups(p_image_id uuid, p_group_ids uuid[]) TO service_role;
+
+
+--
+-- Name: FUNCTION request_image_upload(p_group_ids text[], p_description text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.request_image_upload(p_group_ids text[], p_description text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.request_image_upload(p_group_ids text[], p_description text) TO authenticated;
+GRANT ALL ON FUNCTION public.request_image_upload(p_group_ids text[], p_description text) TO service_role;
 
 
 --
@@ -5046,9 +5199,18 @@ GRANT ALL ON FUNCTION public.request_image_uuid() TO service_role;
 --
 
 REVOKE ALL ON FUNCTION public.revoke_group_invite(p_token text) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.revoke_group_invite(p_token text) TO anon;
 GRANT ALL ON FUNCTION public.revoke_group_invite(p_token text) TO authenticated;
 GRANT ALL ON FUNCTION public.revoke_group_invite(p_token text) TO service_role;
+
+
+--
+-- Name: FUNCTION safe_uuid(p_text text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.safe_uuid(p_text text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.safe_uuid(p_text text) TO anon;
+GRANT ALL ON FUNCTION public.safe_uuid(p_text text) TO authenticated;
+GRANT ALL ON FUNCTION public.safe_uuid(p_text text) TO service_role;
 
 
 --
@@ -5170,12 +5332,12 @@ GRANT ALL ON TABLE public."Members" TO service_role;
 
 
 --
--- Name: TABLE "NotifiedImageUsers"; Type: ACL; Schema: public; Owner: -
+-- Name: TABLE "PendingImageGroups"; Type: ACL; Schema: public; Owner: -
 --
 
-GRANT ALL ON TABLE public."NotifiedImageUsers" TO anon;
-GRANT ALL ON TABLE public."NotifiedImageUsers" TO authenticated;
-GRANT ALL ON TABLE public."NotifiedImageUsers" TO service_role;
+GRANT ALL ON TABLE public."PendingImageGroups" TO anon;
+GRANT ALL ON TABLE public."PendingImageGroups" TO authenticated;
+GRANT ALL ON TABLE public."PendingImageGroups" TO service_role;
 
 
 --

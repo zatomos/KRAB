@@ -45,21 +45,49 @@ AppLocalizations _l10n() {
 
 final FlutterLocalNotificationsPlugin _flnp = FlutterLocalNotificationsPlugin();
 
-/// Stable notification id for an image's "new photo" notification, so it can be
-/// cancelled later.
-int imageNotificationId(String imageId) {
+/// Stable notification id for one delivery of an image.
+///
+/// The same photo landing in another group later is a separate event, so it
+/// gets its own id from batchKey.
+int imageNotificationId(String imageId, {String batchKey = ''}) {
+  final source = batchKey.isEmpty ? imageId : '$imageId|$batchKey';
   var hash = 0x811c9dc5; // FNV-1a 32-bit offset basis
-  for (final unit in imageId.codeUnits) {
+  for (final unit in source.codeUnits) {
     hash ^= unit;
     hash = (hash * 0x01000193) & 0xFFFFFFFF;
   }
   return hash & 0x7FFFFFFF;
 }
 
-/// Dismiss a deleted image's notification and drop its cached big-picture file.
+/// Identifies one delivery of a photo: the set of groups it reached together.
+String imageBatchKey(Iterable<String> groupIds) =>
+    (groupIds.toList()..sort()).join(',');
+
+/// Dismiss a deleted image's notifications and drop its cached big-picture file.
 Future<void> cancelImageNotification(String imageId) async {
   await _ensureFlnpInitialized();
+
+  // A notification shown by an older build carries the bare-image-id form.
   await _flnp.cancel(id: imageNotificationId(imageId));
+
+  try {
+    for (final notification in await _flnp.getActiveNotifications()) {
+      final id = notification.id;
+      final payload = notification.payload;
+      if (id == null || payload == null || payload.isEmpty) continue;
+      try {
+        final data = jsonDecode(payload) as Map<String, dynamic>;
+        if (data['type'] == 'new_image' && data['image_id'] == imageId) {
+          await _flnp.cancel(id: id);
+        }
+      } catch (_) {
+        // Not a payload we wrote; leave it alone.
+      }
+    }
+  } catch (e) {
+    debugPrint('notif: could not scan active notifications: $e');
+  }
+
   try {
     final dir = await getTemporaryDirectory();
     final f = File('${dir.path}/notif_img_$imageId.jpg');
@@ -262,8 +290,7 @@ Future<void> dispatchImageNotification(Map<String, dynamic> data) async {
   final ctx = await getImageNotificationContext(imageId);
   if (!ctx.success || ctx.data == null) return;
 
-  // Every group the image was sent to that the user can see. An image shared to
-  // several groups yields a single notification that names all of them.
+  // Every group the image is in that the user can see.
   final rawGroups = (ctx.data!['groups'] as List?) ?? const [];
   final groups = rawGroups
       .whereType<Map>()
@@ -275,9 +302,21 @@ Future<void> dispatchImageNotification(Map<String, dynamic> data) async {
       .toList();
   if (groups.isEmpty) return;
 
+  // Narrow those to the groups this send actually delivered the photo to. An
+  // image shared to several groups at once yields a single notification naming
+  // all of them; an old image added to one group later names only that group,
+  // rather than announcing it as if it had just landed everywhere.
+  final batch = ((data['group_ids'] as String?) ?? '')
+      .split(',')
+      .where((s) => s.isNotEmpty)
+      .toSet();
+  var delivered =
+      batch.isEmpty ? groups : groups.where((g) => batch.contains(g.id)).toList();
+  if (delivered.isEmpty) delivered = groups;
+
   // Drop muted groups; only suppress the notification if every group is muted.
   final unmuted = <({String id, String name})>[];
-  for (final g in groups) {
+  for (final g in delivered) {
     if (!await UserPreferences.isGroupMuted(g.id)) unmuted.add(g);
   }
   if (unmuted.isEmpty) return;
@@ -305,6 +344,10 @@ Future<void> dispatchImageNotification(Map<String, dynamic> data) async {
     groupId: channel.id,
     groupName: channel.name,
     groupsDisplay: groupsDisplay,
+    batchKey: imageBatchKey(delivered.map((g) => g.id)),
+    // For a photo delivered to several groups at once, the tap goes to
+    // the cross-group feed
+    tapGroupId: unmuted.length == 1 ? channel.id : null,
     senderUsername: senderUsername,
     imageId: imageId,
     imageDescription: imageDescription,
@@ -319,6 +362,11 @@ Future<void> showImageNotification({
   required String senderUsername,
   required String imageId,
   String? groupsDisplay,
+
+  /// The group a tap should open. Null when the photo reached the user through
+  /// more than one group, in which case the tap opens the cross-group feed.
+  String? tapGroupId,
+  String batchKey = '',
   String imageDescription = '',
   Uint8List? senderAvatarBytes,
   Uint8List? imageBytes,
@@ -363,7 +411,7 @@ Future<void> showImageNotification({
       : null;
 
   await _flnp.show(
-    id: imageNotificationId(imageId),
+    id: imageNotificationId(imageId, batchKey: batchKey),
     title: senderUsername,
     body: _l10n().new_image_notification,
     notificationDetails: NotificationDetails(
@@ -380,8 +428,11 @@ Future<void> showImageNotification({
         styleInformation: styleInformation,
       ),
     ),
-    payload: jsonEncode(
-        {'type': 'new_image', 'image_id': imageId, 'group_id': groupId}),
+    payload: jsonEncode({
+      'type': 'new_image',
+      'image_id': imageId,
+      'group_id': tapGroupId ?? '',
+    }),
   );
 }
 

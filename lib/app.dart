@@ -7,6 +7,7 @@ import 'package:krab/services/auth/app_auth.dart';
 import 'package:krab/services/home_widget_status.dart';
 import 'package:krab/services/home_widget_updater.dart';
 import 'package:krab/services/notification_router.dart';
+import 'package:krab/services/upload_outbox.dart';
 import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/widgets/update_checker.dart';
 import 'package:krab/l10n/l10n.dart';
@@ -81,6 +82,10 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
     // on a refresh. On-demand refresh still covers everything else via
     // the accessToken hook.
     AppAuth.instance.getValidToken();
+
+    // Coming back to the app is the most likely moment for a connection to have
+    // returned, so try the photos that were queued without one.
+    UploadOutbox.instance.flush();
 
     final now = DateTime.now();
     final canRefresh = _lastWidgetRefresh == null ||

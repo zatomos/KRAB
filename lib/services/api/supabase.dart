@@ -31,7 +31,15 @@ class SupabaseResponse<T> {
   final T? data;
   final String? error;
 
-  SupabaseResponse({required this.success, this.data, this.error});
+  /// The call failed because the device could not reach the server
+  final bool offline;
+
+  SupabaseResponse({
+    required this.success,
+    this.data,
+    this.error,
+    this.offline = false,
+  });
 }
 
 /// Whether error looks like a transient network failure worth retrying.

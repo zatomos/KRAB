@@ -359,33 +359,38 @@ class CameraPageState extends State<CameraPage> {
   Future<void> _showSendImageDialog(File imageFile) async {
     setState(() => _dialogOpen = true);
     try {
-      final response = await showDialog<SupabaseResponse<String>>(
+      final result = await showDialog<SendImageResult>(
         context: context,
         builder: (_) => SendImageDialog(imageFile: imageFile),
       );
-      if (response == null || !mounted) return;
+      if (result == null || !mounted) return;
 
-      if (response.success) {
-        updateHomeWidget();
-        // Confirm the send with a snackbar that also offers a quick Undo.
-        final l10n = context.l10n;
-        final imageId = response.data;
-        final removedMsg = l10n.photo_removed;
-        final failedMsg = l10n.failed_to_delete_photo;
-        showSnackBar(
-          l10n.photo_sent,
-          color: Colors.green,
-          actionLabel: imageId == null ? null : l10n.undo,
-          onAction: imageId == null
-              ? null
-              : () => _undoSend(imageId, removedMsg, failedMsg),
-        );
-      } else {
-        await showDialog(
-          context: context,
-          builder: (_) =>
-              ImageSentDialog(success: false, errorMsg: response.error),
-        );
+      final l10n = context.l10n;
+
+      switch (result.outcome) {
+        case SendOutcome.sent:
+          updateHomeWidget();
+          // Confirm the send with a snackbar that also offers a quick Undo.
+          final imageId = result.imageId;
+          final removedMsg = l10n.photo_removed;
+          final failedMsg = l10n.failed_to_delete_photo;
+          showSnackBar(
+            l10n.photo_sent,
+            color: Colors.green,
+            actionLabel: imageId == null ? null : l10n.undo,
+            onAction: imageId == null
+                ? null
+                : () => _undoSend(imageId, removedMsg, failedMsg),
+          );
+        case SendOutcome.queued:
+          // The photo is safe in the outbox, so this reads as a success.
+          showSnackBar(l10n.photo_queued_offline, color: Colors.green);
+        case SendOutcome.failed:
+          await showDialog(
+            context: context,
+            builder: (_) =>
+                ImageSentDialog(success: false, errorMsg: result.error),
+          );
       }
     } finally {
       if (mounted) setState(() => _dialogOpen = false);

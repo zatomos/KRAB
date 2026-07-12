@@ -73,6 +73,7 @@
   "delete_photo_group_confirm": "Delete this photo from this group? This can't be undone.",
   "photo_deleted": "Photo deleted",
   "photo_sent": "Photo sent",
+  "photo_queued_offline": "Queued; will send when you're back online",
   "photo_removed": "Photo removed",
   "failed_to_delete_photo": "Failed to delete photo",
   "image_saved": "Image saved!",

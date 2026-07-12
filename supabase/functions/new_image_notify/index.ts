@@ -96,26 +96,54 @@ Deno.serve(async (req) => {
 
         const usersWithToken = users.filter((u) => u.fcm_token)
 
-        // Claim each user in the dedup ledger so we notify them at most once per
-        // image, even when the image is shared to several groups at once
-        const { data: claimed, error: claimError } = await supabase
-            .from('NotifiedImageUsers')
-            .upsert(
-                usersWithToken.map((u) => ({ image_id: imageId, user_id: u.id })),
-                { onConflict: 'image_id,user_id', ignoreDuplicates: true }
-            )
-            .select('user_id')
+        // Sending one photo to several groups fires this webhook once per group,
+        // so somebody in two of them would be told twice about the same photo.
+        //
+        // Each one works out whether it speaks for a given person: among the groups this photo
+        // reached in the same send, the lowest by id owns that person, and only that group's run
+        // notifies them.
+        //
+        // Adding an old photo to another group later is its own event and fires this webhook again.
+        const { data: imageGroups, error: imageGroupsError } = await supabase
+            .from('ImageGroups')
+            .select('group_id, uploaded_at')
+            .eq('image_id', imageId)
 
-        if (claimError) {
-            console.error('Error claiming notification ledger:', claimError.message)
+        if (imageGroupsError || !imageGroups) {
+            console.error('Error fetching the image groups:', imageGroupsError?.message)
             return new Response(null, { status: 500 })
         }
 
-        const claimedIds = new Set((claimed ?? []).map((c) => c.user_id))
-        const usersToNotify = usersWithToken.filter((u) => claimedIds.has(u.id))
+        const sentAt = imageGroups.find((g) => g.group_id === groupId)?.uploaded_at
+        const batch = imageGroups
+            .filter((g) => g.uploaded_at === sentAt)
+            .map((g) => g.group_id)
+
+        const { data: memberships, error: membershipsError } = await supabase
+            .from('Members')
+            .select('user_id, group_id')
+            .in('group_id', batch)
+            .in('user_id', usersWithToken.map((u) => u.id))
+
+        if (membershipsError || !memberships) {
+            console.error('Error fetching memberships:', membershipsError?.message)
+            return new Response(null, { status: 500 })
+        }
+
+        const owningGroup = new Map<string, string>()
+        for (const m of memberships) {
+            const current = owningGroup.get(m.user_id)
+            if (current === undefined || m.group_id < current) {
+                owningGroup.set(m.user_id, m.group_id)
+            }
+        }
+
+        const usersToNotify = usersWithToken.filter(
+            (u) => owningGroup.get(u.id) === groupId
+        )
 
         if (usersToNotify.length === 0) {
-            console.log('All members already notified for this image.')
+            console.log('Another group in this send speaks for these members.')
             return new Response(null, { status: 200 })
         }
 
@@ -126,7 +154,13 @@ Deno.serve(async (req) => {
             projectId,
             accessToken,
             usersToNotify.map((u) => u.fcm_token),
-            { type: 'new_image', image_id: imageId, group_id: groupId }
+            {
+                type: 'new_image',
+                image_id: imageId,
+                group_id: groupId,
+                // The groups this send actually delivered the photo to.
+                group_ids: batch.join(','),
+            }
         )
         await pruneDeadTokens(supabase, results)
 
