@@ -1,10 +1,6 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import {
-  getFcmAccessToken,
-  pruneDeadTokens,
-  sendToTokens,
-} from '../_shared/fcm.ts';
-import type { FcmResult } from '../_shared/fcm.ts';
+import { isReachable, PUSH_COLUMNS, sendPush } from '../_shared/webpush.ts';
+import type { PushSubscriptionRow } from '../_shared/webpush.ts';
 
 interface Comments {
   id: string;
@@ -78,25 +74,24 @@ Deno.serve(async (req) => {
 
     console.log('Commenter username:', commenterUsername);
 
-    // Fetch the uploader's FCM token
+    // Fetch the uploader's push target
     const { data: uploaderData, error: uploaderError } = await supabase
       .from('Users')
-      .select('fcm_token, username')
+      .select(`${PUSH_COLUMNS}, username`)
       .eq('id', uploaderId)
+      .returns<PushSubscriptionRow & { username: string }>()
       .single();
 
-    const hasUploaderToken =
-      !uploaderError && uploaderData && uploaderData.fcm_token;
+    const uploaderSub =
+      !uploaderError && isReachable(uploaderData) ? uploaderData : null;
 
-    if (!hasUploaderToken) {
-      console.log('Uploader has no FCM token or error fetching uploader info.');
+    if (!uploaderSub) {
+      console.log('Uploader is not reachable for push, or fetching them failed.');
     }
-
-    const fcmToken = hasUploaderToken ? uploaderData.fcm_token : null;
 
     // If this comment is a reply, resolve the parent comment's author.
     let parentAuthorId: string | null = null;
-    let parentAuthorToken: string | null = null;
+    let parentAuthorSub: PushSubscriptionRow | null = null;
     if (comment.parent_id) {
       const { data: parent, error: parentError } = await supabase
         .from('Comments')
@@ -110,51 +105,43 @@ Deno.serve(async (req) => {
         parentAuthorId = parent.user_id;
         const { data: parentUser, error: parentUserError } = await supabase
           .from('Users')
-          .select('fcm_token')
+          .select(PUSH_COLUMNS)
           .eq('id', parentAuthorId)
+          .returns<PushSubscriptionRow>()
           .single();
-        if (!parentUserError && parentUser?.fcm_token) {
-          parentAuthorToken = parentUser.fcm_token;
+        if (!parentUserError && isReachable(parentUser)) {
+          parentAuthorSub = parentUser;
         } else {
-          console.log('Parent comment author has no FCM token.');
+          console.log('Parent comment author is not reachable for push.');
         }
       }
     }
 
     // Whoever we notify via the reply push is excluded from the uploader and
     // group pushes so one comment never double-notifies them.
-    const replyDedupId = parentAuthorToken ? parentAuthorId : null;
-
-    const { accessToken, projectId } = await getFcmAccessToken();
-    console.log('Firebase access token retrieved');
-
-    const allResults: FcmResult[] = [];
+    const replyDedupId = parentAuthorSub ? parentAuthorId : null;
 
     // Notify the parent comment's author that they were replied to.
-    if (parentAuthorToken) {
+    if (parentAuthorSub) {
       console.log('Sending reply notification to parent comment author');
-      allResults.push(
-        ...(await sendToTokens(projectId, accessToken, [parentAuthorToken], {
-          type: 'comment_reply',
-          comment_id: comment.id,
-        }))
-      );
+      await sendPush(supabase, [parentAuthorSub], {
+        type: 'comment_reply',
+        comment_id: comment.id,
+      });
     }
 
     // Notify the uploader, unless they were already notified as the replied-to
     // author above.
     if (
-      hasUploaderToken &&
+      uploaderSub &&
       uploaderId !== comment.user_id &&
       uploaderId !== replyDedupId
     ) {
       console.log('Sending notification to uploader');
-      allResults.push(
-        ...(await sendToTokens(projectId, accessToken, [fcmToken], {
-          type: 'new_comment',
-          comment_id: comment.id,
-        }))
-      );
+      await sendPush(supabase, [uploaderSub], {
+        type: 'new_comment',
+        comment_id: comment.id,
+      });
     }
 
     // Notify group members
@@ -178,27 +165,24 @@ Deno.serve(async (req) => {
       if (userIds.length > 0) {
         const { data: users, error: usersError } = await supabase
           .from('Users')
-          .select('id, fcm_token, notify_group_comments')
-          .in('id', userIds);
+          .select(`id, ${PUSH_COLUMNS}, notify_group_comments`)
+          .in('id', userIds)
+          .returns<(PushSubscriptionRow & { id: string; notify_group_comments: boolean })[]>();
 
         if (usersError || !users) {
           console.error('Error fetching users:', usersError?.message);
         } else {
-          const groupTokens = users
-            .filter((u) => u.notify_group_comments === true && u.fcm_token)
-            .map((u) => u.fcm_token);
-
-          allResults.push(
-            ...(await sendToTokens(projectId, accessToken, groupTokens, {
-              type: 'group_comment',
-              comment_id: comment.id,
-            }))
+          const groupSubs = users.filter(
+            (u) => u.notify_group_comments === true && isReachable(u)
           );
+
+          await sendPush(supabase, groupSubs, {
+            type: 'group_comment',
+            comment_id: comment.id,
+          });
         }
       }
     }
-
-    await pruneDeadTokens(supabase, allResults);
 
     console.log('Webhook processing completed');
 

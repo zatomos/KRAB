@@ -12,13 +12,16 @@ import 'package:krab/services/image_crop_helper.dart';
 import 'package:krab/user_preferences.dart';
 import 'package:krab/services/debug_notifier.dart';
 import 'package:krab/services/home_widget_updater.dart';
+import 'package:krab/services/push_helper.dart';
 import 'package:krab/services/update_service.dart';
 import 'package:krab/widgets/rectangle_button.dart';
 import 'package:krab/widgets/avatars/user_avatar.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/widgets/dialogs/change_password_dialog.dart';
+import 'package:krab/widgets/dialogs/change_server_dialog.dart';
 import 'package:krab/widgets/dialogs/delete_account_dialog.dart';
 import 'package:krab/widgets/dialogs/edit_avatar_dialog.dart';
+import 'package:krab/widgets/dialogs/push_distributor_dialog.dart';
 import 'package:krab/widgets/dialogs/rename_dialog.dart';
 import 'package:krab/widgets/dialogs/update_dialog.dart';
 import 'login_page.dart';
@@ -50,11 +53,21 @@ class AccountPageState extends State<AccountPage> {
 
   String appVersion = "";
 
+  /// The UnifiedPush distributor in use, null while loading or if none is set.
+  String? _distributor;
+
   @override
   void initState() {
     super.initState();
     _loadUserProfile();
     _loadAppVersion();
+    _loadDistributor();
+  }
+
+  Future<void> _loadDistributor() async {
+    final distributor = await PushHelper.currentDistributor();
+    if (!mounted) return;
+    setState(() => _distributor = distributor);
   }
 
   Future<void> _loadUserProfile() async {
@@ -156,6 +169,25 @@ class AccountPageState extends State<AccountPage> {
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (context) => const LoginPage()),
     );
+  }
+
+  Future<void> openPushDistributorDialog() async {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => const PushDistributorDialog(),
+    );
+    // The dialog may have switched distributor, so re-read what is in use.
+    await _loadDistributor();
+  }
+
+  Future<void> openChangeServerDialog() async {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => const ChangeServerDialog(),
+    );
+    // The dialog closes the app on a successful switch; if we are still here the
+    // user cancelled, so just refresh the shown host.
+    if (mounted) setState(() {});
   }
 
   Future<void> _deleteAccount() async {
@@ -409,6 +441,29 @@ class AccountPageState extends State<AccountPage> {
                           title: Text(context.l10n.change_password),
                           trailing: const Icon(Icons.chevron_right_rounded),
                           onTap: openChangePasswordDialog,
+                        ),
+                        ListTile(
+                          leading: const Icon(Icons.dns_rounded),
+                          title: Text(context.l10n.server_label),
+                          subtitle: Text(
+                            Uri.tryParse(UserPreferences.supabaseUrl)?.host
+                                    .isNotEmpty ==
+                                    true
+                                ? Uri.parse(UserPreferences.supabaseUrl).host
+                                : UserPreferences.supabaseUrl,
+                          ),
+                          trailing: const Icon(Icons.chevron_right_rounded),
+                          onTap: openChangeServerDialog,
+                        ),
+                        ListTile(
+                          leading: const Icon(Icons.notifications_active_rounded),
+                          title: Text(context.l10n.push_distributor_label),
+                          subtitle: Text(
+                            _distributor ??
+                                context.l10n.push_distributor_none_selected,
+                          ),
+                          trailing: const Icon(Icons.chevron_right_rounded),
+                          onTap: openPushDistributorDialog,
                         ),
                         const SizedBox(height: 27),
                         Padding(

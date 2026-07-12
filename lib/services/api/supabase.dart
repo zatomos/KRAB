@@ -7,10 +7,9 @@ import 'package:krab/services/avatar_cache.dart';
 import 'package:krab/services/image_disk_cache.dart';
 import 'package:krab/services/exif_stripper.dart';
 import 'package:krab/services/auth/app_auth.dart';
-import 'package:krab/services/fcm_helper.dart';
 import 'package:krab/services/debug_notifier.dart';
+import 'package:krab/services/push_helper.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
 
 import 'package:krab/models/group.dart';
 import 'package:krab/models/group_invite.dart';

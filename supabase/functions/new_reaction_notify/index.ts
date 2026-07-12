@@ -1,10 +1,6 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import {
-  getFcmAccessToken,
-  pruneDeadTokens,
-  sendToTokens,
-} from '../_shared/fcm.ts';
-import type { FcmResult } from '../_shared/fcm.ts';
+import { isReachable, PUSH_COLUMNS, sendPush } from '../_shared/webpush.ts';
+import type { PushSubscriptionRow } from '../_shared/webpush.ts';
 
 interface Reaction {
   image_id: string;
@@ -59,38 +55,27 @@ Deno.serve(async (req) => {
 
     const uploaderId = imageData.uploaded_by;
 
-    const { accessToken, projectId } = await getFcmAccessToken();
-    console.log('Firebase access token retrieved');
-
-    const allResults: FcmResult[] = [];
-
     // Notify the uploader, unless they reacted to their own image.
     if (uploaderId !== reaction.user_id) {
       const { data: uploaderData, error: uploaderError } = await supabase
         .from('Users')
-        .select('fcm_token')
+        .select(PUSH_COLUMNS)
         .eq('id', uploaderId)
+        .returns<PushSubscriptionRow>()
         .single();
 
       if (uploaderError || !uploaderData) {
         console.error('Error fetching uploader info:', uploaderError?.message);
-      } else if (uploaderData.fcm_token) {
+      } else if (isReachable(uploaderData)) {
         console.log('Sending notification to uploader');
-        allResults.push(
-          ...(await sendToTokens(
-            projectId,
-            accessToken,
-            [uploaderData.fcm_token],
-            {
-              type: 'new_reaction',
-              image_id: reaction.image_id,
-              reactor_id: reaction.user_id,
-              emoji: reaction.emoji,
-            }
-          ))
-        );
+        await sendPush(supabase, [uploaderData], {
+          type: 'new_reaction',
+          image_id: reaction.image_id,
+          reactor_id: reaction.user_id,
+          emoji: reaction.emoji,
+        });
       } else {
-        console.log('Uploader has no FCM token.');
+        console.log('Uploader is not reachable for push.');
       }
     }
 
@@ -144,31 +129,28 @@ Deno.serve(async (req) => {
           if (userIds.length > 0) {
             const { data: users, error: usersError } = await supabase
               .from('Users')
-              .select('id, fcm_token, notify_group_reactions')
-              .in('id', userIds);
+              .select(`id, ${PUSH_COLUMNS}, notify_group_reactions`)
+              .in('id', userIds)
+              .returns<(PushSubscriptionRow & { id: string; notify_group_reactions: boolean })[]>();
 
             if (usersError || !users) {
               console.error('Error fetching users:', usersError?.message);
             } else {
-              const groupTokens = users
-                .filter((u) => u.notify_group_reactions === true && u.fcm_token)
-                .map((u) => u.fcm_token);
-
-              allResults.push(
-                ...(await sendToTokens(projectId, accessToken, groupTokens, {
-                  type: 'group_reaction',
-                  image_id: reaction.image_id,
-                  reactor_id: reaction.user_id,
-                  emoji: reaction.emoji,
-                }))
+              const groupSubs = users.filter(
+                (u) => u.notify_group_reactions === true && isReachable(u)
               );
+
+              await sendPush(supabase, groupSubs, {
+                type: 'group_reaction',
+                image_id: reaction.image_id,
+                reactor_id: reaction.user_id,
+                emoji: reaction.emoji,
+              });
             }
           }
         }
       }
     }
-
-    await pruneDeadTokens(supabase, allResults);
 
     return new Response(JSON.stringify({ message: 'Notification sent' }), {
       headers: { 'Content-Type': 'application/json' },

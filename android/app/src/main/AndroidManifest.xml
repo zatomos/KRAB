@@ -20,9 +20,6 @@
         android:label="KRAB"
         android:requestLegacyExternalStorage="true"
         >
-        <meta-data
-            android:name="com.google.firebase.messaging.default_notification_icon"
-            android:resource="@drawable/ic_stat_krab_logo" />
         <receiver
             android:name=".HomeScreenWidget"
             android:label="@string/widget_single_label"

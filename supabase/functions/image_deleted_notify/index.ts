@@ -1,9 +1,6 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import {
-    getFcmAccessToken,
-    pruneDeadTokens,
-    sendToTokens,
-} from '../_shared/fcm.ts'
+import { PUSH_COLUMNS, sendPush } from '../_shared/webpush.ts'
+import type { PushSubscriptionRow } from '../_shared/webpush.ts'
 
 interface ImageGroups {
     id: string;
@@ -82,23 +79,20 @@ Deno.serve(async (req) => {
 
         const { data: users, error: usersError } = await supabase
             .from('Users')
-            .select('id, fcm_token')
+            .select(`id, ${PUSH_COLUMNS}`)
             .in('id', userIds)
+            .returns<PushSubscriptionRow[]>()
 
         if (usersError || !users) {
-            console.error('Error fetching user FCM tokens:', usersError?.message)
+            console.error('Error fetching push targets:', usersError?.message)
             return new Response(null, { status: 500 })
         }
 
-        const { accessToken, projectId } = await getFcmAccessToken()
-
-        const results = await sendToTokens(
-            projectId,
-            accessToken,
-            users.map((u) => u.fcm_token),
-            { type: 'image_deleted', image_id: imageId, group_id: groupId }
-        )
-        await pruneDeadTokens(supabase, results)
+        await sendPush(supabase, users, {
+            type: 'image_deleted',
+            image_id: imageId,
+            group_id: groupId,
+        })
 
         return new Response(JSON.stringify({ message: 'Deletion notifications sent' }), {
             headers: { 'Content-Type': 'application/json' },

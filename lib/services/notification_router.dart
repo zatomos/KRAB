@@ -2,13 +2,13 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:workmanager/workmanager.dart';
 
 import 'package:krab/app_globals.dart';
 import 'package:krab/services/api/supabase.dart';
 import 'package:krab/services/auth/app_auth.dart';
 import 'package:krab/services/debug_notifier.dart';
+import 'package:krab/services/feed_events.dart';
 import 'package:krab/services/home_widget_updater.dart';
 import 'package:krab/services/notification_channels.dart';
 import 'package:krab/services/supabase_bootstrap.dart';
@@ -139,12 +139,15 @@ void workmanagerCallbackDispatcher() {
   });
 }
 
+/// Handles a decrypted push payload.
 @pragma('vm:entry-point')
-Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  debugPrint('Handling background message: ${message.messageId}');
-  debugPrint('Background data: ${message.data}');
+Future<void> handlePushPayload(
+  Map<String, String> data, {
+  required bool background,
+}) async {
+  final type = data['type'];
+  debugPrint('Push: handling type="$type" (background=$background)');
 
-  final type = message.data['type'];
   if (type != 'new_image' &&
       type != 'new_comment' &&
       type != 'group_comment' &&
@@ -152,47 +155,61 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       type != 'new_reaction' &&
       type != 'group_reaction' &&
       type != 'image_deleted') {
-    debugPrint('Background message type "$type" not handled, skipping');
+    debugPrint('Push message type "$type" not handled, skipping');
     return;
   }
 
   try {
-    await bootstrapBackgroundIsolate();
-    await DebugNotifier.instance.notifyBackgroundTaskStarted();
+    if (background) {
+      await bootstrapBackgroundIsolate();
+      await DebugNotifier.instance.notifyBackgroundTaskStarted();
 
-    final supabaseOk = await initializeBackgroundSupabase();
-    if (!supabaseOk) {
-      debugPrint('Supabase not initialized (background)');
-      await DebugNotifier.instance
-          .notifySupabaseInitFailed('Background: Supabase init failed');
-      return;
-    }
+      final supabaseOk = await initializeBackgroundSupabase();
+      if (!supabaseOk) {
+        debugPrint('Supabase not initialized (background)');
+        await DebugNotifier.instance
+            .notifySupabaseInitFailed('Background: Supabase init failed');
+        return;
+      }
 
-    if (await AppAuth.instance.getValidToken() == null) {
-      await DebugNotifier.instance.notifyBackgroundTaskFailed(
-          'Background session unavailable, reopen the app to re-authenticate');
-      return;
+      if (await AppAuth.instance.getValidToken() == null) {
+        await DebugNotifier.instance.notifyBackgroundTaskFailed(
+            'Background session unavailable, reopen the app to re-authenticate');
+        return;
+      }
     }
 
     if (type == 'new_image') {
-      await dispatchImageNotification(message.data);
+      await dispatchImageNotification(data);
       await updateHomeWidget();
+      if (!background) {
+        // Let an open feed surface a new photos pill without a refresh
+        FeedEvents.instance.notifyNewImage(NewImageEvent(
+          imageId: data['image_id'] ?? '',
+          groupId: data['group_id'],
+        ));
+      }
     } else if (type == 'image_deleted') {
       // The image is gone, clear any standing notification for it and refresh
       // the widget so it drops out
-      await cancelImageNotification(message.data['image_id'] ?? '');
+      await cancelImageNotification(data['image_id'] ?? '');
       await updateHomeWidget();
     } else if (type == 'new_reaction' || type == 'group_reaction') {
-      await dispatchReactionNotification(message.data, type);
+      // Non-null: the guard above returned for every other value of type.
+      await dispatchReactionNotification(data, type!);
     } else {
-      await dispatchCommentNotification(message.data, type);
+      await dispatchCommentNotification(data, type!);
     }
 
-    debugPrint('Background message processed successfully');
-    await DebugNotifier.instance.notifyBackgroundTaskCompleted();
+    debugPrint('Push message processed successfully');
+    if (background) {
+      await DebugNotifier.instance.notifyBackgroundTaskCompleted();
+    }
   } catch (e, st) {
-    debugPrint('Error in background handler: $e');
+    debugPrint('Error handling push message: $e');
     debugPrint(st.toString());
-    await DebugNotifier.instance.notifyBackgroundTaskFailed('$e');
+    if (background) {
+      await DebugNotifier.instance.notifyBackgroundTaskFailed('$e');
+    }
   }
 }

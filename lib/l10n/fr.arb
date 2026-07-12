@@ -45,7 +45,7 @@
   "send": "Envoyer",
   "comments": "Commentaires",
   "error_loading_images": "Erreur lors du chargement des images: {errorMsg}",
-  "no_images" : "Aucune image dans ce groupe (pour l'instant).",
+  "no_images": "Aucune image dans ce groupe (pour l'instant).",
   "group_settings_page_title": "Paramètres de groupe",
   "leave_group": "Quitter le groupe",
   "left_group_success": "Groupe quitté avec succès.",
@@ -230,7 +230,7 @@
   "new_password": "Nouveau mot de passe",
   "confirm_new_password": "Confirmer le nouveau mot de passe",
   "password_updated_success": "Mot de passe mis à jour avec succès !",
-  "forgot_password":"Mot de passe oublié",
+  "forgot_password": "Mot de passe oublié",
   "forgot_password_question": "Mot de passe oublié ?",
   "password_email_sent": "Email de réinitialisation de mot de passe envoyé !",
   "invalid_email_or_password": "Email ou mot de passe invalide.",
@@ -268,11 +268,29 @@
   "expires_after": "Expire après",
   "max_uses_label": "Utilisations max",
   "duration_minutes": "{count, plural, =1{1 minute} other{{count} minutes}}",
-  "@duration_minutes": { "placeholders": { "count": { "type": "int" } } },
+  "@duration_minutes": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "duration_hours": "{count, plural, =1{1 heure} other{{count} heures}}",
-  "@duration_hours": { "placeholders": { "count": { "type": "int" } } },
+  "@duration_hours": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "duration_days": "{count, plural, =1{1 jour} other{{count} jours}}",
-  "@duration_days": { "placeholders": { "count": { "type": "int" } } },
+  "@duration_days": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "duration_never": "Jamais",
   "no_limit": "Aucune limite",
   "error_reacting": "Erreur lors de l'ajout de la réaction : {errorMsg}",
@@ -282,5 +300,35 @@
   "quick_access_emoji": "Accès rapide",
   "no_recents": "Aucun emoji récent",
   "new_reaction_on_your_image_notification": "a réagi {emoji} à votre image",
-  "new_reaction_on_someone_notification": "a réagi {emoji} à l'image de {uploader_username}"
+  "new_reaction_on_someone_notification": "a réagi {emoji} à l'image de {uploader_username}",
+  "instanceSetupTitle": "Se connecter à un serveur KRAB",
+  "instanceSetupSubtitle": "Saisissez l'adresse et la clé publique de l'instance qu'on vous a communiquée.",
+  "instanceSetupUrlHint": "URL du serveur",
+  "instanceSetupKeyHint": "Clé anon",
+  "instanceSetupConnect": "Se connecter",
+  "instanceSetupMissingFields": "Renseignez l'URL du serveur et la clé anon.",
+  "instanceSetupInvalidUrl": "Cette URL ne semble pas valide.",
+  "instanceSetupUnreachable": "Serveur injoignable. Vérifiez l'URL et la clé anon.",
+  "server_label": "Serveur",
+  "push_distributor_label": "Distribution des notifications",
+  "push_distributor_none_selected": "Aucun sélectionné",
+  "push_distributor_title": "Distribution des notifications",
+  "push_distributor_description": "KRAB distribue les notifications via un distributeur UnifiedPush. Choisissez celui à utiliser.",
+  "push_distributor_none": "Aucun distributeur n'est disponible sur cet appareil. Installez une application UnifiedPush pour recevoir les notifications.",
+  "push_distributor_failed": "Impossible de s'abonner avec ce distributeur.",
+  "change_server_title": "Changer de serveur",
+  "change_server_description": "Cela vous déconnecte du serveur actuel et de votre compte. Vous choisirez un serveur au redémarrage de l'application.",
+  "change_server_confirm": "Se déconnecter",
+  "instanceSetupTokenSubtitle": "Collez le jeton de connexion qu'on vous a communiqué pour rejoindre un serveur KRAB.",
+  "instanceSetupTokenHint": "Jeton de connexion",
+  "instanceSetupPaste": "Coller",
+  "instanceSetupBadToken": "Ce jeton de connexion ne semble pas valide.",
+  "instanceSetupUseManual": "Saisir les détails du serveur manuellement",
+  "instanceSetupUseToken": "Utiliser un jeton de connexion",
+  "instanceSetupTest": "Tester la connexion",
+  "instanceSetupTesting": "Test en cours...",
+  "instanceSetupConnecting": "Connexion...",
+  "instanceSetupTestOk": "Connexion réussie",
+  "instanceSetupTestBadKey": "Le serveur est joignable mais a rejeté la clé.",
+  "instanceSetupConnected": "Connecté"
 }

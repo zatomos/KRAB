@@ -8,6 +8,7 @@ class UserPreferences {
 
   static late String supabaseUrl;
   static late String supabaseAnonKey;
+  static late String vapidPublicKey;
   static late bool autoImageSave;
   static late bool isFirstLaunch;
   static late List<String> favoriteGroups;
@@ -16,11 +17,35 @@ class UserPreferences {
   static late int widgetRefreshIntervalMinutes;
   static late bool updateNotifications;
 
+  /// Trims a config value and strips a matching pair of surrounding quotes
+  static String _clean(String? raw) {
+    var v = (raw ?? '').trim();
+    if (v.length >= 2 &&
+        ((v.startsWith("'") && v.endsWith("'")) ||
+            (v.startsWith('"') && v.endsWith('"')))) {
+      v = v.substring(1, v.length - 1).trim();
+    }
+    return v;
+  }
+
   Future<void> initPrefs() async {
     _preferences = await SharedPreferences.getInstance();
 
-    supabaseUrl = dotenv.env['SUPABASE_URL'] ?? '';
-    supabaseAnonKey = dotenv.env['SUPABASE_ANON_KEY'] ?? '';
+    supabaseUrl = _clean(_preferences?.getString('supabaseUrl') ??
+        dotenv.env['SUPABASE_URL']);
+    supabaseAnonKey = _clean(_preferences?.getString('supabaseAnonKey') ??
+        dotenv.env['SUPABASE_ANON_KEY']);
+
+    // Seed the resolved config into prefs the first time a build that still
+    // carries a .env default runs. Only when we actually have a usable pair, so
+    // a blank build writes nothing and stays on the connect screen.
+    if (supabaseUrl.isNotEmpty &&
+        supabaseAnonKey.isNotEmpty &&
+        _preferences?.getString('supabaseUrl') != supabaseUrl) {
+      await _preferences?.setString('supabaseUrl', supabaseUrl);
+      await _preferences?.setString('supabaseAnonKey', supabaseAnonKey);
+    }
+    vapidPublicKey = _preferences?.getString('vapidPublicKey') ?? '';
     autoImageSave = _preferences?.getBool('autoImageSave') ?? false;
     isFirstLaunch = _preferences?.getBool('isFirstLaunch') ?? true;
     favoriteGroups = _preferences?.getStringList('favoriteGroups') ?? [];
@@ -30,6 +55,29 @@ class UserPreferences {
     widgetRefreshIntervalMinutes =
         _preferences?.getInt('widgetRefreshIntervalMinutes') ?? 30;
     updateNotifications = _preferences?.getBool('updateNotifications') ?? true;
+  }
+
+  /// Points this install at a KRAB backend.
+  /// The VAPID key is cleared alongside.
+  static Future<void> setSupabaseConfig({
+    required String url,
+    required String anonKey,
+  }) async {
+    supabaseUrl = url;
+    supabaseAnonKey = anonKey;
+    vapidPublicKey = '';
+    await _preferences?.setString('supabaseUrl', url);
+    await _preferences?.setString('supabaseAnonKey', anonKey);
+    await _preferences?.remove('vapidPublicKey');
+  }
+
+  /// True once this install knows which backend to talk to.
+  static bool get hasSupabaseConfig =>
+      supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty;
+
+  static Future<void> setVapidPublicKey(String value) async {
+    vapidPublicKey = value;
+    await _preferences?.setString('vapidPublicKey', value);
   }
 
   static Future<bool> getAutoImageSave() async {
@@ -66,7 +114,7 @@ class UserPreferences {
   }
 
   // Groups whose notifications the user has muted. Read with a fresh
-  // SharedPreferences handle so it also works in the FCM background isolate,
+  // SharedPreferences handle so it also works in the push background isolate,
   // where the static _preferences is never initialized.
   static Future<SharedPreferences> _prefs() async =>
       _preferences ?? await SharedPreferences.getInstance();

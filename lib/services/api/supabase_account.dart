@@ -1,23 +1,29 @@
 part of 'supabase.dart';
 
-/// ------------------ FCM TOKEN & USER FUNCTIONS ------------------
+/// ------------------ PUSH SUBSCRIPTION & USER FUNCTIONS ------------------
 
-/// Handles FCM token registration.
-Future<SupabaseResponse<void>> fcmTokenHandler({String? username}) async {
+/// Stores the caller's Web Push subscription so the backend can push to it.
+///
+/// [endpoint] is where the user's push service accepts messages; [p256dh] and
+/// [auth] are the keys the backend needs to encrypt a payload that only this
+/// device can open. All three come from the distributor, and any of
+/// them can change at any launch, so this is called on every new endpoint
+/// rather than once at sign-up.
+Future<SupabaseResponse<void>> savePushSubscription({
+  required String endpoint,
+  required String p256dh,
+  required String auth,
+  String? username,
+}) async {
+  if (!AppAuth.instance.isLoggedIn) {
+    return SupabaseResponse(success: false, error: "No authenticated user");
+  }
+
   try {
-    await FirebaseMessaging.instance.requestPermission();
-
-    final fcmToken = await FirebaseMessaging.instance.getToken();
-    if (fcmToken == null) {
-      return SupabaseResponse(success: false, error: "Error getting FCM token");
-    }
-
-    if (!AppAuth.instance.isLoggedIn) {
-      return SupabaseResponse(success: false, error: "No authenticated user");
-    }
-
-    final response = await supabase.rpc("register_fcm_token", params: {
-      "p_fcm_token": fcmToken,
+    final response = await supabase.rpc("register_push_subscription", params: {
+      "p_endpoint": endpoint,
+      "p_p256dh": p256dh,
+      "p_auth": auth,
       if (username != null) "p_username": username,
     });
 
@@ -29,7 +35,53 @@ Future<SupabaseResponse<void>> fcmTokenHandler({String? username}) async {
   } catch (error) {
     return SupabaseResponse(
       success: false,
-      error: "Error handling FCM token: $error",
+      error: "Error saving push subscription: $error",
+    );
+  }
+}
+
+/// Drops the caller's Web Push subscription, so the backend stops pushing to a
+/// device the user has signed out of.
+Future<SupabaseResponse<void>> clearPushSubscription() async {
+  if (!AppAuth.instance.isLoggedIn) {
+    return SupabaseResponse(success: false, error: "No authenticated user");
+  }
+
+  try {
+    await supabase.from('Users').update({
+      'push_endpoint': null,
+      'push_p256dh': null,
+      'push_auth': null,
+    }).eq('id', AppAuth.instance.currentUserId!);
+    return SupabaseResponse(success: true);
+  } catch (error) {
+    return SupabaseResponse(
+      success: false,
+      error: "Error clearing push subscription: $error",
+    );
+  }
+}
+
+/// This instance's VAPID public key, which the app must present to a distributor
+/// to open a Web Push subscription.
+Future<SupabaseResponse<String>> fetchVapidPublicKey() async {
+  try {
+    final res = await supabase.functions.invoke('vapid');
+
+    final body = res.data;
+    final key = body is Map ? body['vapid_public_key'] as String? : null;
+
+    if (key == null || key.isEmpty) {
+      return SupabaseResponse(
+        success: false,
+        error: "This instance has not configured push notifications",
+      );
+    }
+    return SupabaseResponse(success: true, data: key);
+  } catch (error) {
+    return SupabaseResponse(
+      success: false,
+      error: "Error fetching the VAPID public key: $error",
     );
   }
 }
@@ -69,7 +121,7 @@ Future<SupabaseResponse<bool>> registerUser(
     return SupabaseResponse(success: false, error: _mapAuthError(res.error));
   }
   if (AppAuth.instance.isLoggedIn) {
-    await fcmTokenHandler(username: username);
+    await PushHelper.ensureRegistered();
     return SupabaseResponse(success: true, data: true);
   }
   // Verification required; the username was stored via signup metadata and the
@@ -92,7 +144,7 @@ Future<SupabaseResponse<void>> loginUser(String email, String password) async {
   if (!res.success) {
     return SupabaseResponse(success: false, error: _mapAuthError(res.error));
   }
-  await fcmTokenHandler();
+  await PushHelper.ensureRegistered();
   return SupabaseResponse(success: true);
 }
 
@@ -102,8 +154,15 @@ Future<SupabaseResponse<void>> logOut() async {
     // Mark this as an intentional logout to prevent "unexpected signout" notification
     DebugNotifier.instance.markIntentionalLogout();
 
-    // Clean up FCM listeners
-    await FcmHelper.dispose();
+    // The row can only be cleared while the session is still valid, and
+    // a failure here must not strand the user in a half-logged-out state,
+    // so it is best-effort.
+    final cleared = await clearPushSubscription();
+    if (!cleared.success) {
+      debugPrint('Could not clear the push subscription: ${cleared.error}');
+    }
+    await PushHelper.unregister();
+    await PushHelper.dispose();
 
     // Clear profile picture cache
     await ProfilePictureCache.of(supabase).clear();
