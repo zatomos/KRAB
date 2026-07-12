@@ -1,14 +1,22 @@
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'package:krab/services/file_saver.dart';
 
 class UserPreferences {
   static SharedPreferences? _preferences;
 
+  /// Optional backend baked in at build time.
+  static const _bakedUrl = String.fromEnvironment('SUPABASE_URL');
+  static const _bakedAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
+
   static late String supabaseUrl;
   static late String supabaseAnonKey;
+
+  // Per-instance settings, fetched from the instance-config edge function and
+  // cached here.
   static late String vapidPublicKey;
+  static late String passwordResetUrl;
+  static late String emailConfirmUrl;
   static late bool autoImageSave;
   static late bool isFirstLaunch;
   static late List<String> favoriteGroups;
@@ -31,14 +39,14 @@ class UserPreferences {
   Future<void> initPrefs() async {
     _preferences = await SharedPreferences.getInstance();
 
-    supabaseUrl = _clean(_preferences?.getString('supabaseUrl') ??
-        dotenv.env['SUPABASE_URL']);
-    supabaseAnonKey = _clean(_preferences?.getString('supabaseAnonKey') ??
-        dotenv.env['SUPABASE_ANON_KEY']);
+    supabaseUrl = _clean(_preferences?.getString('supabaseUrl') ?? _bakedUrl);
+    supabaseAnonKey =
+        _clean(_preferences?.getString('supabaseAnonKey') ?? _bakedAnonKey);
 
-    // Seed the resolved config into prefs the first time a build that still
-    // carries a .env default runs. Only when we actually have a usable pair, so
-    // a blank build writes nothing and stays on the connect screen.
+    // Seed a baked-in default into prefs on first launch, so that from then on
+    // prefs are the single source of truth and the user can still switch away.
+    // Only when we have a usable pair, so the generic build writes nothing and
+    // comes up on the connect screen.
     if (supabaseUrl.isNotEmpty &&
         supabaseAnonKey.isNotEmpty &&
         _preferences?.getString('supabaseUrl') != supabaseUrl) {
@@ -46,6 +54,8 @@ class UserPreferences {
       await _preferences?.setString('supabaseAnonKey', supabaseAnonKey);
     }
     vapidPublicKey = _preferences?.getString('vapidPublicKey') ?? '';
+    passwordResetUrl = _preferences?.getString('passwordResetUrl') ?? '';
+    emailConfirmUrl = _preferences?.getString('emailConfirmUrl') ?? '';
     autoImageSave = _preferences?.getBool('autoImageSave') ?? false;
     isFirstLaunch = _preferences?.getBool('isFirstLaunch') ?? true;
     favoriteGroups = _preferences?.getStringList('favoriteGroups') ?? [];
@@ -58,26 +68,42 @@ class UserPreferences {
   }
 
   /// Points this install at a KRAB backend.
-  /// The VAPID key is cleared alongside.
   static Future<void> setSupabaseConfig({
     required String url,
     required String anonKey,
   }) async {
     supabaseUrl = url;
     supabaseAnonKey = anonKey;
-    vapidPublicKey = '';
     await _preferences?.setString('supabaseUrl', url);
     await _preferences?.setString('supabaseAnonKey', anonKey);
-    await _preferences?.remove('vapidPublicKey');
+    await clearInstanceConfig();
   }
 
   /// True once this install knows which backend to talk to.
   static bool get hasSupabaseConfig =>
       supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty;
 
-  static Future<void> setVapidPublicKey(String value) async {
-    vapidPublicKey = value;
-    await _preferences?.setString('vapidPublicKey', value);
+  /// Caches what the instance-config endpoint reported for this backend.
+  static Future<void> setInstanceConfig({
+    required String vapidKey,
+    required String resetUrl,
+    required String confirmUrl,
+  }) async {
+    vapidPublicKey = vapidKey;
+    passwordResetUrl = resetUrl;
+    emailConfirmUrl = confirmUrl;
+    await _preferences?.setString('vapidPublicKey', vapidKey);
+    await _preferences?.setString('passwordResetUrl', resetUrl);
+    await _preferences?.setString('emailConfirmUrl', confirmUrl);
+  }
+
+  static Future<void> clearInstanceConfig() async {
+    vapidPublicKey = '';
+    passwordResetUrl = '';
+    emailConfirmUrl = '';
+    await _preferences?.remove('vapidPublicKey');
+    await _preferences?.remove('passwordResetUrl');
+    await _preferences?.remove('emailConfirmUrl');
   }
 
   static Future<bool> getAutoImageSave() async {

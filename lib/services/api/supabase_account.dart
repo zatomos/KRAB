@@ -62,29 +62,56 @@ Future<SupabaseResponse<void>> clearPushSubscription() async {
   }
 }
 
-/// This instance's VAPID public key, which the app must present to a distributor
-/// to open a Web Push subscription.
-Future<SupabaseResponse<String>> fetchVapidPublicKey() async {
+/// Fetches this instance's public settings and caches them.
+/// Called once a backend is known, before login.
+/// Every caller treats a failure here as non-fatal and carries on with whatever
+/// was cached, so a failure has to be loud in the log or it is invisible: the
+/// only symptom is a feature quietly not appearing.
+Future<SupabaseResponse<void>> fetchInstanceConfig() async {
   try {
-    final res = await supabase.functions.invoke('vapid');
+    final res = await supabase.functions.invoke('instance-config');
 
     final body = res.data;
-    final key = body is Map ? body['vapid_public_key'] as String? : null;
-
-    if (key == null || key.isEmpty) {
+    if (body is! Map) {
+      debugPrint('InstanceConfig: unexpected response body: $body');
       return SupabaseResponse(
         success: false,
-        error: "This instance has not configured push notifications",
+        error: "This instance returned no configuration",
       );
     }
-    return SupabaseResponse(success: true, data: key);
+
+    String field(String key) => (body[key] as String?) ?? '';
+
+    final vapidKey = field('vapid_public_key');
+    final resetUrl = field('password_reset_url');
+    final confirmUrl = field('email_confirm_url');
+
+    await UserPreferences.setInstanceConfig(
+      vapidKey: vapidKey,
+      resetUrl: resetUrl,
+      confirmUrl: confirmUrl,
+    );
+
+    debugPrint('InstanceConfig: fetched '
+        '(vapid=${vapidKey.isNotEmpty}, '
+        'passwordReset=${resetUrl.isNotEmpty}, '
+        'emailConfirm=${confirmUrl.isNotEmpty})');
+    return SupabaseResponse(success: true);
   } catch (error) {
+    debugPrint('InstanceConfig: fetch failed: $error');
     return SupabaseResponse(
       success: false,
-      error: "Error fetching the VAPID public key: $error",
+      error: "Error fetching the instance configuration: $error",
     );
   }
 }
+
+/// Where GoTrue sends the user after they confirm their email. Null when this
+/// instance has no confirmation page, in which case GoTrue falls back to its
+/// own SITE_URL.
+String? get _emailConfirmUrl => UserPreferences.emailConfirmUrl.isEmpty
+    ? null
+    : UserPreferences.emailConfirmUrl;
 
 /// Map a GoTrue error code to the app's localized error keys.
 String _mapAuthError(String? code) {
@@ -112,11 +139,10 @@ String _mapAuthError(String? code) {
 Future<SupabaseResponse<bool>> registerUser(
     String username, String email, String password) async {
   debugPrint("Registering user: $username, $email");
-  // After confirming, GoTrue redirects here. When unset it falls back to the
-  // server's SITE_URL. Must be allowlisted in ADDITIONAL_REDIRECT_URLS.
-  final confirmUrl = dotenv.env['EMAIL_CONFIRM_URL'];
-  final res = await AppAuth.instance
-      .register(email, password, username: username, redirectTo: confirmUrl);
+  // After confirming, GoTrue redirects here. When this instance has no
+  // confirmation page it falls back to the server's SITE_URL.
+  final res = await AppAuth.instance.register(email, password,
+      username: username, redirectTo: _emailConfirmUrl);
   if (!res.success) {
     return SupabaseResponse(success: false, error: _mapAuthError(res.error));
   }
@@ -132,7 +158,7 @@ Future<SupabaseResponse<bool>> registerUser(
 /// Re-send the signup confirmation email to an unconfirmed account.
 Future<SupabaseResponse<void>> resendConfirmationEmail(String email) async {
   final res = await AppAuth.instance
-      .resendConfirmation(email, redirectTo: dotenv.env['EMAIL_CONFIRM_URL']);
+      .resendConfirmation(email, redirectTo: _emailConfirmUrl);
   return res.success
       ? SupabaseResponse(success: true)
       : SupabaseResponse(success: false, error: _mapAuthError(res.error));
@@ -383,20 +409,18 @@ Future<SupabaseResponse<void>> changePassword(
   return SupabaseResponse(success: true);
 }
 
-/// Whether the password reset feature is enabled via the .env configuration.
-/// Defaults to enabled.
-bool get isPasswordResetEnabled =>
-    dotenv.env['ENABLE_PASSWORD_RESET']?.toLowerCase() != 'false';
+/// Whether this instance has a password-reset page.
+bool get isPasswordResetEnabled => UserPreferences.passwordResetUrl.isNotEmpty;
 
 /// Send a password reset email.
 Future<SupabaseResponse<void>> sendPasswordResetEmail(String email) async {
   if (!isPasswordResetEnabled) {
     return SupabaseResponse(success: false, error: 'Password reset is disabled');
   }
-  final redirectUrl = dotenv.env['PASSWORD_RESET_URL'] ??
-      'https://your-domain.com/reset-password.html';
-  final res =
-      await AppAuth.instance.sendPasswordReset(email, redirectTo: redirectUrl);
+  final res = await AppAuth.instance.sendPasswordReset(
+    email,
+    redirectTo: UserPreferences.passwordResetUrl,
+  );
   if (!res.success) {
     return SupabaseResponse(success: false, error: _mapAuthError(res.error));
   }

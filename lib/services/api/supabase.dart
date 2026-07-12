@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:krab/services/profile_picture_cache.dart';
 import 'package:krab/services/avatar_cache.dart';
 import 'package:krab/services/image_disk_cache.dart';
@@ -9,6 +8,7 @@ import 'package:krab/services/exif_stripper.dart';
 import 'package:krab/services/auth/app_auth.dart';
 import 'package:krab/services/debug_notifier.dart';
 import 'package:krab/services/push_helper.dart';
+import 'package:krab/user_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:krab/models/group.dart';

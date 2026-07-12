@@ -204,14 +204,21 @@ class PushHelper {
 
     if (!isSupabaseInitialized) return null;
 
-    final res = await fetchVapidPublicKey();
-    if (!res.success || res.data == null) {
-      debugPrint('Push: could not fetch the VAPID key: ${res.error}');
+    // The key arrives as part of this instance's config, which is cached, so
+    // this fetch happens once per backend rather than once per registration.
+    final res = await fetchInstanceConfig();
+    if (!res.success) {
+      debugPrint('Push: could not fetch the instance config: ${res.error}');
       return null;
     }
 
-    _vapidKey = res.data;
-    await UserPreferences.setVapidPublicKey(res.data!);
+    final key = UserPreferences.vapidPublicKey;
+    if (key.isEmpty) {
+      debugPrint('Push: this instance has not configured push');
+      return null;
+    }
+
+    _vapidKey = key;
     return _vapidKey;
   }
 

@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:krab/app_globals.dart';
@@ -92,11 +91,6 @@ Future<bool> initializeBackgroundSupabase() async {
 /// Common boot sequence for background isolates.
 Future<void> bootstrapBackgroundIsolate() async {
   WidgetsFlutterBinding.ensureInitialized();
-  try {
-    await dotenv.load(fileName: ".env");
-  } catch (_) {
-    dotenv.loadFromString(envString: '# no bundled .env');
-  }
   await UserPreferences().initPrefs();
   await DebugNotifier.instance.initialize();
 }

@@ -5,7 +5,6 @@ import 'package:flutter/cupertino.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'package:krab/user_preferences.dart';
 import 'package:krab/services/notification_channels.dart';
@@ -63,9 +62,13 @@ class UpdateCheckResult {
 class UpdateService {
   final Dio _dio = Dio();
 
-  String get manifestUrl => dotenv.env['MANIFEST_URL'] ?? '';
-  bool get isEnabled =>
-      (dotenv.env['ENABLE_AUTO_UPDATE']?.toLowerCase() == 'true');
+  /// Where this build looks for updates, and whether it looks at all.
+  static const _manifestUrl = String.fromEnvironment('MANIFEST_URL');
+  static const _autoUpdate =
+      bool.fromEnvironment('ENABLE_AUTO_UPDATE', defaultValue: false);
+
+  String get manifestUrl => _manifestUrl;
+  bool get isEnabled => _autoUpdate && _manifestUrl.isNotEmpty;
 
   Future<UpdateCheckResult> checkForUpdate({bool requireEnabled = true}) async {
     if (requireEnabled && !isEnabled) {

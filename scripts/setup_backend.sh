@@ -20,7 +20,7 @@ BUCKETS=(
   "profile-pictures:1048576:image/*"
   "image-thumbnails:1048576:image/*"
 )
-FN_SLUGS="vapid:vapid new_image_notify:image-notification new_comment_notify:comment-notification new_reaction_notify:reaction-notification image_deleted_notify:image-deleted-notification generate-thumbnail:thumbnail-generation"
+FN_SLUGS="instance_config:instance-config new_image_notify:image-notification new_comment_notify:comment-notification new_reaction_notify:reaction-notification image_deleted_notify:image-deleted-notification generate-thumbnail:thumbnail-generation"
 
 log() { printf '\n==> %s\n' "$*"; }
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
@@ -106,13 +106,20 @@ VAPID_SUBJECT="$(ask 'Contact email for push services (RFC 8292)' "${existing_su
 [[ "$VAPID_SUBJECT" == mailto:* || "$VAPID_SUBJECT" == https://* ]] || VAPID_SUBJECT="mailto:$VAPID_SUBJECT"
 set_env VAPID_SUBJECT "$VAPID_SUBJECT"
 
-# Expose the keypair to the edge-functions container.
+# Expose the keypair, and the per-instance settings the app fetches from
+# instance-config, to the edge-functions container.
+#
+# PASSWORD_RESET_URL and EMAIL_CONFIRM_URL are set by the optional feature
+# scripts, not here. Compose substitutes an empty string when they are absent
+# from .env.
 cat >> "$OVERRIDE_FILE" <<'YML'
   functions:
     environment:
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
       VAPID_SUBJECT: ${VAPID_SUBJECT}
+      PASSWORD_RESET_URL: ${PASSWORD_RESET_URL:-}
+      EMAIL_CONFIRM_URL: ${EMAIL_CONFIRM_URL:-}
 YML
 echo "  added functions env to docker-compose.override.yml"
 

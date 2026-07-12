@@ -4,6 +4,7 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/pages/login_page.dart';
+import 'package:krab/services/api/supabase.dart';
 import 'package:krab/services/connection_check.dart';
 import 'package:krab/services/connection_token.dart';
 import 'package:krab/services/push_helper.dart';
@@ -164,7 +165,12 @@ class _InstanceSetupPageState extends State<InstanceSetupPage> {
       return;
     }
 
-    // Pick up the instance's VAPID key and subscribe against it.
+    // Learn what this instance supports (its VAPID key, and whether it offers
+    // password reset or email confirmation) before the login screen is built,
+    // since the login screen decides what to show from it.
+    await fetchInstanceConfig();
+
+    // Then subscribe against the VAPID key that just arrived.
     await PushHelper.ensureRegistered();
 
     if (!mounted) return;

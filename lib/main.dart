@@ -2,12 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:home_widget/home_widget.dart';
 import 'package:workmanager/workmanager.dart';
 
 import 'package:krab/app.dart';
 import 'package:krab/app_globals.dart';
+import 'package:krab/services/api/supabase.dart';
 import 'package:krab/services/auth/app_auth.dart';
 import 'package:krab/services/debug_notifier.dart';
 import 'package:krab/services/home_widget_status.dart';
@@ -27,12 +27,6 @@ void main(List<String> args) async {
 
   try {
     WidgetsFlutterBinding.ensureInitialized();
-    // Load instance
-    try {
-      await dotenv.load(fileName: ".env");
-    } catch (_) {
-      dotenv.loadFromString(envString: '# no bundled .env');
-    }
     await UserPreferences().initPrefs();
     await DebugNotifier.instance.initialize();
 
@@ -65,6 +59,9 @@ void main(List<String> args) async {
     HomeWidget.widgetClicked.listen(handleWidgetLaunch);
 
     if (supabaseOk) {
+      // Re-read this instance's public settings on every launch. Cached.
+      await fetchInstanceConfig();
+
       // Subscribes through a distributor and hands the endpoint to
       // this instance's backend.
       await PushHelper.ensureRegistered();
