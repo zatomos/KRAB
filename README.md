@@ -78,6 +78,7 @@ Sending a photo takes two steps, and the database closes the gap between them:
 
 So the bytes and their group links commit together or not at all. A photo that belongs to no group
 can't exist, which means a send that dies partway through leaves nothing behind.
+
 ---
 
 ## 🚀 Setup
@@ -128,7 +129,29 @@ You'll also want to put your API URL behind HTTPS for production use.
    flutter run
    ```
 
-### 4. Password reset (optional)
+#### Release signing
+
+Only needed if you publish APKs. Without a keystore, release builds fall back to Android's **debug**
+key.
+
+1. Generate the keystore, once:
+   ```bash
+   keytool -genkey -v -keystore ~/krab-release.jks \
+     -keyalg RSA -keysize 4096 -validity 10000 -alias krab
+   ```
+2. Point the build at it:
+   ```bash
+   cp android/key.properties.example android/key.properties
+   # then fill in storeFile / storePassword / keyAlias / keyPassword
+   ```
+   `key.properties` and `*.jks` are gitignored.
+3. Build, and confirm it is signed with your key rather than the debug key:
+   ```bash
+   flutter build apk --release
+   apksigner verify --print-certs build/app/outputs/flutter-apk/app-release.apk
+   ```
+
+### 3. Password reset (optional)
 
 Password reset sends an email with a link to a small web page where the user sets a new password.
 It needs a publicly reachable page and an SMTP server to send the email.
@@ -145,13 +168,13 @@ It needs a publicly reachable page and an SMTP server to send the email.
    uses to fetch the email template, and your **SMTP host / port / user / password**. It then serves
    the page, whitelists the redirect, installs the branded email template, and configures SMTP.
 
-### 5. Auto-update the app (optional)
+### 4. Auto-update the app (optional)
 
 The app can check a manifest and prompt users to update. Host a `manifest.json` (template: `manifest.json.example`) listing your releases and their APK download URLs, then build with `--dart-define=MANIFEST_URL=... --dart-define=ENABLE_AUTO_UPDATE=true`.
 
 A helper to publish APKs + manifest to a Nextcloud instance is provided (`scripts/release.sh`).
 
-### 6. Email verification (optional)
+### 5. Email verification (optional)
 
 When enabled, signing up sends a confirmation email and the account can't log in until the link
 is clicked.

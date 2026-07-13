@@ -1,0 +1,15 @@
+# Release signing config. Copy to android/key.properties and fill in.
+#
+#   cp android/key.properties.example android/key.properties
+#
+# key.properties and *.jks are gitignored. NEVER commit either of them.
+#
+# Generate the keystore (see README "Release signing"):
+#
+#   keytool -genkey -v -keystore ~/krab-release.jks \
+#     -keyalg RSA -keysize 4096 -validity 10000 -alias krab
+
+storeFile=/absolute/path/to/krab-release.jks
+storePassword=
+keyAlias=krab
+keyPassword=
