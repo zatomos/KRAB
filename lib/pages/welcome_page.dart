@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import 'package:krab/app_globals.dart';
 import 'package:krab/l10n/l10n.dart';
+import 'package:krab/services/auth/app_auth.dart';
 import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/user_preferences.dart';
+import 'package:krab/pages/camera_page.dart';
+import 'package:krab/pages/instance_setup_page.dart';
 import 'package:krab/pages/login_page.dart';
 import 'package:krab/widgets/soft_button.dart';
 import 'package:krab/services/home_widget_status.dart';
@@ -59,9 +63,19 @@ class _WelcomePageState extends State<WelcomePage> {
     await UserPreferences.notFirstLaunch();
     if (!context.mounted) return;
 
+    final Widget next;
+    if (!UserPreferences.hasSupabaseConfig) {
+      next = const InstanceSetupPage();
+    } else if (isSupabaseInitialized && AppAuth.instance.isLoggedIn) {
+      next = const CameraPage();
+    } else {
+      next = const LoginPage();
+    }
+
+    if (!context.mounted) return;
     Navigator.pushReplacement(
       context,
-      MaterialPageRoute(builder: (_) => const LoginPage()),
+      MaterialPageRoute(builder: (_) => next),
     );
   }
 

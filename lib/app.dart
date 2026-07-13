@@ -158,13 +158,13 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
         await Future.delayed(const Duration(milliseconds: 500));
       }
 
+      if (UserPreferences.isFirstLaunch) {
+        return const WelcomePage();
+      }
+
       // Nothing works until we know which instance to talk to
       if (!UserPreferences.hasSupabaseConfig) {
         return const InstanceSetupPage();
-      }
-
-      if (UserPreferences.isFirstLaunch) {
-        return const WelcomePage();
       }
 
       if (!isSupabaseInitialized) {
