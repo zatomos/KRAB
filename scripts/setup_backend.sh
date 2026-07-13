@@ -2,7 +2,7 @@
 #
 # One-shot KRAB backend bootstrap on a fresh host. Installs self-hosted Supabase if missing,
 # configures it for KRAB, loads the schema, creates the storage buckets,
-# and deploys the notification edge functions.
+# generates this instance's VAPID keypair, and deploys the notification edge functions.
 #
 # Run:
 #   curl -fsSL https://raw.githubusercontent.com/zatomos/KRAB/main/scripts/setup_backend.sh | bash
@@ -20,7 +20,7 @@ BUCKETS=(
   "profile-pictures:1048576:image/*"
   "image-thumbnails:1048576:image/*"
 )
-FN_SLUGS="new_image_notify:image-notification new_comment_notify:comment-notification new_reaction_notify:reaction-notification image_deleted_notify:image-deleted-notification generate-thumbnail:thumbnail-generation"
+FN_SLUGS="instance_config:instance-config new_image_notify:image-notification new_comment_notify:comment-notification new_reaction_notify:reaction-notification image_deleted_notify:image-deleted-notification generate-thumbnail:thumbnail-generation"
 
 log() { printf '\n==> %s\n' "$*"; }
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
@@ -65,7 +65,7 @@ set_env API_EXTERNAL_URL "$API_URL"
 set_env DASHBOARD_USERNAME "$DASH_USER"
 [[ -n "$DASH_PASS" ]] && set_env DASHBOARD_PASSWORD "$DASH_PASS"
 
-# --- 1b. docker-compose override: auth refresh-token config + Firebase --
+# --- 1b. docker-compose override: auth refresh-token config --------------
 OVERRIDE_FILE="$SUPABASE_DIR/docker-compose.override.yml"
 cat > "$OVERRIDE_FILE" <<'YML'
 # Added by KRAB setup_backend.sh. Do not edit; re-run the script to regenerate.
@@ -78,27 +78,50 @@ services:
 YML
 echo "  wrote auth refresh-token config to docker-compose.override.yml"
 
-# Firebase service account for the push edge functions (optional).
-printf '\nPaste the Firebase service-account JSON, then Ctrl-D (Ctrl-D alone to skip).\n> '
-sa_json="$(cat /dev/tty)"
-if [[ -n "${sa_json//[[:space:]]/}" ]]; then
-  if command -v jq >/dev/null 2>&1; then sa_json="$(printf '%s' "$sa_json" | jq -c .)" || die "Invalid JSON"
-  else sa_json="$(printf '%s' "$sa_json" | tr -d '\n')"; fi
-  grep -v '^GOOGLE_SERVICE_ACCOUNT=' "$ENV_FILE" > "$ENV_FILE.tmp" && mv "$ENV_FILE.tmp" "$ENV_FILE"
-  printf "GOOGLE_SERVICE_ACCOUNT='%s'\n" "$sa_json" >> "$ENV_FILE"
-  echo "  set GOOGLE_SERVICE_ACCOUNT"
+# --- 1c. VAPID keypair for push ------------------------------------------
+if grep -q '^VAPID_PRIVATE_KEY=' "$ENV_FILE"; then
+  echo "  VAPID keypair already present, keeping it (rotating would break every existing subscription)"
+  VAPID_PUBLIC="$(grep -E '^VAPID_PUBLIC_KEY=' "$ENV_FILE" | cut -d= -f2- | tr -d "\r\"'")"
+else
+  log "Generating a VAPID keypair"
+  # Both halves are base64url, which is the format web-push and the app expect.
+  vapid_out="$(docker run --rm denoland/deno:alpine eval --quiet '
+    import webpush from "npm:web-push@3.6.7";
+    const k = webpush.generateVAPIDKeys();
+    console.log(k.publicKey + " " + k.privateKey);' 2>/dev/null | tail -1)"
+  VAPID_PUBLIC="${vapid_out%% *}"
+  VAPID_PRIVATE="${vapid_out##* }"
+  [[ -n "$VAPID_PUBLIC" && -n "$VAPID_PRIVATE" && "$VAPID_PUBLIC" != "$VAPID_PRIVATE" ]] \
+    || die "VAPID key generation failed (can Docker pull denoland/deno:alpine?)"
+
+  grep -v -e '^VAPID_PUBLIC_KEY=' -e '^VAPID_PRIVATE_KEY=' -e '^VAPID_KEYS=' "$ENV_FILE" > "$ENV_FILE.tmp" \
+    && mv "$ENV_FILE.tmp" "$ENV_FILE"
+  printf "VAPID_PUBLIC_KEY='%s'\n"  "$VAPID_PUBLIC"  >> "$ENV_FILE"
+  printf "VAPID_PRIVATE_KEY='%s'\n" "$VAPID_PRIVATE" >> "$ENV_FILE"
+  echo "  set VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY"
 fi
 
-# If a service account is present (just pasted, or kept from a previous run),
-# expose it to the edge-functions container via the same override.
-if grep -q '^GOOGLE_SERVICE_ACCOUNT=' "$ENV_FILE"; then
-  cat >> "$OVERRIDE_FILE" <<'YML'
+existing_subject="$(grep -E '^VAPID_SUBJECT=' "$ENV_FILE" | cut -d= -f2- | tr -d "\r\"'")"
+VAPID_SUBJECT="$(ask 'Contact email for push services (RFC 8292)' "${existing_subject:-mailto:admin@example.com}")"
+[[ "$VAPID_SUBJECT" == mailto:* || "$VAPID_SUBJECT" == https://* ]] || VAPID_SUBJECT="mailto:$VAPID_SUBJECT"
+set_env VAPID_SUBJECT "$VAPID_SUBJECT"
+
+# Expose the keypair, and the per-instance settings the app fetches from
+# instance-config, to the edge-functions container.
+#
+# PASSWORD_RESET_URL and EMAIL_CONFIRM_URL are set by the optional feature
+# scripts, not here. Compose substitutes an empty string when they are absent
+# from .env.
+cat >> "$OVERRIDE_FILE" <<'YML'
   functions:
     environment:
-      GOOGLE_SERVICE_ACCOUNT: ${GOOGLE_SERVICE_ACCOUNT}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
+      VAPID_SUBJECT: ${VAPID_SUBJECT}
+      PASSWORD_RESET_URL: ${PASSWORD_RESET_URL:-}
+      EMAIL_CONFIRM_URL: ${EMAIL_CONFIRM_URL:-}
 YML
-  echo "  added functions env to docker-compose.override.yml"
-fi
+echo "  added functions env to docker-compose.override.yml"
 
 if grep -q '^COMPOSE_FILE=' "$ENV_FILE" \
    && ! grep '^COMPOSE_FILE=' "$ENV_FILE" | grep -q 'docker-compose.override.yml'; then
@@ -168,9 +191,9 @@ deployed=1
 
 # Shared helpers
 mkdir -p "$fdir/_shared"
-curl -fsSL "$REPO_RAW/supabase/functions/_shared/fcm.ts" -o "$fdir/_shared/fcm.ts" \
-  || { echo "  WARN: failed to fetch _shared/fcm.ts"; deployed=0; }
-echo "  _shared/fcm.ts"
+curl -fsSL "$REPO_RAW/supabase/functions/_shared/webpush.ts" -o "$fdir/_shared/webpush.ts" \
+  || { echo "  WARN: failed to fetch _shared/webpush.ts"; deployed=0; }
+echo "  _shared/webpush.ts"
 
 for pair in $FN_SLUGS; do
   src="${pair%%:*}"; slug="${pair##*:}"
@@ -184,4 +207,22 @@ done
   || echo "  WARN: restart the 'functions' container manually"; }
 
 log "Done."
+
+# --- Connection token -----------------------------------------------------
+# What a user pastes into the app to reach this instance. Packs the API URL and
+# the anon key into one string.
+ANON_KEY="$(grep -E '^ANON_KEY=' "$ENV_FILE" | cut -d= -f2- | tr -d '\r"')"
+if [[ -n "$ANON_KEY" ]]; then
+  b64="$(printf '%s' "${API_URL}|${ANON_KEY}" | base64 -w0 | tr '+/' '-_' | tr -d '=')"
+  token="krab1:${b64}"
+  echo
+  echo "Share this connection token with your users. They paste it into the app"
+  echo "to connect to this instance:"
+  echo
+  echo "  $token"
+  echo
+else
+  echo "WARN: ANON_KEY not found in $ENV_FILE; could not build a connection token."
+fi
+
 echo "Optional: enable password reset with scripts/reset_password/setup-reset-pwd-page.sh"

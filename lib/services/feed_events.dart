@@ -1,6 +1,6 @@
 import 'dart:async';
 
-/// A new image that arrived via FCM while the app is foregrounded.
+/// A new image that arrived via push while the app is foregrounded.
 class NewImageEvent {
   final String imageId;
 

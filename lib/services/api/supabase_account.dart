@@ -1,23 +1,29 @@
 part of 'supabase.dart';
 
-/// ------------------ FCM TOKEN & USER FUNCTIONS ------------------
+/// ------------------ PUSH SUBSCRIPTION & USER FUNCTIONS ------------------
 
-/// Handles FCM token registration.
-Future<SupabaseResponse<void>> fcmTokenHandler({String? username}) async {
+/// Stores the caller's Web Push subscription so the backend can push to it.
+///
+/// [endpoint] is where the user's push service accepts messages; [p256dh] and
+/// [auth] are the keys the backend needs to encrypt a payload that only this
+/// device can open. All three come from the distributor, and any of
+/// them can change at any launch, so this is called on every new endpoint
+/// rather than once at sign-up.
+Future<SupabaseResponse<void>> savePushSubscription({
+  required String endpoint,
+  required String p256dh,
+  required String auth,
+  String? username,
+}) async {
+  if (!AppAuth.instance.isLoggedIn) {
+    return SupabaseResponse(success: false, error: "No authenticated user");
+  }
+
   try {
-    await FirebaseMessaging.instance.requestPermission();
-
-    final fcmToken = await FirebaseMessaging.instance.getToken();
-    if (fcmToken == null) {
-      return SupabaseResponse(success: false, error: "Error getting FCM token");
-    }
-
-    if (!AppAuth.instance.isLoggedIn) {
-      return SupabaseResponse(success: false, error: "No authenticated user");
-    }
-
-    final response = await supabase.rpc("register_fcm_token", params: {
-      "p_fcm_token": fcmToken,
+    final response = await supabase.rpc("register_push_subscription", params: {
+      "p_endpoint": endpoint,
+      "p_p256dh": p256dh,
+      "p_auth": auth,
       if (username != null) "p_username": username,
     });
 
@@ -29,10 +35,83 @@ Future<SupabaseResponse<void>> fcmTokenHandler({String? username}) async {
   } catch (error) {
     return SupabaseResponse(
       success: false,
-      error: "Error handling FCM token: $error",
+      error: "Error saving push subscription: $error",
     );
   }
 }
+
+/// Drops the caller's Web Push subscription, so the backend stops pushing to a
+/// device the user has signed out of.
+Future<SupabaseResponse<void>> clearPushSubscription() async {
+  if (!AppAuth.instance.isLoggedIn) {
+    return SupabaseResponse(success: false, error: "No authenticated user");
+  }
+
+  try {
+    await supabase.from('Users').update({
+      'push_endpoint': null,
+      'push_p256dh': null,
+      'push_auth': null,
+    }).eq('id', AppAuth.instance.currentUserId!);
+    return SupabaseResponse(success: true);
+  } catch (error) {
+    return SupabaseResponse(
+      success: false,
+      error: "Error clearing push subscription: $error",
+    );
+  }
+}
+
+/// Fetches this instance's public settings and caches them.
+/// Called once a backend is known, before login.
+/// Every caller treats a failure here as non-fatal and carries on with whatever
+/// was cached, so a failure has to be loud in the log or it is invisible: the
+/// only symptom is a feature quietly not appearing.
+Future<SupabaseResponse<void>> fetchInstanceConfig() async {
+  try {
+    final res = await supabase.functions.invoke('instance-config');
+
+    final body = res.data;
+    if (body is! Map) {
+      debugPrint('InstanceConfig: unexpected response body: $body');
+      return SupabaseResponse(
+        success: false,
+        error: "This instance returned no configuration",
+      );
+    }
+
+    String field(String key) => (body[key] as String?) ?? '';
+
+    final vapidKey = field('vapid_public_key');
+    final resetUrl = field('password_reset_url');
+    final confirmUrl = field('email_confirm_url');
+
+    await UserPreferences.setInstanceConfig(
+      vapidKey: vapidKey,
+      resetUrl: resetUrl,
+      confirmUrl: confirmUrl,
+    );
+
+    debugPrint('InstanceConfig: fetched '
+        '(vapid=${vapidKey.isNotEmpty}, '
+        'passwordReset=${resetUrl.isNotEmpty}, '
+        'emailConfirm=${confirmUrl.isNotEmpty})');
+    return SupabaseResponse(success: true);
+  } catch (error) {
+    debugPrint('InstanceConfig: fetch failed: $error');
+    return SupabaseResponse(
+      success: false,
+      error: "Error fetching the instance configuration: $error",
+    );
+  }
+}
+
+/// Where GoTrue sends the user after they confirm their email. Null when this
+/// instance has no confirmation page, in which case GoTrue falls back to its
+/// own SITE_URL.
+String? get _emailConfirmUrl => UserPreferences.emailConfirmUrl.isEmpty
+    ? null
+    : UserPreferences.emailConfirmUrl;
 
 /// Map a GoTrue error code to the app's localized error keys.
 String _mapAuthError(String? code) {
@@ -60,16 +139,15 @@ String _mapAuthError(String? code) {
 Future<SupabaseResponse<bool>> registerUser(
     String username, String email, String password) async {
   debugPrint("Registering user: $username, $email");
-  // After confirming, GoTrue redirects here. When unset it falls back to the
-  // server's SITE_URL. Must be allowlisted in ADDITIONAL_REDIRECT_URLS.
-  final confirmUrl = dotenv.env['EMAIL_CONFIRM_URL'];
-  final res = await AppAuth.instance
-      .register(email, password, username: username, redirectTo: confirmUrl);
+  // After confirming, GoTrue redirects here. When this instance has no
+  // confirmation page it falls back to the server's SITE_URL.
+  final res = await AppAuth.instance.register(email, password,
+      username: username, redirectTo: _emailConfirmUrl);
   if (!res.success) {
     return SupabaseResponse(success: false, error: _mapAuthError(res.error));
   }
   if (AppAuth.instance.isLoggedIn) {
-    await fcmTokenHandler(username: username);
+    await PushHelper.ensureRegistered();
     return SupabaseResponse(success: true, data: true);
   }
   // Verification required; the username was stored via signup metadata and the
@@ -80,7 +158,7 @@ Future<SupabaseResponse<bool>> registerUser(
 /// Re-send the signup confirmation email to an unconfirmed account.
 Future<SupabaseResponse<void>> resendConfirmationEmail(String email) async {
   final res = await AppAuth.instance
-      .resendConfirmation(email, redirectTo: dotenv.env['EMAIL_CONFIRM_URL']);
+      .resendConfirmation(email, redirectTo: _emailConfirmUrl);
   return res.success
       ? SupabaseResponse(success: true)
       : SupabaseResponse(success: false, error: _mapAuthError(res.error));
@@ -92,7 +170,7 @@ Future<SupabaseResponse<void>> loginUser(String email, String password) async {
   if (!res.success) {
     return SupabaseResponse(success: false, error: _mapAuthError(res.error));
   }
-  await fcmTokenHandler();
+  await PushHelper.ensureRegistered();
   return SupabaseResponse(success: true);
 }
 
@@ -102,8 +180,15 @@ Future<SupabaseResponse<void>> logOut() async {
     // Mark this as an intentional logout to prevent "unexpected signout" notification
     DebugNotifier.instance.markIntentionalLogout();
 
-    // Clean up FCM listeners
-    await FcmHelper.dispose();
+    // The row can only be cleared while the session is still valid, and
+    // a failure here must not strand the user in a half-logged-out state,
+    // so it is best-effort.
+    final cleared = await clearPushSubscription();
+    if (!cleared.success) {
+      debugPrint('Could not clear the push subscription: ${cleared.error}');
+    }
+    await PushHelper.unregister();
+    await PushHelper.dispose();
 
     // Clear profile picture cache
     await ProfilePictureCache.of(supabase).clear();
@@ -324,20 +409,18 @@ Future<SupabaseResponse<void>> changePassword(
   return SupabaseResponse(success: true);
 }
 
-/// Whether the password reset feature is enabled via the .env configuration.
-/// Defaults to enabled.
-bool get isPasswordResetEnabled =>
-    dotenv.env['ENABLE_PASSWORD_RESET']?.toLowerCase() != 'false';
+/// Whether this instance has a password-reset page.
+bool get isPasswordResetEnabled => UserPreferences.passwordResetUrl.isNotEmpty;
 
 /// Send a password reset email.
 Future<SupabaseResponse<void>> sendPasswordResetEmail(String email) async {
   if (!isPasswordResetEnabled) {
     return SupabaseResponse(success: false, error: 'Password reset is disabled');
   }
-  final redirectUrl = dotenv.env['PASSWORD_RESET_URL'] ??
-      'https://your-domain.com/reset-password.html';
-  final res =
-      await AppAuth.instance.sendPasswordReset(email, redirectTo: redirectUrl);
+  final res = await AppAuth.instance.sendPasswordReset(
+    email,
+    redirectTo: UserPreferences.passwordResetUrl,
+  );
   if (!res.success) {
     return SupabaseResponse(success: false, error: _mapAuthError(res.error));
   }

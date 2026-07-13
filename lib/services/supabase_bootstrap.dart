@@ -1,12 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:krab/app_globals.dart';
-import 'package:krab/firebase_options.dart';
 import 'package:krab/services/auth/app_auth.dart';
 import 'package:krab/services/debug_notifier.dart';
 import 'package:krab/user_preferences.dart';
@@ -26,8 +23,10 @@ Future<bool> initializeSupabaseIfNeeded() async {
   // Start initialization with lock
   _supabaseInitCompleter = Completer<bool>();
 
-  final url = dotenv.env['SUPABASE_URL'] ?? '';
-  final anon = dotenv.env['SUPABASE_ANON_KEY'] ?? '';
+  // Whichever instance the user connected this install to. Falls back to the
+  // .env default; empty until the user picks one.
+  final url = UserPreferences.supabaseUrl;
+  final anon = UserPreferences.supabaseAnonKey;
 
   if (url.isEmpty || anon.isEmpty) {
     debugPrint('Supabase config missing, cannot initialize.');
@@ -92,8 +91,6 @@ Future<bool> initializeBackgroundSupabase() async {
 /// Common boot sequence for background isolates.
 Future<void> bootstrapBackgroundIsolate() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await dotenv.load(fileName: ".env");
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   await UserPreferences().initPrefs();
   await DebugNotifier.instance.initialize();
 }

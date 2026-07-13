@@ -142,6 +142,8 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
           ),
         ),
       ),
+      actionsOverflowButtonSpacing:
+          GlobalThemeData.dialogActionsOverflowSpacing,
       actions: [
         SoftButton(
           onPressed: () => Navigator.pop(context),

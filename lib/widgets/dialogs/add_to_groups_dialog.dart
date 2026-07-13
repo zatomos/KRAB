@@ -68,6 +68,8 @@ class _AddToGroupsDialogState extends State<_AddToGroupsDialog> {
           ),
         ],
       ),
+      actionsOverflowButtonSpacing:
+          GlobalThemeData.dialogActionsOverflowSpacing,
       actions: [
         SoftButton(
           onPressed: () => Navigator.of(context).pop(),
@@ -79,6 +81,7 @@ class _AddToGroupsDialogState extends State<_AddToGroupsDialog> {
               ? null
               : () => Navigator.of(context).pop(Set.of(_selected)),
           label: context.l10n.add,
+          icon: Icons.add,
           color: _selected.isEmpty
               ? GlobalThemeData.darkColorScheme.onSurfaceVariant
                   .withValues(alpha: 0.4)

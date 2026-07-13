@@ -53,8 +53,8 @@ Photos shared to a group appear directly on every member's home screen.</h4>
 
 - 🛡️ Privacy:
   - Fully self-hostable backend.
-  - Even though the app uses FCM to send push notifications, their content is fully hidden from
-    Google.
+  - Push notifications use [UnifiedPush](https://unifiedpush.org) and standard Web Push. Payloads are
+    encrypted to your device, so a push service only ever sees ciphertext.
 
 ## 🏗️ Architecture
 
@@ -65,7 +65,7 @@ posted.
 - The app talks to Supabase directly for all reads and writes. Access rules make sure each user only
   sees content from the groups they belong to.
 - When a photo or comment is posted, the database automatically triggers a function that pushes a
-  notification (via Firebase) to the other group members, whose apps then refresh their widget.
+  notification to the other group members, whose apps then refresh their widget.
 
 ### Uploading
 
@@ -78,28 +78,12 @@ Sending a photo takes two steps, and the database closes the gap between them:
 
 So the bytes and their group links commit together or not at all. A photo that belongs to no group
 can't exist, which means a send that dies partway through leaves nothing behind.
+
 ---
 
 ## 🚀 Setup
 
-### 1. Firebase setup
-
-1. Go to the [Firebase console](https://console.firebase.google.com) and **create a project**.
-2. **Add an Android app** to the project:
-   - Package name: **`fr.zatomos.krab`** (or your own, if you change `applicationId` in
-     `android/app/build.gradle`).
-   - Download the generated **`google-services.json`**.
-3. **Enable Cloud Messaging**: in the console, *Settings / General / Cloud Messaging*
-     (the *Firebase Cloud Messaging API (V1)* must be enabled).
-4. **Create a service-account key** (used by the backend to send notifications):
-   - *Settings / Service accounts / Generate new private key*.
-   - This downloads a JSON file. Keep it secret, you'll paste its contents into the backend setup
-     in the next step.
-
-> The `google-services.json` is safe to ship in the app. The **service-account key is a secret**,
-> never commit it.
-
-### 2. Backend setup: Supabase
+### 1. Backend setup: Supabase
 
 You can use a free or paid hosted instance at https://supabase.com, which has a reasonable
 [privacy policy](https://supabase.com/privacy). If you'd rather self-host your own instance, you can
@@ -111,8 +95,9 @@ Docker Compose plugin.
 
 Run the backend setup script `setup_backend.sh` on the server. It installs self-hosted Supabase
 (if missing), configures it for KRAB, loads the database schema, creates the storage buckets,
-and deploys the edge functions. It also wires the database triggers that call those functions, injecting
-your instance's service-role key as their authorization so the calls aren't rejected:
+generates this instance's VAPID keypair, and deploys the edge functions. It also wires the database
+triggers that call those functions, injecting your instance's service-role key as their
+authorization so the calls aren't rejected:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/zatomos/KRAB/main/scripts/setup_backend.sh | bash
@@ -121,17 +106,15 @@ curl -fsSL https://raw.githubusercontent.com/zatomos/KRAB/main/scripts/setup_bac
 It will ask you for:
 - **API URL** clients use.
 - **Studio dashboard** username / password.
-- The **Firebase service-account JSON** from step 1.
+- A **contact email** for push services
 
-When it finishes, grab the **anon key** for the app:
-
-```bash
-grep '^ANON_KEY=' ~/supabase-project/.env
-```
+When it finishes, it prints a **connection token**, a single string that packs the API URL and the
+anon key. That is all a user needs to point the app at your instance; share it with the people you're
+inviting.
 
 You'll also want to put your API URL behind HTTPS for production use.
 
-### 3. App setup: Flutter
+### 2. Building the app (optional)
 
 **Prerequisites:** [Flutter](https://flutter.dev/docs/get-started/install).
 
@@ -141,44 +124,67 @@ You'll also want to put your API URL behind HTTPS for production use.
    cd KRAB
    flutter pub get
    ```
-2. Add your Firebase config to the app. The easiest way is the FlutterFire CLI, which generates both
-   files for your project:
+2. Create your build config:
    ```bash
-   dart pub global activate flutterfire_cli
-   flutterfire configure
+   cp lib/config.example.dart lib/config.dart
    ```
-   This creates `lib/firebase_options.dart` and `android/app/google-services.json`.
-3. Create your `.env` from the template and fill it in:
-   ```bash
-   cp .env.example .env
-   ```
-   ```ini
-   SUPABASE_URL='https://your-supabase-url'      # the API URL from step 2
-   SUPABASE_ANON_KEY='your_anon_key'             # the ANON_KEY from step 2
-
-   # Optional: password reset
-   PASSWORD_RESET_URL='https://your-domain/reset-password.html'
-
-   # Optional: email verification
-   EMAIL_CONFIRM_URL='https://your-domain/confirmed.html'
-
-   # Optional: auto-updates
-   MANIFEST_URL='YOUR_MANIFEST_URL'
-   ENABLE_AUTO_UPDATE='false'
-   ```
-4. Run it:
+   `lib/config.dart` is gitignored and the app won't compile without it. That's deliberate — it says
+   which repo the build updates itself from, and a fork must not silently inherit someone else's.
+   The defaults are safe (no self-updating); see [Auto-update](#auto-update) below.
+3. Run it:
    ```bash
    flutter run
    ```
 
-### 4. Password reset (optional)
+#### Release signing
+
+Only needed if you publish APKs. Without a keystore, release builds fall back to Android's **debug**
+key.
+
+1. Generate the keystore, once:
+   ```bash
+   keytool -genkey -v -keystore ~/krab-release.jks \
+     -keyalg RSA -keysize 4096 -validity 10000 -alias krab
+   ```
+2. Point the build at it:
+   ```bash
+   cp android/key.properties.example android/key.properties
+   # then fill in storeFile / storePassword / keyAlias / keyPassword
+   ```
+   `key.properties` and `*.jks` are gitignored.
+3. Build, and confirm it is signed with your key rather than the debug key:
+   ```bash
+   flutter build apk --release
+   apksigner verify --print-certs build/app/outputs/flutter-apk/app-release.apk
+   ```
+
+#### Auto-update
+
+The app can check for new versions from GitHub and prompt users to update.
+
+Enable it in **`lib/config.dart`**, pointing it at your own repository:
+
+```dart
+const updateRepo = 'zatomos/KRAB';
+const enableAutoUpdate = true;
+```
+
+Use `scripts/release.sh` to build, verify and publish a release:
+
+```bash
+scripts/release.sh "Added a thing" "Fixed another"
+```
+
+Requires the [`gh` CLI](https://cli.github.com).
+
+### 3. Password reset (optional)
 
 Password reset sends an email with a link to a small web page where the user sets a new password.
 It needs a publicly reachable page and an SMTP server to send the email.
 
 1. Pick a public hostname for the reset page (e.g. `https://krab.example.com`) and point it
    (via DNS / your reverse proxy) at the server.
-2. **Get an SMTP app password.** Use an *app-specific password* from your email provider, **not**
+2. **Get an SMTP app password.** Use an *app-specific password* from your email provider, not
    your account password.
 3. Run the setup script on the server:
    ```bash
@@ -187,15 +193,8 @@ It needs a publicly reachable page and an SMTP server to send the email.
    It asks for your Supabase URL, the public page URL, the anon key, the LAN IP the auth container
    uses to fetch the email template, and your **SMTP host / port / user / password**. It then serves
    the page, whitelists the redirect, installs the branded email template, and configures SMTP.
-4. Set `PASSWORD_RESET_URL` in the app's `.env` to the page URL.
 
-### 5. Auto-update the app (optional)
-
-The app can check a manifest and prompt users to update. Host a `manifest.json` (template: `manifest.json.example`) listing your releases and their APK download URLs, then set `MANIFEST_URL` and `ENABLE_AUTO_UPDATE='true'` in the app `.env`.
-
-A helper to publish APKs + manifest to a Nextcloud instance is provided (`scripts/release.sh`).
-
-### 6. Email verification (optional)
+### 4. Email verification (optional)
 
 When enabled, signing up sends a confirmation email and the account can't log in until the link
 is clicked.
@@ -208,11 +207,8 @@ Run the setup script on the server:
    curl -fsSL https://raw.githubusercontent.com/zatomos/KRAB/main/scripts/email_confirmation/setup-email-confirmation.sh | sudo bash
    ```
    It serves an "email confirmed" landing page, whitelists the redirect, installs the confirmation
-   email template, and sets `GOTRUE_MAILER_AUTOCONFIRM=false` on the auth container.
-
-Then set `EMAIL_CONFIRM_URL` in the app's `.env` to that confirmed-page URL (e.g.
-`https://krab.example.com/confirmed.html`) so the confirmation link lands there instead of on the
-API host.
+   email template, and sets `GOTRUE_MAILER_AUTOCONFIRM=false` on the auth container. As with password
+   reset, it publishes the landing-page URL to your instance, so the app picks it up on its own.
 
 To turn it back off, remove the `docker-compose.krab-confirm.yml` override from `COMPOSE_FILE` in
 your `.env` (or set `GOTRUE_MAILER_AUTOCONFIRM=true`) and re-run `docker compose up -d auth`.

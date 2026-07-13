@@ -45,7 +45,7 @@
   "send": "Send",
   "comments": "Comments",
   "error_loading_images": "Error loading images: {errorMsg}",
-  "no_images" : "No images in this group (yet).",
+  "no_images": "No images in this group (yet).",
   "group_settings_page_title": "Group Settings",
   "leave_group": "Leave Group",
   "left_group_success": "Left group successfully.",
@@ -60,7 +60,6 @@
   "delete": "Delete",
   "undo": "Undo",
   "remove": "Remove",
-  "delete_everywhere": "Delete everywhere",
   "remove_from_groups_message": "Select the groups for which this photo will be deleted.",
   "save_to_device": "Save to device",
   "add_to_group": "Add to group",
@@ -137,7 +136,6 @@
   "update_available": "Update Available",
   "version": "Version {version}",
   "current_version": "Current version: {currentVersion}",
-  "update_required": "This update is required.",
   "whats_new": "What's new:",
   "no_changelog": "No changelog available.",
   "downloading": "Downloading... {progress}%",
@@ -230,12 +228,10 @@
   "new_password": "New password",
   "confirm_new_password": "Confirm new password",
   "password_updated_success": "Password updated successfully!",
-  "forgot_password":"Forgot Password",
+  "forgot_password": "Forgot Password",
   "forgot_password_question": "Forgot password?",
   "password_email_sent": "Password reset email sent!",
   "invalid_email_or_password": "Invalid email or password.",
-  "reauth_prompt_title": "Confirm your password",
-  "reauth_prompt_message": "To keep sending you notifications and updating your widget in the background, KRAB needs you to confirm your password once.",
   "email_already_exists": "An account with this email already exists.",
   "password_too_weak": "Password is too weak.",
   "enter_email_account": "Enter your account email and we'll send you a reset link.",
@@ -268,11 +264,29 @@
   "expires_after": "Expires after",
   "max_uses_label": "Max uses",
   "duration_minutes": "{count, plural, =1{1 minute} other{{count} minutes}}",
-  "@duration_minutes": { "placeholders": { "count": { "type": "int" } } },
+  "@duration_minutes": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "duration_hours": "{count, plural, =1{1 hour} other{{count} hours}}",
-  "@duration_hours": { "placeholders": { "count": { "type": "int" } } },
+  "@duration_hours": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "duration_days": "{count, plural, =1{1 day} other{{count} days}}",
-  "@duration_days": { "placeholders": { "count": { "type": "int" } } },
+  "@duration_days": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "duration_never": "Never",
   "no_limit": "No limit",
   "error_reacting": "Error adding reaction: {errorMsg}",
@@ -282,5 +296,34 @@
   "quick_access_emoji": "Quick access",
   "no_recents": "No recent emojis",
   "new_reaction_on_your_image_notification": "reacted {emoji} to your image",
-  "new_reaction_on_someone_notification": "reacted {emoji} to {uploader_username}'s image"
+  "new_reaction_on_someone_notification": "reacted {emoji} to {uploader_username}'s image",
+  "instanceSetupTitle": "Connect to a KRAB server",
+  "instanceSetupSubtitle": "Enter the address and public key of the instance you were given.",
+  "instanceSetupUrlHint": "Server URL",
+  "instanceSetupKeyHint": "Anon key",
+  "instanceSetupConnect": "Connect",
+  "instanceSetupMissingFields": "Fill in both the server URL and the anon key.",
+  "instanceSetupInvalidUrl": "That does not look like a valid URL.",
+  "instanceSetupUnreachable": "Could not reach that server. Check the URL and the anon key.",
+  "server_label": "Server",
+  "push_distributor_label": "Notification delivery",
+  "push_distributor_none_selected": "None selected",
+  "push_distributor_title": "Notification delivery",
+  "push_distributor_description": "KRAB delivers notifications through a UnifiedPush distributor. Choose which one to use.",
+  "push_distributor_none": "No distributor is available on this device. Install a UnifiedPush app to receive notifications.",
+  "push_distributor_failed": "Could not subscribe with that distributor.",
+  "change_server_title": "Change server",
+  "change_server_description": "This disconnects you from the current server and signs you out. You'll choose a server when the app reopens.",
+  "change_server_confirm": "Disconnect",
+  "instanceSetupTokenSubtitle": "Paste the connection token you were given to join a KRAB server.",
+  "instanceSetupTokenHint": "Connection token",
+  "instanceSetupPaste": "Paste",
+  "instanceSetupBadToken": "That doesn't look like a valid connection token.",
+  "instanceSetupUseManual": "Enter server details manually",
+  "instanceSetupUseToken": "Use a connection token instead",
+  "instanceSetupTest": "Test connection",
+  "instanceSetupTesting": "Testing...",
+  "instanceSetupConnecting": "Connecting...",
+  "instanceSetupTestBadKey": "The server is reachable but rejected the key.",
+  "instanceSetupConnected": "Connected"
 }

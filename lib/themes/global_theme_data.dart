@@ -25,5 +25,7 @@ class GlobalThemeData {
     brightness: Brightness.dark,
   );
 
+  static const double dialogActionsOverflowSpacing = 8.0;
+
   static const _darkFocusColor = Color(0xFF1a1a1a);
 }

@@ -1,9 +1,6 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import {
-    getFcmAccessToken,
-    pruneDeadTokens,
-    sendToTokens,
-} from '../_shared/fcm.ts'
+import { isReachable, PUSH_COLUMNS, sendPush } from '../_shared/webpush.ts'
+import type { PushSubscriptionRow } from '../_shared/webpush.ts'
 
 interface ImageGroups {
     id: string;
@@ -86,15 +83,20 @@ Deno.serve(async (req) => {
 
         const { data: users, error: usersError } = await supabase
             .from('Users')
-            .select('id, fcm_token')
+            .select(`id, ${PUSH_COLUMNS}`)
             .in('id', userIds)
+            .returns<(PushSubscriptionRow & { id: string })[]>()
 
         if (usersError || !users) {
-            console.error('Error fetching user FCM tokens:', usersError?.message)
+            console.error('Error fetching push targets:', usersError?.message)
             return new Response(null, { status: 500 })
         }
 
-        const usersWithToken = users.filter((u) => u.fcm_token)
+        // Only fully reachable users take part in the dedup below. A user with a
+        // half-written subscription would otherwise win a group and then be
+        // dropped at send time, silently losing the notification the other group
+        // would have sent them.
+        const usersWithSub = users.filter(isReachable)
 
         // Sending one photo to several groups fires this webhook once per group,
         // so somebody in two of them would be told twice about the same photo.
@@ -123,7 +125,7 @@ Deno.serve(async (req) => {
             .from('Members')
             .select('user_id, group_id')
             .in('group_id', batch)
-            .in('user_id', usersWithToken.map((u) => u.id))
+            .in('user_id', usersWithSub.map((u) => u.id))
 
         if (membershipsError || !memberships) {
             console.error('Error fetching memberships:', membershipsError?.message)
@@ -138,7 +140,7 @@ Deno.serve(async (req) => {
             }
         }
 
-        const usersToNotify = usersWithToken.filter(
+        const usersToNotify = usersWithSub.filter(
             (u) => owningGroup.get(u.id) === groupId
         )
 
@@ -147,22 +149,12 @@ Deno.serve(async (req) => {
             return new Response(null, { status: 200 })
         }
 
-        const { accessToken, projectId } = await getFcmAccessToken()
-        console.log('Firebase access token retrieved')
-
-        const results = await sendToTokens(
-            projectId,
-            accessToken,
-            usersToNotify.map((u) => u.fcm_token),
-            {
-                type: 'new_image',
-                image_id: imageId,
-                group_id: groupId,
-                // The groups this send actually delivered the photo to.
-                group_ids: batch.join(','),
-            }
-        )
-        await pruneDeadTokens(supabase, results)
+        await sendPush(supabase, usersToNotify, {
+            type: 'new_image',
+            image_id: imageId,
+            group_id: groupId,
+            group_ids: batch.join(','),
+        })
 
         console.log('Webhook processing completed')
 

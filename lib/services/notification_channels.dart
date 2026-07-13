@@ -130,6 +130,17 @@ Future<void> initCommentNotifications({
   await _ensureFlnpInitialized();
 }
 
+Future<bool> requestNotificationPermission() async {
+  await _ensureFlnpInitialized();
+  final android = _flnp.resolvePlatformSpecificImplementation<
+      AndroidFlutterLocalNotificationsPlugin>();
+  if (android == null) return true;
+
+  final granted = await android.requestNotificationsPermission() ?? false;
+  debugPrint('Notify: POST_NOTIFICATIONS granted=$granted');
+  return granted;
+}
+
 Future<String?> getLocalNotificationLaunchPayload() async {
   await _ensureFlnpInitialized();
   final details = await _flnp.getNotificationAppLaunchDetails();
@@ -285,10 +296,16 @@ Future<void> dispatchImageNotification(Map<String, dynamic> data) async {
   final groupId = data['group_id'] ?? '';
   final imageId = data['image_id'] ?? '';
 
-  if (groupId.isEmpty || imageId.isEmpty) return;
+  if (groupId.isEmpty || imageId.isEmpty) {
+    debugPrint('Notify: missing group_id/image_id, dropping');
+    return;
+  }
 
   final ctx = await getImageNotificationContext(imageId);
-  if (!ctx.success || ctx.data == null) return;
+  if (!ctx.success || ctx.data == null) {
+    debugPrint('Notify: no context for image $imageId (${ctx.error}), dropping');
+    return;
+  }
 
   // Every group the image is in that the user can see.
   final rawGroups = (ctx.data!['groups'] as List?) ?? const [];
@@ -300,7 +317,10 @@ Future<void> dispatchImageNotification(Map<String, dynamic> data) async {
           ))
       .where((g) => g.id.isNotEmpty && g.name.isNotEmpty)
       .toList();
-  if (groups.isEmpty) return;
+  if (groups.isEmpty) {
+    debugPrint('Notify: image $imageId is in no group you can see, dropping');
+    return;
+  }
 
   // Narrow those to the groups this send actually delivered the photo to. An
   // image shared to several groups at once yields a single notification naming
@@ -319,7 +339,10 @@ Future<void> dispatchImageNotification(Map<String, dynamic> data) async {
   for (final g in delivered) {
     if (!await UserPreferences.isGroupMuted(g.id)) unmuted.add(g);
   }
-  if (unmuted.isEmpty) return;
+  if (unmuted.isEmpty) {
+    debugPrint('Notify: every group for image $imageId is muted, dropping');
+    return;
+  }
 
   // Use the triggering group for the notification channel when it survived the
   // mute filter, otherwise the first visible group. The subtext lists them all.

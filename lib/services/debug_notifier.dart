@@ -175,14 +175,14 @@ class DebugNotifier {
     await _notify('Background Failed', reason);
   }
 
-  // --- FCM Events ---
+  // --- Push subscription events ---
 
-  Future<void> notifyFcmTokenPushFailed(String error) async {
-    await _notify('FCM Sync Failed', error);
+  Future<void> notifyPushSubscriptionFailed(String error) async {
+    await _notify('Push Sync Failed', error);
   }
 
-  Future<void> notifyFcmTokenPushed() async {
-    await _notify('FCM', 'Token synced successfully');
+  Future<void> notifyPushSubscriptionSaved() async {
+    await _notify('Push', 'Subscription synced successfully');
   }
 
   // --- Supabase Events ---

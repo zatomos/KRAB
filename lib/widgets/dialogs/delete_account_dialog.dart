@@ -55,6 +55,8 @@ class _DeleteAccountDialogState extends State<DeleteAccountDialog> {
           ),
         ],
       ),
+      actionsOverflowButtonSpacing:
+          GlobalThemeData.dialogActionsOverflowSpacing,
       actions: [
         SoftButton(
           onPressed: () => Navigator.pop(context),
@@ -64,9 +66,8 @@ class _DeleteAccountDialogState extends State<DeleteAccountDialog> {
         SoftButton(
           onPressed: _matches ? () => Navigator.pop(context, true) : null,
           label: context.l10n.delete_account,
-          color: _matches
-              ? errorColor
-              : errorColor.withValues(alpha: 0.4),
+          icon: Icons.delete_forever,
+          color: _matches ? errorColor : errorColor.withValues(alpha: 0.4),
         ),
       ],
     );

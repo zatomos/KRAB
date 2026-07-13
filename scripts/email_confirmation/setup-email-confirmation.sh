@@ -113,6 +113,8 @@ else
   set_env ADDITIONAL_REDIRECT_URLS "$CONFIRMED_PAGE_URL"
 fi
 
+set_env EMAIL_CONFIRM_URL "$CONFIRMED_PAGE_URL"
+
 CONFIRM_OVERRIDE="docker-compose.krab-confirm.yml"
 echo "Writing $CONFIRM_OVERRIDE (confirmation settings for the auth container)..."
 cat > "$SUPABASE_DIR/$CONFIRM_OVERRIDE" <<YML
@@ -142,6 +144,7 @@ fi
 
 echo "Applying to Supabase auth..."
 ( cd "$SUPABASE_DIR" && docker compose up -d auth )
+( cd "$SUPABASE_DIR" && docker compose up -d functions )
 
 echo ""
 echo "✅ Done! New signups must confirm their email before logging in."

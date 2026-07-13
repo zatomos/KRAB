@@ -1,7 +1,14 @@
 plugins {
     id "com.android.application"
-    id 'com.google.gms.google-services'
     id "dev.flutter.flutter-gradle-plugin"
+}
+
+// Release signing.
+def keystorePropertiesFile = rootProject.file("key.properties")
+def keystoreProperties = new Properties()
+def hasReleaseKeystore = keystorePropertiesFile.exists()
+if (hasReleaseKeystore) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
 }
 
 android {
@@ -25,11 +32,33 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (hasReleaseKeystore) {
+            release {
+                keyAlias = keystoreProperties["keyAlias"]
+                keyPassword = keystoreProperties["keyPassword"]
+                storeFile = keystoreProperties["storeFile"] ? file(keystoreProperties["storeFile"]) : null
+                storePassword = keystoreProperties["storePassword"]
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.debug
+            if (hasReleaseKeystore) {
+                signingConfig = signingConfigs.release
+            } else {
+                // No keystore: fall back to debug keys
+                println("=".multiply(78))
+                println("WARNING: no android/key.properties, signing release with DEBUG keys.")
+                println("This APK is for local use only. DO NOT PUBLISH IT.")
+                println("See android/key.properties.example.")
+                println("=".multiply(78))
+                signingConfig = signingConfigs.debug
+            }
         }
     }
     buildFeatures {
@@ -48,7 +77,14 @@ flutter {
     source = "../.."
 }
 
+configurations.configureEach {
+    exclude group: 'com.google.crypto.tink', module: 'tink'
+}
+
 dependencies {
+    implementation 'org.unifiedpush.android:embedded-fcm-distributor:3.1.0'
+    implementation 'org.unifiedpush.android:connector:3.3.3'
+
     // Kotlin coroutines
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1"
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.1"

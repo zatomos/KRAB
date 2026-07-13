@@ -19,6 +19,8 @@ Future<bool> showConfirmDialog(
     builder: (context) => AlertDialog(
       title: Text(title),
       content: message != null ? Text(message) : null,
+      actionsOverflowButtonSpacing:
+          GlobalThemeData.dialogActionsOverflowSpacing,
       actions: [
         SoftButton(
           onPressed: () => Navigator.of(context).pop(false),

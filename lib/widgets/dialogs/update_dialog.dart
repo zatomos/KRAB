@@ -14,7 +14,7 @@ Future<void> showUpdateDialog({
 }) async {
   await showDialog(
     context: context,
-    barrierDismissible: !info.forceUpdate,
+    barrierDismissible: true,
     builder: (context) {
       bool isDownloading = false;
       double progress = 0.0;
@@ -55,31 +55,6 @@ Future<void> showUpdateDialog({
                   style: const TextStyle(fontSize: 16, color: Colors.grey),
                 ),
               const SizedBox(height: 12),
-              if (info.forceUpdate)
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.deepOrangeAccent),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.warning_rounded,
-                        size: 16,
-                        color: Colors.deepOrangeAccent,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          context.l10n.update_required,
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              if (info.forceUpdate) const SizedBox(height: 12),
               Text(
                 context.l10n.whats_new,
                 style: const TextStyle(fontWeight: FontWeight.bold),
@@ -161,8 +136,10 @@ Future<void> showUpdateDialog({
               ],
             ],
           ),
+          actionsOverflowButtonSpacing:
+              GlobalThemeData.dialogActionsOverflowSpacing,
           actions: [
-            if (!info.forceUpdate && !isDownloading)
+            if (!isDownloading)
               SoftButton(
                 onPressed: () => Navigator.pop(context),
                 label: context.l10n.later,

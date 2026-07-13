@@ -11,6 +11,7 @@ import 'package:krab/services/upload_outbox.dart';
 import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/widgets/update_checker.dart';
 import 'package:krab/l10n/l10n.dart';
+import 'package:krab/pages/instance_setup_page.dart';
 import 'package:krab/pages/welcome_page.dart';
 import 'package:krab/pages/login_page.dart';
 import 'package:krab/pages/camera_page.dart';
@@ -155,6 +156,11 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
       if (!isAppInitialized) {
         debugPrint('Waiting for app initialization...');
         await Future.delayed(const Duration(milliseconds: 500));
+      }
+
+      // Nothing works until we know which instance to talk to
+      if (!UserPreferences.hasSupabaseConfig) {
+        return const InstanceSetupPage();
       }
 
       if (UserPreferences.isFirstLaunch) {

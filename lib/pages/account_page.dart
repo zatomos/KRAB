@@ -12,13 +12,16 @@ import 'package:krab/services/image_crop_helper.dart';
 import 'package:krab/user_preferences.dart';
 import 'package:krab/services/debug_notifier.dart';
 import 'package:krab/services/home_widget_updater.dart';
+import 'package:krab/services/push_helper.dart';
 import 'package:krab/services/update_service.dart';
 import 'package:krab/widgets/rectangle_button.dart';
 import 'package:krab/widgets/avatars/user_avatar.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/widgets/dialogs/change_password_dialog.dart';
+import 'package:krab/widgets/dialogs/change_server_dialog.dart';
 import 'package:krab/widgets/dialogs/delete_account_dialog.dart';
 import 'package:krab/widgets/dialogs/edit_avatar_dialog.dart';
+import 'package:krab/widgets/dialogs/push_distributor_dialog.dart';
 import 'package:krab/widgets/dialogs/rename_dialog.dart';
 import 'package:krab/widgets/dialogs/update_dialog.dart';
 import 'login_page.dart';
@@ -50,11 +53,32 @@ class AccountPageState extends State<AccountPage> {
 
   String appVersion = "";
 
+  /// The UnifiedPush distributor in use, null while loading or if none is set.
+  String? _distributor;
+
+  /// Whether the user has a delivery choice worth showing. See [_loadDistributor].
+  bool _showDistributor = false;
+
   @override
   void initState() {
     super.initState();
     _loadUserProfile();
     _loadAppVersion();
+    _loadDistributor();
+  }
+
+  Future<void> _loadDistributor() async {
+    final distributors = await PushHelper.availableDistributors();
+    final current = await PushHelper.currentDistributor();
+    final packageName = (await PackageInfo.fromPlatform()).packageName;
+    final onlyEmbedded =
+        distributors.length == 1 && distributors.first == packageName;
+
+    if (!mounted) return;
+    setState(() {
+      _distributor = current;
+      _showDistributor = !onlyEmbedded;
+    });
   }
 
   Future<void> _loadUserProfile() async {
@@ -94,7 +118,8 @@ class AccountPageState extends State<AccountPage> {
     }
     if (!emailResponse.success) {
       showSnackBar(
-          context.l10n.error_loading_email(context.errorOr(emailResponse.error)),
+          context.l10n
+              .error_loading_email(context.errorOr(emailResponse.error)),
           color: Colors.red);
     }
 
@@ -158,6 +183,25 @@ class AccountPageState extends State<AccountPage> {
     );
   }
 
+  Future<void> openPushDistributorDialog() async {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => const PushDistributorDialog(),
+    );
+    // The dialog may have switched distributor, so re-read what is in use.
+    await _loadDistributor();
+  }
+
+  Future<void> openChangeServerDialog() async {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => const ChangeServerDialog(),
+    );
+    // The dialog closes the app on a successful switch; if we are still here the
+    // user cancelled, so just refresh the shown host.
+    if (mounted) setState(() {});
+  }
+
   Future<void> _deleteAccount() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -187,7 +231,7 @@ class AccountPageState extends State<AccountPage> {
     if (_isCheckingForUpdates) return;
 
     setState(() => _isCheckingForUpdates = true);
-    final result = await _updateService.checkForUpdate(requireEnabled: false);
+    final result = await _updateService.checkForUpdate();
     if (!mounted) return;
     setState(() => _isCheckingForUpdates = false);
 
@@ -410,6 +454,32 @@ class AccountPageState extends State<AccountPage> {
                           trailing: const Icon(Icons.chevron_right_rounded),
                           onTap: openChangePasswordDialog,
                         ),
+                        ListTile(
+                          leading: const Icon(Icons.dns_rounded),
+                          title: Text(context.l10n.server_label),
+                          subtitle: Text(
+                            Uri.tryParse(UserPreferences.supabaseUrl)
+                                        ?.host
+                                        .isNotEmpty ==
+                                    true
+                                ? Uri.parse(UserPreferences.supabaseUrl).host
+                                : UserPreferences.supabaseUrl,
+                          ),
+                          trailing: const Icon(Icons.chevron_right_rounded),
+                          onTap: openChangeServerDialog,
+                        ),
+                        if (_showDistributor)
+                          ListTile(
+                            leading:
+                                const Icon(Icons.notifications_active_rounded),
+                            title: Text(context.l10n.push_distributor_label),
+                            subtitle: Text(
+                              _distributor ??
+                                  context.l10n.push_distributor_none_selected,
+                            ),
+                            trailing: const Icon(Icons.chevron_right_rounded),
+                            onTap: openPushDistributorDialog,
+                          ),
                         const SizedBox(height: 27),
                         Padding(
                           padding: const EdgeInsets.only(left: 8.0),
@@ -513,7 +583,7 @@ class AccountPageState extends State<AccountPage> {
                             },
                           ),
                         ),
-                        if (UpdateService().isEnabled)
+                        if (_updateService.isEnabled)
                           SwitchListTile(
                             title: Text(context.l10n.app_update_notifications),
                             subtitle: Text(context
@@ -553,15 +623,19 @@ class AccountPageState extends State<AccountPage> {
                           ),
                         ],
                         const SizedBox(height: 40),
-                        RectangleButton(
-                          label: _isCheckingForUpdates
-                              ? context.l10n.checking_for_updates
-                              : context.l10n.check_for_updates,
-                          icon: Symbols.system_update_rounded,
-                          width: 200,
-                          onPressed: _checkForUpdates,
-                        ),
-                        const SizedBox(height: 15),
+                        // Hidden when this build has no repo to update from, or
+                        // updates are off
+                        if (_updateService.isEnabled) ...[
+                          RectangleButton(
+                            label: _isCheckingForUpdates
+                                ? context.l10n.checking_for_updates
+                                : context.l10n.check_for_updates,
+                            icon: Symbols.system_update_rounded,
+                            width: 200,
+                            onPressed: _checkForUpdates,
+                          ),
+                          const SizedBox(height: 15),
+                        ],
                         RectangleButton(
                           label: context.l10n.log_out,
                           icon: Symbols.logout_rounded,

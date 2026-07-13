@@ -7,6 +7,7 @@ import 'package:krab/l10n/l10n.dart';
 import 'package:krab/services/api/supabase.dart';
 import 'package:krab/services/home_widget_updater.dart';
 import 'package:krab/themes/global_theme_data.dart';
+import 'package:krab/widgets/auth_card.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/widgets/rounded_input_field.dart';
 import 'package:krab/widgets/soft_button.dart';
@@ -182,6 +183,8 @@ class LoginPageState extends State<LoginPage> {
                   ),
                 ],
               ),
+              actionsOverflowButtonSpacing:
+                  GlobalThemeData.dialogActionsOverflowSpacing,
               actions: [
                 SoftButton(
                   label: context.l10n.cancel,
@@ -234,116 +237,139 @@ class LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: GlobalThemeData.darkColorScheme.surface,
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 28.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const SizedBox(height: 20),
-              _buildLogo(),
-              const SizedBox(height: 40),
-              Text(
-                _isSigningUp ? context.l10n.sign_up : context.l10n.log_in,
-                style:
-                    const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 28),
-              AutofillGroup(
-                child: AnimatedSize(
-                  duration: const Duration(milliseconds: 200),
-                  curve: Curves.easeInOut,
-                  child: Column(
-                    children: [
-                      if (_isSigningUp)
-                        RoundedInputField(
-                          controller: _usernameController,
-                          hintText: context.l10n.username,
-                          icon: const Icon(Icons.person_rounded),
-                          autofillHints: const [AutofillHints.username],
-                          maxLength: 19,
+        child: Center(
+          child: SingleChildScrollView(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12.0, vertical: 16.0),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: AuthCard.maxWidth),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildLogo(),
+                  const SizedBox(height: 20),
+                  AuthCard(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          _isSigningUp
+                              ? context.l10n.sign_up
+                              : context.l10n.log_in,
+                          style: const TextStyle(
+                              fontSize: 28, fontWeight: FontWeight.bold),
                         ),
-                      RoundedInputField(
-                        controller: _emailController,
-                        hintText: context.l10n.email,
-                        icon: const Icon(Icons.email_rounded),
-                        keyboardType: TextInputType.emailAddress,
-                        autofillHints: const [AutofillHints.email],
-                      ),
-                      RoundedInputField(
-                        controller: _passwordController,
-                        hintText: context.l10n.password,
-                        obscureText: !_showPassword,
-                        icon: const Icon(Icons.lock_rounded),
-                        autofillHints: _isSigningUp
-                            ? const [AutofillHints.newPassword]
-                            : const [AutofillHints.password],
-                        suffixIcon: IconButton(
-                          icon: Icon(_showPassword
-                              ? Icons.visibility_off_rounded
-                              : Icons.visibility_rounded),
-                          onPressed: () =>
-                              setState(() => _showPassword = !_showPassword),
-                        ),
-                      ),
-                      if (_isSigningUp)
-                        RoundedInputField(
-                          controller: _passwordConfirmController,
-                          hintText: context.l10n.confirm_password,
-                          obscureText: !_showConfirmPassword,
-                          icon: const Icon(Icons.check_rounded),
-                          autofillHints: const [AutofillHints.newPassword],
-                          suffixIcon: IconButton(
-                            icon: Icon(_showConfirmPassword
-                                ? Icons.visibility_off_rounded
-                                : Icons.visibility_rounded),
-                            onPressed: () => setState(() =>
-                                _showConfirmPassword = !_showConfirmPassword),
+                        const SizedBox(height: 20),
+                        AutofillGroup(
+                          child: AnimatedSize(
+                            duration: const Duration(milliseconds: 200),
+                            curve: Curves.easeInOut,
+                            child: Column(
+                              children: [
+                                if (_isSigningUp)
+                                  RoundedInputField(
+                                    controller: _usernameController,
+                                    hintText: context.l10n.username,
+                                    icon: const Icon(Icons.person_rounded),
+                                    autofillHints: const [
+                                      AutofillHints.username
+                                    ],
+                                    maxLength: 19,
+                                  ),
+                                RoundedInputField(
+                                  controller: _emailController,
+                                  hintText: context.l10n.email,
+                                  icon: const Icon(Icons.email_rounded),
+                                  keyboardType: TextInputType.emailAddress,
+                                  autofillHints: const [AutofillHints.email],
+                                ),
+                                RoundedInputField(
+                                  controller: _passwordController,
+                                  hintText: context.l10n.password,
+                                  obscureText: !_showPassword,
+                                  icon: const Icon(Icons.lock_rounded),
+                                  autofillHints: _isSigningUp
+                                      ? const [AutofillHints.newPassword]
+                                      : const [AutofillHints.password],
+                                  suffixIcon: IconButton(
+                                    icon: Icon(_showPassword
+                                        ? Icons.visibility_off_rounded
+                                        : Icons.visibility_rounded),
+                                    onPressed: () => setState(
+                                        () => _showPassword = !_showPassword),
+                                  ),
+                                ),
+                                if (_isSigningUp)
+                                  RoundedInputField(
+                                    controller: _passwordConfirmController,
+                                    hintText: context.l10n.confirm_password,
+                                    obscureText: !_showConfirmPassword,
+                                    icon: const Icon(Icons.check_rounded),
+                                    autofillHints: const [
+                                      AutofillHints.newPassword
+                                    ],
+                                    suffixIcon: IconButton(
+                                      icon: Icon(_showConfirmPassword
+                                          ? Icons.visibility_off_rounded
+                                          : Icons.visibility_rounded),
+                                      onPressed: () => setState(() =>
+                                          _showConfirmPassword =
+                                              !_showConfirmPassword),
+                                    ),
+                                  ),
+                              ],
+                            ),
                           ),
                         ),
-                    ],
+                        if (_errorMessage != null) _buildError(),
+                        if (_showResendConfirmation)
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
+                              onPressed: _resendConfirmation,
+                              child: Text(context.l10n.resend_confirmation),
+                            ),
+                          ),
+                        const SizedBox(height: 12),
+                        _buildButton(),
+                        if (!_isSigningUp && isPasswordResetEnabled)
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
+                              onPressed: _forgotPasswordDialog,
+                              child:
+                                  Text(context.l10n.forgot_password_question),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
-                ),
+                  // Outside the card: switching between logging in and signing
+                  // up is a move to a different form, not a field within one.
+                  const SizedBox(height: 8),
+                  Center(
+                    child: TextButton(
+                      onPressed: () {
+                        setState(() {
+                          _isSigningUp = !_isSigningUp;
+                          _errorMessage = null;
+                          _passwordController.clear();
+                          if (!_isSigningUp) _usernameController.clear();
+                        });
+                      },
+                      child: Text(
+                        _isSigningUp
+                            ? context.l10n.already_have_account
+                            : context.l10n.dont_have_account,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              if (_errorMessage != null) _buildError(),
-              if (_showResendConfirmation)
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton(
-                    onPressed: _resendConfirmation,
-                    child: Text(context.l10n.resend_confirmation),
-                  ),
-                ),
-              const SizedBox(height: 20),
-              _buildButton(),
-              if (!_isSigningUp && isPasswordResetEnabled)
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton(
-                    onPressed: _forgotPasswordDialog,
-                    child: Text(context.l10n.forgot_password_question),
-                  ),
-                ),
-              const SizedBox(height: 8),
-              Center(
-                child: TextButton(
-                  onPressed: () {
-                    setState(() {
-                      _isSigningUp = !_isSigningUp;
-                      _errorMessage = null;
-                      _passwordController.clear();
-                      if (!_isSigningUp) _usernameController.clear();
-                    });
-                  },
-                  child: Text(
-                    _isSigningUp
-                        ? context.l10n.already_have_account
-                        : context.l10n.dont_have_account,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 32),
-            ],
+            ),
           ),
         ),
       ),
@@ -353,11 +379,11 @@ class LoginPageState extends State<LoginPage> {
   Widget _buildLogo() {
     return Column(
       children: [
-        Image.asset('logo/krab_logo.png', width: 120, height: 120),
+        Image.asset('logo/krab_logo.png', width: 96, height: 96),
         const Text(
           'KRAB',
           style: TextStyle(
-              fontSize: 40, fontWeight: FontWeight.w900, letterSpacing: 2),
+              fontSize: 34, fontWeight: FontWeight.w900, letterSpacing: 2),
         ),
       ],
     );

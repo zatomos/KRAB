@@ -112,6 +112,9 @@ if grep -q '^ADDITIONAL_REDIRECT_URLS=' "$ENV_FILE"; then
 else
   set_env ADDITIONAL_REDIRECT_URLS "$RESET_PAGE_URL"
 fi
+
+set_env PASSWORD_RESET_URL "$RESET_PAGE_URL"
+
 # Drop any stale plain MAILER_TEMPLATES_* lines
 sed -i '/^MAILER_TEMPLATES_RECOVERY=/d;/^MAILER_SUBJECTS_RECOVERY=/d' "$ENV_FILE"
 
@@ -165,6 +168,7 @@ fi
 
 echo "Applying to Supabase auth..."
 ( cd "$SUPABASE_DIR" && docker compose up -d auth )
+( cd "$SUPABASE_DIR" && docker compose up -d functions )
 
 echo ""
 echo "✅ Done!"

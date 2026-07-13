@@ -22,6 +22,8 @@ Future<AvatarAction?> showEditAvatarDialog(
     context: context,
     builder: (dialogContext) => AlertDialog(
       title: Text(title),
+      actionsOverflowButtonSpacing:
+          GlobalThemeData.dialogActionsOverflowSpacing,
       actions: [
         SoftButton(
           onPressed: () => Navigator.of(dialogContext).pop(),
@@ -31,6 +33,7 @@ Future<AvatarAction?> showEditAvatarDialog(
         SoftButton(
           onPressed: () => Navigator.of(dialogContext).pop(AvatarAction.edit),
           label: hasImage ? dialogContext.l10n.edit : dialogContext.l10n.add,
+          icon: hasImage ? Icons.edit : Icons.add,
           color: GlobalThemeData.darkColorScheme.primary,
         ),
         if (hasImage)
@@ -38,6 +41,7 @@ Future<AvatarAction?> showEditAvatarDialog(
             onPressed: () =>
                 Navigator.of(dialogContext).pop(AvatarAction.delete),
             label: dialogContext.l10n.delete,
+            icon: Icons.delete_forever,
             color: GlobalThemeData.darkColorScheme.error,
           ),
       ],
