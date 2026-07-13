@@ -103,12 +103,14 @@ class GroupsPageState extends State<GroupsPage> {
                 }
                 if (snapshot.hasError || !snapshot.hasData) {
                   debugPrint("Failed to load groups: ${snapshot.error}");
-                  return Center(child: Text(context.l10n.failed_to_load_groups));
+                  return Center(
+                      child: Text(context.l10n.failed_to_load_groups));
                 }
                 final response = snapshot.data!;
                 if (!response.success) {
                   debugPrint("Failed to load groups: ${response.error}");
-                  return Center(child: Text(context.l10n.failed_to_load_groups));
+                  return Center(
+                      child: Text(context.l10n.failed_to_load_groups));
                 }
                 final groups = response.data ?? [];
                 if (groups.isEmpty) {
@@ -147,8 +149,7 @@ class _RecentPhotosCard extends StatelessWidget {
         leading: CircleAvatar(
           radius: 25,
           backgroundColor: scheme.primary,
-          child: Icon(Symbols.photo_library,
-              fill: 1, color: scheme.onPrimary),
+          child: Icon(Symbols.photo_library, fill: 1, color: scheme.onPrimary),
         ),
         title: Text(
           context.l10n.recent_photos,
@@ -206,8 +207,8 @@ class JoinGroupDialogState extends State<JoinGroupDialog> {
       if (!mounted) return;
       if (!response.success) {
         setState(() {
-          error = context.l10n
-              .group_code_invalid(context.errorOr(response.error));
+          error =
+              context.l10n.group_code_invalid(context.errorOr(response.error));
           _loading = false;
         });
         return;
@@ -241,6 +242,8 @@ class JoinGroupDialogState extends State<JoinGroupDialog> {
           ],
         ),
       ),
+      actionsOverflowButtonSpacing:
+          GlobalThemeData.dialogActionsOverflowSpacing,
       actions: [
         SoftButton(
           onPressed: () => Navigator.of(context).pop(),
@@ -256,6 +259,7 @@ class JoinGroupDialogState extends State<JoinGroupDialog> {
           SoftButton(
             onPressed: _joinGroup,
             label: context.l10n.join,
+            icon: Symbols.groups_rounded,
             color: GlobalThemeData.darkColorScheme.primary,
           ),
       ],
@@ -340,6 +344,8 @@ class CreateGroupDialogState extends State<CreateGroupDialog> {
           ],
         ),
       ),
+      actionsOverflowButtonSpacing:
+          GlobalThemeData.dialogActionsOverflowSpacing,
       actions: [
         SoftButton(
           onPressed: () => Navigator.of(context).pop(),
@@ -355,6 +361,7 @@ class CreateGroupDialogState extends State<CreateGroupDialog> {
           SoftButton(
             onPressed: _createGroup,
             label: context.l10n.create,
+            icon: Symbols.group_add_rounded,
             color: GlobalThemeData.darkColorScheme.primary,
           ),
       ],

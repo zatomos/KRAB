@@ -34,6 +34,8 @@ Future<void> showMemberRolesDialog(BuildContext context) => showDialog<void>(
             ),
           ),
         ),
+        actionsOverflowButtonSpacing:
+            GlobalThemeData.dialogActionsOverflowSpacing,
         actions: [
           SoftButton(
             onPressed: () => Navigator.of(context).pop(),

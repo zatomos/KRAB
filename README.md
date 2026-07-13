@@ -114,7 +114,7 @@ inviting.
 
 You'll also want to put your API URL behind HTTPS for production use.
 
-### 2. Building the app yourself (optional)
+### 2. Building the app (optional)
 
 **Prerequisites:** [Flutter](https://flutter.dev/docs/get-started/install).
 
@@ -124,7 +124,14 @@ You'll also want to put your API URL behind HTTPS for production use.
    cd KRAB
    flutter pub get
    ```
-2. Run it:
+2. Create your build config:
+   ```bash
+   cp lib/config.example.dart lib/config.dart
+   ```
+   `lib/config.dart` is gitignored and the app won't compile without it. That's deliberate — it says
+   which repo the build updates itself from, and a fork must not silently inherit someone else's.
+   The defaults are safe (no self-updating); see [Auto-update](#auto-update) below.
+3. Run it:
    ```bash
    flutter run
    ```
@@ -151,6 +158,25 @@ key.
    apksigner verify --print-certs build/app/outputs/flutter-apk/app-release.apk
    ```
 
+#### Auto-update
+
+The app can check for new versions from GitHub and prompt users to update.
+
+Enable it in **`lib/config.dart`**, pointing it at your own repository:
+
+```dart
+const updateRepo = 'zatomos/KRAB';
+const enableAutoUpdate = true;
+```
+
+Use `scripts/release.sh` to build, verify and publish a release:
+
+```bash
+scripts/release.sh "Added a thing" "Fixed another"
+```
+
+Requires the [`gh` CLI](https://cli.github.com).
+
 ### 3. Password reset (optional)
 
 Password reset sends an email with a link to a small web page where the user sets a new password.
@@ -158,7 +184,7 @@ It needs a publicly reachable page and an SMTP server to send the email.
 
 1. Pick a public hostname for the reset page (e.g. `https://krab.example.com`) and point it
    (via DNS / your reverse proxy) at the server.
-2. **Get an SMTP app password.** Use an *app-specific password* from your email provider, **not**
+2. **Get an SMTP app password.** Use an *app-specific password* from your email provider, not
    your account password.
 3. Run the setup script on the server:
    ```bash
@@ -168,13 +194,7 @@ It needs a publicly reachable page and an SMTP server to send the email.
    uses to fetch the email template, and your **SMTP host / port / user / password**. It then serves
    the page, whitelists the redirect, installs the branded email template, and configures SMTP.
 
-### 4. Auto-update the app (optional)
-
-The app can check a manifest and prompt users to update. Host a `manifest.json` (template: `manifest.json.example`) listing your releases and their APK download URLs, then build with `--dart-define=MANIFEST_URL=... --dart-define=ENABLE_AUTO_UPDATE=true`.
-
-A helper to publish APKs + manifest to a Nextcloud instance is provided (`scripts/release.sh`).
-
-### 5. Email verification (optional)
+### 4. Email verification (optional)
 
 When enabled, signing up sends a confirmation email and the account can't log in until the link
 is clicked.

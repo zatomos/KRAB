@@ -60,7 +60,6 @@
   "delete": "Delete",
   "undo": "Undo",
   "remove": "Remove",
-  "delete_everywhere": "Delete everywhere",
   "remove_from_groups_message": "Select the groups for which this photo will be deleted.",
   "save_to_device": "Save to device",
   "add_to_group": "Add to group",
@@ -137,7 +136,6 @@
   "update_available": "Update Available",
   "version": "Version {version}",
   "current_version": "Current version: {currentVersion}",
-  "update_required": "This update is required.",
   "whats_new": "What's new:",
   "no_changelog": "No changelog available.",
   "downloading": "Downloading... {progress}%",
@@ -234,8 +232,6 @@
   "forgot_password_question": "Forgot password?",
   "password_email_sent": "Password reset email sent!",
   "invalid_email_or_password": "Invalid email or password.",
-  "reauth_prompt_title": "Confirm your password",
-  "reauth_prompt_message": "To keep sending you notifications and updating your widget in the background, KRAB needs you to confirm your password once.",
   "email_already_exists": "An account with this email already exists.",
   "password_too_weak": "Password is too weak.",
   "enter_email_account": "Enter your account email and we'll send you a reset link.",
@@ -328,7 +324,6 @@
   "instanceSetupTest": "Test connection",
   "instanceSetupTesting": "Testing...",
   "instanceSetupConnecting": "Connecting...",
-  "instanceSetupTestOk": "Connection successful",
   "instanceSetupTestBadKey": "The server is reachable but rejected the key.",
   "instanceSetupConnected": "Connected"
 }

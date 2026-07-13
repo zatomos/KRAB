@@ -60,7 +60,6 @@
   "delete": "Supprimer",
   "undo": "Annuler",
   "remove": "Supprimer",
-  "delete_everywhere": "Supprimer partout",
   "remove_from_groups_message": "Sélectionnez les groupes pour lesquels cette photo sera supprimée.",
   "save_to_device": "Enregistrer sur l'appareil",
   "add_to_group": "Ajouter à un groupe",
@@ -137,7 +136,6 @@
   "update_available": "Mise à jour disponible",
   "version": "Version {version}",
   "current_version": "Version actuelle : {currentVersion}",
-  "update_required": "Cette mise à jour est obligatoire.",
   "whats_new": "Changements:",
   "no_changelog": "Aucun journal des modifications n'a été fourni.",
   "downloading": "Téléchargement... {progress}%",
@@ -234,8 +232,6 @@
   "forgot_password_question": "Mot de passe oublié ?",
   "password_email_sent": "Email de réinitialisation de mot de passe envoyé !",
   "invalid_email_or_password": "Email ou mot de passe invalide.",
-  "reauth_prompt_title": "Confirmez votre mot de passe",
-  "reauth_prompt_message": "Pour continuer à vous envoyer des notifications et à mettre à jour votre widget en arrière-plan, KRAB doit vous faire confirmer votre mot de passe une fois.",
   "email_already_exists": "Un compte avec cet email existe déjà.",
   "password_too_weak": "Le mot de passe est trop faible.",
   "enter_email_account": "Entrez l'email de votre compte et nous vous enverrons un lien de réinitialisation.",
@@ -328,7 +324,6 @@
   "instanceSetupTest": "Tester la connexion",
   "instanceSetupTesting": "Test en cours...",
   "instanceSetupConnecting": "Connexion...",
-  "instanceSetupTestOk": "Connexion réussie",
   "instanceSetupTestBadKey": "Le serveur est joignable mais a rejeté la clé.",
   "instanceSetupConnected": "Connecté"
 }

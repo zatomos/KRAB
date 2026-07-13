@@ -87,6 +87,8 @@ class _RenameDialogState extends State<RenameDialog> {
             ),
         ],
       ),
+      actionsOverflowButtonSpacing:
+          GlobalThemeData.dialogActionsOverflowSpacing,
       actions: [
         SoftButton(
           onPressed: () => Navigator.of(context).pop(),
@@ -102,6 +104,7 @@ class _RenameDialogState extends State<RenameDialog> {
           SoftButton(
             onPressed: _submit,
             label: context.l10n.save,
+            icon: Icons.check,
             color: GlobalThemeData.darkColorScheme.primary,
           ),
       ],

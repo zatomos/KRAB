@@ -6,29 +6,56 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/services.dart';
 
+import 'package:krab/config.dart';
 import 'package:krab/user_preferences.dart';
 import 'package:krab/services/notification_channels.dart';
 
-/// A single published release entry in the manifest.
+/// A single published GitHub release.
 class Release {
   final String version;
   final String downloadUrl;
   final List<String> changelog;
-  final bool mandatory;
 
   Release({
     required this.version,
     required this.downloadUrl,
     required this.changelog,
-    this.mandatory = false,
   });
 
-  factory Release.fromJson(Map<String, dynamic> json) {
+  /// Builds a release from one entry of GitHub releases`.
+  static Release? fromGitHub(Map<String, dynamic> json) {
+    final tag = (json['tag_name'] as String? ?? '').trim();
+    final version = tag.startsWith('v') ? tag.substring(1) : tag;
+    if (version.isEmpty) return null;
+
+    final assets = json['assets'];
+    if (assets is! List) return null;
+
+    String? apkUrl;
+    for (final asset in assets) {
+      if (asset is! Map) continue;
+      final name = asset['name'] as String? ?? '';
+      if (name.toLowerCase().endsWith('.apk')) {
+        apkUrl = asset['browser_download_url'] as String?;
+        break;
+      }
+    }
+    if (apkUrl == null || apkUrl.isEmpty) return null;
+
+    final changelog = (json['body'] as String? ?? '')
+        .split('\n')
+        .map((l) => l.trim())
+        .where((l) => l.isNotEmpty)
+        // Strip Markdown bullets
+        .map((l) => l.startsWith('- ') || l.startsWith('* ')
+            ? l.substring(2).trim()
+            : l)
+        .toList();
+
     return Release(
-      version: json['version'] ?? '',
-      downloadUrl: json['downloadUrl'] ?? '',
-      changelog: List<String>.from(json['changelog'] ?? []),
-      mandatory: json['mandatory'] ?? false,
+      version: version,
+      downloadUrl: apkUrl,
+      changelog: changelog,
     );
   }
 }
@@ -37,13 +64,11 @@ class UpdateInfo {
   final String version;
   final String downloadUrl;
   final List<Release> releases;
-  final bool forceUpdate;
 
   UpdateInfo({
     required this.version,
     required this.downloadUrl,
     required this.releases,
-    this.forceUpdate = false,
   });
 }
 
@@ -62,21 +87,45 @@ class UpdateCheckResult {
 class UpdateService {
   final Dio _dio = Dio();
 
-  /// Where this build looks for updates, and whether it looks at all.
-  static const _manifestUrl = String.fromEnvironment('MANIFEST_URL');
-  static const _autoUpdate =
-      bool.fromEnvironment('ENABLE_AUTO_UPDATE', defaultValue: false);
+  /// Which repository this build updates from, and whether it looks at all.
+  bool get isEnabled => enableAutoUpdate && updateRepo.isNotEmpty;
 
-  String get manifestUrl => _manifestUrl;
-  bool get isEnabled => _autoUpdate && _manifestUrl.isNotEmpty;
+  String get _releasesUrl =>
+      'https://api.github.com/repos/$updateRepo/releases?per_page=30';
 
-  Future<UpdateCheckResult> checkForUpdate({bool requireEnabled = true}) async {
-    if (requireEnabled && !isEnabled) {
+  /// Never checks when this build has no repo to update from, or has updates
+  /// switched off
+  Future<UpdateCheckResult> checkForUpdate() async {
+    if (!isEnabled) {
+      debugPrint('Update check skipped: not enabled in config.dart');
       return UpdateCheckResult(success: false, hasUpdate: false);
     }
 
     try {
-      final response = await _dio.get(manifestUrl);
+      final response = await _dio.get(
+        _releasesUrl,
+        options: Options(
+          headers: {
+            'Accept': 'application/vnd.github+json',
+            'X-GitHub-Api-Version': '2022-11-28',
+          },
+          // Inspect the status
+          validateStatus: (_) => true,
+        ),
+      );
+
+      final status = response.statusCode ?? 0;
+
+      // Unauthenticated GitHub API calls are limited
+      if (status == 403 || status == 429) {
+        debugPrint('Update check rate-limited by GitHub (status $status)');
+        return UpdateCheckResult(success: false, hasUpdate: false);
+      }
+      if (status != 200) {
+        debugPrint('Update check failed (status $status)');
+        return UpdateCheckResult(success: false, hasUpdate: false);
+      }
+
       dynamic rawData = response.data;
       if (rawData is String) rawData = jsonDecode(rawData);
 
@@ -104,9 +153,6 @@ class UpdateService {
           .reversed
           .toList();
 
-      // Forced if the user has skipped past any mandatory release
-      final forceUpdate = newer.any((r) => r.mandatory);
-
       return UpdateCheckResult(
         success: true,
         hasUpdate: true,
@@ -114,7 +160,6 @@ class UpdateService {
           version: latest.version,
           downloadUrl: latest.downloadUrl,
           releases: newer,
-          forceUpdate: forceUpdate,
         ),
       );
     } catch (e) {
@@ -123,11 +168,14 @@ class UpdateService {
     }
   }
 
-  /// Parses the `{"releases": [...]}` manifest.
-  List<Release> _parseReleases(Map<String, dynamic> data) {
-    if (data['releases'] is! List) return [];
-    return (data['releases'] as List)
-        .map((e) => Release.fromJson(e as Map<String, dynamic>))
+  /// Parses the JSON array returned by the release.
+  List<Release> _parseReleases(dynamic data) {
+    if (data is! List) return [];
+    return data
+        .whereType<Map<String, dynamic>>()
+        .where((e) => e['draft'] != true && e['prerelease'] != true)
+        .map(Release.fromGitHub)
+        .whereType<Release>()
         .where((r) => r.version.isNotEmpty)
         .toList();
   }

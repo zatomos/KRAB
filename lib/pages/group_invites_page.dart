@@ -238,6 +238,8 @@ class _CreateInviteDialogState extends State<CreateInviteDialog> {
           ],
         ],
       ),
+      actionsOverflowButtonSpacing:
+          GlobalThemeData.dialogActionsOverflowSpacing,
       actions: [
         SoftButton(
           onPressed: () => Navigator.of(context).pop(),
@@ -278,6 +280,8 @@ Future<void> showInviteTokenDialog(BuildContext context, String token) {
           ),
         ],
       ),
+      actionsOverflowButtonSpacing:
+          GlobalThemeData.dialogActionsOverflowSpacing,
       actions: [
         SoftButton(
           onPressed: () => Navigator.of(context).pop(),

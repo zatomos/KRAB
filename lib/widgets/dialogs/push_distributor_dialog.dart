@@ -116,6 +116,8 @@ class _PushDistributorDialogState extends State<PushDistributorDialog> {
             ),
         ],
       ),
+      actionsOverflowButtonSpacing:
+          GlobalThemeData.dialogActionsOverflowSpacing,
       actions: [
         SoftButton(
           onPressed: _switching ? () {} : () => Navigator.of(context).pop(),

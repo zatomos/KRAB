@@ -79,6 +79,8 @@ class _DeleteImageDialogState extends State<_DeleteImageDialog> {
           ),
         ],
       ),
+      actionsOverflowButtonSpacing:
+          GlobalThemeData.dialogActionsOverflowSpacing,
       actions: [
         SoftButton(
           onPressed: () => Navigator.of(context).pop(),
@@ -90,6 +92,7 @@ class _DeleteImageDialogState extends State<_DeleteImageDialog> {
               ? null
               : () => Navigator.of(context).pop(Set.of(_selected)),
           label: context.l10n.remove,
+          icon: Icons.delete_forever,
           color: _selected.isEmpty
               ? GlobalThemeData.darkColorScheme.onSurfaceVariant
                   .withValues(alpha: 0.4)

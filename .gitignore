@@ -47,12 +47,11 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 /android/local.properties
-/android/app/google-services.json
 /android/app/.cxx/*
 
-firebase.json
-supabase/functions/service-account.json
 supabase/.temp
-lib/firebase_options.dart
 .env
 release.env
+
+# Build-time config
+lib/config.dart

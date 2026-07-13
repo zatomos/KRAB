@@ -13,7 +13,7 @@ import 'package:krab/widgets/soft_button.dart';
 /// process against one URL, and there is no supported way to re-init it. So this
 /// signs out, clears the saved instance, and closes the app; the next launch
 /// finds no instance and comes up on the connect screen, where the user picks a
-/// new one (token or manual).
+/// new one.
 class ChangeServerDialog extends StatefulWidget {
   const ChangeServerDialog({super.key});
 
@@ -33,8 +33,7 @@ class _ChangeServerDialogState extends State<ChangeServerDialog> {
       await logOut();
     } catch (_) {}
 
-    // Clearing the saved instance is what sends the next launch to the connect
-    // screen instead of straight to login.
+    // Clear the saved instance
     await UserPreferences.setSupabaseConfig(url: '', anonKey: '');
 
     await SystemNavigator.pop();
@@ -45,6 +44,8 @@ class _ChangeServerDialogState extends State<ChangeServerDialog> {
     return AlertDialog(
       title: Text(context.l10n.change_server_title),
       content: Text(context.l10n.change_server_description),
+      actionsOverflowButtonSpacing:
+          GlobalThemeData.dialogActionsOverflowSpacing,
       actions: [
         SoftButton(
           onPressed: _working ? () {} : () => Navigator.of(context).pop(),
@@ -60,6 +61,7 @@ class _ChangeServerDialogState extends State<ChangeServerDialog> {
           SoftButton(
             onPressed: _disconnect,
             label: context.l10n.change_server_confirm,
+            icon: Icons.logout,
             color: GlobalThemeData.darkColorScheme.primary,
           ),
       ],

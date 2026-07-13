@@ -11,6 +11,7 @@ import 'package:krab/services/push_helper.dart';
 import 'package:krab/services/supabase_bootstrap.dart';
 import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/user_preferences.dart';
+import 'package:krab/widgets/auth_card.dart';
 import 'package:krab/widgets/rectangle_button.dart';
 import 'package:krab/widgets/rounded_input_field.dart';
 
@@ -189,105 +190,114 @@ class _InstanceSetupPageState extends State<InstanceSetupPage> {
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Image.asset('logo/krab_logo.png', height: 96),
-                const SizedBox(height: 24),
-                Text(
-                  context.l10n.instanceSetupTitle,
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.headlineSmall,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  _manual
-                      ? context.l10n.instanceSetupSubtitle
-                      : context.l10n.instanceSetupTokenSubtitle,
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.bodyMedium,
-                ),
-                const SizedBox(height: 28),
-                if (_manual) ...[
-                  RoundedInputField(
-                    controller: _urlController,
-                    hintText: context.l10n.instanceSetupUrlHint,
-                  ),
-                  const SizedBox(height: 12),
-                  RoundedInputField(
-                    controller: _keyController,
-                    hintText: context.l10n.instanceSetupKeyHint,
-                  ),
-                ] else ...[
-                  RoundedInputField(
-                    controller: _tokenController,
-                    hintText: context.l10n.instanceSetupTokenHint,
-                  ),
-                  const SizedBox(height: 8),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton.icon(
-                      onPressed: _connecting ? null : _pasteToken,
-                      icon: const Icon(Icons.content_paste_rounded, size: 18),
-                      label: Text(context.l10n.instanceSetupPaste),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: AuthCard.maxWidth),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Image.asset('logo/krab_logo.png', height: 80),
+                  const SizedBox(height: 16),
+                  AuthCard(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          context.l10n.instanceSetupTitle,
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.headlineMedium,
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _manual
+                              ? context.l10n.instanceSetupSubtitle
+                              : context.l10n.instanceSetupTokenSubtitle,
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.bodyMedium,
+                        ),
+                        const SizedBox(height: 20),
+                        if (_manual) ...[
+                          RoundedInputField(
+                            controller: _urlController,
+                            hintText: context.l10n.instanceSetupUrlHint,
+                          ),
+                          RoundedInputField(
+                            controller: _keyController,
+                            hintText: context.l10n.instanceSetupKeyHint,
+                          ),
+                        ] else ...[
+                          RoundedInputField(
+                            controller: _tokenController,
+                            hintText: context.l10n.instanceSetupTokenHint,
+                          ),
+                          const SizedBox(height: 8),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton.icon(
+                              onPressed: _connecting ? null : _pasteToken,
+                              icon: const Icon(Icons.content_paste_rounded,
+                                  size: 18),
+                              label: Text(context.l10n.instanceSetupPaste),
+                            ),
+                          ),
+                        ],
+                        SizedBox(
+                          height: 12,
+                          child: Center(
+                            child: _error == null
+                                ? null
+                                : Text(
+                                    _error!,
+                                    textAlign: TextAlign.center,
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                        color: theme.colorScheme.error),
+                                  ),
+                          ),
+                        ),
+                        RectangleButton(
+                          label: _connected
+                              ? context.l10n.instanceSetupConnected
+                              : _testing
+                                  ? context.l10n.instanceSetupTesting
+                                  : context.l10n.instanceSetupTest,
+                          icon: _connected
+                              ? Symbols.check_circle_rounded
+                              : Symbols.wifi_tethering_rounded,
+                          backgroundColor: _connected
+                              ? Colors.green
+                              : GlobalThemeData.darkColorScheme.surface,
+                          onPressed: _test,
+                        ),
+                        const SizedBox(height: 10),
+                        RectangleButton(
+                          label: _connecting
+                              ? context.l10n.instanceSetupConnecting
+                              : context.l10n.instanceSetupConnect,
+                          icon: Symbols.arrow_forward_rounded,
+                          onPressed: _connect,
+                        ),
+                        const SizedBox(height: 8),
+                        TextButton(
+                          onPressed: (_connecting || _testing)
+                              ? null
+                              : () => setState(() {
+                                    _manual = !_manual;
+                                    _error = null;
+                                    _connected = false;
+                                  }),
+                          child: Text(
+                            _manual
+                                ? context.l10n.instanceSetupUseToken
+                                : context.l10n.instanceSetupUseManual,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
-                // Fixed-height slot so an error appearing or clearing does not
-                // shove the buttons up and down.
-                SizedBox(
-                  height: 44,
-                  child: Center(
-                    child: _error == null
-                        ? null
-                        : Text(
-                            _error!,
-                            textAlign: TextAlign.center,
-                            style: theme.textTheme.bodySmall
-                                ?.copyWith(color: theme.colorScheme.error),
-                          ),
-                  ),
-                ),
-                RectangleButton(
-                  label: _connected
-                      ? context.l10n.instanceSetupConnected
-                      : _testing
-                          ? context.l10n.instanceSetupTesting
-                          : context.l10n.instanceSetupTest,
-                  icon: _connected
-                      ? Symbols.check_circle_rounded
-                      : Symbols.wifi_tethering_rounded,
-                  backgroundColor: _connected
-                      ? Colors.green
-                      : GlobalThemeData.darkColorScheme.surfaceBright,
-                  onPressed: _test,
-                ),
-                const SizedBox(height: 10),
-                RectangleButton(
-                  label: _connecting
-                      ? context.l10n.instanceSetupConnecting
-                      : context.l10n.instanceSetupConnect,
-                  icon: Symbols.arrow_forward_rounded,
-                  onPressed: _connect,
-                ),
-                const SizedBox(height: 8),
-                TextButton(
-                  onPressed: (_connecting || _testing)
-                      ? null
-                      : () => setState(() {
-                            _manual = !_manual;
-                            _error = null;
-                            _connected = false;
-                          }),
-                  child: Text(
-                    _manual
-                        ? context.l10n.instanceSetupUseToken
-                        : context.l10n.instanceSetupUseManual,
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ),

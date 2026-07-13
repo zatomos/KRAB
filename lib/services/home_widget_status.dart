@@ -75,6 +75,8 @@ class HomeWidgetStatus {
       builder: (dialogContext) => AlertDialog(
         title: Text(context.l10n.add_krab_widget),
         content: Text(context.l10n.krab_widget_experience_desc),
+        actionsOverflowButtonSpacing:
+            GlobalThemeData.dialogActionsOverflowSpacing,
         actions: [
           SoftButton(
             label: context.l10n.later,
@@ -114,6 +116,8 @@ class HomeWidgetStatus {
       builder: (dialogContext) => AlertDialog(
         title: Text(context.l10n.widget_configuration),
         content: Text(context.l10n.widget_configuration_desc),
+        actionsOverflowButtonSpacing:
+            GlobalThemeData.dialogActionsOverflowSpacing,
         actions: [
           SoftButton(
             label: context.l10n.widget_single_image,
@@ -180,6 +184,8 @@ class HomeWidgetStatus {
             ],
           ),
         ),
+        actionsOverflowButtonSpacing:
+            GlobalThemeData.dialogActionsOverflowSpacing,
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),

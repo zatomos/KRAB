@@ -1,13 +1,10 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:krab/config.dart';
 import 'package:krab/services/file_saver.dart';
 
 class UserPreferences {
   static SharedPreferences? _preferences;
-
-  /// Optional backend baked in at build time.
-  static const _bakedUrl = String.fromEnvironment('SUPABASE_URL');
-  static const _bakedAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
 
   static late String supabaseUrl;
   static late String supabaseAnonKey;
@@ -39,9 +36,10 @@ class UserPreferences {
   Future<void> initPrefs() async {
     _preferences = await SharedPreferences.getInstance();
 
-    supabaseUrl = _clean(_preferences?.getString('supabaseUrl') ?? _bakedUrl);
-    supabaseAnonKey =
-        _clean(_preferences?.getString('supabaseAnonKey') ?? _bakedAnonKey);
+    supabaseUrl =
+        _clean(_preferences?.getString('supabaseUrl') ?? bakedSupabaseUrl);
+    supabaseAnonKey = _clean(
+        _preferences?.getString('supabaseAnonKey') ?? bakedSupabaseAnonKey);
 
     // Seed a baked-in default into prefs on first launch, so that from then on
     // prefs are the single source of truth and the user can still switch away.

@@ -56,6 +56,9 @@ class AccountPageState extends State<AccountPage> {
   /// The UnifiedPush distributor in use, null while loading or if none is set.
   String? _distributor;
 
+  /// Whether the user has a delivery choice worth showing. See [_loadDistributor].
+  bool _showDistributor = false;
+
   @override
   void initState() {
     super.initState();
@@ -65,9 +68,17 @@ class AccountPageState extends State<AccountPage> {
   }
 
   Future<void> _loadDistributor() async {
-    final distributor = await PushHelper.currentDistributor();
+    final distributors = await PushHelper.availableDistributors();
+    final current = await PushHelper.currentDistributor();
+    final packageName = (await PackageInfo.fromPlatform()).packageName;
+    final onlyEmbedded =
+        distributors.length == 1 && distributors.first == packageName;
+
     if (!mounted) return;
-    setState(() => _distributor = distributor);
+    setState(() {
+      _distributor = current;
+      _showDistributor = !onlyEmbedded;
+    });
   }
 
   Future<void> _loadUserProfile() async {
@@ -107,7 +118,8 @@ class AccountPageState extends State<AccountPage> {
     }
     if (!emailResponse.success) {
       showSnackBar(
-          context.l10n.error_loading_email(context.errorOr(emailResponse.error)),
+          context.l10n
+              .error_loading_email(context.errorOr(emailResponse.error)),
           color: Colors.red);
     }
 
@@ -219,7 +231,7 @@ class AccountPageState extends State<AccountPage> {
     if (_isCheckingForUpdates) return;
 
     setState(() => _isCheckingForUpdates = true);
-    final result = await _updateService.checkForUpdate(requireEnabled: false);
+    final result = await _updateService.checkForUpdate();
     if (!mounted) return;
     setState(() => _isCheckingForUpdates = false);
 
@@ -446,8 +458,9 @@ class AccountPageState extends State<AccountPage> {
                           leading: const Icon(Icons.dns_rounded),
                           title: Text(context.l10n.server_label),
                           subtitle: Text(
-                            Uri.tryParse(UserPreferences.supabaseUrl)?.host
-                                    .isNotEmpty ==
+                            Uri.tryParse(UserPreferences.supabaseUrl)
+                                        ?.host
+                                        .isNotEmpty ==
                                     true
                                 ? Uri.parse(UserPreferences.supabaseUrl).host
                                 : UserPreferences.supabaseUrl,
@@ -455,16 +468,18 @@ class AccountPageState extends State<AccountPage> {
                           trailing: const Icon(Icons.chevron_right_rounded),
                           onTap: openChangeServerDialog,
                         ),
-                        ListTile(
-                          leading: const Icon(Icons.notifications_active_rounded),
-                          title: Text(context.l10n.push_distributor_label),
-                          subtitle: Text(
-                            _distributor ??
-                                context.l10n.push_distributor_none_selected,
+                        if (_showDistributor)
+                          ListTile(
+                            leading:
+                                const Icon(Icons.notifications_active_rounded),
+                            title: Text(context.l10n.push_distributor_label),
+                            subtitle: Text(
+                              _distributor ??
+                                  context.l10n.push_distributor_none_selected,
+                            ),
+                            trailing: const Icon(Icons.chevron_right_rounded),
+                            onTap: openPushDistributorDialog,
                           ),
-                          trailing: const Icon(Icons.chevron_right_rounded),
-                          onTap: openPushDistributorDialog,
-                        ),
                         const SizedBox(height: 27),
                         Padding(
                           padding: const EdgeInsets.only(left: 8.0),
@@ -568,7 +583,7 @@ class AccountPageState extends State<AccountPage> {
                             },
                           ),
                         ),
-                        if (UpdateService().isEnabled)
+                        if (_updateService.isEnabled)
                           SwitchListTile(
                             title: Text(context.l10n.app_update_notifications),
                             subtitle: Text(context
@@ -608,15 +623,19 @@ class AccountPageState extends State<AccountPage> {
                           ),
                         ],
                         const SizedBox(height: 40),
-                        RectangleButton(
-                          label: _isCheckingForUpdates
-                              ? context.l10n.checking_for_updates
-                              : context.l10n.check_for_updates,
-                          icon: Symbols.system_update_rounded,
-                          width: 200,
-                          onPressed: _checkForUpdates,
-                        ),
-                        const SizedBox(height: 15),
+                        // Hidden when this build has no repo to update from, or
+                        // updates are off
+                        if (_updateService.isEnabled) ...[
+                          RectangleButton(
+                            label: _isCheckingForUpdates
+                                ? context.l10n.checking_for_updates
+                                : context.l10n.check_for_updates,
+                            icon: Symbols.system_update_rounded,
+                            width: 200,
+                            onPressed: _checkForUpdates,
+                          ),
+                          const SizedBox(height: 15),
+                        ],
                         RectangleButton(
                           label: context.l10n.log_out,
                           icon: Symbols.logout_rounded,

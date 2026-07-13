@@ -208,8 +208,7 @@ class _SendImageDialogState extends State<SendImageDialog> {
             // Reserve room for description + spacer + safety margin.
             final gh = cst.maxHeight.isFinite
                 ? (cst.maxHeight - spacerH - 88).clamp(0.0, 500.0)
-                : (MediaQuery.sizeOf(context).height * 0.5)
-                    .clamp(60.0, 500.0);
+                : (MediaQuery.sizeOf(context).height * 0.5).clamp(60.0, 500.0);
             return Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -232,6 +231,8 @@ class _SendImageDialogState extends State<SendImageDialog> {
           },
         ),
       ),
+      actionsOverflowButtonSpacing:
+          GlobalThemeData.dialogActionsOverflowSpacing,
       actions: keyboardOpen
           ? null
           : [
