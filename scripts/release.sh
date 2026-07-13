@@ -10,6 +10,7 @@
 #
 #   --dry-run          Build and check everything, publish nothing.
 #   --repo owner/name  Publish to a repo other than this checkout's origin.
+#   --skip-checks      Skip the analyzer and the test suite.
 
 set -euo pipefail
 
@@ -26,11 +27,13 @@ log() { printf '\n==> %s\n' "$*"; }
 
 # --- Parse args -----------------------------------------------------------
 DRY_RUN=false
+SKIP_CHECKS=false
 REPO_OVERRIDE=""
 while [[ "${1:-}" == -* ]]; do
   case "$1" in
-    --dry-run|-n) DRY_RUN=true; shift ;;
-    --repo)       REPO_OVERRIDE="${2:-}"; [[ -n "$REPO_OVERRIDE" ]] || die "--repo needs owner/name"; shift 2 ;;
+    --dry-run|-n)  DRY_RUN=true; shift ;;
+    --skip-checks) SKIP_CHECKS=true; shift ;;
+    --repo)        REPO_OVERRIDE="${2:-}"; [[ -n "$REPO_OVERRIDE" ]] || die "--repo needs owner/name"; shift 2 ;;
     *) die "Unknown flag: $1" ;;
   esac
 done
@@ -157,6 +160,19 @@ fi
 [[ "$(jq -r '.size // 0' <<<"$REPO_JSON" 2>/dev/null)" != "0" ]] \
   || echo "    NOTE: $REPO looks empty; if the release fails, give it a commit:
       gh repo create ${REPO#*/} --public --add-readme"
+
+# --- Analyzer and tests ---------------------------------------------------
+if [[ "$SKIP_CHECKS" == true ]]; then
+  echo "    NOTE: --skip-checks: neither the analyzer nor the tests ran."
+else
+  log "Analyzing"
+  flutter analyze --no-fatal-infos \
+    || block "flutter analyze found problems. Fix them, or re-run with --skip-checks."
+
+  log "Running the test suite"
+  flutter test \
+    || block "Tests failed. Fix errors, or re-run with --skip-checks."
+fi
 
 # --- Build ----------------------------------------------------------------
 log "Building the release APK"
