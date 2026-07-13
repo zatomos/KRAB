@@ -190,14 +190,14 @@ class _InstanceSetupPageState extends State<InstanceSetupPage> {
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: AuthCard.maxWidth),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Image.asset('logo/krab_logo.png', height: 80),
+                  Image.asset('logo/krab_logo.png', height: 96),
                   const SizedBox(height: 16),
                   AuthCard(
                     child: Column(
@@ -209,7 +209,7 @@ class _InstanceSetupPageState extends State<InstanceSetupPage> {
                           textAlign: TextAlign.center,
                           style: theme.textTheme.headlineMedium,
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 12),
                         Text(
                           _manual
                               ? context.l10n.instanceSetupSubtitle
@@ -243,18 +243,23 @@ class _InstanceSetupPageState extends State<InstanceSetupPage> {
                             ),
                           ),
                         ],
-                        SizedBox(
-                          height: 12,
-                          child: Center(
-                            child: _error == null
-                                ? null
-                                : Text(
+                        AnimatedSize(
+                          duration: const Duration(milliseconds: 150),
+                          curve: Curves.easeOut,
+                          alignment: Alignment.topCenter,
+                          child: _error == null
+                              ? const SizedBox(
+                                  width: double.infinity, height: 8)
+                              : Padding(
+                                  padding:
+                                      const EdgeInsets.fromLTRB(0, 4, 0, 8),
+                                  child: Text(
                                     _error!,
                                     textAlign: TextAlign.center,
                                     style: theme.textTheme.bodySmall?.copyWith(
                                         color: theme.colorScheme.error),
                                   ),
-                          ),
+                                ),
                         ),
                         RectangleButton(
                           label: _connected
