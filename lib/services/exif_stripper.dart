@@ -4,24 +4,49 @@ import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 
 /// Removes metadata from a photo before it leaves the device.
-Future<Uint8List> stripImageMetadata(Uint8List bytes) async {
+Future<Uint8List> stripImageMetadata(
+  Uint8List bytes, {
+  int maxDimension = 0,
+  int quality = 100,
+}) async {
   try {
-    return await compute(_stripSync, bytes);
+    return await compute(_stripSync, (bytes, maxDimension, quality));
   } catch (e) {
     debugPrint('EXIF strip failed, sending original bytes: $e');
     return bytes;
   }
 }
 
-Uint8List _stripSync(Uint8List bytes) {
-  final lossless = stripJpegMetadataLossless(bytes);
-  if (lossless != null) return lossless;
+Uint8List _stripSync((Uint8List, int, int) args) {
+  final (bytes, maxDimension, quality) = args;
 
-  // Not a JPEG, we can scrub losslessly. Re-encode
-  // as a privacy fallback so metadata is still removed.
+  // A JPEG we are not asked to shrink or recompress keeps its original bytes.
+  if (maxDimension <= 0 && quality >= 100) {
+    final lossless = stripJpegMetadataLossless(bytes);
+    if (lossless != null) return lossless;
+  }
+
+  // Either we were asked to re-encode, or this is not a JPEG we can scrub
+  // losslessly. Decoding and re-encoding drops the metadata either way.
   final decoded = img.decodeImage(bytes);
   if (decoded == null) return bytes;
-  return img.encodeJpg(img.bakeOrientation(decoded), quality: 100);
+
+  var image = img.bakeOrientation(decoded);
+  if (maxDimension > 0 &&
+      (image.width > maxDimension || image.height > maxDimension)) {
+    final landscape = image.width >= image.height;
+    image = img.copyResize(
+      image,
+      width: landscape ? maxDimension : null,
+      height: landscape ? null : maxDimension,
+      interpolation: img.Interpolation.average,
+    );
+  }
+
+  // The decoder carries EXIF across into the re-encode, so clear it explicitly;
+  // orientation is already baked into the pixels.
+  image.exif = img.ExifData();
+  return img.encodeJpg(image, quality: quality.clamp(1, 100));
 }
 
 /// Rewrites a JPEG

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:krab/config.dart';
 import 'package:krab/services/profile_picture_cache.dart';
 import 'package:krab/services/avatar_cache.dart';
 import 'package:krab/services/image_disk_cache.dart';

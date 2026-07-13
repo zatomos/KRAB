@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image/image.dart' as img;
 import 'package:krab/services/exif_stripper.dart';
 
 // JPEG marker bytes.
@@ -49,7 +50,82 @@ Uint8List _buildJpeg({required int orientation}) {
   ]);
 }
 
+/// A real JPEG of [width]x[height], carrying a GPS tag that must not survive.
+Uint8List _realJpeg({required int width, required int height}) {
+  final image = img.Image(width: width, height: height);
+  // Some actual variation, so a quality drop has something to lose.
+  for (var y = 0; y < height; y++) {
+    for (var x = 0; x < width; x++) {
+      image.setPixelRgb(x, y, x % 256, y % 256, (x * y) % 256);
+    }
+  }
+  image.exif.gpsIfd['GPSLatitude'] = img.IfdValueRational(48, 1);
+  return img.encodeJpg(image, quality: 100);
+}
+
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  group('stripImageMetadata', () {
+    test('leaves a JPEG at full resolution by default', () async {
+      final out = await stripImageMetadata(_realJpeg(width: 400, height: 200));
+
+      final decoded = img.decodeJpg(out)!;
+      expect(decoded.width, 400);
+      expect(decoded.height, 200);
+    });
+
+    test('caps the longest edge of a landscape photo', () async {
+      final out = await stripImageMetadata(
+        _realJpeg(width: 400, height: 200),
+        maxDimension: 100,
+      );
+
+      final decoded = img.decodeJpg(out)!;
+      expect(decoded.width, 100);
+      expect(decoded.height, 50, reason: 'aspect ratio must be preserved');
+    });
+
+    test('caps the longest edge of a portrait photo', () async {
+      final out = await stripImageMetadata(
+        _realJpeg(width: 200, height: 400),
+        maxDimension: 100,
+      );
+
+      final decoded = img.decodeJpg(out)!;
+      expect(decoded.width, 50);
+      expect(decoded.height, 100);
+    });
+
+    test('does not upscale a photo smaller than the cap', () async {
+      final out = await stripImageMetadata(
+        _realJpeg(width: 80, height: 40),
+        maxDimension: 1000,
+      );
+
+      final decoded = img.decodeJpg(out)!;
+      expect(decoded.width, 80);
+      expect(decoded.height, 40);
+    });
+
+    test('a lower quality produces a smaller file', () async {
+      final src = _realJpeg(width: 400, height: 200);
+      final full = await stripImageMetadata(src);
+      final lossy = await stripImageMetadata(src, quality: 50);
+
+      expect(lossy.length, lessThan(full.length));
+    });
+
+    test('drops EXIF on the re-encode path', () async {
+      final out = await stripImageMetadata(
+        _realJpeg(width: 400, height: 200),
+        maxDimension: 100,
+      );
+
+      expect(img.decodeJpg(out)!.exif.gpsIfd.isEmpty, isTrue);
+    });
+  });
+
   group('stripJpegMetadataLossless', () {
     test('returns null for non-JPEG input', () {
       expect(stripJpegMetadataLossless(Uint8List.fromList([1, 2, 3])), isNull);

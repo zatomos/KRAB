@@ -27,8 +27,12 @@ Future<SupabaseResponse<String>> sendImageToGroups(
   Future<void> Function(String imageId)? onReserved,
 }) async {
   try {
-    // Strip EXIF metadata
-    final imageBytes = await stripImageMetadata(await imageFile.readAsBytes());
+    // Strip EXIF metadata, and shrink the photo if this build asks for it
+    final imageBytes = await stripImageMetadata(
+      await imageFile.readAsBytes(),
+      maxDimension: maxUploadDimension,
+      quality: uploadJpegQuality,
+    );
 
     if (imageBytes.length > maxImageUploadBytes) {
       return SupabaseResponse(

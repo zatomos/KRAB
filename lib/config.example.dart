@@ -15,3 +15,10 @@ const enableAutoUpdate = false;
 /// connect screen.
 const bakedSupabaseUrl = '';
 const bakedSupabaseAnonKey = '';
+
+/// How photos are encoded before being sent to the server.
+/// Longest edge in pixels, or 0 to leave the photo at full resolution.
+const maxUploadDimension = 0;
+
+/// JPEG quality, 1-100.
+const uploadJpegQuality = 100;
