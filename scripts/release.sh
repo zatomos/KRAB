@@ -106,9 +106,16 @@ else
   [[ "$BRANCH" == "main" ]] \
     || block "On branch '$BRANCH'. Release from main."
 
-  git fetch --tags --quiet
-  git rev-parse "$TAG" >/dev/null 2>&1 \
-    && block "Tag $TAG already exists. Bump 'version:' in pubspec.yaml."
+  git fetch --tags --prune --prune-tags --quiet 2>/dev/null || git fetch --tags --quiet
+
+  if git rev-parse "$TAG" >/dev/null 2>&1; then
+    if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+      block "Tag $TAG already exists on the remote. Bump 'version:' in pubspec.yaml."
+    else
+      block "Tag $TAG exists locally but not on the remote. Remove it and re-run:
+       git tag -d $TAG"
+    fi
+  fi
 
   PREV_TAG="$(git tag --list 'v*' --sort=-v:refname | head -1)"
   if [[ -n "$PREV_TAG" ]]; then
