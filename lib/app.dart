@@ -6,7 +6,7 @@ import 'package:krab/app_globals.dart';
 import 'package:krab/services/auth/app_auth.dart';
 import 'package:krab/services/home_widget_status.dart';
 import 'package:krab/services/home_widget_updater.dart';
-import 'package:krab/services/notification_router.dart';
+import 'package:krab/services/launch_router.dart';
 import 'package:krab/services/upload_outbox.dart';
 import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/widgets/update_checker.dart';

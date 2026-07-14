@@ -8,7 +8,7 @@ import 'package:krab/app_globals.dart';
 import 'package:krab/services/api/supabase.dart';
 import 'package:krab/services/auth/app_auth.dart';
 import 'package:krab/services/debug_notifier.dart';
-import 'package:krab/services/notification_router.dart';
+import 'package:krab/services/push_handler.dart';
 import 'package:krab/user_preferences.dart';
 
 /// Decodes a decrypted push body into the flat string map the routers expect.
