@@ -4,15 +4,11 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
-/// On-disk cache for image bytes downloaded from storage.
+/// On-disk cache for image bytes, behind `getImage`, so the feed, viewer and
+/// home-screen widget all share it.
 ///
-/// Images are immutable, as they're keyed by a per-photo UUID. Their bytes
-/// never change, so entries are kept until evicted for space.
-/// Best-effort throughout: any I/O failure is swallowed and simply behaves
-/// as a cache miss.
-///
-/// Sits behind `getImage`, so the feed, viewer, and home-screen widget all share
-/// it. Writes are atomic so a reader never sees a partial file.
+/// Photos are keyed by UUID and never change, so entries are only evicted for
+/// space. Writes are atomic, and every I/O failure is swallowed as a miss.
 class ImageDiskCache {
   ImageDiskCache._();
   static final ImageDiskCache instance = ImageDiskCache._();
@@ -76,7 +72,8 @@ class ImageDiskCache {
       final tmp = _fileFor(dir, '$key.tmp');
       await tmp.writeAsBytes(bytes, flush: true);
       await tmp.rename(_fileFor(dir, key).path);
-      debugPrint('[img-cache] WROTE $key (${(bytes.length / 1024).round()} KB)');
+      debugPrint(
+          '[img-cache] WROTE $key (${(bytes.length / 1024).round()} KB)');
     } catch (e) {
       debugPrint('[img-cache] write error $key: $e');
     } finally {

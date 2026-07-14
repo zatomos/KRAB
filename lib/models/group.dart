@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 class Group {
   final String id;
   final String name;
@@ -54,29 +52,6 @@ class Group {
       invitePermission: invitePermission ?? this.invitePermission,
       role: role ?? this.role,
     );
-  }
-
-  // Convert a Group object to a JSON Map
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'name': name,
-      'icon_url': iconUrl,
-      'created_at': createdAt,
-      'latest_image_at': latestImageAt?.toIso8601String(),
-      'invite_permission': invitePermission,
-      'role': role,
-    };
-  }
-
-  // Convert a JSON string into a Group object
-  static Group fromJsonString(String jsonString) {
-    return Group.fromJson(json.decode(jsonString));
-  }
-
-  // Convert a Group object into a JSON string
-  String toJsonString() {
-    return json.encode(toJson());
   }
 
   @override

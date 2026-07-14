@@ -10,7 +10,6 @@ import 'package:krab/services/connection_check.dart';
 import 'package:krab/services/connection_token.dart';
 import 'package:krab/services/push_helper.dart';
 import 'package:krab/services/supabase_bootstrap.dart';
-import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/user_preferences.dart';
 import 'package:krab/widgets/auth_card.dart';
 import 'package:krab/widgets/rectangle_button.dart';
@@ -74,39 +73,38 @@ class _InstanceSetupPageState extends State<InstanceSetupPage> {
     }
   }
 
-  /// Resolves the connection details from whichever mode is active. Returns null
-  /// and sets an inline error if the input is unusable.
+  /// Show an inline error, and forget any earlier successful test.
+  void _fail(String message) {
+    setState(() {
+      _error = message;
+      _connected = false;
+    });
+  }
+
+  /// Resolves the connection details. Returns null and shows an inline error
+  /// if the input is unusable.
   ({String url, String key})? _resolve() {
-    if (_manual) {
-      final url = _urlController.text.trim();
-      final key = _keyController.text.trim();
-      if (url.isEmpty || key.isEmpty) {
-        setState(() {
-          _error = context.l10n.instanceSetupMissingFields;
-          _connected = false;
-        });
+    if (!_manual) {
+      final info = ConnectionToken.decode(_tokenController.text);
+      if (info == null) {
+        _fail(context.l10n.instance_setup_bad_token);
         return null;
       }
-      final uri = Uri.tryParse(url);
-      if (uri == null || !uri.hasScheme || !uri.hasAuthority) {
-        setState(() {
-          _error = context.l10n.instanceSetupInvalidUrl;
-          _connected = false;
-        });
-        return null;
-      }
-      return (url: url, key: key);
+      return (url: info.url, key: info.anonKey);
     }
 
-    final info = ConnectionToken.decode(_tokenController.text);
-    if (info == null) {
-      setState(() {
-        _error = context.l10n.instanceSetupBadToken;
-        _connected = false;
-      });
+    final url = _urlController.text.trim();
+    final key = _keyController.text.trim();
+    if (url.isEmpty || key.isEmpty) {
+      _fail(context.l10n.instance_setup_missing_fields);
       return null;
     }
-    return (url: info.url, key: info.anonKey);
+    final uri = Uri.tryParse(url);
+    if (uri == null || !uri.hasScheme || !uri.hasAuthority) {
+      _fail(context.l10n.instance_setup_invalid_url);
+      return null;
+    }
+    return (url: url, key: key);
   }
 
   /// Probes the instance without committing to it, so the user can confirm the
@@ -131,9 +129,9 @@ class _InstanceSetupPageState extends State<InstanceSetupPage> {
         case ConnectionCheckResult.ok:
           _connected = true;
         case ConnectionCheckResult.badKey:
-          _error = context.l10n.instanceSetupTestBadKey;
+          _error = context.l10n.instance_setup_test_bad_key;
         case ConnectionCheckResult.unreachable:
-          _error = context.l10n.instanceSetupUnreachable;
+          _error = context.l10n.instance_setup_unreachable;
       }
     });
   }
@@ -163,10 +161,8 @@ class _InstanceSetupPageState extends State<InstanceSetupPage> {
     if (!ok) {
       await UserPreferences.setSupabaseConfig(url: '', anonKey: '');
       if (!mounted) return;
-      setState(() {
-        _connecting = false;
-        _error = context.l10n.instanceSetupUnreachable;
-      });
+      setState(() => _connecting = false);
+      _fail(context.l10n.instance_setup_unreachable);
       return;
     }
 
@@ -190,7 +186,7 @@ class _InstanceSetupPageState extends State<InstanceSetupPage> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      backgroundColor: GlobalThemeData.darkColorScheme.surface,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -209,15 +205,15 @@ class _InstanceSetupPageState extends State<InstanceSetupPage> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Text(
-                          context.l10n.instanceSetupTitle,
+                          context.l10n.instance_setup_title,
                           textAlign: TextAlign.center,
                           style: theme.textTheme.headlineMedium,
                         ),
                         const SizedBox(height: 12),
                         Text(
                           _manual
-                              ? context.l10n.instanceSetupSubtitle
-                              : context.l10n.instanceSetupTokenSubtitle,
+                              ? context.l10n.instance_setup_subtitle
+                              : context.l10n.instance_setup_token_subtitle,
                           textAlign: TextAlign.center,
                           style: theme.textTheme.bodyMedium,
                         ),
@@ -225,16 +221,16 @@ class _InstanceSetupPageState extends State<InstanceSetupPage> {
                         if (_manual) ...[
                           RoundedInputField(
                             controller: _urlController,
-                            hintText: context.l10n.instanceSetupUrlHint,
+                            hintText: context.l10n.instance_setup_url_hint,
                           ),
                           RoundedInputField(
                             controller: _keyController,
-                            hintText: context.l10n.instanceSetupKeyHint,
+                            hintText: context.l10n.instance_setup_key_hint,
                           ),
                         ] else ...[
                           RoundedInputField(
                             controller: _tokenController,
-                            hintText: context.l10n.instanceSetupTokenHint,
+                            hintText: context.l10n.instance_setup_token_hint,
                           ),
                           const SizedBox(height: 8),
                           Align(
@@ -243,7 +239,7 @@ class _InstanceSetupPageState extends State<InstanceSetupPage> {
                               onPressed: _connecting ? null : _pasteToken,
                               icon: const Icon(Icons.content_paste_rounded,
                                   size: 18),
-                              label: Text(context.l10n.instanceSetupPaste),
+                              label: Text(context.l10n.instance_setup_paste),
                             ),
                           ),
                         ],
@@ -267,23 +263,23 @@ class _InstanceSetupPageState extends State<InstanceSetupPage> {
                         ),
                         RectangleButton(
                           label: _connected
-                              ? context.l10n.instanceSetupConnected
+                              ? context.l10n.instance_setup_connected
                               : _testing
-                                  ? context.l10n.instanceSetupTesting
-                                  : context.l10n.instanceSetupTest,
+                                  ? context.l10n.instance_setup_testing
+                                  : context.l10n.instance_setup_test,
                           icon: _connected
                               ? Symbols.check_circle_rounded
                               : Symbols.wifi_tethering_rounded,
                           backgroundColor: _connected
                               ? Colors.green
-                              : GlobalThemeData.darkColorScheme.surface,
+                              : Theme.of(context).colorScheme.surface,
                           onPressed: _test,
                         ),
                         const SizedBox(height: 10),
                         RectangleButton(
                           label: _connecting
-                              ? context.l10n.instanceSetupConnecting
-                              : context.l10n.instanceSetupConnect,
+                              ? context.l10n.instance_setup_connecting
+                              : context.l10n.instance_setup_connect,
                           icon: Symbols.arrow_forward_rounded,
                           onPressed: _connect,
                         ),
@@ -298,8 +294,8 @@ class _InstanceSetupPageState extends State<InstanceSetupPage> {
                                   }),
                           child: Text(
                             _manual
-                                ? context.l10n.instanceSetupUseToken
-                                : context.l10n.instanceSetupUseManual,
+                                ? context.l10n.instance_setup_use_token
+                                : context.l10n.instance_setup_use_manual,
                           ),
                         ),
                       ],

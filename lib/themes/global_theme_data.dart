@@ -1,15 +1,6 @@
 import 'package:flutter/material.dart';
 
 class GlobalThemeData {
-  static ThemeData darkThemeData = ThemeData(
-    colorScheme: darkColorScheme,
-    focusColor: _darkFocusColor,
-    dialogTheme: DialogThemeData(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-    ),
-  );
-
   static const ColorScheme darkColorScheme = ColorScheme(
     primary: Color(0xffdd6b3a),
     onPrimary: Colors.black45,
@@ -26,6 +17,4 @@ class GlobalThemeData {
   );
 
   static const double dialogActionsOverflowSpacing = 8.0;
-
-  static const _darkFocusColor = Color(0xFF1a1a1a);
 }

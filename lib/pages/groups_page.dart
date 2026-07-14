@@ -38,6 +38,24 @@ class GroupsPageState extends State<GroupsPage> {
     });
   }
 
+  /// A menu entry that opens a dialog, and reloads the list if it changed one.
+  PopupMenuItem<void> _menuItem(IconData icon, String label, Widget dialog) {
+    return PopupMenuItem(
+      child: ListTile(
+        leading: Icon(icon),
+        title: Text(label),
+        onTap: () async {
+          Navigator.pop(context);
+          final changed = await showDialog<bool>(
+            context: context,
+            builder: (_) => dialog,
+          );
+          if (changed == true && mounted) _refreshData();
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -45,50 +63,19 @@ class GroupsPageState extends State<GroupsPage> {
         title: Text(context.l10n.your_groups_page_title),
         actions: [
           IconButton(
-              icon: const Icon(Icons.more_vert_rounded),
-              onPressed: () {
-                showMenu(
-                  context: context,
-                  color: GlobalThemeData.darkColorScheme.surfaceBright,
-                  position: const RelativeRect.fromLTRB(0, 100, -1, 0),
-                  items: [
-                    PopupMenuItem(
-                      child: ListTile(
-                        leading: const Icon(Symbols.group_add_rounded),
-                        title: Text(context.l10n.create_new_group),
-                        onTap: () {
-                          Navigator.pop(context);
-                          showDialog(
-                            context: context,
-                            builder: (context) => const CreateGroupDialog(),
-                          ).then((value) {
-                            if (value == true) {
-                              _refreshData();
-                            }
-                          });
-                        },
-                      ),
-                    ),
-                    PopupMenuItem(
-                      child: ListTile(
-                        leading: const Icon(Symbols.groups_rounded),
-                        title: Text(context.l10n.join_group),
-                        onTap: () {
-                          Navigator.pop(context);
-                          showDialog(
-                            context: context,
-                            builder: (context) => const JoinGroupDialog(),
-                          ).then((value) {
-                            if (value == true) {
-                              _refreshData();
-                            }
-                          });
-                        },
-                      ),
-                    ),
-                  ],
-                );
-              }),
+            icon: const Icon(Icons.more_vert_rounded),
+            onPressed: () => showMenu(
+              context: context,
+              color: Theme.of(context).colorScheme.surfaceBright,
+              position: const RelativeRect.fromLTRB(0, 100, -1, 0),
+              items: [
+                _menuItem(Symbols.group_add_rounded,
+                    context.l10n.create_new_group, const CreateGroupDialog()),
+                _menuItem(Symbols.groups_rounded, context.l10n.join_group,
+                    const JoinGroupDialog()),
+              ],
+            ),
+          ),
         ],
       ),
       body: Column(
@@ -137,7 +124,7 @@ class GroupsPageState extends State<GroupsPage> {
 class _RecentPhotosCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    final scheme = GlobalThemeData.darkColorScheme;
+    final scheme = Theme.of(context).colorScheme;
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       elevation: 0,
@@ -170,16 +157,61 @@ class _RecentPhotosCard extends StatelessWidget {
 }
 
 /// Join group dialog where the user pastes an invite token.
-class JoinGroupDialog extends StatefulWidget {
+class JoinGroupDialog extends StatelessWidget {
   const JoinGroupDialog({super.key});
 
   @override
-  JoinGroupDialogState createState() => JoinGroupDialogState();
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    return _GroupFormDialog(
+      title: l10n.join_group,
+      hintText: l10n.enter_invite,
+      emptyError: l10n.invite_empty,
+      submitLabel: l10n.join,
+      submitIcon: Symbols.groups_rounded,
+      successMessage: l10n.group_joined_success,
+      onSubmit: (token) async {
+        final res = await joinGroupByInvite(token);
+        return res.success
+            ? null
+            : l10n.group_code_invalid(res.error ?? l10n.unknown_error);
+      },
+    );
+  }
 }
 
-class JoinGroupDialogState extends State<JoinGroupDialog> {
+/// One text field and a submit button, for the actions that add a group to the
+/// user's list. Pops true once the group list has changed.
+class _GroupFormDialog extends StatefulWidget {
+  final String title;
+  final String hintText;
+  final String emptyError;
+  final String submitLabel;
+  final IconData submitIcon;
+  final String successMessage;
+  final int? maxLength;
+
+  /// Returns null on success, or the message to show under the field.
+  final Future<String?> Function(String value) onSubmit;
+
+  const _GroupFormDialog({
+    required this.title,
+    required this.hintText,
+    required this.emptyError,
+    required this.submitLabel,
+    required this.submitIcon,
+    required this.successMessage,
+    required this.onSubmit,
+    this.maxLength,
+  });
+
+  @override
+  State<_GroupFormDialog> createState() => _GroupFormDialogState();
+}
+
+class _GroupFormDialogState extends State<_GroupFormDialog> {
   final TextEditingController _controller = TextEditingController();
-  String? error;
+  String? _error;
   bool _loading = false;
 
   @override
@@ -188,58 +220,54 @@ class JoinGroupDialogState extends State<JoinGroupDialog> {
     super.dispose();
   }
 
-  Future<void> _joinGroup() async {
+  Future<void> _submit() async {
     if (_loading) return;
     setState(() {
-      error = null;
+      _error = null;
       _loading = true;
     });
-    final token = _controller.text.trim();
-    if (token.isEmpty) {
+
+    final value = _controller.text.trim();
+    if (value.isEmpty) {
       setState(() {
-        error = context.l10n.invite_empty;
+        _error = widget.emptyError;
         _loading = false;
       });
       return;
     }
+
+    String? error;
     try {
-      final response = await joinGroupByInvite(token);
-      if (!mounted) return;
-      if (!response.success) {
-        setState(() {
-          error =
-              context.l10n.group_code_invalid(context.errorOr(response.error));
-          _loading = false;
-        });
-        return;
-      }
-      cacheUserGroupsForWidget();
-      Navigator.of(context).pop(true);
-      showSnackBar(context.l10n.group_joined_success, color: Colors.green);
+      error = await widget.onSubmit(value);
     } catch (e) {
-      if (!mounted) return;
+      error = e.toString();
+    }
+    if (!mounted) return;
+
+    if (error != null) {
       setState(() {
-        error = e.toString();
+        _error = error;
         _loading = false;
       });
+      return;
     }
+
+    cacheUserGroupsForWidget();
+    Navigator.of(context).pop(true);
+    showSnackBar(widget.successMessage, tone: SnackTone.success);
   }
 
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(context.l10n.join_group),
+      title: Text(widget.title),
       content: SizedBox(
         width: double.maxFinite,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            RoundedInputField(
-              controller: _controller,
-              hintText: context.l10n.enter_invite,
-              errorText: error,
-            ),
-          ],
+        child: RoundedInputField(
+          controller: _controller,
+          hintText: widget.hintText,
+          errorText: _error,
+          maxLength: widget.maxLength,
         ),
       ),
       actionsOverflowButtonSpacing:
@@ -248,19 +276,20 @@ class JoinGroupDialogState extends State<JoinGroupDialog> {
         SoftButton(
           onPressed: () => Navigator.of(context).pop(),
           label: context.l10n.cancel,
-          color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
         ),
         if (_loading)
           const SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2))
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          )
         else
           SoftButton(
-            onPressed: _joinGroup,
-            label: context.l10n.join,
-            icon: Symbols.groups_rounded,
-            color: GlobalThemeData.darkColorScheme.primary,
+            onPressed: _submit,
+            label: widget.submitLabel,
+            icon: widget.submitIcon,
+            color: Theme.of(context).colorScheme.primary,
           ),
       ],
     );
@@ -268,103 +297,26 @@ class JoinGroupDialogState extends State<JoinGroupDialog> {
 }
 
 /// Create group dialog where the user enters a group name.
-class CreateGroupDialog extends StatefulWidget {
+class CreateGroupDialog extends StatelessWidget {
   const CreateGroupDialog({super.key});
 
   @override
-  CreateGroupDialogState createState() => CreateGroupDialogState();
-}
-
-class CreateGroupDialogState extends State<CreateGroupDialog> {
-  final TextEditingController _controller = TextEditingController();
-  String? error;
-  bool _loading = false;
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  Future<void> _createGroup() async {
-    if (_loading) return;
-    setState(() {
-      error = null;
-      _loading = true;
-    });
-
-    final name = _controller.text.trim();
-    if (name.isEmpty) {
-      setState(() {
-        error = context.l10n.group_name_empty_error;
-        _loading = false;
-      });
-      return;
-    }
-
-    try {
-      final response = await createGroup(name);
-      if (!mounted) return;
-      if (!response.success) {
-        setState(() {
-          error = context.l10n
-              .error_creating_group(context.errorOr(response.error));
-          _loading = false;
-        });
-        return;
-      }
-
-      cacheUserGroupsForWidget();
-      Navigator.of(context).pop(true);
-      showSnackBar(context.l10n.group_created_success, color: Colors.green);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        error = e.toString();
-        _loading = false;
-      });
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(context.l10n.create_group),
-      content: SizedBox(
-        width: double.maxFinite,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            RoundedInputField(
-              controller: _controller,
-              hintText: context.l10n.enter_group_name,
-              errorText: error,
-              maxLength: 19,
-            ),
-          ],
-        ),
-      ),
-      actionsOverflowButtonSpacing:
-          GlobalThemeData.dialogActionsOverflowSpacing,
-      actions: [
-        SoftButton(
-          onPressed: () => Navigator.of(context).pop(),
-          label: context.l10n.cancel,
-          color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
-        ),
-        if (_loading)
-          const SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2))
-        else
-          SoftButton(
-            onPressed: _createGroup,
-            label: context.l10n.create,
-            icon: Symbols.group_add_rounded,
-            color: GlobalThemeData.darkColorScheme.primary,
-          ),
-      ],
+    final l10n = context.l10n;
+    return _GroupFormDialog(
+      title: l10n.create_group,
+      hintText: l10n.enter_group_name,
+      emptyError: l10n.group_name_empty_error,
+      submitLabel: l10n.create,
+      submitIcon: Symbols.group_add_rounded,
+      successMessage: l10n.group_created_success,
+      maxLength: 19,
+      onSubmit: (name) async {
+        final res = await createGroup(name);
+        return res.success
+            ? null
+            : l10n.error_creating_group(res.error ?? l10n.unknown_error);
+      },
     );
   }
 }

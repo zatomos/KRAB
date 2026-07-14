@@ -148,7 +148,7 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
         SoftButton(
           onPressed: () => Navigator.pop(context),
           label: context.l10n.cancel,
-          color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
         ),
         if (_saving)
           const SizedBox(
@@ -160,7 +160,7 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
           SoftButton(
             label: context.l10n.save,
             onPressed: _save,
-            color: GlobalThemeData.darkColorScheme.primary,
+            color: Theme.of(context).colorScheme.primary,
             icon: Icons.check_rounded,
           ),
       ],

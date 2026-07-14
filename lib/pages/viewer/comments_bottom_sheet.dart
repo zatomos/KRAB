@@ -269,14 +269,16 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
       await _refreshAndReportCount();
       if (mounted) {
         setState(() => _isSending = false);
-        showSnackBar(context.l10n.comment_added_success, color: Colors.green);
+        showSnackBar(context.l10n.comment_added_success,
+            tone: SnackTone.success);
       }
     } else {
       if (mounted) {
         setState(() => _isSending = false);
         showSnackBar(
-            context.l10n.error_adding_comment(context.errorOr(response.error)),
-            color: Colors.red);
+            context.l10n
+                .error_adding_comment(context.errorText(response.error)),
+            tone: SnackTone.failure);
       }
     }
   }
@@ -298,15 +300,16 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
       });
       await _fetchComments();
       if (mounted) {
-        showSnackBar(context.l10n.comment_updated_success, color: Colors.green);
+        showSnackBar(context.l10n.comment_updated_success,
+            tone: SnackTone.success);
       }
     } else {
       if (mounted) {
         setState(() => _isSending = false);
         showSnackBar(
             context.l10n
-                .error_updating_comment(context.errorOr(response.error)),
-            color: Colors.red);
+                .error_updating_comment(context.errorText(response.error)),
+            tone: SnackTone.failure);
       }
     }
   }
@@ -331,22 +334,31 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
       }
       await _refreshAndReportCount();
       if (!mounted) return;
-      showSnackBar(context.l10n.comment_deleted_success, color: Colors.green);
+      showSnackBar(context.l10n.comment_deleted_success,
+          tone: SnackTone.success);
     } else {
       showSnackBar(
-        context.l10n.error_deleting_comment(context.errorOr(response.error)),
-        color: Colors.red,
+        context.l10n.error_deleting_comment(context.errorText(response.error)),
+        tone: SnackTone.failure,
       );
     }
   }
 
+  /// Drop any reply or edit in progress.
+  void _clearComposeTarget() {
+    _editingCommentId = null;
+    _editingGroupId = null;
+    _replyingToCommentId = null;
+    _replyingToUsername = null;
+    _replyingGroupId = null;
+  }
+
   void _startReply(Comment comment, String username, String groupId) {
     setState(() {
+      _clearComposeTarget();
       _replyingToCommentId = comment.id;
       _replyingToUsername = username;
       _replyingGroupId = groupId;
-      _editingCommentId = null;
-      _editingGroupId = null;
     });
     _newCommentController.clear();
     _focusInput();
@@ -362,11 +374,9 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
 
   void _startEdit(Comment comment, String groupId) {
     setState(() {
+      _clearComposeTarget();
       _editingCommentId = comment.id;
       _editingGroupId = groupId;
-      _replyingToCommentId = null;
-      _replyingToUsername = null;
-      _replyingGroupId = null;
       _newCommentController.text = comment.text;
       // Put the cursor at the end of the existing text
       _newCommentController.selection = TextSelection.collapsed(
@@ -388,12 +398,8 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
   /// Start composing a brand-new top-level comment in section's group.
   void _composeIn(_GroupCommentSection section) {
     setState(() {
+      _clearComposeTarget();
       _composingGroupId = section.groupId;
-      _editingCommentId = null;
-      _editingGroupId = null;
-      _replyingToCommentId = null;
-      _replyingToUsername = null;
-      _replyingGroupId = null;
       _expandedGroupIds.add(section.groupId);
     });
     _newCommentController.clear();
@@ -775,12 +781,23 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
         ],
         if (_editingCommentId != null) ...[
           const SizedBox(height: 8),
-          _editBanner(),
+          _contextBanner(
+            icon: Symbols.edit_rounded,
+            text: context.l10n.editing_comment,
+            onCancel: _cancelEdit,
+          ),
           const SizedBox(height: 8),
         ],
         if (_replyingToCommentId != null) ...[
           const SizedBox(height: 8),
-          _replyBanner(),
+          _contextBanner(
+            icon: Symbols.reply_rounded,
+            text: _replyBannerText(),
+            onCancel: () {
+              _cancelReply();
+              _inputFocusNode.unfocus();
+            },
+          ),
           const SizedBox(height: 8),
         ],
         _inputRow(interactive: interactive),
@@ -788,8 +805,13 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
     );
   }
 
-  /// "Editing comment" context banner.
-  Widget _editBanner() {
+  /// The editing comment/replying to context banner above the composer.
+  Widget _contextBanner({
+    required IconData icon,
+    required String text,
+    required VoidCallback onCancel,
+  }) {
+    final muted = Theme.of(context).colorScheme.onSurfaceVariant;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
@@ -798,59 +820,14 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
       ),
       child: Row(
         children: [
-          Icon(Symbols.edit_rounded,
-              size: 18, color: Theme.of(context).colorScheme.onSurfaceVariant),
+          Icon(icon, size: 18, color: muted),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(
-              context.l10n.editing_comment,
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                fontSize: 14,
-              ),
-            ),
+            child: Text(text, style: TextStyle(color: muted, fontSize: 14)),
           ),
           GestureDetector(
-            onTap: _cancelEdit,
-            child: Icon(Symbols.close_rounded,
-                size: 24,
-                color: Theme.of(context).colorScheme.onSurfaceVariant),
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// "Replying to …" context banner.
-  Widget _replyBanner() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        children: [
-          Icon(Symbols.reply_rounded,
-              size: 18, color: Theme.of(context).colorScheme.onSurfaceVariant),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              _replyBannerText(),
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                fontSize: 14,
-              ),
-            ),
-          ),
-          GestureDetector(
-            onTap: () {
-              _cancelReply();
-              _inputFocusNode.unfocus();
-            },
-            child: Icon(Symbols.close_rounded,
-                size: 24,
-                color: Theme.of(context).colorScheme.onSurfaceVariant),
+            onTap: onCancel,
+            child: Icon(Symbols.close_rounded, size: 24, color: muted),
           ),
         ],
       ),

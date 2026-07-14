@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
@@ -13,7 +12,8 @@ import 'package:krab/models/image_ref.dart';
 import 'package:krab/pages/group_settings_page.dart';
 import 'package:krab/pages/groups_page.dart';
 import 'package:krab/pages/viewer/image_viewer_page.dart';
-import 'package:krab/services/reaction_cache.dart';
+import 'package:krab/services/cache/feed_image_cache.dart';
+import 'package:krab/services/cache/reaction_cache.dart';
 import 'package:krab/widgets/avatars/user_avatar.dart';
 
 /// Number of images fetched per page in both the single-group and cross-group
@@ -56,20 +56,9 @@ class ImageFeedPageState extends State<ImageFeedPage> {
   bool _hasNewPhotos = false;
   StreamSubscription<NewImageEvent>? _newImageSub;
 
-  /// Caches
-  final Map<String, Uint8List> _lowResCache = {};
-  final Map<String, Uint8List> _fullResCache = {};
-  final Map<String, Future<Uint8List?>> _fullResFutureCache = {};
-  final Map<String, Future<ImageData>> _imageFutureCache = {};
-  final Map<String, krab_user.User> _userCache = {};
-  final Map<String, int> _commentCountCache = {};
-  final Map<String, int> _reactionCountCache = {};
-
-  /// LRU bound on how many images' bytes are retained.
-  static const int _maxCachedImages = 60;
-  final List<String> _lruOrder = [];
-  static const int _maxFullResImages = 5;
-  final List<String> _fullResLru = [];
+  /// The bytes, uploaders and tallies for the images on screen. Shared with the
+  /// viewer this page opens.
+  late final FeedImageCache _cache = FeedImageCache(groupId: _groupId);
 
   @override
   void initState() {
@@ -131,52 +120,62 @@ class ImageFeedPageState extends State<ImageFeedPage> {
         pages++;
       }
 
-      final initialData = await _getImageDataFuture(widget.imageId!);
-      if (!mounted) return;
-      final initialSize = await decodeImageSize(initialData.imageBytes);
+      final initialData = await _cache.imageData(widget.imageId!);
       if (!mounted) return;
 
       // The image is somewhere in the loaded feed: open the gallery on it, with
-      // its neighbors to swipe through.
-      // If it isn't, show it on its own rather than opening the gallery
-      // at index 0.
+      // its neighbors to swipe through. If it isn't, show it on its own rather
+      // than opening the gallery at index 0.
       final found = index >= 0;
-      final images = found
-          ? _images
-          : [
-              ImageRef(
-                id: widget.imageId!,
-                uploadedBy: initialData.uploadedBy,
-                uploadedAt: DateTime.tryParse(initialData.createdAt),
-              )
-            ];
-
-      Navigator.push(
-        context,
-        _viewerRoute(ImageViewerPage(
-          images: images,
-          initialIndex: found ? index : 0,
-          initialImageData: initialData,
-          initialImageSize: initialSize,
-          groupId: _groupId,
-          getImageData: _getImageDataFuture,
-          getOrStartFullResFuture: _getOrStartFullResFuture,
-          getCachedImage: _getCachedImage,
-          commentCountCache: _commentCountCache,
-          userCache: _userCache,
-          onCommentCountChanged: _onCommentCountChanged,
-          onImageDeleted: _onImageDeleted,
-          onImageChanged: found ? _revealTile : null,
-          loadMore: found ? _loadMore : null,
-          hasMore: found ? () => _hasMore : null,
-        )),
-      ).then((_) {
-        // Reaction badges may have changed in the viewer; rebuild
-        if (mounted) setState(() {});
-      });
+      await _openViewer(
+        images: found
+            ? _images
+            : [
+                ImageRef(
+                  id: widget.imageId!,
+                  uploadedBy: initialData.uploadedBy,
+                  uploadedAt: DateTime.tryParse(initialData.createdAt),
+                )
+              ],
+        index: found ? index : 0,
+        data: initialData,
+        paginated: found,
+      );
     } catch (err) {
       debugPrint("Failed to preload image: $err");
     }
+  }
+
+  /// Open the full-screen gallery on one image..
+  Future<void> _openViewer({
+    required List<ImageRef> images,
+    required int index,
+    required ImageData data,
+    bool paginated = true,
+  }) async {
+    // Decode the size first so the viewer's hero flight is stable.
+    final initialSize = await decodeImageSize(data.imageBytes);
+    if (!mounted) return;
+
+    await Navigator.push(
+      context,
+      _viewerRoute(ImageViewerPage(
+        images: images,
+        initialIndex: index,
+        initialImageData: data,
+        initialImageSize: initialSize,
+        groupId: _groupId,
+        cache: _cache,
+        onCommentCountChanged: _onCommentCountChanged,
+        onImageDeleted: _onImageDeleted,
+        onImageChanged: paginated ? _revealTile : null,
+        loadMore: paginated ? _loadMore : null,
+        hasMore: paginated ? () => _hasMore : null,
+      )),
+    );
+
+    // Reaction badges may have changed in the viewer; rebuild.
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadInitial() async {
@@ -267,167 +266,20 @@ class ImageFeedPageState extends State<ImageFeedPage> {
   void dispose() {
     _newImageSub?.cancel();
     _scrollController.dispose();
-    _lowResCache.clear();
-    _fullResCache.clear();
-    _fullResFutureCache.clear();
-    _imageFutureCache.clear();
-    _userCache.clear();
-    _commentCountCache.clear();
-    _reactionCountCache.clear();
-    _lruOrder.clear();
-    _fullResLru.clear();
+    _cache.clear();
     super.dispose();
-  }
-
-  Future<Uint8List?> _getCachedImage(String imageId,
-      {bool lowRes = true}) async {
-    final cache = lowRes ? _lowResCache : _fullResCache;
-    if (cache.containsKey(imageId)) {
-      debugPrint("[feed] bytes HIT $imageId (${lowRes ? 'low' : 'full'})");
-      return cache[imageId];
-    }
-
-    final response = await getImage(imageId, lowRes: lowRes);
-    if (response.success && response.data != null) {
-      cache[imageId] = response.data!;
-      if (!lowRes) _touchFullRes(imageId);
-      return response.data!;
-    }
-    return null;
   }
 
   /// Drop a deleted image from the list and every cache so it disappears from
   /// the grid.
   void _onImageDeleted(String imageId) {
-    _dropImage(imageId);
-    _commentCountCache.remove(imageId);
-    _reactionCountCache.remove(imageId);
-    _lruOrder.remove(imageId);
+    _cache.evict(imageId);
     if (!mounted) return;
     setState(() => _images.removeWhere((img) => img.id == imageId));
   }
 
-  Future<ImageData> _getImageDataFuture(String imageId) {
-    // Mark as most-recently used and evict stale images before reading, so a
-    // just-touched image is never the one dropped.
-    _touchCache(imageId);
-    final cached = _imageFutureCache[imageId];
-    if (cached != null) {
-      debugPrint("[feed] memo HIT $imageId (imageData)");
-      return cached;
-    }
-    final future = _fetchImageData(imageId);
-    _imageFutureCache[imageId] = future;
-    return future;
-  }
-
-  /// Record imageId as most-recently accessed and drop the byte caches of any
-  /// images that fall outside the LRU window.
-  void _touchCache(String imageId) {
-    _lruOrder
-      ..remove(imageId)
-      ..add(imageId);
-    while (_lruOrder.length > _maxCachedImages) {
-      _dropImage(_lruOrder.removeAt(0));
-    }
-  }
-
-  /// The same for the full-resolution bytes.
-  void _touchFullRes(String imageId) {
-    _fullResLru
-      ..remove(imageId)
-      ..add(imageId);
-    while (_fullResLru.length > _maxFullResImages) {
-      final evicted = _fullResLru.removeAt(0);
-      _fullResCache.remove(evicted);
-      _fullResFutureCache.remove(evicted);
-    }
-  }
-
-  /// Forget everything held for one image.
-  void _dropImage(String imageId) {
-    _lowResCache.remove(imageId);
-    _fullResCache.remove(imageId);
-    _fullResFutureCache.remove(imageId);
-    _imageFutureCache.remove(imageId);
-    _fullResLru.remove(imageId);
-  }
-
-  Future<Uint8List?> _getOrStartFullResFuture(String imageId) {
-    _touchFullRes(imageId);
-    if (_fullResFutureCache.containsKey(imageId)) {
-      debugPrint("[feed] memo HIT $imageId (fullres)");
-      return _fullResFutureCache[imageId]!;
-    }
-    final future = _getCachedImage(imageId, lowRes: false);
-    _fullResFutureCache[imageId] = future;
-    return future;
-  }
-
-  Future<ImageData> _fetchImageData(String imageId) async {
-    // Run the RPC calls in parallel
-    final bytesFuture = _getCachedImage(imageId, lowRes: true);
-    final detailsFuture = getImageDetails(imageId);
-    final countFuture = _commentCountCache.containsKey(imageId)
-        ? null
-        : (_groupId != null
-            ? getCommentCount(imageId, _groupId!)
-            : getImageCommentCount(imageId));
-    final reactionsFuture =
-        _reactionCountCache.containsKey(imageId) ? null : getImageReactions(imageId);
-
-    final imageBytes = await bytesFuture;
-    if (imageBytes == null) throw Exception("Error downloading low-res image");
-
-    final imageDetailsResponse = await detailsFuture;
-    if (!imageDetailsResponse.success || imageDetailsResponse.data == null) {
-      throw Exception(
-          "Error fetching image details: ${imageDetailsResponse.error}");
-    }
-
-    final imageDetails = imageDetailsResponse.data!;
-    final uploaderId = imageDetails.uploadedBy;
-
-    // Cache username
-    if (!_userCache.containsKey(uploaderId)) {
-      final userResponse = await getUserDetails(uploaderId);
-      _userCache[uploaderId] =
-          (userResponse.success && userResponse.data != null)
-              ? userResponse.data!
-              : krab_user.User(id: uploaderId, username: "");
-    }
-
-    // Cache comment count
-    if (countFuture != null) {
-      final commentResponse = await countFuture;
-      _commentCountCache[imageId] =
-          (commentResponse.success && commentResponse.data != null)
-              ? commentResponse.data!
-              : 0;
-    }
-
-    // Cache total reaction count
-    if (reactionsFuture != null) {
-      final reactionsResponse = await reactionsFuture;
-      _reactionCountCache[imageId] = (reactionsResponse.success &&
-              reactionsResponse.data != null)
-          ? reactionsResponse.data!.fold<int>(
-              0, (sum, e) => sum + ((e['count'] as num?)?.toInt() ?? 0))
-          : 0;
-    }
-
-    return ImageData(
-      imageBytes: imageBytes,
-      uploadedBy: uploaderId,
-      createdAt: imageDetails.createdAt,
-      description: imageDetails.description,
-    );
-  }
-
   void _onCommentCountChanged(String imageId, int delta) {
-    setState(() {
-      _commentCountCache[imageId] = (_commentCountCache[imageId] ?? 0) + delta;
-    });
+    setState(() => _cache.addToCommentCount(imageId, delta));
   }
 
   /// Pull-to-refresh
@@ -436,14 +288,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
     if (!mounted || !response.success || response.data == null) return;
     final page = response.data!;
     setState(() {
-      _lowResCache.clear();
-      _fullResCache.clear();
-      _fullResFutureCache.clear();
-      _imageFutureCache.clear();
-      _userCache.clear();
-      _commentCountCache.clear();
-      _reactionCountCache.clear();
-      _lruOrder.clear();
+      _cache.clear();
       _images
         ..clear()
         ..addAll(page);
@@ -613,7 +458,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
     final imageId = _images[index].id;
 
     return FutureBuilder<ImageData>(
-      future: _getImageDataFuture(imageId),
+      future: _cache.imageData(imageId),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Container(
@@ -632,41 +477,16 @@ class ImageFeedPageState extends State<ImageFeedPage> {
         }
 
         final imageData = snapshot.data!;
-        final uploader = _userCache[imageData.uploadedBy] ??
-            krab_user.User(
-              id: imageData.uploadedBy,
-              username: "",
-            );
+        final uploader = _cache.user(imageData.uploadedBy) ??
+            krab_user.User(id: imageData.uploadedBy, username: "");
+        final hasDescription = imageData.description?.isNotEmpty ?? false;
+        final reactions = _reactionCountFor(imageId);
+        final comments = _cache.commentCount(imageId);
 
         return GestureDetector(
-          onTap: () async {
-            _getOrStartFullResFuture(imageId);
-            // Decode the size first so the viewer's hero flight is stable
-            final initialSize = await decodeImageSize(imageData.imageBytes);
-            if (!context.mounted) return;
-            Navigator.push(
-              context,
-              _viewerRoute(ImageViewerPage(
-                images: _images,
-                initialIndex: index,
-                initialImageData: imageData,
-                initialImageSize: initialSize,
-                groupId: _groupId,
-                getImageData: _getImageDataFuture,
-                getOrStartFullResFuture: _getOrStartFullResFuture,
-                getCachedImage: _getCachedImage,
-                commentCountCache: _commentCountCache,
-                userCache: _userCache,
-                onCommentCountChanged: _onCommentCountChanged,
-                onImageDeleted: _onImageDeleted,
-                onImageChanged: _revealTile,
-                loadMore: _loadMore,
-                hasMore: () => _hasMore,
-              )),
-            ).then((_) {
-              // Reaction badges may have changed in the viewer; rebuild
-              if (mounted) setState(() {});
-            });
+          onTap: () {
+            _cache.fullResBytes(imageId);
+            _openViewer(images: _images, index: index, data: imageData);
           },
           child: ClipRRect(
             borderRadius: BorderRadius.circular(10),
@@ -683,45 +503,36 @@ class ImageFeedPageState extends State<ImageFeedPage> {
                   ),
                 ),
                 Positioned(
-                  bottom: (imageData.description != null &&
-                          imageData.description!.isNotEmpty)
-                      ? 12
-                      : 8,
-                  right: (imageData.description != null &&
-                          imageData.description!.isNotEmpty)
-                      ? 12
-                      : 8,
+                  bottom: hasDescription ? 12 : 8,
+                  right: hasDescription ? 12 : 8,
                   child: UserAvatar(uploader, radius: 20),
                 ),
-                if (_reactionCountFor(imageId) > 0 ||
-                    (_commentCountCache[imageId] ?? 0) > 0)
+                if (reactions > 0 || comments > 0)
                   Positioned(
                     top: 8,
                     right: 8,
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
+                      spacing: 4,
                       children: [
-                        if (_reactionCountFor(imageId) > 0)
+                        if (reactions > 0)
                           _countBadge(
                             Symbols.emoji_emotions_rounded,
-                            _reactionCountFor(imageId),
-                            borderColor: const Color(0xFFFFC107).withValues(alpha: 0.8)
+                            reactions,
+                            borderColor:
+                                const Color(0xFFFFC107).withValues(alpha: 0.8),
                           ),
-                        if (_reactionCountFor(imageId) > 0 &&
-                            (_commentCountCache[imageId] ?? 0) > 0)
-                          const SizedBox(width: 4),
-                        if ((_commentCountCache[imageId] ?? 0) > 0)
+                        if (comments > 0)
                           _countBadge(
                             Symbols.comment_rounded,
-                            _commentCountCache[imageId]!,
+                            comments,
                             borderColor:
                                 const Color(0xFF42A5F5).withValues(alpha: 0.8),
                           ),
                       ],
                     ),
                   ),
-                if (imageData.description != null &&
-                    imageData.description!.isNotEmpty)
+                if (hasDescription)
                   Positioned(
                     bottom: 6,
                     right: 6,
@@ -748,7 +559,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
 
   /// Total reactions for an image's badge
   int _reactionCountFor(String imageId) =>
-      cachedReactionTotal(imageId) ?? _reactionCountCache[imageId] ?? 0;
+      cachedReactionTotal(imageId) ?? _cache.reactionCount(imageId);
 
   /// A small frosted count badge for the grid tile corner.
   Widget _countBadge(IconData icon, int count, {Color? borderColor}) {
@@ -757,8 +568,9 @@ class ImageFeedPageState extends State<ImageFeedPage> {
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.6),
         borderRadius: BorderRadius.circular(10),
-        border:
-            borderColor != null ? Border.all(color: borderColor, width: 1) : null,
+        border: borderColor != null
+            ? Border.all(color: borderColor, width: 1)
+            : null,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

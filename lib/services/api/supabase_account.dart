@@ -4,11 +4,10 @@ part of 'supabase.dart';
 
 /// Stores the caller's Web Push subscription so the backend can push to it.
 ///
-/// [endpoint] is where the user's push service accepts messages; [p256dh] and
-/// [auth] are the keys the backend needs to encrypt a payload that only this
-/// device can open. All three come from the distributor, and any of
-/// them can change at any launch, so this is called on every new endpoint
-/// rather than once at sign-up.
+/// endpoint is where the user's push service accepts messages; p256dh and
+/// auth let the backend encrypt a payload only this device can open. All three
+/// come from the distributor and any of them can change at any launch, so this
+/// is called on every new endpoint rather than once at sign-up.
 Future<SupabaseResponse<void>> savePushSubscription({
   required String endpoint,
   required String p256dh,
@@ -16,35 +15,23 @@ Future<SupabaseResponse<void>> savePushSubscription({
   String? username,
 }) async {
   if (!AppAuth.instance.isLoggedIn) {
-    return SupabaseResponse(success: false, error: "No authenticated user");
+    return SupabaseResponse(success: false, error: errorNotLoggedIn);
   }
-
-  try {
-    final response = await supabase.rpc("register_push_subscription", params: {
-      "p_endpoint": endpoint,
-      "p_p256dh": p256dh,
-      "p_auth": auth,
-      if (username != null) "p_username": username,
-    });
-
-    if (response["success"] == false) {
-      return SupabaseResponse(
-          success: false, error: response["error"]?.toString());
-    }
-    return SupabaseResponse(success: true);
-  } catch (error) {
-    return SupabaseResponse(
-      success: false,
-      error: "Error saving push subscription: $error",
-    );
-  }
+  return _rpc("register_push_subscription",
+      params: {
+        "p_endpoint": endpoint,
+        "p_p256dh": p256dh,
+        "p_auth": auth,
+        if (username != null) "p_username": username,
+      },
+      errorContext: "saving push subscription");
 }
 
 /// Drops the caller's Web Push subscription, so the backend stops pushing to a
 /// device the user has signed out of.
 Future<SupabaseResponse<void>> clearPushSubscription() async {
   if (!AppAuth.instance.isLoggedIn) {
-    return SupabaseResponse(success: false, error: "No authenticated user");
+    return SupabaseResponse(success: false, error: errorNotLoggedIn);
   }
 
   try {
@@ -55,18 +42,12 @@ Future<SupabaseResponse<void>> clearPushSubscription() async {
     }).eq('id', AppAuth.instance.currentUserId!);
     return SupabaseResponse(success: true);
   } catch (error) {
-    return SupabaseResponse(
-      success: false,
-      error: "Error clearing push subscription: $error",
-    );
+    return _failure(error, "clearing the push subscription");
   }
 }
 
-/// Fetches this instance's public settings and caches them.
-/// Called once a backend is known, before login.
-/// Every caller treats a failure here as non-fatal and carries on with whatever
-/// was cached, so a failure has to be loud in the log or it is invisible: the
-/// only symptom is a feature quietly not appearing.
+/// Fetches this instance's public settings and caches them, once a backend is
+/// known and before login.
 Future<SupabaseResponse<void>> fetchInstanceConfig() async {
   try {
     final res = await supabase.functions.invoke('instance-config');
@@ -74,10 +55,7 @@ Future<SupabaseResponse<void>> fetchInstanceConfig() async {
     final body = res.data;
     if (body is! Map) {
       debugPrint('InstanceConfig: unexpected response body: $body');
-      return SupabaseResponse(
-        success: false,
-        error: "This instance returned no configuration",
-      );
+      return SupabaseResponse(success: false, error: errorServer);
     }
 
     String field(String key) => (body[key] as String?) ?? '';
@@ -99,10 +77,7 @@ Future<SupabaseResponse<void>> fetchInstanceConfig() async {
     return SupabaseResponse(success: true);
   } catch (error) {
     debugPrint('InstanceConfig: fetch failed: $error');
-    return SupabaseResponse(
-      success: false,
-      error: "Error fetching the instance configuration: $error",
-    );
+    return _failure(error, "fetching the instance configuration");
   }
 }
 
@@ -202,7 +177,7 @@ Future<SupabaseResponse<void>> logOut() async {
   } catch (error) {
     // Reset the flag if logout fails
     DebugNotifier.instance.resetIntentionalLogout();
-    return SupabaseResponse(success: false, error: "Error signing out: $error");
+    return _failure(error, "signing out");
   }
 }
 
@@ -212,7 +187,7 @@ Future<SupabaseResponse<void>> deleteAccount() async {
   try {
     final userId = AppAuth.instance.currentUserId;
     if (userId == null || !AppAuth.instance.isLoggedIn) {
-      return SupabaseResponse(success: false, error: "No current user");
+      return SupabaseResponse(success: false, error: errorNotLoggedIn);
     }
 
     final res = await supabase.rpc("delete_account");
@@ -231,99 +206,72 @@ Future<SupabaseResponse<void>> deleteAccount() async {
     await logOut();
     return SupabaseResponse(success: true);
   } catch (error) {
-    return SupabaseResponse(
-        success: false, error: "Error deleting account: $error");
+    return _failure(error, "deleting the account");
   }
 }
 
-/// Get the username for a given user ID.
+/// Get the username and profile picture for a given user ID.
 Future<SupabaseResponse<krab_user.User>> getUserDetails(String userId) async {
   try {
-    final supabase = Supabase.instance.client;
-
-    // Get username
-    final usernameResponse =
+    final username =
         await supabase.rpc('get_username', params: {'user_id': userId});
-    if (usernameResponse == null || usernameResponse == '') {
-      return SupabaseResponse(
-          success: false, error: 'Could not get username for this user');
+    if (username == null || username == '') {
+      return SupabaseResponse(success: false, error: errorServer);
     }
 
-    final username = usernameResponse as String;
-    debugPrint("Fetched username for $userId: $username");
-
-    // Cached signed URL
     final pfpUrl = await ProfilePictureCache.of(supabase)
         .getUrl(userId, ttl: const Duration(hours: 1));
 
-    debugPrint("Fetched profile picture URL for $userId: $pfpUrl");
-
-    // Construct user object
-    final user = krab_user.User(
-      id: userId,
-      username: username,
-      pfpUrl: pfpUrl ?? '',
-    );
-
-    return SupabaseResponse(success: true, data: user);
-  } catch (error) {
     return SupabaseResponse(
-      success: false,
-      error: 'Error fetching user details: $error',
+      success: true,
+      data: krab_user.User(
+        id: userId,
+        username: username as String,
+        pfpUrl: pfpUrl ?? '',
+      ),
     );
+  } catch (error) {
+    return _failure(error, 'fetching user details');
   }
 }
 
-/// Resolve everything an image notification needs in a single RPC call
+/// Resolve everything one notification needs.
+Future<SupabaseResponse<Map<String, dynamic>>> _notificationContext(
+    String fn, Map<String, dynamic> params, String what) async {
+  try {
+    final res = await supabase.rpc(fn, params: params);
+    if (res == null || res['success'] != true) {
+      return SupabaseResponse(
+          success: false, error: res?['error']?.toString() ?? errorServer);
+    }
+    return SupabaseResponse(success: true, data: res as Map<String, dynamic>);
+  } catch (error) {
+    return _failure(error, 'fetching the $what notification');
+  }
+}
+
 Future<SupabaseResponse<Map<String, dynamic>>> getImageNotificationContext(
-    String imageId) async {
-  try {
-    final res = await supabase.rpc('get_image_notification',
-        params: {'p_image_id': imageId});
-    if (res == null || res['success'] != true) {
-      return SupabaseResponse(success: false, error: res?['error']?.toString());
-    }
-    return SupabaseResponse(success: true, data: res as Map<String, dynamic>);
-  } catch (error) {
-    return SupabaseResponse(
-        success: false, error: 'Error fetching image notification: $error');
-  }
-}
+        String imageId) =>
+    _notificationContext(
+        'get_image_notification', {'p_image_id': imageId}, 'image');
 
-/// Resolve everything a comment notification needs in a single RPC call
 Future<SupabaseResponse<Map<String, dynamic>>> getCommentNotificationContext(
-    String commentId) async {
-  try {
-    final res = await supabase
-        .rpc('get_comment_notification', params: {'p_comment_id': commentId});
-    if (res == null || res['success'] != true) {
-      return SupabaseResponse(success: false, error: res?['error']?.toString());
-    }
-    return SupabaseResponse(success: true, data: res as Map<String, dynamic>);
-  } catch (error) {
-    return SupabaseResponse(
-        success: false, error: 'Error fetching comment notification: $error');
-  }
-}
+        String commentId) =>
+    _notificationContext(
+        'get_comment_notification', {'p_comment_id': commentId}, 'comment');
+
+Future<SupabaseResponse<Map<String, dynamic>>> getReactionNotificationContext(
+        String imageId, String reactorId) =>
+    _notificationContext('get_reaction_notification',
+        {'p_image_id': imageId, 'p_reactor_id': reactorId}, 'reaction');
 
 /// Edit the username of the current user.
 Future<SupabaseResponse<void>> editUsername(String newUsername) async {
-  try {
-    if (!AppAuth.instance.isLoggedIn) {
-      return SupabaseResponse(success: false, error: "No current user");
-    }
-
-    await supabase.rpc("edit_username", params: {
-      "new_username": newUsername,
-    });
-
-    return SupabaseResponse(success: true);
-  } catch (error) {
-    return SupabaseResponse(
-      success: false,
-      error: "Error updating username: $error",
-    );
+  if (!AppAuth.instance.isLoggedIn) {
+    return SupabaseResponse(success: false, error: errorNotLoggedIn);
   }
+  return _rpc("edit_username",
+      params: {"new_username": newUsername}, errorContext: "updating username");
 }
 
 /// Edit the profile picture of the current user.
@@ -331,7 +279,7 @@ Future<SupabaseResponse<void>> editProfilePicture(File imageFile) async {
   try {
     final userId = AppAuth.instance.currentUserId;
     if (userId == null) {
-      return SupabaseResponse(success: false, error: "No current user");
+      return SupabaseResponse(success: false, error: errorNotLoggedIn);
     }
 
     // Check if a profile picture already exists
@@ -348,10 +296,7 @@ Future<SupabaseResponse<void>> editProfilePicture(File imageFile) async {
 
     return SupabaseResponse(success: true);
   } catch (error) {
-    return SupabaseResponse(
-      success: false,
-      error: "Error updating profile picture: $error",
-    );
+    return _failure(error, "updating the profile picture");
   }
 }
 
@@ -371,17 +316,14 @@ Future<SupabaseResponse<void>> deleteProfilePicture() async {
   try {
     final userId = AppAuth.instance.currentUserId;
     if (userId == null) {
-      return SupabaseResponse(success: false, error: "No current user");
+      return SupabaseResponse(success: false, error: errorNotLoggedIn);
     }
     await supabase.storage.from("profile-pictures").remove([userId]);
     await ProfilePictureCache.of(supabase).refresh(userId);
     await evictAvatar(userId);
     return SupabaseResponse(success: true);
   } catch (error) {
-    return SupabaseResponse(
-      success: false,
-      error: "Error deleting profile picture: $error",
-    );
+    return _failure(error, "deleting the profile picture");
   }
 }
 
@@ -390,12 +332,11 @@ Future<SupabaseResponse<String>> getEmail() async {
   try {
     final email = AppAuth.instance.currentUserEmail;
     if (email == null) {
-      return SupabaseResponse(success: false, error: "No current user");
+      return SupabaseResponse(success: false, error: errorNotLoggedIn);
     }
     return SupabaseResponse(success: true, data: email);
   } catch (error) {
-    return SupabaseResponse(
-        success: false, error: "Error getting email: $error");
+    return _failure(error, "getting the email");
   }
 }
 
@@ -416,7 +357,7 @@ bool get isPasswordResetEnabled => UserPreferences.passwordResetUrl.isNotEmpty;
 /// Send a password reset email.
 Future<SupabaseResponse<void>> sendPasswordResetEmail(String email) async {
   if (!isPasswordResetEnabled) {
-    return SupabaseResponse(success: false, error: 'Password reset is disabled');
+    return SupabaseResponse(success: false, error: errorServer);
   }
   final res = await AppAuth.instance.sendPasswordReset(
     email,
@@ -451,21 +392,3 @@ Future<SupabaseResponse<bool>> getGroupReactionNotificationSetting() =>
     _rpc("get_notify_group_reactions",
         errorContext: "fetching notification setting",
         parse: (r) => r['enabled'] as bool);
-
-/// Resolve the group/reactor names a reaction notification needs.
-Future<SupabaseResponse<Map<String, dynamic>>> getReactionNotificationContext(
-    String imageId, String reactorId) async {
-  try {
-    final res = await supabase.rpc('get_reaction_notification', params: {
-      'p_image_id': imageId,
-      'p_reactor_id': reactorId,
-    });
-    if (res == null || res['success'] != true) {
-      return SupabaseResponse(success: false, error: res?['error']?.toString());
-    }
-    return SupabaseResponse(success: true, data: res as Map<String, dynamic>);
-  } catch (error) {
-    return SupabaseResponse(
-        success: false, error: 'Error fetching reaction notification: $error');
-  }
-}

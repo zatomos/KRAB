@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import 'package:krab/themes/global_theme_data.dart';
 
 class RectangleButton extends StatelessWidget {
   final String label;
@@ -25,7 +24,7 @@ class RectangleButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final effectiveBackgroundColor =
-        backgroundColor ?? GlobalThemeData.darkColorScheme.primary;
+        backgroundColor ?? Theme.of(context).colorScheme.primary;
     final button = ElevatedButton(
       onPressed: onPressed,
       style: ElevatedButton.styleFrom(

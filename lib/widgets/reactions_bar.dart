@@ -6,7 +6,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/models/reaction.dart';
 import 'package:krab/services/api/supabase.dart';
-import 'package:krab/services/reaction_cache.dart';
+import 'package:krab/services/cache/reaction_cache.dart';
 import 'package:krab/widgets/emoji_picker_sheet.dart';
 import 'package:krab/widgets/reactors_sheet.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
@@ -61,7 +61,7 @@ class ReactionsBarState extends State<ReactionsBar> {
   Future<void> _toggle(String emoji) async {
     final imageId = widget.imageId;
     final previous = _reactions;
-    final updated = _applyToggle(previous, emoji);
+    final updated = applyToggle(previous, emoji);
     setState(() => _reactions = updated);
     cacheReactions(imageId, updated);
 
@@ -72,14 +72,15 @@ class ReactionsBarState extends State<ReactionsBar> {
     if (!mounted || imageId != widget.imageId) return;
     setState(() => _reactions = previous);
     showSnackBar(
-      context.l10n.error_reacting(context.errorOr(response.error)),
-      color: Colors.red,
+      context.l10n.error_reacting(context.errorText(response.error)),
+      tone: SnackTone.failure,
     );
   }
 
   /// Adds the emoji if the user hadn't reacted with it, removes their reaction
   /// otherwise, dropping chips that fall to zero.
-  static List<ReactionSummary> _applyToggle(
+  @visibleForTesting
+  static List<ReactionSummary> applyToggle(
       List<ReactionSummary> current, String emoji) {
     final result = <ReactionSummary>[];
     var found = false;

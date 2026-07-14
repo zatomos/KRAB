@@ -25,14 +25,14 @@ Future<bool> showConfirmDialog(
         SoftButton(
           onPressed: () => Navigator.of(context).pop(false),
           label: cancelLabel ?? context.l10n.cancel,
-          color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
         ),
         SoftButton(
           onPressed: () => Navigator.of(context).pop(true),
           label: confirmLabel,
           color: destructive
-              ? GlobalThemeData.darkColorScheme.error
-              : GlobalThemeData.darkColorScheme.primary,
+              ? Theme.of(context).colorScheme.error
+              : Theme.of(context).colorScheme.primary,
         ),
       ],
     ),

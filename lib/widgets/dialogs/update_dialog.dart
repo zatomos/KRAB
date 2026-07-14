@@ -26,7 +26,7 @@ Future<void> showUpdateDialog({
             children: [
               Icon(
                 Icons.system_update_rounded,
-                color: GlobalThemeData.darkColorScheme.primary,
+                color: Theme.of(context).colorScheme.primary,
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -125,8 +125,8 @@ Future<void> showUpdateDialog({
                 LinearProgressIndicator(
                   value: progress,
                   backgroundColor:
-                      GlobalThemeData.darkColorScheme.surfaceBright,
-                  color: GlobalThemeData.darkColorScheme.primary,
+                      Theme.of(context).colorScheme.surfaceBright,
+                  color: Theme.of(context).colorScheme.primary,
                 ),
                 const SizedBox(height: 8),
                 Text(
@@ -143,7 +143,7 @@ Future<void> showUpdateDialog({
               SoftButton(
                 onPressed: () => Navigator.pop(context),
                 label: context.l10n.later,
-                color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             isDownloading
                 ? const SizedBox(
@@ -168,7 +168,7 @@ Future<void> showUpdateDialog({
                           Navigator.pop(context);
                           showSnackBar(
                             context.l10n.installing_update,
-                            color: Colors.orangeAccent,
+                            tone: SnackTone.warning,
                           );
                         }
                       } else {
@@ -176,13 +176,13 @@ Future<void> showUpdateDialog({
                         if (context.mounted) {
                           showSnackBar(
                             context.l10n.update_failed,
-                            color: Colors.redAccent,
+                            tone: SnackTone.failure,
                           );
                         }
                       }
                     },
                     label: context.l10n.update_now,
-                    color: GlobalThemeData.darkColorScheme.primary,
+                    color: Theme.of(context).colorScheme.primary,
                   ),
           ],
         ),

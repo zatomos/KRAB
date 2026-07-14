@@ -12,15 +12,9 @@ import 'package:krab/user_preferences.dart';
 
 enum AppAuthStatus { signedIn, signedOut, tokenRefreshed }
 
-/// Derive a session's absolute expiry from a GoTrue session JSON.
-///
-/// Preference order:
-///  1. explicit `expires_at` (already absolute)
-///  2. `expires_in` seconds, added to nowEpochSeconds
-///  3. the access token's `exp` claim (from [claims])
-///
-/// Returns null when none are present or well-formed, which callers treat as
-/// "unknown expiry" -> always refresh.
+/// A session's absolute expiry, preferring `expires_at`, then `expires_in`,
+/// then the access token's `exp` claim. Null when none are usable, which
+/// callers treat as "unknown expiry" and always refresh.
 int? deriveExpiresAt(
   Map<String, dynamic> session,
   Map<String, dynamic>? claims,
@@ -36,20 +30,15 @@ int? deriveExpiresAt(
   return exp is int ? exp : null;
 }
 
-/// Whether a token expiring at expiresAt should be refreshed now.
-///
-/// A null expiry always counts as near-expiry. Otherwise it's near-expiry
-/// once we are within marginSeconds of the expiry instant,
-/// including already past it.
+/// Whether a token expiring at expiresAt should be refreshed now. An unknown
+/// expiry always counts as near.
 bool isNearExpiry(int? expiresAt, int nowEpochSeconds, int marginSeconds) {
   if (expiresAt == null) return true;
   return expiresAt - nowEpochSeconds <= marginSeconds;
 }
 
-/// GoTrue error codes that prove the session is dead, so we need to
-/// sign the user out.
-/// Everything else is a failure of one attempt, not proof that
-/// the session is gone.
+/// GoTrue error codes that prove the session is dead. Everything else is one
+/// attempt failing, not proof the session is gone.
 const Set<String> fatalRefreshCodes = {
   'refresh_token_not_found',
   'refresh_token_revoked',
@@ -71,12 +60,10 @@ class AuthResult {
 
 /// The single source of truth for the user's session, shared by every isolate.
 ///
-/// KRAB uses supabase_flutter's accessToken hook: the Supabase clients hold
-/// no session of their own; they call [getValidToken] for every request.
-/// So there is exactly one refresh chain, owned here, and none of
-/// supabase_flutter's session lifecycle is in play.
-/// Refresh is single-flight across isolates via a file lock, and only
-/// the GoTrue REST API is touched.
+/// The Supabase clients hold no session of their own: they call getValidToken
+/// for every request through supabase_flutter's accessToken hook. So there is
+/// exactly one refresh chain, owned here, single-flighted across isolates with
+/// a file lock and speaking only to the GoTrue REST API.
 class AppAuth {
   AppAuth._();
   static final AppAuth instance = AppAuth._();
@@ -176,12 +163,7 @@ class AppAuth {
         _events.add(AppAuthStatus.signedIn);
       });
 
-  /// Register a new account. The username is stored in signup metadata so the
-  /// profile can be created server-side even before email confirmation.
-  ///
-  /// If email confirmation is disabled the signup response includes a session
-  /// and we sign in immediately; otherwise no session is returned and the caller
-  /// must have the user confirm their email before logging in.
+  /// Register a new account.
   Future<AuthResult> register(String email, String password,
           {String? username, String? redirectTo}) =>
       _runAction(() async {
@@ -196,10 +178,8 @@ class AppAuth {
           return;
         }
 
-        // No session in the signup response. Either confirmation is required, or
-        // this server auto-confirms but doesn't return a session on signup. Try
-        // to log in: success means we're auto-confirmed; email_not_confirmed
-        // means the user must verify first.
+        // No session in the response: either confirmation is required, or this
+        // server auto-confirms without returning one
         try {
           await _apply(await _api.passwordGrant(email, password),
               persist: true);
@@ -242,9 +222,7 @@ class AppAuth {
   /// Drop the stored session without telling the server, and without announcing
   /// a sign-out.
   Future<void> forgetSession() async {
-    _accessToken = _refreshToken = null;
-    _expiresAt = null;
-    _claims = null;
+    _dropSession();
     _rejectedToken = null;
     _rejectionCount = 0;
     try {
@@ -252,6 +230,13 @@ class AppAuth {
     } catch (e) {
       debugPrint('AppAuth.forgetSession failed: $e');
     }
+  }
+
+  /// Drop the in-memory session.
+  void _dropSession() {
+    _accessToken = _refreshToken = null;
+    _expiresAt = null;
+    _claims = null;
   }
 
   Future<AuthResult> _runAction(Future<void> Function() action) async {
@@ -353,19 +338,14 @@ class AppAuth {
     try {
       final raw = await _storage.read(key: _sessionKey);
       if (raw == null || raw.isEmpty) {
-        _accessToken = _refreshToken = null;
-        _expiresAt = null;
-        _claims = null;
+        _dropSession();
         return;
       }
       await _apply(jsonDecode(raw) as Map<String, dynamic>, persist: false);
     } catch (_) {}
   }
 
-  /// Apply a GoTrue session JSON to memory and optionally persist it.
-  ///
-  /// When persist is true, the Keystore write is AWAITED, so a login or
-  /// refresh cannot be lost if the process dies immediately afterwards.
+  /// Apply a GoTrue session JSON to memory, and persist it if asked.
   Future<void> _apply(Map<String, dynamic> session,
       {required bool persist}) async {
     final access = session['access_token'] as String?;
@@ -381,28 +361,22 @@ class AppAuth {
       _claims,
       DateTime.now().millisecondsSinceEpoch ~/ 1000,
     );
+    // Stored in the exact GoTrue session shape so any isolate can reload it.
     if (persist) {
-      // Persist the exact GoTrue session shape so any isolate can reload it.
       await _storage.write(key: _sessionKey, value: jsonEncode(session));
     }
   }
 
+  /// Drop the session and announce the sign-out.
   Future<void> _clear() async {
-    _accessToken = _refreshToken = null;
-    _expiresAt = null;
-    _claims = null;
-    _rejectedToken = null;
-    _rejectionCount = 0;
-    try {
-      await _storage.delete(key: _sessionKey);
-    } catch (_) {}
+    await forgetSession();
     _events.add(AppAuthStatus.signedOut);
   }
 
-  /// Best-effort cross-process exclusive lock. Returns null when the lock can't
-  /// be taken, and the caller then adopts the persisted session rather than
-  /// refreshing unlocked: rotation means a parallel refresh gets one of the two
-  /// callers a spent-token rejection.
+  /// Best-effort cross-process exclusive lock, null when it can't be taken. The
+  /// caller then adopts the persisted session rather than refreshing unlocked:
+  /// with token rotation, a parallel refresh hands one of the two callers a
+  /// spent-token rejection.
   Future<RandomAccessFile?> _acquireLock() async {
     try {
       final file = File('${Directory.systemTemp.path}/krab_auth.lock');

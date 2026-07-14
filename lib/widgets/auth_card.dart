@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import 'package:krab/themes/global_theme_data.dart';
 
 /// The panel the connect and login screens sit on.
 class AuthCard extends StatelessWidget {
@@ -14,7 +13,7 @@ class AuthCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
       decoration: BoxDecoration(
-        color: GlobalThemeData.darkColorScheme.surfaceBright,
+        color: Theme.of(context).colorScheme.surfaceBright,
         borderRadius: BorderRadius.circular(16),
       ),
       child: child,

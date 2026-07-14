@@ -50,7 +50,6 @@ app.*.map.json
 /android/app/.cxx/*
 
 supabase/.temp
-.env
 release.env
 
 # Build-time config

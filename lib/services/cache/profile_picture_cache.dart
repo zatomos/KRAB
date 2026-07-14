@@ -6,9 +6,10 @@ import 'package:krab/models/cached_url.dart';
 
 class ProfilePictureCache {
   static const _prefsKey = 'pfp_cache';
-  // How long to wait after the last change before writing to disk, so a burst
-  // of avatar fetches coalesces into one write instead of re-encoding and
-  //persisting the whole map per URL.
+
+  /// How long to wait after the last change before writing to disk, so a burst
+  /// of avatar fetches coalesces into one write rather than re-encoding the
+  /// whole map per URL.
   static const _persistDebounce = Duration(milliseconds: 400);
 
   /// Retire a cached URL before its signature actually expires.

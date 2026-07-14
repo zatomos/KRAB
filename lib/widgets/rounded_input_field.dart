@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import 'package:krab/themes/global_theme_data.dart';
 
 class RoundedInputField extends StatelessWidget {
   final TextEditingController? controller;
@@ -69,12 +68,12 @@ class RoundedInputField extends StatelessWidget {
           ),
           enabledBorder: OutlineInputBorder(
             borderSide: BorderSide(
-                color: GlobalThemeData.darkColorScheme.onSurface, width: 1.5),
+                color: Theme.of(context).colorScheme.onSurface, width: 1.5),
             borderRadius: BorderRadius.circular(borderRadius),
           ),
           focusedBorder: OutlineInputBorder(
             borderSide: BorderSide(
-                color: GlobalThemeData.darkColorScheme.primary, width: 2.5),
+                color: Theme.of(context).colorScheme.primary, width: 2.5),
             borderRadius: BorderRadius.circular(borderRadius),
           ),
         ),

@@ -43,45 +43,4 @@ void main() {
       expect(buildCommentTree([]), isEmpty);
     });
   });
-
-  group('JSON serialization', () {
-    test('round-trips through json without a parent', () {
-      final original = _c('x');
-      final restored = commentFromJson(commentToJson(original));
-
-      expect(restored.id, original.id);
-      expect(restored.userId, original.userId);
-      expect(restored.text, original.text);
-      expect(restored.createdAt, original.createdAt);
-      expect(restored.parentId, isNull);
-      expect(restored.replies, isEmpty);
-    });
-
-    test('round-trips a parent id', () {
-      final restored =
-          commentFromJson(commentToJson(_c('x', parentId: 'p')));
-      expect(restored.parentId, 'p');
-    });
-
-    test('string helpers round-trip', () {
-      final restored = commentFromJsonString(commentToJsonString(_c('s')));
-      expect(restored.id, 's');
-    });
-  });
-
-  group('copyWith', () {
-    test('overrides only the given field', () {
-      final updated = _c('a').copyWith(text: 'edited');
-      expect(updated.id, 'a');
-      expect(updated.text, 'edited');
-    });
-
-    test('preserves all fields when nothing is passed', () {
-      final original = _c('a', parentId: 'p');
-      final copy = original.copyWith();
-      expect(copy.id, original.id);
-      expect(copy.parentId, original.parentId);
-      expect(copy.createdAt, original.createdAt);
-    });
-  });
 }

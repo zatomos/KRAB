@@ -7,18 +7,8 @@ class ConnectionInfo {
   const ConnectionInfo({required this.url, required this.anonKey});
 }
 
-/// Packs the values a client needs to reach an instance into a single
-/// shareable string.
-///
-/// Format: `krab1:` followed by base64url (padding stripped) of `<url>|<anonKey>`.
-/// The payload is encoded, not because it is secret -- the anon key is public --
-/// but so the token reads as one opaque string rather than exposing the URL in
-/// the clear.
-///
-/// Inside the decoded payload the anon key is a JWT, whose alphabet
-/// (`A-Za-z0-9-_.`) never contains `|`, so the last `|` unambiguously splits URL
-/// from key even if the URL itself contained one. The `krab1` prefix marks the
-/// string as a token and versions the format.
+/// Packs the values a client needs to reach an instance into one shareable
+/// string.
 class ConnectionToken {
   static const _prefix = 'krab1:';
 
@@ -28,9 +18,8 @@ class ConnectionToken {
     return '$_prefix$b64';
   }
 
-  /// Decodes a token to its [ConnectionInfo], or null if [input] is not a
-  /// well-formed KRAB token. Tolerant of surrounding whitespace, text a user may
-  /// have pasted around it, and base64 that lost its `=` padding.
+  /// Decodes a token, or null if input is not a well-formed KRAB token.
+  /// Tolerant of surrounding whitespace.
   static ConnectionInfo? decode(String input) {
     final at = input.indexOf(_prefix);
     if (at < 0) return null;
@@ -65,7 +54,7 @@ class ConnectionToken {
     return ConnectionInfo(url: url, anonKey: key);
   }
 
-  /// Whether [input] looks like a connection token at all, so the UI can decide
-  /// between token and manual handling.
+  /// Whether the input looks like a connection token at all, so the UI
+  /// can decide between token and manual handling.
   static bool looksLikeToken(String input) => input.contains(_prefix);
 }

@@ -5,22 +5,22 @@ import 'package:flutter/material.dart';
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/models/user.dart' as krab_user;
 import 'package:krab/services/api/supabase.dart';
-import 'package:krab/services/profile_picture_cache.dart';
+import 'package:krab/services/cache/profile_picture_cache.dart';
 import 'package:krab/widgets/avatars/user_avatar.dart';
 
 /// One person's reaction with a given emoji.
-class _Reactor {
+class Reactor {
   final String emoji;
   final String userId;
   final String username;
 
-  const _Reactor({
+  const Reactor({
     required this.emoji,
     required this.userId,
     required this.username,
   });
 
-  static _Reactor fromJson(Map<String, dynamic> json) => _Reactor(
+  static Reactor fromJson(Map<String, dynamic> json) => Reactor(
         emoji: json['emoji']?.toString() ?? '',
         userId: json['user_id']?.toString() ?? '',
         username: json['username']?.toString() ?? '',
@@ -28,16 +28,51 @@ class _Reactor {
 }
 
 /// A user and every emoji they reacted with, as shown in one row.
-class _ReactorRow {
+class ReactorRow {
   final String userId;
   final String username;
   final List<String> emojis;
 
-  const _ReactorRow({
+  const ReactorRow({
     required this.userId,
     required this.username,
     required this.emojis,
   });
+}
+
+/// Collapse the reactions into one row per person, carrying every emoji they
+/// used.
+/// With emoji given, only that emoji's reactions are counted.
+List<ReactorRow> groupReactors(List<Reactor> reactors, {String? emoji}) {
+  final source =
+      emoji == null ? reactors : reactors.where((r) => r.emoji == emoji);
+
+  final byUser = <String, ReactorRow>{};
+  final order = <String>[];
+  for (final r in source) {
+    final existing = byUser[r.userId];
+    if (existing == null) {
+      byUser[r.userId] =
+          ReactorRow(userId: r.userId, username: r.username, emojis: [r.emoji]);
+      order.add(r.userId);
+    } else {
+      existing.emojis.add(r.emoji);
+    }
+  }
+  return [for (final id in order) byUser[id]!];
+}
+
+/// The distinct emojis used, most-used first, then alphabetically.
+List<String> emojisByUse(List<Reactor> reactors) {
+  final counts = <String, int>{};
+  for (final r in reactors) {
+    counts[r.emoji] = (counts[r.emoji] ?? 0) + 1;
+  }
+  return counts.keys.toList()
+    ..sort((a, b) {
+      final byCount = counts[b]!.compareTo(counts[a]!);
+      return byCount != 0 ? byCount : a.compareTo(b);
+    });
 }
 
 /// Open the reactors sheet for an image
@@ -70,7 +105,7 @@ class _ReactorsSheetState extends State<_ReactorsSheet> {
   static const double _rowVerticalPadding = 12;
   static double get _rowHeight => _avatarRadius * 2 + _rowVerticalPadding * 2;
 
-  List<_Reactor> _reactors = const [];
+  List<Reactor> _reactors = const [];
 
   /// Distinct emojis ordered by how many used them
   List<String> _emojis = const [];
@@ -94,23 +129,12 @@ class _ReactorsSheetState extends State<_ReactorsSheet> {
     }
 
     final reactors = response.data!
-        .map((e) => _Reactor.fromJson(e as Map<String, dynamic>))
+        .map((e) => Reactor.fromJson(e as Map<String, dynamic>))
         .toList();
-
-    // Order emoji tabs by descending usage
-    final counts = <String, int>{};
-    for (final r in reactors) {
-      counts[r.emoji] = (counts[r.emoji] ?? 0) + 1;
-    }
-    final emojis = counts.keys.toList()
-      ..sort((a, b) {
-        final byCount = counts[b]!.compareTo(counts[a]!);
-        return byCount != 0 ? byCount : a.compareTo(b);
-      });
 
     setState(() {
       _reactors = reactors;
-      _emojis = emojis;
+      _emojis = emojisByUse(reactors);
       _loading = false;
     });
 
@@ -122,27 +146,6 @@ class _ReactorsSheetState extends State<_ReactorsSheet> {
         setState(() => _pfpUrls[userId] = url);
       });
     }
-  }
-
-  /// Collapse every reactor into one row per user carrying all the emojis
-  /// that user reacted with
-  List<_ReactorRow> _rowsFor(String? emoji) {
-    final source =
-        emoji == null ? _reactors : _reactors.where((r) => r.emoji == emoji);
-
-    final byUser = <String, _ReactorRow>{};
-    final order = <String>[];
-    for (final r in source) {
-      final existing = byUser[r.userId];
-      if (existing == null) {
-        byUser[r.userId] =
-            _ReactorRow(userId: r.userId, username: r.username, emojis: [r.emoji]);
-        order.add(r.userId);
-      } else {
-        existing.emojis.add(r.emoji);
-      }
-    }
-    return [for (final id in order) byUser[id]!];
   }
 
   @override
@@ -161,7 +164,7 @@ class _ReactorsSheetState extends State<_ReactorsSheet> {
     }
 
     const double minListHeight = 200;
-    final allRows = _rowsFor(null);
+    final allRows = groupReactors(_reactors);
     final maxListHeight =
         math.max(MediaQuery.sizeOf(context).height * 0.7 - 140, minListHeight);
     final listHeight = (allRows.length * _rowHeight)
@@ -200,7 +203,8 @@ class _ReactorsSheetState extends State<_ReactorsSheet> {
                 children: [
                   _reactorList(allRows, listHeight),
                   for (final emoji in _emojis)
-                    _reactorList(_rowsFor(emoji), listHeight),
+                    _reactorList(
+                        groupReactors(_reactors, emoji: emoji), listHeight),
                 ],
               ),
             ),
@@ -210,7 +214,7 @@ class _ReactorsSheetState extends State<_ReactorsSheet> {
     );
   }
 
-  Widget _reactorList(List<_ReactorRow> rows, double listHeight) {
+  Widget _reactorList(List<ReactorRow> rows, double listHeight) {
     final fits = rows.length * _rowHeight <= listHeight;
     return ListView.builder(
       physics: fits
@@ -226,8 +230,7 @@ class _ReactorsSheetState extends State<_ReactorsSheet> {
           pfpUrl: _pfpUrls[row.userId] ?? '',
         );
         return Padding(
-          padding:
-              const EdgeInsets.symmetric(vertical: _rowVerticalPadding),
+          padding: const EdgeInsets.symmetric(vertical: _rowVerticalPadding),
           child: Row(
             children: [
               UserAvatar(user, radius: _avatarRadius),

@@ -29,6 +29,10 @@ class LoginPageState extends State<LoginPage> {
 
   String _localizeAuthError(String? error) {
     switch (error) {
+      case 'network_error':
+        return context.l10n.error_network;
+      case 'auth_error':
+        return context.l10n.error_server;
       case 'invalid_email_or_password':
         return context.l10n.invalid_email_or_password;
       case 'email_already_exists':
@@ -117,12 +121,17 @@ class LoginPageState extends State<LoginPage> {
     }
 
     // Auto-confirm path: already logged in.
+    _enterApp();
+    showSnackBar(context.l10n.register_user_success);
+  }
+
+  /// Leave the login screen for the camera, now that there's a session.
+  void _enterApp() {
     unawaited(cacheUserGroupsForWidget());
     TextInput.finishAutofillContext(shouldSave: true);
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (context) => const CameraPage()),
+      MaterialPageRoute(builder: (_) => const CameraPage()),
     );
-    showSnackBar(context.l10n.register_user_success);
   }
 
   Future<void> _logIn() async {
@@ -143,12 +152,7 @@ class LoginPageState extends State<LoginPage> {
     final response = await loginUser(email, password);
     if (!mounted) return;
     if (response.success) {
-      // Cache groups so the widget configure screen can offer a group filter
-      unawaited(cacheUserGroupsForWidget());
-      TextInput.finishAutofillContext(shouldSave: true);
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (context) => const CameraPage()),
-      );
+      _enterApp();
     } else {
       setState(() {
         _isLoading = false;
@@ -189,7 +193,7 @@ class LoginPageState extends State<LoginPage> {
                 SoftButton(
                   label: context.l10n.cancel,
                   onPressed: () => Navigator.pop(context),
-                  color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
                 if (sending)
                   const SizedBox(
@@ -223,7 +227,7 @@ class LoginPageState extends State<LoginPage> {
                         });
                       }
                     },
-                    color: GlobalThemeData.darkColorScheme.primary,
+                    color: Theme.of(context).colorScheme.primary,
                     icon: Icons.send_rounded,
                   ),
               ],
@@ -237,7 +241,7 @@ class LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: GlobalThemeData.darkColorScheme.surface,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -286,39 +290,27 @@ class LoginPageState extends State<LoginPage> {
                                   keyboardType: TextInputType.emailAddress,
                                   autofillHints: const [AutofillHints.email],
                                 ),
-                                RoundedInputField(
+                                _passwordField(
                                   controller: _passwordController,
                                   hintText: context.l10n.password,
-                                  obscureText: !_showPassword,
-                                  icon: const Icon(Icons.lock_rounded),
-                                  autofillHints: _isSigningUp
-                                      ? const [AutofillHints.newPassword]
-                                      : const [AutofillHints.password],
-                                  suffixIcon: IconButton(
-                                    icon: Icon(_showPassword
-                                        ? Icons.visibility_off_rounded
-                                        : Icons.visibility_rounded),
-                                    onPressed: () => setState(
-                                        () => _showPassword = !_showPassword),
-                                  ),
+                                  icon: Icons.lock_rounded,
+                                  visible: _showPassword,
+                                  onToggle: () => setState(
+                                      () => _showPassword = !_showPassword),
+                                  autofillHint: _isSigningUp
+                                      ? AutofillHints.newPassword
+                                      : AutofillHints.password,
                                 ),
                                 if (_isSigningUp)
-                                  RoundedInputField(
+                                  _passwordField(
                                     controller: _passwordConfirmController,
                                     hintText: context.l10n.confirm_password,
-                                    obscureText: !_showConfirmPassword,
-                                    icon: const Icon(Icons.check_rounded),
-                                    autofillHints: const [
-                                      AutofillHints.newPassword
-                                    ],
-                                    suffixIcon: IconButton(
-                                      icon: Icon(_showConfirmPassword
-                                          ? Icons.visibility_off_rounded
-                                          : Icons.visibility_rounded),
-                                      onPressed: () => setState(() =>
-                                          _showConfirmPassword =
-                                              !_showConfirmPassword),
-                                    ),
+                                    icon: Icons.check_rounded,
+                                    visible: _showConfirmPassword,
+                                    onToggle: () => setState(() =>
+                                        _showConfirmPassword =
+                                            !_showConfirmPassword),
+                                    autofillHint: AutofillHints.newPassword,
                                   ),
                               ],
                             ),
@@ -376,6 +368,29 @@ class LoginPageState extends State<LoginPage> {
     );
   }
 
+  /// A password field with a show/hide toggle.
+  Widget _passwordField({
+    required TextEditingController controller,
+    required String hintText,
+    required IconData icon,
+    required bool visible,
+    required VoidCallback onToggle,
+    required String autofillHint,
+  }) {
+    return RoundedInputField(
+      controller: controller,
+      hintText: hintText,
+      obscureText: !visible,
+      icon: Icon(icon),
+      autofillHints: [autofillHint],
+      suffixIcon: IconButton(
+        icon: Icon(
+            visible ? Icons.visibility_off_rounded : Icons.visibility_rounded),
+        onPressed: onToggle,
+      ),
+    );
+  }
+
   Widget _buildLogo() {
     return Column(
       children: [
@@ -420,9 +435,9 @@ class LoginPageState extends State<LoginPage> {
       child: ElevatedButton(
         onPressed: _isLoading ? null : (_isSigningUp ? _signUp : _logIn),
         style: ElevatedButton.styleFrom(
-          backgroundColor: GlobalThemeData.darkColorScheme.primary,
+          backgroundColor: Theme.of(context).colorScheme.primary,
           disabledBackgroundColor:
-              GlobalThemeData.darkColorScheme.primary.withValues(alpha: 0.6),
+              Theme.of(context).colorScheme.primary.withValues(alpha: 0.6),
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),

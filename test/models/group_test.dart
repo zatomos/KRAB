@@ -36,22 +36,6 @@ void main() {
     });
   });
 
-  test('round-trips through a JSON string', () {
-    final original = Group.fromJson({
-      'id': 'g1',
-      'name': 'Friends',
-      'created_at': '2026-01-01T00:00:00Z',
-      'latest_image_at': '2026-02-03T04:05:06Z',
-    });
-
-    final restored = Group.fromJsonString(original.toJsonString());
-
-    expect(restored.id, original.id);
-    expect(restored.name, original.name);
-    expect(restored.createdAt, original.createdAt);
-    expect(restored.latestImageAt, original.latestImageAt);
-  });
-
   group('copyWith', () {
     test('overrides a single field', () {
       final original = Group.fromJson({

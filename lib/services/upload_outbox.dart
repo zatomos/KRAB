@@ -35,10 +35,7 @@ class _OutboxEntry {
   final int attempts;
   final DateTime? claimedAt;
 
-  /// The id the server reserved for this photo, once a send has got that far.
-  ///
-  /// Retrying under the same id is what keeps a retry from becoming a second
-  /// photo.
+  /// The id the server reserved for this photo, once a send got that far.
   final String? reservedImageId;
 
   const _OutboxEntry({
@@ -67,9 +64,8 @@ class _OutboxEntry {
         createdAt: createdAt,
         attempts: attempts ?? this.attempts,
         claimedAt: clearClaim ? null : (claimedAt ?? this.claimedAt),
-        reservedImageId: clearReservation
-            ? null
-            : (reservedImageId ?? this.reservedImageId),
+        reservedImageId:
+            clearReservation ? null : (reservedImageId ?? this.reservedImageId),
       );
 
   Map<String, dynamic> toJson() => {
@@ -83,23 +79,18 @@ class _OutboxEntry {
         'reservedImageId': reservedImageId,
       };
 
-  static _OutboxEntry? fromJson(Map<String, dynamic> json) {
-    try {
-      final claimedAt = json['claimedAt'] as String?;
-      return _OutboxEntry(
-        id: json['id'] as String,
-        path: json['path'] as String,
-        groupIds: (json['groupIds'] as List).cast<String>(),
-        description: json['description'] as String? ?? '',
-        createdAt: DateTime.parse(json['createdAt'] as String),
-        attempts: json['attempts'] as int? ?? 0,
-        claimedAt: claimedAt == null ? null : DateTime.parse(claimedAt),
-        reservedImageId: json['reservedImageId'] as String?,
-      );
-    } catch (error) {
-      debugPrint("Outbox: dropping unreadable entry: $error");
-      return null;
-    }
+  static _OutboxEntry fromJson(Map<String, dynamic> json) {
+    final claimedAt = json['claimedAt'] as String?;
+    return _OutboxEntry(
+      id: json['id'] as String,
+      path: json['path'] as String,
+      groupIds: (json['groupIds'] as List).cast<String>(),
+      description: json['description'] as String? ?? '',
+      createdAt: DateTime.parse(json['createdAt'] as String),
+      attempts: json['attempts'] as int? ?? 0,
+      claimedAt: claimedAt == null ? null : DateTime.parse(claimedAt),
+      reservedImageId: json['reservedImageId'] as String?,
+    );
   }
 }
 
@@ -126,17 +117,17 @@ class UploadOutbox {
   Future<Directory> Function() _storageDir = () async =>
       Directory("${(await getApplicationSupportDirectory()).path}/outbox");
 
-  Future<void> Function() _scheduleRetry = () => Workmanager().registerOneOffTask(
-        _outboxFlushUniqueName,
-        outboxFlushTask,
-        constraints: Constraints(networkType: NetworkType.connected),
-        existingWorkPolicy: ExistingWorkPolicy.replace,
-        backoffPolicy: BackoffPolicy.exponential,
-        initialDelay: const Duration(seconds: 10),
-      );
+  Future<void> Function() _scheduleRetry =
+      () => Workmanager().registerOneOffTask(
+            _outboxFlushUniqueName,
+            outboxFlushTask,
+            constraints: Constraints(networkType: NetworkType.connected),
+            existingWorkPolicy: ExistingWorkPolicy.replace,
+            backoffPolicy: BackoffPolicy.exponential,
+            initialDelay: const Duration(seconds: 10),
+          );
 
   Future<void> Function() _onDelivered = updateHomeWidget;
-
 
   @visibleForTesting
   void overrideForTest({
@@ -155,8 +146,7 @@ class UploadOutbox {
   /// WorkManager to retry as soon as it has a connection.
   ///
   /// Pass reservedImageId when the failed send already got an id out of the
-  /// server: the retry has to reuse it, since the bytes may have landed and only
-  /// the reply been lost.
+  /// server: the bytes may have landed and only the reply been lost.
   Future<void> enqueue(
     File imageFile,
     List<String> groupIds,
@@ -194,9 +184,6 @@ class UploadOutbox {
 
   /// Try to send everything queued. Returns true when the outbox is empty
   /// afterwards, which is what the background worker reports as success.
-  ///
-  /// Stops at the first offline failure: if one send can't reach the server the
-  /// next one can't either, and every attempt costs a retry against the cap.
   Future<bool> flush() async {
     if (_flushing) return false;
     _flushing = true;
@@ -213,7 +200,9 @@ class UploadOutbox {
       final mine = <String>{};
       entries = entries.map((entry) {
         final claim = entry.claimedAt;
-        if (claim != null && now.difference(claim) < _claimTimeout) return entry;
+        if (claim != null && now.difference(claim) < _claimTimeout) {
+          return entry;
+        }
         mine.add(entry.id);
         return entry.copyWith(claimedAt: now);
       }).toList();
@@ -229,10 +218,9 @@ class UploadOutbox {
       for (var i = 0; i < pending.length; i++) {
         final entry = pending[i];
 
-        // Resume under the id an earlier attempt reserved, so a retry can never
-        // become a second photo. A fresh id is written down the instant it
-        // exists: if we die between reserving it and finishing, the next attempt
-        // has to find it, or it would reserve another and send the photo twice.
+        // A fresh id is written down the instant it exists: if we die between
+        // reserving it and finishing, the next attempt has to find it, or it
+        // would reserve another and send the photo twice.
         var reserved = entry.reservedImageId;
 
         final response = await _sender(
@@ -257,8 +245,7 @@ class UploadOutbox {
         final expired = now.difference(entry.createdAt) > _maxAge;
 
         // An offline failure isn't the photo's fault, so it doesn't count
-        // against the attempt cap. Age still does: a photo nobody has been able
-        // to send for a week is not going out now.
+        // against the attempt cap. Age still does.
         if (expired || (!offline && attempts >= _maxAttempts)) {
           debugPrint("Outbox: giving up on ${entry.id}: ${response.error}");
           await _resolve(prefs, entry);
@@ -268,11 +255,10 @@ class UploadOutbox {
         debugPrint("Outbox: ${entry.id} not sent "
             "(attempt $attempts, offline=$offline): ${response.error}");
 
-        // Keep the reservation while we're offline: the same id has to be
-        // reused once the connection is back. A failure the server gave us is
-        // different, the reservation may be the thing that's wrong with it,
-        // so let the next attempt open a fresh send rather than retrying a
-        // dead id until the cap runs out.
+        // Keep the reservation while offline; the same id has to be reused once
+        // the connection is back. Drop it on a server failure, where the
+        // reservation may be the thing that's wrong, rather than retrying a dead
+        // id until the cap runs out.
         await _update(
           prefs,
           entry.copyWith(
@@ -283,8 +269,7 @@ class UploadOutbox {
           ),
         );
 
-        // One send that couldn't reach the server means the next can't either,
-        // so stop here.
+        // One send that couldn't reach the server means the next can't either.
         if (offline) {
           for (final skipped in pending.skip(i + 1)) {
             await _update(prefs, skipped.copyWith(clearClaim: true));
@@ -341,11 +326,12 @@ class UploadOutbox {
             return null;
           }
         })
-        .whereType<_OutboxEntry>()
+        .nonNulls
         .toList();
   }
 
-  Future<void> _write(SharedPreferences prefs, List<_OutboxEntry> entries) async {
+  Future<void> _write(
+      SharedPreferences prefs, List<_OutboxEntry> entries) async {
     await prefs.setStringList(
       _outboxPrefsKey,
       entries.map((e) => jsonEncode(e.toJson())).toList(),

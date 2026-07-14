@@ -85,7 +85,7 @@ class _DeleteImageDialogState extends State<_DeleteImageDialog> {
         SoftButton(
           onPressed: () => Navigator.of(context).pop(),
           label: context.l10n.cancel,
-          color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
         ),
         SoftButton(
           onPressed: _selected.isEmpty
@@ -94,9 +94,9 @@ class _DeleteImageDialogState extends State<_DeleteImageDialog> {
           label: context.l10n.remove,
           icon: Icons.delete_forever,
           color: _selected.isEmpty
-              ? GlobalThemeData.darkColorScheme.onSurfaceVariant
+              ? Theme.of(context).colorScheme.onSurfaceVariant
                   .withValues(alpha: 0.4)
-              : GlobalThemeData.darkColorScheme.error,
+              : Theme.of(context).colorScheme.error,
         ),
       ],
     );

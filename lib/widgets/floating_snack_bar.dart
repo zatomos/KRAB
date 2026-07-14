@@ -4,9 +4,16 @@ import 'package:flutter/material.dart';
 
 import 'package:krab/app_globals.dart';
 
+enum SnackTone {
+  neutral,
+  success,
+  failure,
+  warning,
+}
+
 void showSnackBar(
   String message, {
-  Color? color,
+  SnackTone tone = SnackTone.neutral,
   String? actionLabel,
   VoidCallback? onAction,
   Duration? duration,
@@ -14,8 +21,13 @@ void showSnackBar(
   final scaffoldMessenger = scaffoldMessengerKey.currentState;
 
   if (scaffoldMessenger != null) {
-    final background =
-        color ?? Theme.of(scaffoldMessenger.context).colorScheme.secondary;
+    final background = switch (tone) {
+      SnackTone.neutral =>
+        Theme.of(scaffoldMessenger.context).colorScheme.secondary,
+      SnackTone.success => Colors.green,
+      SnackTone.failure => Colors.red,
+      SnackTone.warning => Colors.orangeAccent,
+    };
     final hasAction = actionLabel != null && onAction != null;
     final visibleFor = duration ?? const Duration(seconds: 4);
     // Don't stack on top of a previous snackbar

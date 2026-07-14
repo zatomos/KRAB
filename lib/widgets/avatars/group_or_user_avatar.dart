@@ -35,7 +35,8 @@ class GroupOrUserAvatar extends StatelessWidget {
       return CircleAvatar(
         radius: radius,
         backgroundColor: Colors.transparent,
-        backgroundImage: CachedNetworkImageProvider(imageUrl!, cacheKey: cacheKey),
+        backgroundImage:
+            CachedNetworkImageProvider(imageUrl!, cacheKey: cacheKey),
         onBackgroundImageError: (_, __) {
           debugPrint('⚠️ Failed to load image for $name');
         },

@@ -54,16 +54,17 @@ class _GroupInvitesPageState extends State<GroupInvitesPage> {
     final res = await revokeGroupInvite(token);
     if (!mounted) return;
     if (res.success) {
-      showSnackBar(context.l10n.invite_revoked_success, color: Colors.green);
+      showSnackBar(context.l10n.invite_revoked_success,
+          tone: SnackTone.success);
       _refresh();
     } else {
-      showSnackBar(context.errorOr(res.error), color: Colors.red);
+      showSnackBar(context.errorText(res.error), tone: SnackTone.failure);
     }
   }
 
   void _copyToken(String token) {
     Clipboard.setData(ClipboardData(text: token));
-    showSnackBar(context.l10n.invite_copied, color: Colors.green);
+    showSnackBar(context.l10n.invite_copied, tone: SnackTone.success);
   }
 
   String _subtitleFor(BuildContext context, GroupInvite invite) {
@@ -88,7 +89,7 @@ class _GroupInvitesPageState extends State<GroupInvitesPage> {
           onPressed: _createInvite,
           icon: Symbols.add_link_rounded,
           label: context.l10n.create_invite,
-          color: GlobalThemeData.darkColorScheme.primary),
+          color: Theme.of(context).colorScheme.primary),
       body: FutureBuilder<SupabaseResponse<List<GroupInvite>>>(
         future: _invitesFuture,
         builder: (context, snapshot) {
@@ -96,7 +97,7 @@ class _GroupInvitesPageState extends State<GroupInvitesPage> {
             return const Center(child: CircularProgressIndicator());
           }
           if (!snapshot.data!.success) {
-            return Center(child: Text(snapshot.data!.error ?? "Error"));
+            return Center(child: Text(context.errorText(snapshot.data!.error)));
           }
           final invites = snapshot.data!.data ?? [];
           if (invites.isEmpty) {
@@ -113,8 +114,8 @@ class _GroupInvitesPageState extends State<GroupInvitesPage> {
                       ? Symbols.link_rounded
                       : Symbols.link_off_rounded,
                   color: invite.isActive
-                      ? GlobalThemeData.darkColorScheme.primary
-                      : GlobalThemeData.darkColorScheme.onSurfaceVariant,
+                      ? Theme.of(context).colorScheme.primary
+                      : Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
                 title: Text(
                   invite.token,
@@ -172,7 +173,7 @@ class _CreateInviteDialogState extends State<CreateInviteDialog> {
     if (!mounted) return;
     if (!res.success) {
       setState(() {
-        error = context.errorOr(res.error);
+        error = context.errorText(res.error);
         _loading = false;
       });
       return;
@@ -244,7 +245,7 @@ class _CreateInviteDialogState extends State<CreateInviteDialog> {
         SoftButton(
           onPressed: () => Navigator.of(context).pop(),
           label: context.l10n.cancel,
-          color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
         ),
         if (_loading)
           const SizedBox(
@@ -255,7 +256,7 @@ class _CreateInviteDialogState extends State<CreateInviteDialog> {
           SoftButton(
             onPressed: _create,
             label: context.l10n.create_invite,
-            color: GlobalThemeData.darkColorScheme.primary,
+            color: Theme.of(context).colorScheme.primary,
           ),
       ],
     );
@@ -286,16 +287,16 @@ Future<void> showInviteTokenDialog(BuildContext context, String token) {
         SoftButton(
           onPressed: () => Navigator.of(context).pop(),
           label: context.l10n.close,
-          color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
         ),
         SoftButton(
           onPressed: () {
             Clipboard.setData(ClipboardData(text: token));
-            showSnackBar(context.l10n.invite_copied, color: Colors.green);
+            showSnackBar(context.l10n.invite_copied, tone: SnackTone.success);
             Navigator.of(context).pop();
           },
           label: context.l10n.copy,
-          color: GlobalThemeData.darkColorScheme.primary,
+          color: Theme.of(context).colorScheme.primary,
         ),
       ],
     ),

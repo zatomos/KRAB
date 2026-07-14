@@ -53,7 +53,7 @@ class _ChangeServerDialogState extends State<ChangeServerDialog> {
         SoftButton(
           onPressed: _working ? () {} : () => Navigator.of(context).pop(),
           label: context.l10n.cancel,
-          color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
         ),
         if (_working)
           const SizedBox(
@@ -65,7 +65,7 @@ class _ChangeServerDialogState extends State<ChangeServerDialog> {
             onPressed: _disconnect,
             label: context.l10n.change_server_confirm,
             icon: Icons.logout,
-            color: GlobalThemeData.darkColorScheme.primary,
+            color: Theme.of(context).colorScheme.primary,
           ),
       ],
     );

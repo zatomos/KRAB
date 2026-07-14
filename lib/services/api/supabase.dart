@@ -2,15 +2,15 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:krab/config.dart';
-import 'package:krab/services/profile_picture_cache.dart';
-import 'package:krab/services/avatar_cache.dart';
-import 'package:krab/services/image_disk_cache.dart';
+import 'package:krab/services/cache/profile_picture_cache.dart';
+import 'package:krab/services/cache/avatar_cache.dart';
+import 'package:krab/services/cache/image_disk_cache.dart';
 import 'package:krab/services/exif_stripper.dart';
 import 'package:krab/services/auth/app_auth.dart';
 import 'package:krab/services/debug_notifier.dart';
 import 'package:krab/services/push_helper.dart';
-import 'package:krab/services/reaction_cache.dart';
-import 'package:krab/services/viewer_cache.dart';
+import 'package:krab/services/cache/reaction_cache.dart';
+import 'package:krab/services/cache/viewer_cache.dart';
 import 'package:krab/user_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -23,6 +23,8 @@ import 'package:krab/models/user.dart' as krab_user;
 
 part 'supabase_groups.dart';
 part 'supabase_images.dart';
+part 'supabase_comments.dart';
+part 'supabase_reactions.dart';
 part 'supabase_account.dart';
 
 final supabase = Supabase.instance.client;
@@ -31,17 +33,52 @@ final supabase = Supabase.instance.client;
 class SupabaseResponse<T> {
   final bool success;
   final T? data;
+
+  /// Why the call failed, as something we can display to the user.
   final String? error;
 
   /// The call failed because the device could not reach the server
   final bool offline;
 
-  SupabaseResponse({
+  const SupabaseResponse({
     required this.success,
     this.data,
     this.error,
     this.offline = false,
   });
+}
+
+/// The device could not reach the server.
+const String errorNetwork = 'network_error';
+
+/// The server was reached, but the call failed.
+const String errorServer = 'server_error';
+
+/// The call needs a signed-in user and there isn't one.
+const String errorNotLoggedIn = 'not_logged_in';
+
+const String errorPhotoTooLarge = 'photo_too_large';
+
+const String errorNameTooShort = 'name_too_short';
+
+/// Failure codes KRAB produces, which the UI translates.
+const Set<String> errorCodes = {
+  errorNetwork,
+  errorServer,
+  errorNotLoggedIn,
+  errorPhotoTooLarge,
+  errorNameTooShort,
+};
+
+/// Turn a thrown exception into a failure the UI can show.
+SupabaseResponse<T> _failure<T>(Object error, String what) {
+  final offline = _isTransientError(error);
+  debugPrint('Supabase: $what failed: $error');
+  return SupabaseResponse(
+    success: false,
+    offline: offline,
+    error: offline ? errorNetwork : errorServer,
+  );
 }
 
 /// Whether error looks like a transient network failure worth retrying.
@@ -104,12 +141,12 @@ Future<SupabaseResponse<T>> _rpc<T>(
   try {
     final response = await supabase.rpc(fn, params: params);
     if (response is Map && response['success'] == false) {
+      // The server explains its own refusals; pass its message through.
       return SupabaseResponse(
-          success: false, error: response['error']?.toString());
+          success: false, error: response['error']?.toString() ?? errorServer);
     }
     return SupabaseResponse(success: true, data: parse?.call(response));
   } catch (error) {
-    return SupabaseResponse(
-        success: false, error: "Error $errorContext: $error");
+    return _failure(error, errorContext);
   }
 }

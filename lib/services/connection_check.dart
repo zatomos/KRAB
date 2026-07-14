@@ -13,15 +13,7 @@ enum ConnectionCheckResult {
   unreachable,
 }
 
-/// Checks that [url] is a reachable Supabase instance that accepts [anonKey],
-/// without initialising the app's Supabase client.
-///
-/// The client can only be initialised once per process against one URL, so a
-/// test that used it would pin the app to whatever was tried first. This makes
-/// a plain request instead: `GET /auth/v1/settings` goes through the same
-/// gateway the app uses and is gated on the anon key, so a 200 proves both the
-/// URL and the key, a 401/403 isolates a bad key, and anything else (or a
-/// network error) is unreachable.
+/// Checks that the url is a reachable Supabase instance accepting anonKey.
 Future<ConnectionCheckResult> testConnection(String url, String anonKey) async {
   final base = url.endsWith('/') ? url.substring(0, url.length - 1) : url;
 

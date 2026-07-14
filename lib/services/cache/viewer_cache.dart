@@ -1,10 +1,8 @@
 import 'package:krab/models/group.dart';
 import 'package:krab/services/api/supabase.dart';
+import 'package:krab/services/cache/bounded_cache.dart';
 
-/// How many images to keep.
-const int _maxCachedImages = 200;
-
-final Map<String, List<Group>> _postedInGroups = {};
+final _postedInGroups = BoundedCache<List<Group>>(200);
 final Map<String, bool> _moderatedGroups = {};
 
 /// The groups an image was shared to that the current user can see.
@@ -26,11 +24,7 @@ Future<List<Group>?> fetchPostedInGroups(String imageId) async {
     );
   }));
 
-  // Dart maps keep insertion order, so the oldest key is the first one.
   _postedInGroups[imageId] = groups;
-  while (_postedInGroups.length > _maxCachedImages) {
-    _postedInGroups.remove(_postedInGroups.keys.first);
-  }
   return groups;
 }
 
@@ -38,9 +32,8 @@ Future<List<Group>?> fetchPostedInGroups(String imageId) async {
 List<Group>? cachedPostedInGroups(String imageId) => _postedInGroups[imageId];
 
 /// Forget an image's cached groups so the next fetch reflects a change.
-void invalidatePostedInGroups(String imageId) {
-  _postedInGroups.remove(imageId);
-}
+void invalidatePostedInGroups(String imageId) =>
+    _postedInGroups.remove(imageId);
 
 /// Whether the user owns or administers groupId, and may remove other people's
 /// photos from it.

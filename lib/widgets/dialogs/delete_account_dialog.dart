@@ -37,7 +37,7 @@ class _DeleteAccountDialogState extends State<DeleteAccountDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final errorColor = GlobalThemeData.darkColorScheme.error;
+    final errorColor = Theme.of(context).colorScheme.error;
     return AlertDialog(
       title: Text(context.l10n.delete_account),
       content: Column(
@@ -61,7 +61,7 @@ class _DeleteAccountDialogState extends State<DeleteAccountDialog> {
         SoftButton(
           onPressed: () => Navigator.pop(context),
           label: context.l10n.cancel,
-          color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
         ),
         SoftButton(
           onPressed: _matches ? () => Navigator.pop(context, true) : null,

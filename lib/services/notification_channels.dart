@@ -11,7 +11,7 @@ import 'package:krab/services/api/supabase.dart';
 import 'package:krab/user_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 
-/// Delete cached big-picture notification images older than [maxAge] so they
+/// Delete cached big-picture notification images older than maxAge so they
 /// don't accumulate unbounded in the temporary directory.
 Future<void> _pruneOldNotifImages(Directory dir,
     {Duration maxAge = const Duration(days: 2)}) async {
@@ -128,12 +128,27 @@ Future<void> _ensureFlnpInitialized() async {
 }
 
 Future<void> _createFlnpChannel(String channelId, String channelName) async {
+  await _ensureFlnpInitialized();
   final plugin = _flnp.resolvePlatformSpecificImplementation<
       AndroidFlutterLocalNotificationsPlugin>();
   await plugin?.createNotificationChannel(
     AndroidNotificationChannel(channelId, channelName,
         importance: Importance.high),
   );
+}
+
+/// The avatar and photo thumbnail a notification illustrates itself with,
+/// fetched together.
+Future<({Uint8List? avatar, Uint8List? image})> _notificationMedia(
+    String userId, String imageId) async {
+  const missing = SupabaseResponse<Uint8List>(success: false);
+  final results = await Future.wait([
+    userId.isNotEmpty ? getProfilePictureBytes(userId) : Future.value(missing),
+    imageId.isNotEmpty
+        ? getImage(imageId, lowRes: true)
+        : Future.value(missing),
+  ]);
+  return (avatar: results[0].data, image: results[1].data);
 }
 
 Future<void> initCommentNotifications({
@@ -246,16 +261,7 @@ Future<void> dispatchCommentNotification(
   if (await UserPreferences.isGroupMuted(groupId)) return;
   if (commenterUsername.isEmpty) commenterUsername = 'Someone';
 
-  final results = await Future.wait([
-    commenterId.isNotEmpty
-        ? getProfilePictureBytes(commenterId)
-        : Future.value(SupabaseResponse<Uint8List>(success: false)),
-    imageId.isNotEmpty
-        ? getImage(imageId, lowRes: true)
-        : Future.value(SupabaseResponse<Uint8List>(success: false)),
-  ]);
-
-  await initCommentNotifications();
+  final media = await _notificationMedia(commenterId, imageId);
   await showCommentNotification(
     groupId: groupId,
     groupName: groupName,
@@ -264,9 +270,9 @@ Future<void> dispatchCommentNotification(
     commentText: commentText,
     imageId: imageId,
     type: type,
-    commenterAvatarBytes: results[0].data,
+    commenterAvatarBytes: media.avatar,
     uploaderUsername: uploaderUsername,
-    imageBytes: results[1].data,
+    imageBytes: media.image,
   );
 }
 
@@ -288,22 +294,15 @@ Future<void> dispatchReactionNotification(Map<String, dynamic> data,
   final uploaderUsername =
       type == 'group_reaction' ? d['uploader_username'] as String? : null;
 
-  final results = await Future.wait([
-    reactorId.isNotEmpty
-        ? getProfilePictureBytes(reactorId)
-        : Future.value(SupabaseResponse<Uint8List>(success: false)),
-    getImage(imageId, lowRes: true),
-  ]);
-
-  await initCommentNotifications();
+  final media = await _notificationMedia(reactorId, imageId);
   await showReactionNotification(
     reactorUsername: reactorUsername,
     reactorId: reactorId,
     emoji: emoji,
     imageId: imageId,
     uploaderUsername: uploaderUsername,
-    reactorAvatarBytes: results[0].data,
-    imageBytes: results[1].data,
+    reactorAvatarBytes: media.avatar,
+    imageBytes: media.image,
   );
 }
 
@@ -318,7 +317,8 @@ Future<void> dispatchImageNotification(Map<String, dynamic> data) async {
 
   final ctx = await getImageNotificationContext(imageId);
   if (!ctx.success || ctx.data == null) {
-    debugPrint('Notify: no context for image $imageId (${ctx.error}), dropping');
+    debugPrint(
+        'Notify: no context for image $imageId (${ctx.error}), dropping');
     return;
   }
 
@@ -345,8 +345,9 @@ Future<void> dispatchImageNotification(Map<String, dynamic> data) async {
       .split(',')
       .where((s) => s.isNotEmpty)
       .toSet();
-  var delivered =
-      batch.isEmpty ? groups : groups.where((g) => batch.contains(g.id)).toList();
+  var delivered = batch.isEmpty
+      ? groups
+      : groups.where((g) => batch.contains(g.id)).toList();
   if (delivered.isEmpty) delivered = groups;
 
   // Drop muted groups; only suppress the notification if every group is muted.
@@ -370,14 +371,7 @@ Future<void> dispatchImageNotification(Map<String, dynamic> data) async {
   if (senderUsername.isEmpty) senderUsername = 'Someone';
   final imageDescription = (ctx.data!['description'] as String?) ?? '';
 
-  final results = await Future.wait([
-    senderId.isNotEmpty
-        ? getProfilePictureBytes(senderId)
-        : Future.value(SupabaseResponse<Uint8List>(success: false)),
-    getImage(imageId, lowRes: true),
-  ]);
-
-  await initCommentNotifications();
+  final media = await _notificationMedia(senderId, imageId);
   await showImageNotification(
     groupId: channel.id,
     groupName: channel.name,
@@ -389,8 +383,8 @@ Future<void> dispatchImageNotification(Map<String, dynamic> data) async {
     senderUsername: senderUsername,
     imageId: imageId,
     imageDescription: imageDescription,
-    senderAvatarBytes: results[0].data,
-    imageBytes: results[1].data,
+    senderAvatarBytes: media.avatar,
+    imageBytes: media.image,
   );
 }
 
@@ -409,7 +403,6 @@ Future<void> showImageNotification({
   Uint8List? senderAvatarBytes,
   Uint8List? imageBytes,
 }) async {
-  await _ensureFlnpInitialized();
   await _createFlnpChannel(groupId, groupName);
 
   // Shown on the notification itself; lists every group the image was sent to.
@@ -486,7 +479,6 @@ Future<void> showCommentNotification({
   String? uploaderUsername,
   Uint8List? imageBytes,
 }) async {
-  await _ensureFlnpInitialized();
   await _createFlnpChannel(groupId, groupName);
 
   final compositeBytes = _buildImageLargeIcon(imageBytes, commenterAvatarBytes);
@@ -520,7 +512,6 @@ Future<void> showCommentNotification({
   );
 }
 
-
 Future<void> showReactionNotification({
   required String reactorUsername,
   required String emoji,
@@ -532,7 +523,6 @@ Future<void> showReactionNotification({
 }) async {
   const channelId = 'reactions';
   final channelName = _l10n().reactions_title;
-  await _ensureFlnpInitialized();
   await _createFlnpChannel(channelId, channelName);
 
   final compositeBytes = _buildImageLargeIcon(imageBytes, reactorAvatarBytes);
@@ -565,7 +555,6 @@ Future<void> showReactionNotification({
 Future<void> showUpdateNotification(String version) async {
   const channelId = 'app_updates';
   const channelName = 'App updates';
-  await _ensureFlnpInitialized();
   await _createFlnpChannel(channelId, channelName);
 
   await _flnp.show(

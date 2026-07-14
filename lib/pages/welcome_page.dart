@@ -4,7 +4,6 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:krab/app_globals.dart';
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/services/auth/app_auth.dart';
-import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/user_preferences.dart';
 import 'package:krab/pages/camera_page.dart';
 import 'package:krab/pages/instance_setup_page.dart';
@@ -26,26 +25,10 @@ class _WelcomePageState extends State<WelcomePage> {
   @override
   void initState() {
     super.initState();
-    debugPrint("🏠 WelcomePage.initState()");
     _initializeState();
-
-    // Trust the callback - set widget as installed when callback fires
     HomeWidgetStatus.instance.setWidgetInstalledListener(() {
-      debugPrint("🎯 Widget installed callback fired!");
-      debugPrint("🎯 mounted: $mounted");
-      debugPrint("🎯 Current _hasWidget: $_hasWidget");
-
-      if (!mounted) {
-        debugPrint("🎯 Not mounted, skipping setState");
-        return;
-      }
-
-      debugPrint("🎯 Calling setState to set _hasWidget = true");
-      setState(() => _hasWidget = true);
-      debugPrint("🎯 setState completed, _hasWidget now: $_hasWidget");
+      if (mounted) setState(() => _hasWidget = true);
     });
-
-    debugPrint("🏠 Listener registered");
   }
 
   Future<void> _initializeState() async {
@@ -110,7 +93,7 @@ class _WelcomePageState extends State<WelcomePage> {
               style: TextStyle(
                 fontSize: 28,
                 fontWeight: FontWeight.bold,
-                color: GlobalThemeData.darkColorScheme.primary,
+                color: Theme.of(context).colorScheme.primary,
               ),
               textAlign: TextAlign.center,
             ),
@@ -126,7 +109,7 @@ class _WelcomePageState extends State<WelcomePage> {
             SoftButton(
               icon: Icons.check_rounded,
               label: context.l10n.go_button,
-              color: GlobalThemeData.darkColorScheme.primary,
+              color: Theme.of(context).colorScheme.primary,
               onPressed: () => _continue(context),
             ),
           ],
@@ -141,7 +124,7 @@ class _WelcomePageState extends State<WelcomePage> {
       decoration: BoxDecoration(
         borderRadius: const BorderRadius.all(Radius.circular(20)),
         border: Border.all(
-          color: GlobalThemeData.darkColorScheme.primary,
+          color: Theme.of(context).colorScheme.primary,
           width: 1,
         ),
       ),
@@ -174,7 +157,7 @@ class _WelcomePageState extends State<WelcomePage> {
             icon: _hasWidget ? Icons.check_circle : Icons.add_box,
             color: _hasWidget
                 ? Colors.green
-                : GlobalThemeData.darkColorScheme.primary,
+                : Theme.of(context).colorScheme.primary,
           ),
         ],
       ),

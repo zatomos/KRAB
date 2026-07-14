@@ -74,7 +74,7 @@ class _AddToGroupsDialogState extends State<_AddToGroupsDialog> {
         SoftButton(
           onPressed: () => Navigator.of(context).pop(),
           label: context.l10n.cancel,
-          color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
         ),
         SoftButton(
           onPressed: _selected.isEmpty
@@ -83,9 +83,9 @@ class _AddToGroupsDialogState extends State<_AddToGroupsDialog> {
           label: context.l10n.add,
           icon: Icons.add,
           color: _selected.isEmpty
-              ? GlobalThemeData.darkColorScheme.onSurfaceVariant
+              ? Theme.of(context).colorScheme.onSurfaceVariant
                   .withValues(alpha: 0.4)
-              : GlobalThemeData.darkColorScheme.primary,
+              : Theme.of(context).colorScheme.primary,
         ),
       ],
     );

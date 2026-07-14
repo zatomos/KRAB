@@ -39,7 +39,7 @@ class HomeWidgetStatus {
         // Show snackbar
         if (_activeContext != null && _activeContext!.mounted) {
           showSnackBar(_activeContext!.l10n.widget_added_success,
-              color: Colors.green);
+              tone: SnackTone.success);
         } else {
           debugPrint("Cannot show snackbar");
         }
@@ -80,12 +80,12 @@ class HomeWidgetStatus {
         actions: [
           SoftButton(
             label: context.l10n.later,
-            color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
             onPressed: () => Navigator.pop(dialogContext),
           ),
           SoftButton(
             label: context.l10n.add_widget,
-            color: GlobalThemeData.darkColorScheme.primary,
+            color: Theme.of(context).colorScheme.primary,
             onPressed: () {
               Navigator.pop(dialogContext);
               pickWidgetConfig(context);
@@ -121,12 +121,12 @@ class HomeWidgetStatus {
         actions: [
           SoftButton(
             label: context.l10n.widget_single_image,
-            color: GlobalThemeData.darkColorScheme.primary,
+            color: Theme.of(context).colorScheme.primary,
             onPressed: () => Navigator.pop(dialogContext, false),
           ),
           SoftButton(
             label: context.l10n.widget_most_recent,
-            color: GlobalThemeData.darkColorScheme.primary,
+            color: Theme.of(context).colorScheme.primary,
             onPressed: () => Navigator.pop(dialogContext, true),
           ),
         ],
@@ -172,13 +172,13 @@ class HomeWidgetStatus {
             children: [
               _sectionTitle(context.l10n.follow_these_steps),
               const SizedBox(height: 15),
-              _step('1', context.l10n.krab_widget_instruction_1),
+              _step(context, '1', context.l10n.krab_widget_instruction_1),
               const SizedBox(height: 10),
-              _step('2', context.l10n.krab_widget_instruction_2),
+              _step(context, '2', context.l10n.krab_widget_instruction_2),
               const SizedBox(height: 10),
-              _step('3', context.l10n.krab_widget_instruction_3),
+              _step(context, '3', context.l10n.krab_widget_instruction_3),
               const SizedBox(height: 10),
-              _step('4', context.l10n.krab_widget_instruction_4),
+              _step(context, '4', context.l10n.krab_widget_instruction_4),
               const SizedBox(height: 15),
               _infoBox(context.l10n.steps_vary_launcher),
             ],
@@ -202,14 +202,14 @@ class HomeWidgetStatus {
         style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
       );
 
-  Widget _step(String number, String text) => Row(
+  Widget _step(BuildContext context, String number, String text) => Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
             width: 26,
             height: 26,
             decoration: BoxDecoration(
-              color: GlobalThemeData.darkColorScheme.primary,
+              color: Theme.of(context).colorScheme.primary,
               shape: BoxShape.circle,
             ),
             child: Center(

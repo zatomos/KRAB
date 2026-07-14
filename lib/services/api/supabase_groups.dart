@@ -6,7 +6,8 @@ part of 'supabase.dart';
 Future<SupabaseResponse<List<Group>>> getUserGroups() async {
   final res = await _rpc<List<Group>>("get_user_groups",
       errorContext: "loading groups",
-      parse: (r) => (r['groups'] as List).map((g) => Group.fromJson(g)).toList());
+      parse: (r) =>
+          (r['groups'] as List).map((g) => Group.fromJson(g)).toList());
   if (!res.success || res.data == null) return res;
 
   // Resolve icon URLs in parallel from the (cached) signed-URL store.
@@ -141,7 +142,8 @@ Future<SupabaseResponse<Group>> editGroupIcon(
     if (!groupResponse.success || groupResponse.data == null) {
       return SupabaseResponse(
         success: false,
-        error: groupResponse.error ?? "Icon updated, but the group could not be reloaded",
+        error: groupResponse.error ??
+            "Icon updated, but the group could not be reloaded",
       );
     }
 
@@ -150,10 +152,7 @@ Future<SupabaseResponse<Group>> editGroupIcon(
       data: groupResponse.data!.copyWith(iconUrl: iconUrl ?? ''),
     );
   } catch (error) {
-    return SupabaseResponse(
-      success: false,
-      error: "Error updating group icon: $error",
-    );
+    return _failure(error, "updating the group icon");
   }
 }
 
@@ -186,10 +185,7 @@ Future<SupabaseResponse<void>> deleteGroupIcon(String groupId) async {
     await evictAvatar(groupId);
     return SupabaseResponse(success: true);
   } catch (error) {
-    return SupabaseResponse(
-      success: false,
-      error: "Error deleting group icon: $error",
-    );
+    return _failure(error, "deleting the group icon");
   }
 }
 
@@ -199,7 +195,7 @@ Future<SupabaseResponse<void>> createGroup(String name) async {
       params: {"group_name": name}, errorContext: "creating group");
   // The DB rejects too-short names with a generic "new row" constraint error.
   if (!res.success && (res.error?.contains("new row") ?? false)) {
-    return SupabaseResponse(success: false, error: "Name too short.");
+    return SupabaseResponse(success: false, error: errorNameTooShort);
   }
   return res;
 }

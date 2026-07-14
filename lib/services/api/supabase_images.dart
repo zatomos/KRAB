@@ -6,19 +6,11 @@ part of 'supabase.dart';
 const int maxImageUploadBytes = 15 * 1024 * 1024;
 
 /// The bytes are already in storage under this name.
-///
-/// Storage refuses to overwrite an existing object, so this is the answer to
-/// "did my upload land?" when the reply to it never came back. It means yes.
 bool _isAlreadyUploaded(Object error) =>
     error is StorageException &&
     (error.statusCode == '409' || error.error == 'Duplicate');
 
 /// Send an image to selected groups with an optional description.
-///
-/// The server records the photo and the groups it is about to belong to,
-/// then the bytes go up under the id it hands back.
-///
-/// Sending the same photo twice is guarded against by the id itself.
 Future<SupabaseResponse<String>> sendImageToGroups(
   File imageFile,
   List<String> selectedGroups,
@@ -35,11 +27,7 @@ Future<SupabaseResponse<String>> sendImageToGroups(
     );
 
     if (imageBytes.length > maxImageUploadBytes) {
-      return SupabaseResponse(
-        success: false,
-        error: "Photo is too large (max "
-            "${maxImageUploadBytes ~/ (1024 * 1024)} MB)",
-      );
+      return SupabaseResponse(success: false, error: errorPhotoTooLarge);
     }
 
     var imageId = resumeImageId;
@@ -79,11 +67,7 @@ Future<SupabaseResponse<String>> sendImageToGroups(
 
     return SupabaseResponse(success: true, data: imageId);
   } catch (error) {
-    return SupabaseResponse(
-      success: false,
-      offline: _isTransientError(error),
-      error: "Error sending image: $error",
-    );
+    return _failure(error, "sending image");
   }
 }
 
@@ -147,7 +131,7 @@ Future<SupabaseResponse<List<ImageRef>>> getGroupImages(
             .map((e) => ImageRef.fromJson(e as Map<String, dynamic>))
             .toList());
 
-/// Get the [count] most recent images accessible to the user, deduplicated
+/// Get the N most recent images accessible to the user, deduplicated
 /// across groups.
 /// If groupIds is provided and non-empty, only images from those groups are
 /// returned; otherwise images from all accessible groups are included.
@@ -156,24 +140,19 @@ Future<SupabaseResponse<List<ImageRef>>> getLatestImages(
   List<String>? groupIds,
   DateTime? beforeCreatedAt,
   String? beforeId,
-}) {
-  final params = <String, dynamic>{"p_count": count};
-  if (groupIds != null && groupIds.isNotEmpty) {
-    params["p_group_ids"] = groupIds;
-  }
-  if (beforeCreatedAt != null) {
-    params["p_before_created_at"] = beforeCreatedAt.toIso8601String();
-  }
-  if (beforeId != null) {
-    params["p_before_id"] = beforeId;
-  }
-  return _rpc("get_latest_images",
-      params: params,
-      errorContext: "loading latest images",
-      parse: (r) => (r['images'] as List)
-          .map((e) => ImageRef.fromJson(e as Map<String, dynamic>))
-          .toList());
-}
+}) =>
+    _rpc("get_latest_images",
+        params: {
+          "p_count": count,
+          if (groupIds != null && groupIds.isNotEmpty) "p_group_ids": groupIds,
+          if (beforeCreatedAt != null)
+            "p_before_created_at": beforeCreatedAt.toIso8601String(),
+          if (beforeId != null) "p_before_id": beforeId,
+        },
+        errorContext: "loading latest images",
+        parse: (r) => (r['images'] as List)
+            .map((e) => ImageRef.fromJson(e as Map<String, dynamic>))
+            .toList());
 
 /// Download an image from storage, backed by a persistent on-disk cache.
 Future<SupabaseResponse<Uint8List>> getImage(String imageId,
@@ -203,10 +182,7 @@ Future<SupabaseResponse<Uint8List>> getImage(String imageId,
     }
 
     if (data.isEmpty) {
-      return SupabaseResponse(
-        success: false,
-        error: "Downloaded image is empty",
-      );
+      return SupabaseResponse(success: false, error: errorServer);
     }
 
     // Populate the disk cache for next time.
@@ -217,19 +193,12 @@ Future<SupabaseResponse<Uint8List>> getImage(String imageId,
   } catch (error, stack) {
     debugPrint("Error downloading image $imageId: $error");
     debugPrint(stack.toString());
-    return SupabaseResponse(
-      success: false,
-      error: "Error downloading image: $error",
-    );
+    return _failure(error, "downloading image $imageId");
   }
 }
 
-/// Fetch an image's thumbnail. Prefers the pre-generated static thumbnail;
-/// when it isn't there, it falls back to the full image.
-///
-/// Reports which of the two it returned, because the thumbnail is generated
-/// asynchronously after upload: a fallback means "not yet", not "never", and
-/// the caller must not cache the original as though it were the thumbnail.
+/// Fetch an image's thumbnail, falling back to the full image when one hasn't
+/// been generated yet. Reports which of the two it returned.
 Future<({Uint8List bytes, bool isThumbnail})> _downloadThumbnail(
     String imageId) async {
   try {
@@ -255,15 +224,11 @@ Future<SupabaseResponse<Uint8List>> getProfilePictureBytes(
     final data =
         await supabase.storage.from('profile-pictures').download(userId);
     if (data.isEmpty) {
-      return SupabaseResponse(
-          success: false, error: 'Profile picture is empty');
+      return SupabaseResponse(success: false, error: errorServer);
     }
     return SupabaseResponse(success: true, data: data);
   } catch (error) {
-    return SupabaseResponse(
-      success: false,
-      error: 'Error downloading profile picture: $error',
-    );
+    return _failure(error, 'downloading the profile picture');
   }
 }
 
@@ -273,110 +238,12 @@ Future<SupabaseResponse<ImageDetails>> getImageDetails(String imageId) async {
     final response =
         await supabase.rpc("get_image_details", params: {"image_id": imageId});
     if (response == null || response.isEmpty) {
-      return SupabaseResponse(success: false, error: "No image details found");
+      return SupabaseResponse(success: false, error: errorServer);
     }
     return SupabaseResponse(
         success: true,
         data: ImageDetails.fromJson(response.first as Map<String, dynamic>));
   } catch (error) {
-    return SupabaseResponse(
-        success: false, error: "Error fetching image details: $error");
+    return _failure(error, "fetching image details");
   }
 }
-
-Future<SupabaseResponse<void>> postComment(
-        String imageId, String groupId, String comment,
-        {String? parentId}) =>
-    _rpc("add_comment",
-        params: {
-          "image_id": imageId,
-          "group_id": groupId,
-          "text": comment,
-          if (parentId != null) "parent_id": parentId,
-        },
-        errorContext: "posting comment");
-
-Future<SupabaseResponse<void>> updateComment(
-        String commentId, String imageId, String groupId, String text) =>
-    _rpc("update_comment",
-        params: {
-          "comment_id": commentId,
-          "image_id": imageId,
-          "group_id": groupId,
-          "text": text,
-        },
-        errorContext: "updating comment");
-
-Future<SupabaseResponse<void>> deleteComment(
-        String commentId, String imageId, String groupId) =>
-    _rpc("delete_comment",
-        params: {
-          "comment_id": commentId,
-          "image_id": imageId,
-          "group_id": groupId,
-        },
-        errorContext: "deleting comment");
-
-Future<SupabaseResponse<List<dynamic>>> getComments(
-        String imageId, String groupId) =>
-    _rpc("get_comments",
-        params: {"image_id": imageId, "group_id": groupId},
-        errorContext: "loading comments",
-        parse: (r) => (r['comments'] as List?) ?? []);
-
-Future<SupabaseResponse<int>> getCommentCount(String imageId, String groupId) =>
-    _rpc("get_comment_count",
-        params: {"image_id": imageId, "group_id": groupId},
-        errorContext: "loading comment count",
-        parse: (r) => r['count'] as int);
-
-/// Total number of comments an image received across every group the current
-/// user is a member of
-Future<SupabaseResponse<int>> getImageCommentCount(String imageId) =>
-    _rpc("get_image_comment_count",
-        params: {"p_image_id": imageId},
-        errorContext: "loading comment count",
-        parse: (r) => r['count'] as int);
-
-/// Every group the current user shares an image with
-Future<SupabaseResponse<List<dynamic>>> getImageGroups(String imageId) =>
-    _rpc("get_image_groups",
-        params: {"p_image_id": imageId},
-        errorContext: "loading groups",
-        parse: (r) => (r['groups'] as List?) ?? []);
-
-/// Comments for an image grouped by every group the current user shares it
-/// with. When primaryGroupId is provided, that group is returned first and
-/// flagged as primary.
-Future<SupabaseResponse<List<dynamic>>> getImageCommentsGrouped(String imageId,
-        {String? primaryGroupId}) =>
-    _rpc("get_image_comments_grouped",
-        params: {
-          "p_image_id": imageId,
-          if (primaryGroupId != null) "p_primary_group_id": primaryGroupId,
-        },
-        errorContext: "loading comments",
-        parse: (r) => (r['groups'] as List?) ?? []);
-
-/// Add or remove the current user's emoji reaction on an image. Returns whether
-/// the reaction now exists or was removed.
-Future<SupabaseResponse<bool>> toggleReaction(String imageId, String emoji) =>
-    _rpc("toggle_reaction",
-        params: {"p_image_id": imageId, "p_emoji": emoji},
-        errorContext: "toggling reaction",
-        parse: (r) => r['reacted'] == true);
-
-/// Per-emoji tally of an image's reactions, across every group the current user
-/// can see.
-Future<SupabaseResponse<List<dynamic>>> getImageReactions(String imageId) =>
-    _rpc("get_image_reactions",
-        params: {"p_image_id": imageId},
-        errorContext: "loading reactions",
-        parse: (r) => (r['reactions'] as List?) ?? []);
-
-/// Who reacted to an image, one entry per (user, emoji), for the reactors sheet.
-Future<SupabaseResponse<List<dynamic>>> getImageReactors(String imageId) =>
-    _rpc("get_image_reactors",
-        params: {"p_image_id": imageId},
-        errorContext: "loading reactors",
-        parse: (r) => (r['reactors'] as List?) ?? []);

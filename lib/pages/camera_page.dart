@@ -12,7 +12,6 @@ import 'package:native_device_orientation/native_device_orientation.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'package:krab/services/api/supabase.dart';
-import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/models/user.dart' as krab_user;
 import 'package:krab/widgets/dialogs/image_sent_dialog.dart';
 import 'package:krab/widgets/dialogs/send_image_dialog.dart';
@@ -26,6 +25,20 @@ class CameraPage extends StatefulWidget {
   @override
   CameraPageState createState() => CameraPageState();
 }
+
+/// Portrait only, for the pages the camera navigates to.
+void _lockPortrait() => SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+
+/// The camera itself shoots in any orientation.
+void _allowAllOrientations() => SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
 
 class CameraPageState extends State<CameraPage> {
   CameraController? _controller;
@@ -53,22 +66,14 @@ class CameraPageState extends State<CameraPage> {
   @override
   void initState() {
     super.initState();
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-      DeviceOrientation.portraitDown,
-      DeviceOrientation.landscapeLeft,
-      DeviceOrientation.landscapeRight,
-    ]);
+    _allowAllOrientations();
     _initializeCamera();
     _loadCurrentUser();
   }
 
   @override
   void dispose() {
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-      DeviceOrientation.portraitDown,
-    ]);
+    _lockPortrait();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     _zoomNotifier.dispose();
     _controller?.dispose();
@@ -91,31 +96,22 @@ class CameraPageState extends State<CameraPage> {
     await _disposeCamera();
     if (!mounted) return;
 
-    // Reset orientation to portrait
-    SystemChrome.setPreferredOrientations([
-      DeviceOrientation.portraitUp,
-      DeviceOrientation.portraitDown,
-    ]);
+    _lockPortrait();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     _lastSystemUiMode = SystemUiMode.edgeToEdge;
 
     await Navigator.push(
       context,
       MaterialPageRoute(
-        settings:
-            page is GroupsPage ? const RouteSettings(name: GroupsPage.routeName) : null,
+        settings: page is GroupsPage
+            ? const RouteSettings(name: GroupsPage.routeName)
+            : null,
         builder: (_) => page,
       ),
     );
 
     if (mounted) {
-      // Allow landscape mode
-      SystemChrome.setPreferredOrientations([
-        DeviceOrientation.portraitUp,
-        DeviceOrientation.portraitDown,
-        DeviceOrientation.landscapeLeft,
-        DeviceOrientation.landscapeRight,
-      ]);
+      _allowAllOrientations();
       _lastSystemUiMode = null;
       await _initializeCamera();
       setState(() {});
@@ -189,16 +185,7 @@ class CameraPageState extends State<CameraPage> {
     _initializeControllerFuture = _controller!.initialize();
     await _initializeControllerFuture;
 
-    try {
-      await _controller!.setFocusMode(FocusMode.auto);
-    } catch (e) {
-      debugPrint("setFocusMode unsupported: $e");
-    }
-    try {
-      await _controller!.setExposureMode(ExposureMode.auto);
-    } catch (e) {
-      debugPrint("setExposureMode unsupported: $e");
-    }
+    await _resetToAutoModes(_controller!);
 
     _minZoom = await _controller!.getMinZoomLevel();
     _maxZoom = await _controller!.getMaxZoomLevel();
@@ -244,17 +231,30 @@ class CameraPageState extends State<CameraPage> {
     _controller?.setZoomLevel(_zoomNotifier.value).catchError((_) {});
   }
 
+  /// Put focus and exposure back on auto. Either may be unsupported.
+  Future<void> _resetToAutoModes(CameraController ctrl) async {
+    try {
+      await ctrl.setFocusMode(FocusMode.auto);
+    } catch (e) {
+      debugPrint("setFocusMode(auto) failed: $e");
+    }
+    try {
+      await ctrl.setExposureMode(ExposureMode.auto);
+    } catch (e) {
+      debugPrint("setExposureMode(auto) failed: $e");
+    }
+  }
+
   Future<void> _setFocusPoint(Offset point, Size previewSize) async {
     final ctrl = _controller;
     if (ctrl == null || !ctrl.value.isInitialized) return;
 
     if (mounted) setState(() => _focusPoint = point);
 
-    // Normalize
     double x = point.dx / previewSize.width;
-    double y = point.dy / previewSize.height;
+    final y = point.dy / previewSize.height;
 
-    // Flip X for front
+    // The front camera's preview is mirrored, so its x is too.
     final isFront = _cameras != null &&
         _cameras!.isNotEmpty &&
         _cameras![_selectedCameraIndex].lensDirection ==
@@ -262,46 +262,18 @@ class CameraPageState extends State<CameraPage> {
     if (isFront) x = 1.0 - x;
 
     try {
-      // Always stay in auto
-      if (ctrl.value.focusMode != FocusMode.auto) {
-        try {
-          await ctrl.setFocusMode(FocusMode.auto);
-        } catch (e) {
-          debugPrint("setFocusMode(auto) failed: $e");
-        }
-      }
-      if (ctrl.value.exposureMode != ExposureMode.auto) {
-        try {
-          await ctrl.setExposureMode(ExposureMode.auto);
-        } catch (e) {
-          debugPrint("setExposureMode(auto) failed: $e");
-        }
-      }
-
-      ctrl.setExposureOffset(0).catchError((_) {
-        return 0.0;
-      });
+      await _resetToAutoModes(ctrl);
+      ctrl.setExposureOffset(0).catchError((_) => 0.0);
 
       await ctrl.setFocusPoint(Offset(x, y));
       await ctrl.setExposurePoint(Offset(x, y));
 
       // Small delay before returning to auto modes
       await Future.delayed(const Duration(milliseconds: 180));
-      try {
-        await ctrl.setFocusMode(FocusMode.auto);
-      } catch (_) {}
-      try {
-        await ctrl.setExposureMode(ExposureMode.auto);
-      } catch (_) {}
     } catch (e) {
       debugPrint("Error setting focus/exposure point: $e");
-      try {
-        await ctrl.setFocusMode(FocusMode.auto);
-      } catch (_) {}
-      try {
-        await ctrl.setExposureMode(ExposureMode.auto);
-      } catch (_) {}
     }
+    await _resetToAutoModes(ctrl);
 
     Future.delayed(const Duration(seconds: 2), () {
       if (mounted) setState(() => _focusPoint = null);
@@ -322,7 +294,7 @@ class CameraPageState extends State<CameraPage> {
       if (mounted) setState(() => _captureInProgress = false);
     } catch (e) {
       debugPrint("Error capturing image: $e");
-      showSnackBar(errorMessage, color: Colors.red);
+      showSnackBar(errorMessage, tone: SnackTone.failure);
       if (mounted) setState(() => _captureInProgress = false);
     }
   }
@@ -341,7 +313,7 @@ class CameraPageState extends State<CameraPage> {
       await _showSendImageDialog(imageFile);
     } catch (e) {
       debugPrint("Error picking image: $e");
-      showSnackBar(errorMessage, color: Colors.red);
+      showSnackBar(errorMessage, tone: SnackTone.failure);
     }
   }
 
@@ -351,9 +323,9 @@ class CameraPageState extends State<CameraPage> {
     final deleted = await deleteImage(imageId);
     if (deleted.success) {
       updateHomeWidget();
-      showSnackBar(removedMsg, color: Colors.green);
+      showSnackBar(removedMsg, tone: SnackTone.success);
     } else {
-      showSnackBar(deleted.error ?? failedMsg, color: Colors.red);
+      showSnackBar(failedMsg, tone: SnackTone.failure);
     }
   }
 
@@ -362,7 +334,8 @@ class CameraPageState extends State<CameraPage> {
     try {
       final temp = await getTemporaryDirectory();
       if (!imageFile.path.startsWith(temp.path)) {
-        debugPrint("Not deleting ${imageFile.path}: outside the temp directory");
+        debugPrint(
+            "Not deleting ${imageFile.path}: outside the temp directory");
         return;
       }
       if (await imageFile.exists()) await imageFile.delete();
@@ -391,7 +364,7 @@ class CameraPageState extends State<CameraPage> {
           final failedMsg = l10n.failed_to_delete_photo;
           showSnackBar(
             l10n.photo_sent,
-            color: Colors.green,
+            tone: SnackTone.success,
             actionLabel: imageId == null ? null : l10n.undo,
             onAction: imageId == null
                 ? null
@@ -399,12 +372,12 @@ class CameraPageState extends State<CameraPage> {
           );
         case SendOutcome.queued:
           // The photo is safe in the outbox, so this reads as a success.
-          showSnackBar(l10n.photo_queued_offline, color: Colors.green);
+          showSnackBar(l10n.photo_queued_offline, tone: SnackTone.success);
         case SendOutcome.failed:
           await showDialog(
             context: context,
-            builder: (_) =>
-                ImageSentDialog(success: false, errorMsg: result.error),
+            builder: (_) => ImageSentDialog(
+                success: false, errorMsg: context.errorText(result.error)),
           );
       }
     } finally {
@@ -445,7 +418,7 @@ class CameraPageState extends State<CameraPage> {
         icon: Icon(
           Icons.circle_outlined,
           color: _captureInProgress
-              ? GlobalThemeData.darkColorScheme.primary
+              ? Theme.of(context).colorScheme.primary
               : Colors.white,
           size: 70,
         ),
@@ -463,6 +436,136 @@ class CameraPageState extends State<CameraPage> {
         onPressed: _flipFrontBack,
         icon: const Icon(Symbols.flip_camera_android_rounded,
             color: Colors.white),
+      );
+
+  /// The largest preview that fits the screen at the sensor's aspect ratio.
+  Size _previewSize(BuildContext context, {required bool isLandscape}) {
+    final screen = MediaQuery.sizeOf(context);
+    final maxHeight = screen.height * (isLandscape ? 0.95 : 0.7);
+    final maxWidth = screen.width * (isLandscape ? 0.7 : 0.95);
+
+    final sensorRatio = _controller?.value.previewSize != null
+        ? _controller!.value.aspectRatio
+        : 16 / 9;
+    final ratio = isLandscape ? sensorRatio : 1 / sensorRatio;
+
+    return maxHeight * ratio <= maxWidth
+        ? Size(maxHeight * ratio, maxHeight)
+        : Size(maxWidth, maxWidth / ratio);
+  }
+
+  /// The live preview, with tap-to-focus and pinch-to-zoom over it.
+  Widget _preview(Size size) {
+    return GestureDetector(
+      onTapDown: (details) => _onPreviewTap(details, size),
+      onScaleStart: (_) => _baseZoom = _zoomNotifier.value,
+      onScaleUpdate: (details) {
+        if (details.scale == 1.0) return;
+        _onZoomChanged(_baseZoom * details.scale);
+      },
+      onScaleEnd: (_) => _onZoomChanged(_zoomNotifier.value),
+      child: Stack(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(20),
+            child: Container(
+              width: size.width,
+              height: size.height,
+              color: Colors.white12,
+              child: CameraPreview(_controller!),
+            ),
+          ),
+          if (_focusPoint != null)
+            Positioned(
+              left: _focusPoint!.dx - _focusRingRadius,
+              top: _focusPoint!.dy - _focusRingRadius,
+              child: Container(
+                width: _focusRingRadius * 2,
+                height: _focusRingRadius * 2,
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.white, width: 2),
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  static const double _focusRingRadius = 40;
+
+  /// Focus where the user tapped.
+  void _onPreviewTap(TapDownDetails details, Size preview) {
+    final box = context.findRenderObject() as RenderBox;
+    final local = box.globalToLocal(details.globalPosition);
+
+    final screen = MediaQuery.sizeOf(context);
+    final origin = Offset(
+      (screen.width - preview.width) / 2,
+      (screen.height - preview.height) / 2,
+    );
+    final inPreview = local.dx >= origin.dx &&
+        local.dx <= origin.dx + preview.width &&
+        local.dy >= origin.dy &&
+        local.dy <= origin.dy + preview.height;
+    if (!inPreview) return;
+
+    _setFocusPoint(local - origin, preview);
+  }
+
+  /// The zoom readout, shown only while zoomed in.
+  Widget _zoomHud(BuildContext context) {
+    return Positioned(
+      top: MediaQuery.sizeOf(context).height * 0.15,
+      left: MediaQuery.sizeOf(context).width / 2 - 30,
+      child: ValueListenableBuilder<double>(
+        valueListenable: _zoomNotifier,
+        builder: (context, zoom, _) {
+          if (zoom <= 1.01) return const SizedBox.shrink();
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.black54,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              '${zoom.toStringAsFixed(1)}x',
+              style: const TextStyle(color: Colors.white, fontSize: 16),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// Position buttons correctly depending on the phone orientation.
+  Widget _landscapeStrip({
+    required List<Widget> items,
+    required bool isLandscapeLeft,
+    required bool physicalTop,
+  }) {
+    final onLeftEdge = physicalTop == isLandscapeLeft;
+    return Positioned(
+      left: onLeftEdge ? 10 : null,
+      right: onLeftEdge ? null : 10,
+      top: 0,
+      bottom: 0,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: isLandscapeLeft ? items.reversed.toList() : items,
+      ),
+    );
+  }
+
+  Widget _groupsButton() => IconButton(
+        icon: const Icon(Symbols.group_rounded, color: Colors.white, size: 30),
+        onPressed: () => _navigateWithCameraDispose(const GroupsPage()),
+      );
+
+  Widget _uploadButton() => IconButton(
+        icon: const Icon(Symbols.upload_rounded, color: Colors.white, size: 30),
+        onPressed: _sendPictureFromStorage,
       );
 
   @override
@@ -491,29 +594,7 @@ class CameraPageState extends State<CameraPage> {
         SystemChrome.setEnabledSystemUIMode(targetMode);
       }
     }
-    final screenWidth = MediaQuery.sizeOf(context).width;
-    final screenHeight = MediaQuery.sizeOf(context).height;
-    final maxPreviewHeight = screenHeight * (isLandscape ? 0.95 : 0.7);
-    final maxPreviewWidth = screenWidth * (isLandscape ? 0.7 : 0.95);
-
-    // The camera sensor reports a landscape aspect ratio regardless of device
-    // orientation. In portrait we invert it; in landscape we use it as-is.
-    final sensorAspectRatio = (_controller?.value.previewSize != null)
-        ? _controller!.value.aspectRatio
-        : 16 / 9;
-    final displayAspectRatio =
-        isLandscape ? sensorAspectRatio : (1 / sensorAspectRatio);
-
-    double previewWidth;
-    double previewHeight;
-
-    if (maxPreviewHeight * displayAspectRatio <= maxPreviewWidth) {
-      previewHeight = maxPreviewHeight;
-      previewWidth = maxPreviewHeight * displayAspectRatio;
-    } else {
-      previewWidth = maxPreviewWidth;
-      previewHeight = maxPreviewWidth / displayAspectRatio;
-    }
+    final preview = _previewSize(context, isLandscape: isLandscape);
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -526,163 +607,31 @@ class CameraPageState extends State<CameraPage> {
               _controller!.value.isInitialized) {
             return Stack(
               children: [
-                // Preview + gestures
-                Positioned.fill(
-                  child: Center(
-                    child: GestureDetector(
-                      onTapDown: (details) {
-                        final RenderBox box =
-                            context.findRenderObject() as RenderBox;
-                        final Offset localPosition =
-                            box.globalToLocal(details.globalPosition);
-
-                        final screenWidth = MediaQuery.sizeOf(context).width;
-                        final screenHeight = MediaQuery.sizeOf(context).height;
-                        final previewLeft = (screenWidth - previewWidth) / 2;
-                        final previewTop = (screenHeight - previewHeight) / 2;
-
-                        if (localPosition.dx >= previewLeft &&
-                            localPosition.dx <= previewLeft + previewWidth &&
-                            localPosition.dy >= previewTop &&
-                            localPosition.dy <= previewTop + previewHeight) {
-                          final relativePosition = Offset(
-                            localPosition.dx - previewLeft,
-                            localPosition.dy - previewTop,
-                          );
-                          _setFocusPoint(relativePosition,
-                              Size(previewWidth, previewHeight));
-                        }
-                      },
-                      onScaleStart: (_) => _baseZoom = _zoomNotifier.value,
-                      onScaleUpdate: (details) {
-                        if (details.scale == 1.0) return;
-                        final target = (_baseZoom * details.scale)
-                            .clamp(_minZoom, _maxZoom)
-                            .toDouble();
-                        _onZoomChanged(target);
-                      },
-                      onScaleEnd: (_) => _onZoomChanged(_zoomNotifier.value),
-                      child: Stack(
-                        children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(20),
-                            child: Container(
-                              width: previewWidth,
-                              height: previewHeight,
-                              color: Colors.white12,
-                              child: CameraPreview(_controller!),
-                            ),
-                          ),
-                          if (_focusPoint != null)
-                            Positioned(
-                              left: _focusPoint!.dx - 40,
-                              top: _focusPoint!.dy - 40,
-                              child: AnimatedOpacity(
-                                opacity: 1.0,
-                                duration: const Duration(milliseconds: 80),
-                                child: Container(
-                                  width: 80,
-                                  height: 80,
-                                  decoration: BoxDecoration(
-                                    border: Border.all(
-                                        color: Colors.white, width: 2),
-                                    borderRadius: BorderRadius.circular(40),
-                                  ),
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-
-                // Zoom HUD
-                Positioned(
-                  top: MediaQuery.sizeOf(context).height * 0.15,
-                  left: MediaQuery.sizeOf(context).width / 2 - 30,
-                  child: ValueListenableBuilder<double>(
-                    valueListenable: _zoomNotifier,
-                    builder: (context, zoom, _) {
-                      if (zoom <= 1.01) return const SizedBox.shrink();
-                      return Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: Colors.black54,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          '${zoom.toStringAsFixed(1)}x',
-                          style: const TextStyle(
-                              color: Colors.white, fontSize: 16),
-                        ),
-                      );
-                    },
-                  ),
-                ),
+                Positioned.fill(child: Center(child: _preview(preview))),
+                _zoomHud(context),
 
                 // Nav buttons: physical top of phone
                 if (isLandscape)
-                  Positioned(
-                    left: nativeOrientation ==
-                            NativeDeviceOrientation.landscapeLeft
-                        ? 10
-                        : null,
-                    right: nativeOrientation ==
-                            NativeDeviceOrientation.landscapeLeft
-                        ? null
-                        : 10,
-                    top: 0,
-                    bottom: 0,
-                    child: Builder(builder: (_) {
-                      final items = <Widget>[
-                        _navButton(
-                            child: IconButton(
-                          icon: const Icon(Symbols.group_rounded,
-                              color: Colors.white, size: 30),
-                          onPressed: () =>
-                              _navigateWithCameraDispose(const GroupsPage()),
-                        )),
-                        _navButton(
-                            child: IconButton(
-                          icon: const Icon(Symbols.upload_rounded,
-                              color: Colors.white, size: 30),
-                          onPressed: _sendPictureFromStorage,
-                        )),
-                        _navButton(child: _accountButton()),
-                      ];
-                      return Column(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children:
-                            isLandscapeLeft ? items.reversed.toList() : items,
-                      );
-                    }),
+                  _landscapeStrip(
+                    isLandscapeLeft: isLandscapeLeft,
+                    physicalTop: true,
+                    items: [
+                      _navButton(child: _groupsButton()),
+                      _navButton(child: _uploadButton()),
+                      _navButton(child: _accountButton()),
+                    ],
                   )
                 else ...[
                   Positioned(
                     top: 50,
                     left: 25,
-                    child: _navButton(
-                        child: IconButton(
-                      icon: const Icon(Symbols.group_rounded,
-                          color: Colors.white, size: 30),
-                      onPressed: () =>
-                          _navigateWithCameraDispose(const GroupsPage()),
-                    )),
+                    child: _navButton(child: _groupsButton()),
                   ),
                   Positioned(
                     top: 50,
                     left: 0,
                     right: 0,
-                    child: Center(
-                      child: _navButton(
-                          child: IconButton(
-                        icon: const Icon(Symbols.upload_rounded,
-                            color: Colors.white, size: 30),
-                        onPressed: _sendPictureFromStorage,
-                      )),
-                    ),
+                    child: Center(child: _navButton(child: _uploadButton())),
                   ),
                   Positioned(
                     top: 50,
@@ -693,29 +642,10 @@ class CameraPageState extends State<CameraPage> {
 
                 // Shutter buttons: physical bottom of phone
                 if (isLandscape)
-                  Positioned(
-                    left: nativeOrientation ==
-                            NativeDeviceOrientation.landscapeLeft
-                        ? null
-                        : 10,
-                    right: nativeOrientation ==
-                            NativeDeviceOrientation.landscapeLeft
-                        ? 10
-                        : null,
-                    top: 0,
-                    bottom: 0,
-                    child: Builder(builder: (_) {
-                      final items = <Widget>[
-                        _flashButton(),
-                        _shutterButton(),
-                        _flipButton(),
-                      ];
-                      return Column(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children:
-                            isLandscapeLeft ? items.reversed.toList() : items,
-                      );
-                    }),
+                  _landscapeStrip(
+                    isLandscapeLeft: isLandscapeLeft,
+                    physicalTop: false,
+                    items: [_flashButton(), _shutterButton(), _flipButton()],
                   )
                 else
                   Positioned(
@@ -727,7 +657,7 @@ class CameraPageState extends State<CameraPage> {
                       children: [
                         _flashButton(),
                         _shutterButton(),
-                        _flipButton()
+                        _flipButton(),
                       ],
                     ),
                   ),

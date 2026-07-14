@@ -4,7 +4,6 @@ import 'package:krab/services/auth/app_auth.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:krab/services/home_widget_updater.dart';
-import 'package:krab/services/image_crop_helper.dart';
 import 'package:krab/widgets/avatars/group_avatar.dart';
 import 'package:krab/widgets/avatars/user_avatar.dart';
 import 'package:krab/widgets/dialogs/dialogs.dart';
@@ -18,7 +17,6 @@ import 'package:krab/models/group_member.dart';
 import 'package:krab/pages/group_invites_page.dart';
 import 'package:krab/services/api/supabase.dart';
 import 'package:krab/user_preferences.dart';
-import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/l10n/l10n.dart';
 
 class GroupSettingsPage extends StatefulWidget {
@@ -71,146 +69,119 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
       await UserPreferences.removeFavoriteGroup(widget.group.id);
       if (!mounted) return;
       cacheUserGroupsForWidget();
-      showSnackBar(context.l10n.left_group_success, color: Colors.green);
+      showSnackBar(context.l10n.left_group_success, tone: SnackTone.success);
       Navigator.of(context).popUntil((route) => route.isFirst);
     } else {
       showSnackBar(
-          context.l10n.error_leaving_group(context.errorOr(response.error)),
-          color: Colors.red);
+          context.l10n.error_leaving_group(context.errorText(response.error)),
+          tone: SnackTone.failure);
     }
   }
 
   Future<void> _updateGroupName() async {
+    final l10n = context.l10n;
     final newName = await showDialog<String>(
       context: context,
       builder: (_) => RenameDialog(
-        title: context.l10n.edit_group_name,
-        hintText: context.l10n.new_group_name,
+        title: l10n.edit_group_name,
+        hintText: l10n.new_group_name,
         initialValue: _group.name,
-        emptyError: context.l10n.group_name_empty,
+        emptyError: l10n.group_name_empty,
         maxLength: 19,
         onSubmit: (value) async {
           final res = await updateGroupName(_group.id, value);
-          return res.success ? null : res.error.toString();
+          return res.success ? null : describeError(l10n, res.error);
         },
       ),
     );
     if (newName == null || !mounted) return;
     setState(() => _group = _group.copyWith(name: newName));
-    showSnackBar(context.l10n.group_name_updated_success, color: Colors.green);
+    showSnackBar(context.l10n.group_name_updated_success,
+        tone: SnackTone.success);
   }
 
   Future<void> openEditIconDialog() async {
-    final hasIcon = _group.iconUrl != null && _group.iconUrl!.isNotEmpty;
-    final action = await showEditAvatarDialog(
+    final l10n = context.l10n;
+    final change = await editAvatar(
       context,
-      title: context.l10n.edit_icon_title,
-      hasImage: hasIcon,
+      AvatarTarget(
+        hasImage: _group.iconUrl?.isNotEmpty ?? false,
+        dialogTitle: l10n.edit_icon_title,
+        upload: (image) => editGroupIcon(image, _group.id),
+        remove: () => deleteGroupIcon(_group.id),
+        freshUrl: () => getGroupIconUrl(_group.id),
+        uploadFailed: l10n.error_updating_icon,
+        removeFailed: l10n.error_deleting_icon,
+        uploadSucceeded: l10n.icon_updated_success,
+        removeSucceeded: l10n.icon_deleted_success,
+      ),
     );
-    if (action == null || !mounted) return;
-
-    if (action == AvatarAction.edit) {
-      final file =
-          await pickAndCropSquareImage(toolbarTitle: context.l10n.crop_image);
-      if (file == null || !mounted) return;
-
-      final res = await editGroupIcon(file, _group.id);
-      if (!mounted) return;
-      if (!res.success) {
-        showSnackBar(context.l10n.error_updating_icon(context.errorOr(res.error)),
-            color: Colors.red);
-        return;
-      }
-
-      final newUrl = await getGroupIconUrl(_group.id);
-      if (!mounted) return;
-      if (newUrl.success) {
-        setState(() => _group = _group.copyWith(iconUrl: newUrl.data));
-      }
-      showSnackBar(context.l10n.icon_updated_success, color: Colors.green);
-    } else {
-      final res = await deleteGroupIcon(_group.id);
-      if (!mounted) return;
-      if (!res.success) {
-        showSnackBar(context.l10n.error_deleting_icon(context.errorOr(res.error)),
-            color: Colors.red);
-        return;
-      }
-      setState(() => _group = _group.copyWith(iconUrl: ''));
-      showSnackBar(context.l10n.icon_deleted_success, color: Colors.green);
-    }
+    if (change == null || !mounted) return;
+    // A deleted icon is the empty string here, not null: the Group model uses
+    // null to mean "unchanged" in copyWith.
+    setState(() => _group = _group.copyWith(iconUrl: change.url ?? ''));
   }
 
-  Future<void> _manageUserRoleDialog(String userId, String action) async {
-    final title = {
-      "promote_admin": context.l10n.promote_user,
-      "demote": context.l10n.demote_user,
-      "transfer_ownership": context.l10n.transfer_ownership,
-    }[action]!;
-    final content = {
-      "promote_admin": context.l10n.promote_user_confirmation,
-      "demote": context.l10n.demote_user_confirmation,
-      "transfer_ownership": context.l10n.transfer_ownership_confirmation,
-    }[action]!;
-
+  /// Confirm a moderation action, apply it, and reload the member list.
+  Future<void> _confirmMemberAction({
+    required String title,
+    required String message,
+    required Future<SupabaseResponse<String>> Function() apply,
+    required String success,
+    required String Function(String error) failure,
+  }) async {
     final confirmed = await showConfirmDialog(context,
-        title: title, message: content, confirmLabel: context.l10n.confirm);
+        title: title, message: message, confirmLabel: context.l10n.confirm);
     if (!confirmed || !mounted) return;
 
-    final res = await changeMemberRole(_group.id, userId, action);
+    final res = await apply();
     if (!mounted) return;
     if (res.success) {
-      showSnackBar(context.l10n.user_role_updated_success, color: Colors.green);
+      showSnackBar(success, tone: SnackTone.success);
       setState(() => _membersFuture = getGroupMembers(_group.id));
     } else {
-      showSnackBar(
-        context.l10n.error_updating_user_role(context.errorOr(res.error)),
-        color: Colors.red,
-      );
+      showSnackBar(failure(context.errorText(res.error)),
+          tone: SnackTone.failure);
     }
   }
 
-  Future<void> _manageUserBanDialog(String userId) async {
-    final confirmed = await showConfirmDialog(context,
+  Future<void> _manageUserRoleDialog(String userId, String action) {
+    final l10n = context.l10n;
+    final title = {
+      "promote_admin": l10n.promote_user,
+      "demote": l10n.demote_user,
+      "transfer_ownership": l10n.transfer_ownership,
+    }[action]!;
+    final message = {
+      "promote_admin": l10n.promote_user_confirmation,
+      "demote": l10n.demote_user_confirmation,
+      "transfer_ownership": l10n.transfer_ownership_confirmation,
+    }[action]!;
+
+    return _confirmMemberAction(
+      title: title,
+      message: message,
+      apply: () => changeMemberRole(_group.id, userId, action),
+      success: l10n.user_role_updated_success,
+      failure: l10n.error_updating_user_role,
+    );
+  }
+
+  Future<void> _manageUserBanDialog(String userId) => _confirmMemberAction(
         title: context.l10n.ban_user,
         message: context.l10n.ban_user_confirmation,
-        confirmLabel: context.l10n.confirm);
-    if (!confirmed) return;
-    await _banUser(userId);
-  }
+        apply: () => banUser(_group.id, userId),
+        success: context.l10n.user_banned_success,
+        failure: context.l10n.error_banning_user,
+      );
 
-  Future<void> _banUser(String userId) async {
-    final res = await banUser(widget.group.id, userId);
-    if (!mounted) return;
-    if (res.success) {
-      showSnackBar(context.l10n.user_banned_success, color: Colors.green);
-      setState(() => _membersFuture = getGroupMembers(widget.group.id));
-    } else {
-      showSnackBar(context.l10n.error_banning_user(context.errorOr(res.error)),
-          color: Colors.red);
-    }
-  }
-
-  Future<void> _manageUserUnbanDialog(String userId) async {
-    final confirmed = await showConfirmDialog(context,
+  Future<void> _manageUserUnbanDialog(String userId) => _confirmMemberAction(
         title: context.l10n.unban_user,
         message: context.l10n.unban_user_confirmation,
-        confirmLabel: context.l10n.confirm);
-    if (!confirmed) return;
-    await _unbanUser(userId);
-  }
-
-  Future<void> _unbanUser(String userId) async {
-    final res = await unbanUser(widget.group.id, userId);
-    if (!mounted) return;
-    if (res.success) {
-      showSnackBar(context.l10n.user_unbanned_success, color: Colors.green);
-      setState(() => _membersFuture = getGroupMembers(widget.group.id));
-    } else {
-      showSnackBar(context.l10n.error_unbanning_user(context.errorOr(res.error)),
-          color: Colors.red);
-    }
-  }
+        apply: () => unbanUser(_group.id, userId),
+        success: context.l10n.user_unbanned_success,
+        failure: context.l10n.error_unbanning_user,
+      );
 
   Future<void> _deleteGroup() async {
     final confirm = await showConfirmDialog(context,
@@ -223,8 +194,9 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
     final res = await deleteGroup(_group.id);
     if (!mounted) return;
     if (!res.success) {
-      showSnackBar(context.l10n.error_deleting_group(context.errorOr(res.error)),
-          color: Colors.red);
+      showSnackBar(
+          context.l10n.error_deleting_group(context.errorText(res.error)),
+          tone: SnackTone.failure);
       return;
     }
 
@@ -233,7 +205,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
     if (!mounted) return;
 
     cacheUserGroupsForWidget();
-    showSnackBar(context.l10n.group_deleted_success, color: Colors.green);
+    showSnackBar(context.l10n.group_deleted_success, tone: SnackTone.success);
     Navigator.of(context).popUntil((r) => r.isFirst);
   }
 
@@ -280,7 +252,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
               title: Text(_invitePermissionLabel(context, value)),
               trailing: isSelected
                   ? Icon(Symbols.check_rounded,
-                      color: GlobalThemeData.darkColorScheme.primary)
+                      color: Theme.of(context).colorScheme.primary)
                   : null,
               onTap: () => Navigator.of(context).pop(value),
             );
@@ -293,10 +265,11 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
     final res = await setGroupInvitePermission(_group.id, selected);
     if (!mounted) return;
     if (res.success) {
-      showSnackBar(context.l10n.invite_permission_updated, color: Colors.green);
+      showSnackBar(context.l10n.invite_permission_updated,
+          tone: SnackTone.success);
       setState(() => _group = _group.copyWith(invitePermission: selected));
     } else {
-      showSnackBar(context.errorOr(res.error), color: Colors.red);
+      showSnackBar(context.errorText(res.error), tone: SnackTone.failure);
     }
   }
 
@@ -307,9 +280,8 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
       builder: (context, snapshot) {
         final hasData = snapshot.hasData;
         final members = snapshot.data?.data ?? [];
-        final currentRole = hasData
-            ? _getCurrentUserRole(members)
-            : (_group.role ?? 'member');
+        final currentRole =
+            hasData ? _getCurrentUserRole(members) : (_group.role ?? 'member');
         final isManager = currentRole == 'owner' || currentRole == 'admin';
 
         final permission = _group.invitePermission ?? 'admin';
@@ -325,7 +297,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                   onPressed: () {
                     showMenu(
                       context: context,
-                      color: GlobalThemeData.darkColorScheme.surfaceBright,
+                      color: Theme.of(context).colorScheme.surfaceBright,
                       position: const RelativeRect.fromLTRB(0, 90, -1, 0),
                       items: [
                         PopupMenuItem(
@@ -373,7 +345,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
 
                 Divider(
                   height: 32,
-                  color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
 
                 /// Members List
@@ -390,7 +362,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                       icon: Icon(
                         Symbols.info_rounded,
                         size: 20,
-                        color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                       tooltip: context.l10n.member_roles_title,
                       onPressed: () => showMemberRolesDialog(context),
@@ -429,7 +401,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                 if (canCreateInvite || isManager) ...[
                   Divider(
                     height: 64,
-                    color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                   Align(
                     alignment: Alignment.centerLeft,
@@ -457,7 +429,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                       label: context.l10n.manage_invites,
                       icon: Symbols.link_rounded,
                       backgroundColor:
-                          GlobalThemeData.darkColorScheme.surfaceBright,
+                          Theme.of(context).colorScheme.surfaceBright,
                     ),
                   ],
                   if (currentRole == 'owner') ...[
@@ -487,7 +459,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
 
                 Divider(
                   height: 64,
-                  color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
 
                 /// Leave/delete group buttons
@@ -581,7 +553,7 @@ class _MemberTileState extends State<_MemberTile> {
 
     await showMenu<void>(
       context: context,
-      color: GlobalThemeData.darkColorScheme.surfaceBright,
+      color: Theme.of(context).colorScheme.surfaceBright,
       position: RelativeRect.fromRect(
         Rect.fromLTWH(pos.dx, pos.dy + size.height, size.width, 0),
         Offset.zero & overlay.size,

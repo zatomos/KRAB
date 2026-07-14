@@ -45,7 +45,7 @@ class _UpdateCheckerState extends State<UpdateChecker> {
     if (!result.success && mounted) {
       showSnackBar(
         context.l10n.update_check_failed,
-        color: Colors.orangeAccent,
+        tone: SnackTone.warning,
       );
       return;
     }

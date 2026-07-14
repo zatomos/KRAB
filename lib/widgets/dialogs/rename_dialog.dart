@@ -93,7 +93,7 @@ class _RenameDialogState extends State<RenameDialog> {
         SoftButton(
           onPressed: () => Navigator.of(context).pop(),
           label: context.l10n.cancel,
-          color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
         ),
         if (_saving)
           const SizedBox(
@@ -105,7 +105,7 @@ class _RenameDialogState extends State<RenameDialog> {
             onPressed: _submit,
             label: context.l10n.save,
             icon: Icons.check,
-            color: GlobalThemeData.darkColorScheme.primary,
+            color: Theme.of(context).colorScheme.primary,
           ),
       ],
     );

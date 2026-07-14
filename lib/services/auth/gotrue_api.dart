@@ -114,7 +114,8 @@ class GotrueApi {
   /// Change the current user's password.
   Future<void> updatePassword(String accessToken, String newPassword) =>
       _request('PUT', '/auth/v1/user',
-          body: {'password': newPassword}, bearer: accessToken).then((_) {});
+              body: {'password': newPassword}, bearer: accessToken)
+          .then((_) {});
 
   /// Send a password reset email.
   Future<void> recover(String email, {String? redirectTo}) => _request(

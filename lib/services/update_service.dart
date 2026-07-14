@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/services.dart';
@@ -136,20 +137,20 @@ class UpdateService {
       }
 
       // Newest release is the install target
-      releases.sort((a, b) => _compareVersions(a.version, b.version));
+      releases.sort((a, b) => compareVersions(a.version, b.version));
       final latest = releases.last;
 
       final packageInfo = await PackageInfo.fromPlatform();
       final currentVersion = packageInfo.version;
 
-      final hasUpdate = _compareVersions(currentVersion, latest.version) < 0;
+      final hasUpdate = compareVersions(currentVersion, latest.version) < 0;
       if (!hasUpdate) {
         return UpdateCheckResult(success: true, hasUpdate: false);
       }
 
       // Releases newer than the user's version, newest first
       final newer = releases
-          .where((r) => _compareVersions(currentVersion, r.version) < 0)
+          .where((r) => compareVersions(currentVersion, r.version) < 0)
           .toList()
           .reversed
           .toList();
@@ -217,7 +218,8 @@ class UpdateService {
   }
 
   /// Returns < 0 if [a] is older than [b], 0 if equal, > 0 if newer.
-  int _compareVersions(String a, String b) {
+  @visibleForTesting
+  int compareVersions(String a, String b) {
     final pa = _parseVersion(a);
     final pb = _parseVersion(b);
 

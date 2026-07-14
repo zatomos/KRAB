@@ -5,7 +5,15 @@ import 'package:krab/l10n/l10n.dart';
 
 /// A short shortlist of common reactions
 const List<String> _recommendedEmojis = [
-  '❤️', '👍', '👎', '😂', '😮', '😢', '🔥', '🎉', '👏',
+  '❤️',
+  '👍',
+  '👎',
+  '😂',
+  '😮',
+  '😢',
+  '🔥',
+  '🎉',
+  '👏',
 ];
 
 /// Present the emoji picker as a bottom sheet. Resolves to the chosen emoji, or

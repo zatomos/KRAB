@@ -70,10 +70,8 @@ class _SendImageDialogState extends State<SendImageDialog> {
 
     final groups = _selectedGroups.toList();
 
-    // If the send got as far as reserving an id, the outbox must retry under
-    // that same one. The bytes may already have reached storage, and only the
-    // reply been lost; resuming recognises that, while a fresh id would send the
-    // photo a second time.
+    // The outbox has to retry under any id this send reserved, or it would send
+    // the photo a second time.
     String? reserved;
 
     final response = await sendImageToGroups(
@@ -239,7 +237,7 @@ class _SendImageDialogState extends State<SendImageDialog> {
               SoftButton(
                 onPressed: () => Navigator.of(context).pop(),
                 label: context.l10n.cancel,
-                color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
               if (_sending)
                 const Padding(
@@ -254,9 +252,9 @@ class _SendImageDialogState extends State<SendImageDialog> {
                   onPressed: _selectedGroups.isEmpty ? null : _send,
                   label: context.l10n.send,
                   color: _selectedGroups.isEmpty
-                      ? GlobalThemeData.darkColorScheme.onSurfaceVariant
+                      ? Theme.of(context).colorScheme.onSurfaceVariant
                           .withValues(alpha: 0.4)
-                      : GlobalThemeData.darkColorScheme.primary,
+                      : Theme.of(context).colorScheme.primary,
                 ),
             ],
     );

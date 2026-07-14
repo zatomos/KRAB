@@ -14,7 +14,7 @@ import 'package:krab/services/home_widget_status.dart';
 import 'package:krab/services/home_widget_updater.dart';
 import 'package:krab/services/notification_channels.dart';
 import 'package:krab/services/notification_router.dart';
-import 'package:krab/services/profile_picture_cache.dart';
+import 'package:krab/services/cache/profile_picture_cache.dart';
 import 'package:krab/services/push_helper.dart';
 import 'package:krab/services/supabase_bootstrap.dart';
 import 'package:krab/services/upload_outbox.dart';
@@ -29,13 +29,9 @@ void main(List<String> args) async {
     WidgetsFlutterBinding.ensureInitialized();
     await UserPreferences().initPrefs();
     await DebugNotifier.instance.initialize();
-
-    // Local notification tap handler
     await initCommentNotifications(onTap: handleLocalNotificationTap);
 
     final supabaseOk = await initializeSupabaseIfNeeded();
-
-    // Wires the push callbacks
     await PushHelper.initialize(background: background);
 
     if (background) {
@@ -44,13 +40,9 @@ void main(List<String> args) async {
     }
 
     pendingLocalNotificationPayload = await getLocalNotificationLaunchPayload();
-
-    // Check for notification permissions
     await requestNotificationPermission();
 
     HomeWidgetStatus.instance.initialize();
-
-    // WorkManager periodic widget refresh
     await Workmanager().initialize(workmanagerCallbackDispatcher);
     await scheduleWidgetRefresh(UserPreferences.widgetRefreshIntervalMinutes);
 
@@ -80,14 +72,10 @@ void main(List<String> args) async {
 /// Network work that runs once the UI is up.
 Future<void> _warmUpFromNetwork() async {
   try {
-    // Re-read this instance's public settings on every launch. Cached.
     await fetchInstanceConfig();
-
-    // Subscribes through a distributor and hands the endpoint to
-    // this instance's backend.
     await PushHelper.ensureRegistered();
     await ProfilePictureCache.of(Supabase.instance.client).hydrate();
-    // Cache groups so the widget configure screen can offer a group filter
+    // So the widget's configure screen can offer a group filter.
     await cacheUserGroupsForWidget();
     // Photos queued while offline go out as soon as we're up again.
     await UploadOutbox.instance.flush();
@@ -124,4 +112,3 @@ void _listenToAuthEvents() {
     }
   });
 }
-

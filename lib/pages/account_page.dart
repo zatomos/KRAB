@@ -8,7 +8,6 @@ import 'package:krab/l10n/l10n.dart';
 import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/models/user.dart' as krab_user;
 import 'package:krab/services/api/supabase.dart';
-import 'package:krab/services/image_crop_helper.dart';
 import 'package:krab/user_preferences.dart';
 import 'package:krab/services/debug_notifier.dart';
 import 'package:krab/services/home_widget_updater.dart';
@@ -82,88 +81,60 @@ class AccountPageState extends State<AccountPage> {
   }
 
   Future<void> _loadUserProfile() async {
-    setState(() {
-      _isLoading = true;
-    });
+    setState(() => _isLoading = true);
 
     final userId = AppAuth.instance.currentUserId;
-
     if (userId == null) {
-      setState(() {
-        _isLoading = false;
-      });
-      showSnackBar(context.l10n.no_user_logged_in, color: Colors.red);
+      setState(() => _isLoading = false);
+      showSnackBar(context.l10n.no_user_logged_in, tone: SnackTone.failure);
       return;
     }
 
-    final userResponse = await getUserDetails(userId);
+    // Get user info
+    final (userResponse, commentSetting, reactionSetting) = await (
+      getUserDetails(userId),
+      getGroupCommentNotificationSetting(),
+      getGroupReactionNotificationSetting(),
+    ).wait;
     final emailResponse = await getEmail();
 
-    // Check auto image save preference
     autoImageSave = await UserPreferences.getAutoImageSave();
-
-    // Check debug notifications preference
     debugNotificationsEnabled = await UserPreferences.getDebugNotifications();
     updateNotificationsEnabled = UserPreferences.updateNotifications;
     _developerOptionsUnlocked =
         await UserPreferences.getDeveloperOptionsUnlocked();
     final interval = await UserPreferences.getWidgetRefreshInterval();
     if (!mounted) return;
-    setState(() => _widgetRefreshInterval = interval);
 
     if (!userResponse.success) {
       showSnackBar(
-          context.l10n.error_loading_user(context.errorOr(userResponse.error)),
-          color: Colors.red);
+          context.l10n
+              .error_loading_user(context.errorText(userResponse.error)),
+          tone: SnackTone.failure);
     }
     if (!emailResponse.success) {
       showSnackBar(
           context.l10n
-              .error_loading_email(context.errorOr(emailResponse.error)),
-          color: Colors.red);
+              .error_loading_email(context.errorText(emailResponse.error)),
+          tone: SnackTone.failure);
     }
-
-    // Load group comment and reaction notification settings
-    final groupCommentSettingResponse =
-        await getGroupCommentNotificationSetting();
-    final groupReactionSettingResponse =
-        await getGroupReactionNotificationSetting();
-    if (!mounted) return;
-
-    if (!groupCommentSettingResponse.success) {
-      showSnackBar(
-        context.l10n.error_loading_notification_setting(
-            context.errorOr(groupCommentSettingResponse.error)),
-        color: Colors.red,
-      );
-    }
-
-    if (!groupReactionSettingResponse.success) {
-      showSnackBar(
-        context.l10n.error_loading_notification_setting(
-            context.errorOr(groupReactionSettingResponse.error)),
-        color: Colors.red,
-      );
+    for (final setting in [commentSetting, reactionSetting]) {
+      if (!setting.success) {
+        showSnackBar(
+          context.l10n.error_loading_notification_setting(
+              context.errorText(setting.error)),
+          tone: SnackTone.failure,
+        );
+      }
     }
 
     setState(() {
-      // Update user only if data is not null
-      if (userResponse.data != null) {
-        user = userResponse.data!;
-      }
-
+      _widgetRefreshInterval = interval;
+      if (userResponse.data != null) user = userResponse.data!;
       _emailController.text = emailResponse.data ?? "";
-
-      if (groupCommentSettingResponse.success &&
-          groupCommentSettingResponse.data != null) {
-        receiveAllGroupComments = groupCommentSettingResponse.data!;
-      }
-
-      if (groupReactionSettingResponse.success &&
-          groupReactionSettingResponse.data != null) {
-        receiveAllGroupReactions = groupReactionSettingResponse.data!;
-      }
-
+      receiveAllGroupComments = commentSetting.data ?? receiveAllGroupComments;
+      receiveAllGroupReactions =
+          reactionSetting.data ?? receiveAllGroupReactions;
       _isLoading = false;
     });
   }
@@ -182,8 +153,8 @@ class AccountPageState extends State<AccountPage> {
     // A logout that failed left the session on disk.
     if (!res.success) {
       showSnackBar(
-        context.l10n.error_signing_out(context.errorOr(res.error)),
-        color: Colors.red,
+        context.l10n.error_signing_out(context.errorText(res.error)),
+        tone: SnackTone.failure,
       );
       return;
     }
@@ -226,12 +197,12 @@ class AccountPageState extends State<AccountPage> {
       // The server refuses while the user still owns a group
       final message = res.error == 'owns_groups'
           ? context.l10n.delete_account_owns_groups
-          : context.l10n.error_deleting_account(context.errorOr(res.error));
-      showSnackBar(message, color: Colors.red);
+          : context.l10n.error_deleting_account(context.errorText(res.error));
+      showSnackBar(message, tone: SnackTone.failure);
       return;
     }
 
-    showSnackBar(context.l10n.account_deleted_success, color: Colors.green);
+    showSnackBar(context.l10n.account_deleted_success, tone: SnackTone.success);
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (context) => const LoginPage()),
     );
@@ -248,7 +219,7 @@ class AccountPageState extends State<AccountPage> {
     if (!result.success) {
       showSnackBar(
         context.l10n.update_check_failed,
-        color: Colors.orangeAccent,
+        tone: SnackTone.warning,
       );
       return;
     }
@@ -263,7 +234,7 @@ class AccountPageState extends State<AccountPage> {
       return;
     }
 
-    showSnackBar(context.l10n.no_update_available, color: Colors.green);
+    showSnackBar(context.l10n.no_update_available, tone: SnackTone.success);
   }
 
   Future<void> _handlePfpTap() async {
@@ -280,7 +251,7 @@ class AccountPageState extends State<AccountPage> {
       _pfpTapCount = 0;
     });
     if (nextValue) {
-      showSnackBar('Developer options unlocked', color: Colors.green);
+      showSnackBar('Developer options unlocked', tone: SnackTone.success);
     } else {
       debugNotificationsEnabled = false;
       showSnackBar('Developer options hidden');
@@ -300,55 +271,34 @@ class AccountPageState extends State<AccountPage> {
           final res = await editUsername(value);
           return res.success
               ? null
-              : "${l10n.error_updating_username}: ${res.error ?? l10n.unknown_error}";
+              : "${l10n.error_updating_username}: ${describeError(l10n, res.error)}";
         },
       ),
     );
     if (newName == null || !mounted) return;
     setState(() => user = user.copyWith(username: newName));
-    showSnackBar(context.l10n.username_updated_success, color: Colors.green);
+    showSnackBar(context.l10n.username_updated_success,
+        tone: SnackTone.success);
   }
 
   Future<void> openEditPfpDialog() async {
-    final action = await showEditAvatarDialog(
+    final l10n = context.l10n;
+    final change = await editAvatar(
       context,
-      title: context.l10n.edit_pfp_title,
-      hasImage: user.pfpUrl.isNotEmpty,
+      AvatarTarget(
+        hasImage: user.pfpUrl.isNotEmpty,
+        dialogTitle: l10n.edit_pfp_title,
+        upload: editProfilePicture,
+        remove: deleteProfilePicture,
+        freshUrl: () => getProfilePictureUrl(user.id),
+        uploadFailed: l10n.error_updating_pfp,
+        removeFailed: l10n.error_deleting_pfp,
+        uploadSucceeded: l10n.pfp_updated_success,
+        removeSucceeded: l10n.pfp_deleted_success,
+      ),
     );
-    if (action == null || !mounted) return;
-
-    if (action == AvatarAction.edit) {
-      final file =
-          await pickAndCropSquareImage(toolbarTitle: context.l10n.crop_image);
-      if (file == null || !mounted) return;
-
-      final res = await editProfilePicture(file);
-      if (!mounted) return;
-      if (!res.success) {
-        showSnackBar(
-            context.l10n.error_updating_pfp(context.errorOr(res.error)),
-            color: Colors.red);
-        return;
-      }
-
-      // Fetch a fresh signed URL for the new picture.
-      final newUrlResponse = await getProfilePictureUrl(user.id);
-      if (!mounted) return;
-      setState(() => user = user.copyWith(
-          pfpUrl: newUrlResponse.success ? newUrlResponse.data : null));
-      showSnackBar(context.l10n.pfp_updated_success, color: Colors.green);
-    } else {
-      final res = await deleteProfilePicture();
-      if (!mounted) return;
-      if (!res.success) {
-        showSnackBar(
-            context.l10n.error_deleting_pfp(context.errorOr(res.error)),
-            color: Colors.red);
-        return;
-      }
-      setState(() => user = user.copyWith(pfpUrl: null));
-      showSnackBar(context.l10n.pfp_deleted_success, color: Colors.green);
-    }
+    if (change == null || !mounted) return;
+    setState(() => user = user.copyWith(pfpUrl: change.url));
   }
 
   Future<void> openChangePasswordDialog() async {
@@ -357,8 +307,42 @@ class AccountPageState extends State<AccountPage> {
       builder: (_) => const ChangePasswordDialog(),
     );
     if (changed == true && mounted) {
-      showSnackBar(context.l10n.password_updated_success, color: Colors.green);
+      showSnackBar(context.l10n.password_updated_success,
+          tone: SnackTone.success);
     }
+  }
+
+  /// The backend's hostname, falling back to the raw URL if it can't be parsed.
+  String get _serverHost {
+    final host = Uri.tryParse(UserPreferences.supabaseUrl)?.host ?? '';
+    return host.isNotEmpty ? host : UserPreferences.supabaseUrl;
+  }
+
+  /// A switch whose state lives on the server.
+  Widget _serverSwitch({
+    required String title,
+    required String subtitle,
+    required bool value,
+    required Future<SupabaseResponse<void>> Function(bool) save,
+    required void Function(bool) apply,
+  }) {
+    return SwitchListTile(
+      title: Text(title),
+      subtitle: Text(subtitle),
+      value: value,
+      onChanged: (next) async {
+        final l10n = context.l10n;
+        final res = await save(next);
+        if (!mounted) return;
+        if (res.success) {
+          setState(() => apply(next));
+        } else {
+          showSnackBar(
+              l10n.error_updating_setting(res.error ?? l10n.unknown_error),
+              tone: SnackTone.failure);
+        }
+      },
+    );
   }
 
   @override
@@ -468,14 +452,7 @@ class AccountPageState extends State<AccountPage> {
                         ListTile(
                           leading: const Icon(Icons.dns_rounded),
                           title: Text(context.l10n.server_label),
-                          subtitle: Text(
-                            Uri.tryParse(UserPreferences.supabaseUrl)
-                                        ?.host
-                                        .isNotEmpty ==
-                                    true
-                                ? Uri.parse(UserPreferences.supabaseUrl).host
-                                : UserPreferences.supabaseUrl,
-                          ),
+                          subtitle: Text(_serverHost),
                           trailing: const Icon(Icons.chevron_right_rounded),
                           onTap: openChangeServerDialog,
                         ),
@@ -513,51 +490,21 @@ class AccountPageState extends State<AccountPage> {
                             setState(() => autoImageSave = value);
                           },
                         ),
-                        SwitchListTile(
-                          title: Text(context.l10n.group_comment_notifications),
-                          subtitle: Text(context
-                              .l10n.group_comment_notifications_description),
+                        _serverSwitch(
+                          title: context.l10n.group_comment_notifications,
+                          subtitle: context
+                              .l10n.group_comment_notifications_description,
                           value: receiveAllGroupComments,
-                          onChanged: (value) {
-                            final l10n = context.l10n;
-                            final response =
-                                setGroupCommentNotificationSetting(value);
-                            response.then((res) {
-                              if (res.success) {
-                                if (!mounted) return;
-                                setState(() => receiveAllGroupComments = value);
-                              } else {
-                                showSnackBar(
-                                    l10n.error_updating_setting(
-                                        res.error ?? l10n.unknown_error),
-                                    color: Colors.red);
-                              }
-                            });
-                          },
+                          save: setGroupCommentNotificationSetting,
+                          apply: (v) => receiveAllGroupComments = v,
                         ),
-                        SwitchListTile(
-                          title:
-                              Text(context.l10n.group_reaction_notifications),
-                          subtitle: Text(context
-                              .l10n.group_reaction_notifications_description),
+                        _serverSwitch(
+                          title: context.l10n.group_reaction_notifications,
+                          subtitle: context
+                              .l10n.group_reaction_notifications_description,
                           value: receiveAllGroupReactions,
-                          onChanged: (value) {
-                            final l10n = context.l10n;
-                            final response =
-                                setGroupReactionNotificationSetting(value);
-                            response.then((res) {
-                              if (res.success) {
-                                if (!mounted) return;
-                                setState(
-                                    () => receiveAllGroupReactions = value);
-                              } else {
-                                showSnackBar(
-                                    l10n.error_updating_setting(
-                                        res.error ?? l10n.unknown_error),
-                                    color: Colors.red);
-                              }
-                            });
-                          },
+                          save: setGroupReactionNotificationSetting,
+                          apply: (v) => receiveAllGroupReactions = v,
                         ),
                         ListTile(
                           title: Text(context.l10n.widget_refresh_interval),
@@ -661,7 +608,7 @@ class AccountPageState extends State<AccountPage> {
                           label: Text(context.l10n.delete_account),
                           style: TextButton.styleFrom(
                             foregroundColor:
-                                GlobalThemeData.darkColorScheme.error,
+                                Theme.of(context).colorScheme.error,
                           ),
                         ),
                       ],

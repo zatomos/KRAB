@@ -23,8 +23,7 @@ Future<bool> initializeSupabaseIfNeeded() async {
   // Start initialization with lock
   _supabaseInitCompleter = Completer<bool>();
 
-  // Whichever instance the user connected this install to. Falls back to the
-  // .env default; empty until the user picks one.
+  // Whichever instance the user connected this install to.
   final url = UserPreferences.supabaseUrl;
   final anon = UserPreferences.supabaseAnonKey;
 

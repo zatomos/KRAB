@@ -9,29 +9,28 @@ import 'package:krab/models/user.dart' as krab_user;
 import 'package:krab/models/image_data.dart';
 import 'package:krab/models/image_ref.dart';
 import 'package:krab/pages/viewer/viewer_overlay.dart';
-import 'package:krab/services/reaction_cache.dart';
-import 'package:krab/services/viewer_cache.dart';
+import 'package:krab/services/cache/feed_image_cache.dart';
+import 'package:krab/services/cache/reaction_cache.dart';
+import 'package:krab/services/cache/viewer_cache.dart';
 
-/// Resolves the pixel dimensions of encoded image. Used to give the
-/// viewer a stable child size before the hero flight starts, so the entry
-/// image flies to its exact on-screen rect without a mid-flight resize.
+/// Resolves the pixel dimensions of an encoded image.
+/// Used to give the viewer a stable child size before the hero flight starts,
+/// so the entry image flies to its exact on-screen rect without a
+/// mid-flight resize.
 Future<Size> decodeImageSize(Uint8List bytes) {
   final completer = Completer<Size>();
   final stream = MemoryImage(bytes).resolve(const ImageConfiguration());
   late final ImageStreamListener listener;
+  void finish(Size size) {
+    stream.removeListener(listener);
+    if (!completer.isCompleted) completer.complete(size);
+  }
+
   listener = ImageStreamListener(
-    (info, _) {
-      stream.removeListener(listener);
-      if (!completer.isCompleted) {
-        completer.complete(
-          Size(info.image.width.toDouble(), info.image.height.toDouble()),
-        );
-      }
-    },
-    onError: (_, __) {
-      stream.removeListener(listener);
-      if (!completer.isCompleted) completer.complete(const Size(1, 1));
-    },
+    (info, _) => finish(
+      Size(info.image.width.toDouble(), info.image.height.toDouble()),
+    ),
+    onError: (_, __) => finish(Size.zero),
   );
   stream.addListener(listener);
   return completer.future;
@@ -69,7 +68,7 @@ Uint8List? createBlurredBackgroundBytes(Uint8List sourceBytes) {
 }
 
 /// Full-screen, swipeable viewer for a feed of images with a blurred backdrop.
-/// Opened from [ImageFeedPage], which owns the image list and caches.
+/// Opened from ImageFeedPage, which owns the image list and caches.
 class ImageViewerPage extends StatefulWidget {
   final List<ImageRef> images;
   final int initialIndex;
@@ -80,11 +79,10 @@ class ImageViewerPage extends StatefulWidget {
 
   /// The group being viewed, or null for the cross-group recent photos gallery.
   final String? groupId;
-  final Future<ImageData> Function(String) getImageData;
-  final Future<Uint8List?> Function(String) getOrStartFullResFuture;
-  final Future<Uint8List?> Function(String, {bool lowRes}) getCachedImage;
-  final Map<String, int> commentCountCache;
-  final Map<String, krab_user.User> userCache;
+
+  /// The gallery's cache, shared with the feed underneath so swiping between
+  /// photos and closing back to the grid never re-downloads what is loaded.
+  final FeedImageCache cache;
   final void Function(String imageId, int delta)? onCommentCountChanged;
   final void Function(String imageId)? onImageDeleted;
 
@@ -105,11 +103,7 @@ class ImageViewerPage extends StatefulWidget {
     required this.initialImageData,
     this.initialImageSize,
     required this.groupId,
-    required this.getImageData,
-    required this.getOrStartFullResFuture,
-    required this.getCachedImage,
-    required this.commentCountCache,
-    required this.userCache,
+    required this.cache,
     this.onCommentCountChanged,
     this.onImageDeleted,
     this.onImageChanged,
@@ -125,8 +119,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
     with SingleTickerProviderStateMixin {
   late final ExtendedPageController _pageController;
   late int _currentIndex;
-  // The page nearest screen-center. Only this page carries a Hero, so popping
-  // mid-swipe flies a single image, not both.
+  // The page nearest screen-center, so popping mid-swipe flies a single image.
   late int _heroIndex;
 
   // Bytes cached here as pages load so the background never needs an async
@@ -152,9 +145,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
   static const int _loadMoreThreshold = 3;
   bool _isLoadingMore = false;
 
-  // Cap on how many pages' bytes/sizes/futures are retained. Tracks access
-  // order and evicts the least-recently-used page once over the cap,
-  // never touching the pages currently in use.
+  // Cap on how many pages' bytes/sizes/futures are retained.
   static const int _maxCachedPages = 7;
   final List<int> _lru = [];
 
@@ -364,8 +355,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
   /// The live page position, or the settled index before the controller
   /// is attached/measured.
   double get _page {
-    if (_pageController.hasClients &&
-        _pageController.position.haveDimensions) {
+    if (_pageController.hasClients && _pageController.position.haveDimensions) {
       return _pageController.page ?? _currentIndex.toDouble();
     }
     return _currentIndex.toDouble();
@@ -414,7 +404,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
       if (index == widget.initialIndex) {
         return Future.value(widget.initialImageData);
       }
-      return widget.getImageData(widget.images[index].id);
+      return widget.cache.imageData(widget.images[index].id);
     });
   }
 
@@ -431,7 +421,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
             builder: (context, snapshot) {
               final data = snapshot.data;
               if (data == null) return const SizedBox.shrink();
-              final uploader = widget.userCache[data.uploadedBy] ??
+              final uploader = widget.cache.user(data.uploadedBy) ??
                   krab_user.User(id: data.uploadedBy, username: '');
               return ViewerOverlay(
                 key: ValueKey(imageId),
@@ -439,13 +429,11 @@ class _ImageViewerPageState extends State<ImageViewerPage>
                 groupId: widget.groupId,
                 imageData: data,
                 uploader: uploader,
-                commentCount: widget.commentCountCache[imageId] ?? 0,
+                commentCount: widget.cache.commentCount(imageId),
                 progress: t,
                 uploadedAt: widget.images[_currentIndex].uploadedAt,
                 flingToCommentsEnabled: !_isZoomed,
-                loadBestBytesForSave: () async =>
-                    await widget.getCachedImage(imageId, lowRes: false) ??
-                    await widget.getCachedImage(imageId, lowRes: true),
+                loadBestBytesForSave: () => widget.cache.bestBytes(imageId),
                 onCommentCountChanged: (delta) =>
                     widget.onCommentCountChanged?.call(imageId, delta),
                 onImageDeleted: widget.onImageDeleted,
@@ -466,39 +454,39 @@ class _ImageViewerPageState extends State<ImageViewerPage>
       body: GestureDetector(
         onTap: _toggleChrome,
         child: Stack(
-        children: [
-          Positioned.fill(child: _buildBackground()),
-          Positioned.fill(
-            child: ColoredBox(color: Colors.black.withValues(alpha: 0.7)),
-          ),
-          Positioned.fill(
-            child: ExtendedImageGesturePageView.builder(
-              controller: _pageController,
-              itemCount: widget.images.length,
-              onPageChanged: _onPageChanged,
-              physics: const _SnappyPageScrollPhysics(),
-              itemBuilder: (context, index) {
-                _touch(index);
-                final imageId = widget.images[index].id;
-                return _ViewerPhoto(
-                  key: ValueKey(imageId),
-                  displaySize: _displaySizeFor(index, viewport),
-                  // Only the page nearest center gets a Hero
-                  heroTag: index == _heroIndex ? "image_$imageId" : null,
-                  // Seed from the prefetch cache so a known page paints its
-                  // low-res image on the first frame instead of flashing
-                  initialBytes: _pageBytes[index],
-                  imageDataFuture: _imageDataFor(index),
-                  fullFuture: widget.getOrStartFullResFuture(imageId),
-                  onLowBytes: (bytes) => _cachePageBytes(index, bytes),
-                  onNaturalSize: (size) => _setChildSize(index, size),
-                  onZoomChanged: _onPageZoomChanged,
-                );
-              },
+          children: [
+            Positioned.fill(child: _buildBackground()),
+            Positioned.fill(
+              child: ColoredBox(color: Colors.black.withValues(alpha: 0.7)),
             ),
-          ),
-          Positioned.fill(child: _buildOverlay()),
-        ],
+            Positioned.fill(
+              child: ExtendedImageGesturePageView.builder(
+                controller: _pageController,
+                itemCount: widget.images.length,
+                onPageChanged: _onPageChanged,
+                physics: const _SnappyPageScrollPhysics(),
+                itemBuilder: (context, index) {
+                  _touch(index);
+                  final imageId = widget.images[index].id;
+                  return _ViewerPhoto(
+                    key: ValueKey(imageId),
+                    displaySize: _displaySizeFor(index, viewport),
+                    // Only the page nearest center gets a Hero
+                    heroTag: index == _heroIndex ? "image_$imageId" : null,
+                    // Seed from the prefetch cache so a known page paints its
+                    // low-res image on the first frame instead of flashing
+                    initialBytes: _pageBytes[index],
+                    imageDataFuture: _imageDataFor(index),
+                    fullFuture: widget.cache.fullResBytes(imageId),
+                    onLowBytes: (bytes) => _cachePageBytes(index, bytes),
+                    onNaturalSize: (size) => _setChildSize(index, size),
+                    onZoomChanged: _onPageZoomChanged,
+                  );
+                },
+              ),
+            ),
+            Positioned.fill(child: _buildOverlay()),
+          ],
         ),
       ),
     );
@@ -581,16 +569,9 @@ class _ViewerPhotoState extends State<_ViewerPhoto>
   /// Decodes the image's natural size and reports it up so the page can compute
   /// the contained rect
   void _resolveNaturalSize(Uint8List bytes) {
-    final stream = MemoryImage(bytes).resolve(const ImageConfiguration());
-    late final ImageStreamListener listener;
-    listener = ImageStreamListener((info, _) {
-      stream.removeListener(listener);
-      if (!mounted) return;
-      final nW = info.image.width.toDouble();
-      final nH = info.image.height.toDouble();
-      if (nW > 0 && nH > 0) widget.onNaturalSize(Size(nW, nH));
+    decodeImageSize(bytes).then((size) {
+      if (mounted && !size.isEmpty) widget.onNaturalSize(size);
     });
-    stream.addListener(listener);
   }
 
   Future<void> _loadFull() async {

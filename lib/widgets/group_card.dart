@@ -61,7 +61,8 @@ class _GroupCardState extends State<GroupCard> {
     if (response.error != null) {
       debugPrint("Failed to load member count: ${response.error}");
       if (!mounted) return 0;
-      showSnackBar(context.l10n.error_loading_member_count, color: Colors.red);
+      showSnackBar(context.l10n.error_loading_member_count,
+          tone: SnackTone.failure);
       return 0;
     }
     return response.data!;

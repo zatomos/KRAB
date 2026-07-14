@@ -40,7 +40,7 @@ Future<void> showMemberRolesDialog(BuildContext context) => showDialog<void>(
           SoftButton(
             onPressed: () => Navigator.of(context).pop(),
             label: context.l10n.got_it,
-            color: GlobalThemeData.darkColorScheme.primary,
+            color: Theme.of(context).colorScheme.primary,
           ),
         ],
       ),
@@ -85,7 +85,7 @@ class _RoleSection extends StatelessWidget {
         Text(
           description,
           style: TextStyle(
-            color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
             height: 1.35,
           ),
         ),

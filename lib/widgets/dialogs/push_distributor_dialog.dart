@@ -78,7 +78,7 @@ class _PushDistributorDialogState extends State<PushDistributorDialog> {
             Text(
               context.l10n.push_distributor_none,
               style: TextStyle(
-                color: GlobalThemeData.darkColorScheme.error,
+                color: Theme.of(context).colorScheme.error,
               ),
             )
           else
@@ -111,7 +111,7 @@ class _PushDistributorDialogState extends State<PushDistributorDialog> {
               padding: const EdgeInsets.only(top: 8),
               child: Text(
                 _error!,
-                style: TextStyle(color: GlobalThemeData.darkColorScheme.error),
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
             ),
         ],
@@ -122,7 +122,7 @@ class _PushDistributorDialogState extends State<PushDistributorDialog> {
         SoftButton(
           onPressed: _switching ? () {} : () => Navigator.of(context).pop(),
           label: context.l10n.close,
-          color: GlobalThemeData.darkColorScheme.onSurfaceVariant,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
         ),
       ],
     );

@@ -19,14 +19,14 @@ class ImageSentDialog extends StatelessWidget {
       content: Text(success
           ? context.l10n.image_sent_subtitle
           : context.l10n
-              .error_image_not_sent_subtitle(errorMsg ?? 'Unknown error')),
+              .error_image_not_sent_subtitle(context.errorText(errorMsg))),
       actionsOverflowButtonSpacing:
           GlobalThemeData.dialogActionsOverflowSpacing,
       actions: [
         SoftButton(
             onPressed: () => Navigator.of(context).pop(),
             label: context.l10n.ok,
-            color: GlobalThemeData.darkColorScheme.primary),
+            color: Theme.of(context).colorScheme.primary),
       ],
     );
   }
