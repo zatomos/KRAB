@@ -62,8 +62,10 @@ dependencies:
   saver_gallery: ^5.1.0
   shared_preferences: ^2.5.5
   supabase_flutter: ^2.15.0
+  url_launcher: ^6.3.2
   workmanager: ^0.9.0
   unifiedpush: ^6.2.0
+  simple_icons: ^16.23.0
 
 dev_dependencies:
   flutter_test:

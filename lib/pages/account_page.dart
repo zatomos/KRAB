@@ -3,6 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:krab/services/auth/app_auth.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:simple_icons/simple_icons.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import 'package:krab/config.dart';
 
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/themes/global_theme_data.dart';
@@ -137,6 +141,18 @@ class AccountPageState extends State<AccountPage> {
           reactionSetting.data ?? receiveAllGroupReactions;
       _isLoading = false;
     });
+  }
+
+  /// Open the project's page in a browser.
+  Future<void> _openProjectPage() async {
+    final l10n = context.l10n;
+    final opened = await launchUrl(
+      Uri.parse(projectUrl),
+      mode: LaunchMode.externalApplication,
+    );
+    if (!opened && mounted) {
+      showSnackBar(l10n.error_opening_link, tone: SnackTone.failure);
+    }
   }
 
   Future<void> _loadAppVersion() async {
@@ -619,10 +635,21 @@ class AccountPageState extends State<AccountPage> {
                 // Bottom text stays at the bottom
                 Padding(
                   padding: const EdgeInsets.all(16.0),
-                  child: Text(
-                    'KRAB v$appVersion',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.grey),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        'KRAB v$appVersion',
+                        style: const TextStyle(color: Colors.grey),
+                      ),
+                      const SizedBox(width: 4),
+                      IconButton(
+                        icon: const Icon(SimpleIcons.github, size: 18),
+                        color: Colors.grey,
+                        visualDensity: VisualDensity.compact,
+                        onPressed: _openProjectPage,
+                      ),
+                    ],
                   ),
                 ),
               ],

@@ -339,5 +339,6 @@
       }
     }
   },
-  "error_name_too_short": "That name is too short."
+  "error_name_too_short": "That name is too short.",
+  "error_opening_link": "Couldn't open that link."
 }
