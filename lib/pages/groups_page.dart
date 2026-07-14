@@ -38,21 +38,19 @@ class GroupsPageState extends State<GroupsPage> {
     });
   }
 
-  /// A menu entry that opens a dialog, and reloads the list if it changed one.
-  PopupMenuItem<void> _menuItem(IconData icon, String label, Widget dialog) {
+  /// Open one of the menu's dialogs, and reload the list if it changed one.
+  Future<void> _openDialog(Widget dialog) async {
+    final changed = await showDialog<bool>(
+      context: context,
+      builder: (_) => dialog,
+    );
+    if (changed == true && mounted) _refreshData();
+  }
+
+  PopupMenuItem<Widget> _menuItem(IconData icon, String label, Widget dialog) {
     return PopupMenuItem(
-      child: ListTile(
-        leading: Icon(icon),
-        title: Text(label),
-        onTap: () async {
-          Navigator.pop(context);
-          final changed = await showDialog<bool>(
-            context: context,
-            builder: (_) => dialog,
-          );
-          if (changed == true && mounted) _refreshData();
-        },
-      ),
+      value: dialog,
+      child: ListTile(leading: Icon(icon), title: Text(label)),
     );
   }
 
@@ -62,19 +60,17 @@ class GroupsPageState extends State<GroupsPage> {
       appBar: AppBar(
         title: Text(context.l10n.your_groups_page_title),
         actions: [
-          IconButton(
+          PopupMenuButton<Widget>(
             icon: const Icon(Icons.more_vert_rounded),
-            onPressed: () => showMenu(
-              context: context,
-              color: Theme.of(context).colorScheme.surfaceBright,
-              position: const RelativeRect.fromLTRB(0, 100, -1, 0),
-              items: [
-                _menuItem(Symbols.group_add_rounded,
-                    context.l10n.create_new_group, const CreateGroupDialog()),
-                _menuItem(Symbols.groups_rounded, context.l10n.join_group,
-                    const JoinGroupDialog()),
-              ],
-            ),
+            color: Theme.of(context).colorScheme.surfaceBright,
+            position: PopupMenuPosition.under,
+            onSelected: _openDialog,
+            itemBuilder: (context) => [
+              _menuItem(Symbols.group_add_rounded, context.l10n.create_new_group,
+                  const CreateGroupDialog()),
+              _menuItem(Symbols.groups_rounded, context.l10n.join_group,
+                  const JoinGroupDialog()),
+            ],
           ),
         ],
       ),

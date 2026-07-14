@@ -292,37 +292,27 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
             title: Text(context.l10n.group_settings_page_title),
             actions: [
               if (isManager)
-                IconButton(
+                PopupMenuButton<VoidCallback>(
                   icon: const Icon(Symbols.edit_square),
-                  onPressed: () {
-                    showMenu(
-                      context: context,
-                      color: Theme.of(context).colorScheme.surfaceBright,
-                      position: const RelativeRect.fromLTRB(0, 90, -1, 0),
-                      items: [
-                        PopupMenuItem(
-                          child: ListTile(
-                            leading: const Icon(Icons.text_fields_rounded),
-                            title: Text(context.l10n.edit_group_name),
-                            onTap: () {
-                              Navigator.pop(context);
-                              _updateGroupName();
-                            },
-                          ),
-                        ),
-                        PopupMenuItem(
-                          child: ListTile(
-                            leading: const Icon(Icons.image_rounded),
-                            title: Text(context.l10n.edit_icon_title),
-                            onTap: () {
-                              Navigator.pop(context);
-                              openEditIconDialog();
-                            },
-                          ),
-                        ),
-                      ],
-                    );
-                  },
+                  color: Theme.of(context).colorScheme.surfaceBright,
+                  position: PopupMenuPosition.under,
+                  onSelected: (action) => action(),
+                  itemBuilder: (context) => [
+                    PopupMenuItem(
+                      value: _updateGroupName,
+                      child: ListTile(
+                        leading: const Icon(Icons.text_fields_rounded),
+                        title: Text(context.l10n.edit_group_name),
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: openEditIconDialog,
+                      child: ListTile(
+                        leading: const Icon(Icons.image_rounded),
+                        title: Text(context.l10n.edit_icon_title),
+                      ),
+                    ),
+                  ],
                 ),
             ],
           ),

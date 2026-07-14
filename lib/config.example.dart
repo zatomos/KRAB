@@ -4,9 +4,12 @@
 library;
 
 /// The GitHub repository this build checks for its own updates.
-///Point this at *your* repository. Left empty, the app never checks for
+/// Point this at *your* repository. Left empty, the app never checks for
 /// updates.
 const updateRepo = '';
+
+/// The KRAB project itself.
+const projectUrl = 'https://github.com/zatomos/KRAB';
 
 /// Whether the app checks for updates at all.
 const enableAutoUpdate = false;
