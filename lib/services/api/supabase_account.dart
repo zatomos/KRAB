@@ -190,10 +190,11 @@ Future<SupabaseResponse<void>> logOut() async {
     await PushHelper.unregister();
     await PushHelper.dispose();
 
-    // Clear profile picture cache
+    // Clear caches
     await ProfilePictureCache.of(supabase).clear();
-    // Clear cached image bytes
     await ImageDiskCache.instance.clear();
+    clearReactionCache();
+    clearViewerCaches();
 
     // Revoke server-side + clear the shared session.
     await AppAuth.instance.logout();

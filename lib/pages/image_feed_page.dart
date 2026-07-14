@@ -13,8 +13,8 @@ import 'package:krab/models/image_ref.dart';
 import 'package:krab/pages/group_settings_page.dart';
 import 'package:krab/pages/groups_page.dart';
 import 'package:krab/pages/viewer/image_viewer_page.dart';
+import 'package:krab/services/reaction_cache.dart';
 import 'package:krab/widgets/avatars/user_avatar.dart';
-import 'package:krab/widgets/reactions_bar.dart';
 
 /// Number of images fetched per page in both the single-group and cross-group
 /// galleries. New pages load as the user scrolls.
@@ -65,12 +65,11 @@ class ImageFeedPageState extends State<ImageFeedPage> {
   final Map<String, int> _commentCountCache = {};
   final Map<String, int> _reactionCountCache = {};
 
-  /// LRU bound on how many images' decoded bytes are retained, so memory stays
-  /// bounded while paging through an arbitrarily long feed. The lightweight
-  /// caches are not evicted. lruOrder lists image ids from least to
-  /// most-recently accessed.
+  /// LRU bound on how many images' bytes are retained.
   static const int _maxCachedImages = 60;
   final List<String> _lruOrder = [];
+  static const int _maxFullResImages = 5;
+  final List<String> _fullResLru = [];
 
   @override
   void initState() {
@@ -134,15 +133,29 @@ class ImageFeedPageState extends State<ImageFeedPage> {
 
       final initialData = await _getImageDataFuture(widget.imageId!);
       if (!mounted) return;
-      final idx = index >= 0 ? index : 0;
       final initialSize = await decodeImageSize(initialData.imageBytes);
       if (!mounted) return;
+
+      // The image is somewhere in the loaded feed: open the gallery on it, with
+      // its neighbors to swipe through.
+      // If it isn't, show it on its own rather than opening the gallery
+      // at index 0.
+      final found = index >= 0;
+      final images = found
+          ? _images
+          : [
+              ImageRef(
+                id: widget.imageId!,
+                uploadedBy: initialData.uploadedBy,
+                uploadedAt: DateTime.tryParse(initialData.createdAt),
+              )
+            ];
 
       Navigator.push(
         context,
         _viewerRoute(ImageViewerPage(
-          images: _images,
-          initialIndex: idx,
+          images: images,
+          initialIndex: found ? index : 0,
           initialImageData: initialData,
           initialImageSize: initialSize,
           groupId: _groupId,
@@ -153,9 +166,9 @@ class ImageFeedPageState extends State<ImageFeedPage> {
           userCache: _userCache,
           onCommentCountChanged: _onCommentCountChanged,
           onImageDeleted: _onImageDeleted,
-          onImageChanged: _revealTile,
-          loadMore: _loadMore,
-          hasMore: () => _hasMore,
+          onImageChanged: found ? _revealTile : null,
+          loadMore: found ? _loadMore : null,
+          hasMore: found ? () => _hasMore : null,
         )),
       ).then((_) {
         // Reaction badges may have changed in the viewer; rebuild
@@ -262,6 +275,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
     _commentCountCache.clear();
     _reactionCountCache.clear();
     _lruOrder.clear();
+    _fullResLru.clear();
     super.dispose();
   }
 
@@ -276,6 +290,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
     final response = await getImage(imageId, lowRes: lowRes);
     if (response.success && response.data != null) {
       cache[imageId] = response.data!;
+      if (!lowRes) _touchFullRes(imageId);
       return response.data!;
     }
     return null;
@@ -284,10 +299,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
   /// Drop a deleted image from the list and every cache so it disappears from
   /// the grid.
   void _onImageDeleted(String imageId) {
-    _lowResCache.remove(imageId);
-    _fullResCache.remove(imageId);
-    _fullResFutureCache.remove(imageId);
-    _imageFutureCache.remove(imageId);
+    _dropImage(imageId);
     _commentCountCache.remove(imageId);
     _reactionCountCache.remove(imageId);
     _lruOrder.remove(imageId);
@@ -309,22 +321,40 @@ class ImageFeedPageState extends State<ImageFeedPage> {
     return future;
   }
 
-  /// Record [imageId] as most-recently accessed and drop the byte caches of any
+  /// Record imageId as most-recently accessed and drop the byte caches of any
   /// images that fall outside the LRU window.
   void _touchCache(String imageId) {
     _lruOrder
       ..remove(imageId)
       ..add(imageId);
     while (_lruOrder.length > _maxCachedImages) {
-      final evicted = _lruOrder.removeAt(0);
-      _lowResCache.remove(evicted);
-      _fullResCache.remove(evicted);
-      _fullResFutureCache.remove(evicted);
-      _imageFutureCache.remove(evicted);
+      _dropImage(_lruOrder.removeAt(0));
     }
   }
 
+  /// The same for the full-resolution bytes.
+  void _touchFullRes(String imageId) {
+    _fullResLru
+      ..remove(imageId)
+      ..add(imageId);
+    while (_fullResLru.length > _maxFullResImages) {
+      final evicted = _fullResLru.removeAt(0);
+      _fullResCache.remove(evicted);
+      _fullResFutureCache.remove(evicted);
+    }
+  }
+
+  /// Forget everything held for one image.
+  void _dropImage(String imageId) {
+    _lowResCache.remove(imageId);
+    _fullResCache.remove(imageId);
+    _fullResFutureCache.remove(imageId);
+    _imageFutureCache.remove(imageId);
+    _fullResLru.remove(imageId);
+  }
+
   Future<Uint8List?> _getOrStartFullResFuture(String imageId) {
+    _touchFullRes(imageId);
     if (_fullResFutureCache.containsKey(imageId)) {
       debugPrint("[feed] memo HIT $imageId (fullres)");
       return _fullResFutureCache[imageId]!;

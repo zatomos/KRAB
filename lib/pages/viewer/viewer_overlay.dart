@@ -15,6 +15,7 @@ import 'package:krab/pages/image_feed_page.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/services/file_saver.dart';
 import 'package:krab/services/api/supabase.dart';
+import 'package:krab/services/viewer_cache.dart';
 import 'package:krab/widgets/comments_bottom_sheet.dart';
 import 'package:krab/widgets/dialogs/add_to_groups_dialog.dart';
 import 'package:krab/widgets/dialogs/delete_image_dialog.dart';
@@ -24,49 +25,6 @@ import 'package:krab/widgets/reactions_bar.dart';
 import 'package:krab/widgets/avatars/user_avatar.dart';
 import 'package:krab/widgets/avatars/group_avatar.dart';
 import 'package:krab/themes/global_theme_data.dart';
-
-final Map<String, List<Group>> _postedInGroupsCache = {};
-
-Future<List<Group>?> fetchPostedInGroups(String imageId) async {
-  final cached = _postedInGroupsCache[imageId];
-  if (cached != null) return cached;
-
-  final response = await getImageGroups(imageId);
-  if (!response.success || response.data == null) return null;
-
-  final groups = await Future.wait((response.data!).map((e) async {
-    final map = e as Map<String, dynamic>;
-    final id = map['group_id']?.toString() ?? '';
-    return Group(
-      id: id,
-      name: map['group_name']?.toString() ?? '',
-      iconUrl: await resolveGroupIconUrl(id),
-      createdAt: '',
-    );
-  }));
-
-  _postedInGroupsCache[imageId] = groups;
-  return groups;
-}
-
-/// Forget an image's cached groups so the next fetch reflects a change (e.g.
-/// after the photo is removed from some of them).
-void invalidatePostedInGroups(String imageId) {
-  _postedInGroupsCache.remove(imageId);
-}
-
-/// Whether the user moderates a given group.
-final Map<String, bool> _moderatedGroupsCache = {};
-
-Future<bool> _canModerateGroup(String groupId) async {
-  final cached = _moderatedGroupsCache[groupId];
-  if (cached != null) return cached;
-
-  final res = await isGroupAdminOrOwner(groupId);
-  if (!res.success || res.data == null) return false;
-  _moderatedGroupsCache[groupId] = res.data!;
-  return res.data!;
-}
 
 /// Actions offered by the viewer's overflow menu.
 enum _ViewerAction { save, addToGroups, delete }
@@ -155,7 +113,7 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
   void _initModeration() {
     final groupId = widget.groupId;
     if (groupId == null) return;
-    _canModerateGroup(groupId).then((canModerate) {
+    canModerateGroup(groupId).then((canModerate) {
       if (mounted && canModerate != _canModerate) {
         setState(() => _canModerate = canModerate);
       }
@@ -177,7 +135,7 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
   /// show them synchronously so the pill doesn't flash;
   /// otherwise fetch and fill them in when ready.
   void _initPostedInGroups() {
-    final cached = _postedInGroupsCache[widget.imageId];
+    final cached = cachedPostedInGroups(widget.imageId);
     if (cached != null) {
       _postedInGroups = _displayGroups(cached);
     } else {
@@ -814,7 +772,8 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
     final savedMessage = context.l10n.image_saved;
     final errorMessage = context.l10n.error_saving_image;
     final bytes = await widget.loadBestBytesForSave();
-    if (!mounted || bytes == null) {
+    if (!mounted) return;
+    if (bytes == null) {
       showSnackBar(errorMessage, color: Colors.red);
       return;
     }

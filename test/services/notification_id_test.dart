@@ -49,4 +49,51 @@ void main() {
       expect(id, lessThanOrEqualTo(0x7FFFFFFF));
     });
   });
+
+  group('commentNotificationId', () {
+    const comment = '33333333-3333-3333-3333-333333333333';
+
+    test('is stable for the same comment', () {
+      expect(commentNotificationId(comment), commentNotificationId(comment));
+    });
+
+    test('tells two comments apart', () {
+      expect(commentNotificationId(comment),
+          isNot(commentNotificationId('44444444-4444-4444-4444-444444444444')));
+    });
+
+    test('is a valid Android notification id', () {
+      final id = commentNotificationId(comment);
+      expect(id, greaterThanOrEqualTo(0));
+      expect(id, lessThanOrEqualTo(0x7FFFFFFF));
+    });
+  });
+
+  group('reactionNotificationId', () {
+    const reactor = '55555555-5555-5555-5555-555555555555';
+
+    test('is stable for one user reacting to one photo', () {
+      expect(reactionNotificationId(image, reactor),
+          reactionNotificationId(image, reactor));
+    });
+
+    test('tells two reactors on the same photo apart', () {
+      expect(reactionNotificationId(image, reactor),
+          isNot(reactionNotificationId(image, 'someone-else')));
+    });
+
+    test('tells the same reactor on two photos apart', () {
+      expect(reactionNotificationId(image, reactor),
+          isNot(reactionNotificationId(other, reactor)));
+    });
+  });
+
+  test('a comment and a reaction never collide with the photo itself', () {
+    final ids = {
+      imageNotificationId(image),
+      commentNotificationId(image),
+      reactionNotificationId(image, image),
+    };
+    expect(ids, hasLength(3));
+  });
 }

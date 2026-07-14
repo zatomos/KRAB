@@ -58,32 +58,41 @@ void main(List<String> args) async {
     pendingWidgetUri = await HomeWidget.initiallyLaunchedFromHomeWidget();
     HomeWidget.widgetClicked.listen(handleWidgetLaunch);
 
-    if (supabaseOk) {
-      // Re-read this instance's public settings on every launch. Cached.
-      await fetchInstanceConfig();
-
-      // Subscribes through a distributor and hands the endpoint to
-      // this instance's backend.
-      await PushHelper.ensureRegistered();
-      await ProfilePictureCache.of(Supabase.instance.client).hydrate();
-      // Cache groups so the widget configure screen can offer a group filter
-      await cacheUserGroupsForWidget();
-      // Photos queued while offline go out as soon as we're up again.
-      unawaited(UploadOutbox.instance.flush());
-      _listenToAuthEvents();
-    } else {
-      debugPrint('Skipping push/cache init, Supabase not initialized');
-    }
-
     isAppInitialized = true;
 
     runApp(MyApp(navigatorKey: navigatorKey));
+
+    if (supabaseOk) {
+      _listenToAuthEvents();
+      unawaited(_warmUpFromNetwork());
+    } else {
+      debugPrint('Skipping push/cache init, Supabase not initialized');
+    }
   } catch (e, st) {
     debugPrint('Error starting app: $e');
     debugPrint('Stack trace: $st');
     if (!background) {
       runApp(MyApp(navigatorKey: navigatorKey));
     }
+  }
+}
+
+/// Network work that runs once the UI is up.
+Future<void> _warmUpFromNetwork() async {
+  try {
+    // Re-read this instance's public settings on every launch. Cached.
+    await fetchInstanceConfig();
+
+    // Subscribes through a distributor and hands the endpoint to
+    // this instance's backend.
+    await PushHelper.ensureRegistered();
+    await ProfilePictureCache.of(Supabase.instance.client).hydrate();
+    // Cache groups so the widget configure screen can offer a group filter
+    await cacheUserGroupsForWidget();
+    // Photos queued while offline go out as soon as we're up again.
+    await UploadOutbox.instance.flush();
+  } catch (e, st) {
+    debugPrint('Warm-up failed: $e\n$st');
   }
 }
 

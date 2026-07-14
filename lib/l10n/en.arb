@@ -50,6 +50,8 @@
   "leave_group": "Leave Group",
   "left_group_success": "Left group successfully.",
   "error_leaving_group": "Failed to leave group: {errorMsg}",
+  "crop_image": "Crop Image",
+  "error_signing_out": "Failed to sign out: {errorMsg}",
   "edit_group_name": "Edit Group Name",
   "new_group_name": "New Group Name",
   "group_name_empty": "Group name cannot be empty.",

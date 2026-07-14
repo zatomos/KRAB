@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/services/api/supabase.dart';
+import 'package:krab/services/auth/app_auth.dart';
 import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/user_preferences.dart';
 import 'package:krab/widgets/soft_button.dart';
@@ -29,9 +30,11 @@ class _ChangeServerDialogState extends State<ChangeServerDialog> {
     setState(() => _working = true);
 
     // Best-effort sign-out; a failure here must not block the switch.
-    try {
-      await logOut();
-    } catch (_) {}
+    final res = await logOut();
+    if (!res.success) {
+      debugPrint('Change server: sign-out failed (${res.error})');
+    }
+    await AppAuth.instance.forgetSession();
 
     // Clear the saved instance
     await UserPreferences.setSupabaseConfig(url: '', anonKey: '');

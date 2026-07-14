@@ -10,6 +10,10 @@ class ProfilePictureCache {
   // of avatar fetches coalesces into one write instead of re-encoding and
   //persisting the whole map per URL.
   static const _persistDebounce = Duration(milliseconds: 400);
+
+  /// Retire a cached URL before its signature actually expires.
+  static const _expiryMargin = Duration(minutes: 5);
+
   static ProfilePictureCache? _instance;
 
   final SupabaseClient _supabase;
@@ -22,17 +26,19 @@ class ProfilePictureCache {
     return _instance ??= ProfilePictureCache._(supabase);
   }
 
-  /// Load persisted cache on app startup.
+  /// Load persisted cache on app startup, dropping anything already stale.
   Future<void> hydrate() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_prefsKey);
     if (raw == null) return;
     try {
       final map = jsonDecode(raw) as Map<String, dynamic>;
+      final deadline = DateTime.now().subtract(_expiryMargin);
       for (final entry in map.entries) {
-        _memory[entry.key] = CachedUrl.fromJson(
+        final cached = CachedUrl.fromJson(
           Map<String, dynamic>.from(entry.value as Map),
         );
+        if (cached.expiry.isAfter(deadline)) _memory[entry.key] = cached;
       }
     } catch (_) {
       await prefs.remove(_prefsKey);
@@ -45,10 +51,13 @@ class ProfilePictureCache {
     _persistTimer = Timer(_persistDebounce, _persist);
   }
 
-  /// Persist cache
+  /// Persist cache, sweeping out entries that are dead beyond recovery.
   Future<void> _persist() async {
     _persistTimer?.cancel();
     _persistTimer = null;
+    final deadline = DateTime.now().subtract(_expiryMargin);
+    _memory.removeWhere((_, cached) => cached.expiry.isBefore(deadline));
+
     final prefs = await SharedPreferences.getInstance();
     final map = _memory.map((k, v) => MapEntry(k, v.toJson()));
     await prefs.setString(_prefsKey, jsonEncode(map));
@@ -81,7 +90,9 @@ class ProfilePictureCache {
 
       if (url.isEmpty) return null;
 
-      final fresh = CachedUrl(url, DateTime.now().add(ttl));
+      // Expire the entry before the signature does, never after.
+      final usableFor = ttl > _expiryMargin ? ttl - _expiryMargin : ttl ~/ 2;
+      final fresh = CachedUrl(url, DateTime.now().add(usableFor));
       _memory[id] = fresh;
       _schedulePersist();
       return url;

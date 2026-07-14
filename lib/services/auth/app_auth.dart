@@ -46,6 +46,22 @@ bool isNearExpiry(int? expiresAt, int nowEpochSeconds, int marginSeconds) {
   return expiresAt - nowEpochSeconds <= marginSeconds;
 }
 
+/// GoTrue error codes that prove the session is dead, so we need to
+/// sign the user out.
+/// Everything else is a failure of one attempt, not proof that
+/// the session is gone.
+const Set<String> fatalRefreshCodes = {
+  'refresh_token_not_found',
+  'refresh_token_revoked',
+  'session_not_found',
+  'session_expired',
+  'user_not_found',
+  'user_banned',
+};
+
+/// Whether a refresh rejection carrying code means the session is dead.
+bool isFatalRefreshCode(String code) => fatalRefreshCodes.contains(code);
+
 /// Result of an auth action. error is a GoTrue error code when success is false
 class AuthResult {
   const AuthResult(this.success, [this.error]);
@@ -82,6 +98,14 @@ class AppAuth {
 
   // Serialization of refreshes; the file lock serializes across.
   Future<void> _chain = Future<void>.value();
+
+  // A refresh token the server has rejected, and how many times running.
+  String? _rejectedToken;
+  int _rejectionCount = 0;
+
+  /// How many consecutive rejections of the same refresh token it takes before
+  /// the session is treated as genuinely dead.
+  static const int _maxRejections = 3;
 
   GotrueApi get _api =>
       GotrueApi(UserPreferences.supabaseUrl, UserPreferences.supabaseAnonKey);
@@ -215,6 +239,21 @@ class AppAuth {
     await _clear();
   }
 
+  /// Drop the stored session without telling the server, and without announcing
+  /// a sign-out.
+  Future<void> forgetSession() async {
+    _accessToken = _refreshToken = null;
+    _expiresAt = null;
+    _claims = null;
+    _rejectedToken = null;
+    _rejectionCount = 0;
+    try {
+      await _storage.delete(key: _sessionKey);
+    } catch (e) {
+      debugPrint('AppAuth.forgetSession failed: $e');
+    }
+  }
+
   Future<AuthResult> _runAction(Future<void> Function() action) async {
     try {
       await action();
@@ -243,21 +282,27 @@ class AppAuth {
     try {
       lock = await _acquireLock();
 
+      if (lock == null) {
+        await _reloadFromStore();
+        return;
+      }
+
       // Another isolate may have refreshed while we waited for the lock; adopt
       // whatever is now persisted before deciding to refresh.
       await _reloadFromStore();
       if (_refreshToken == null || !_isNearExpiry()) return;
 
+      final used = _refreshToken!;
       try {
-        await _apply(await _api.refreshGrant(_refreshToken!), persist: true);
+        await _apply(await _api.refreshGrant(used), persist: true);
+        _rejectedToken = null;
+        _rejectionCount = 0;
         _events.add(AppAuthStatus.tokenRefreshed);
       } on GotrueNetworkException {
         // Transient; keep the session and try again next time.
         debugPrint('AppAuth: refresh skipped (offline)');
       } on GotrueAuthException catch (e) {
-        // The refresh token is genuinely invalid -> sign out.
-        debugPrint('AppAuth: refresh rejected (${e.code}); signing out');
-        await _clear();
+        await _handleRefreshRejection(e, used);
       }
     } catch (e) {
       debugPrint('AppAuth._refreshLocked failed: $e');
@@ -271,6 +316,39 @@ class AppAuth {
     }
   }
 
+  /// Decide what a rejected refresh actually means before throwing the session
+  /// away.
+  Future<void> _handleRefreshRejection(
+      GotrueAuthException e, String used) async {
+    await _reloadFromStore();
+    if (_refreshToken != null && _refreshToken != used) {
+      debugPrint('AppAuth: refresh raced (${e.code}); '
+          'adopted the session another isolate stored');
+      _rejectedToken = null;
+      _rejectionCount = 0;
+      return;
+    }
+
+    if (isFatalRefreshCode(e.code)) {
+      debugPrint('AppAuth: refresh rejected (${e.code}); signing out');
+      await _clear();
+      return;
+    }
+
+    _rejectionCount = (_rejectedToken == used) ? _rejectionCount + 1 : 1;
+    _rejectedToken = used;
+
+    if (_rejectionCount >= _maxRejections) {
+      debugPrint('AppAuth: refresh rejected (${e.code}) '
+          '$_rejectionCount times running; signing out');
+      await _clear();
+      return;
+    }
+
+    debugPrint('AppAuth: refresh failed (${e.code}, attempt $_rejectionCount); '
+        'keeping the session and retrying later');
+  }
+
   Future<void> _reloadFromStore() async {
     try {
       final raw = await _storage.read(key: _sessionKey);
@@ -280,7 +358,7 @@ class AppAuth {
         _claims = null;
         return;
       }
-      _apply(jsonDecode(raw) as Map<String, dynamic>, persist: false);
+      await _apply(jsonDecode(raw) as Map<String, dynamic>, persist: false);
     } catch (_) {}
   }
 
@@ -313,15 +391,18 @@ class AppAuth {
     _accessToken = _refreshToken = null;
     _expiresAt = null;
     _claims = null;
+    _rejectedToken = null;
+    _rejectionCount = 0;
     try {
       await _storage.delete(key: _sessionKey);
     } catch (_) {}
     _events.add(AppAuthStatus.signedOut);
   }
 
-  /// Best-effort cross-process exclusive lock. On timeout, returns null and the
-  /// caller proceeds unlocked (the server should absorb the rare
-  /// concurrent refresh); a stuck lock must never hang the app.
+  /// Best-effort cross-process exclusive lock. Returns null when the lock can't
+  /// be taken, and the caller then adopts the persisted session rather than
+  /// refreshing unlocked: rotation means a parallel refresh gets one of the two
+  /// callers a spent-token rejection.
   Future<RandomAccessFile?> _acquireLock() async {
     try {
       final file = File('${Directory.systemTemp.path}/krab_auth.lock');

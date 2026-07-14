@@ -78,5 +78,17 @@ void main() {
       final r = Release.fromGitHub(release(body: ''))!;
       expect(r.changelog, isEmpty);
     });
+
+    test('a tag that is not a version number is not a release we can offer', () {
+      expect(Release.fromGitHub(release(tag: 'nightly')), isNull);
+      expect(Release.fromGitHub(release(tag: 'latest')), isNull);
+      expect(Release.fromGitHub(release(tag: 'v')), isNull);
+      expect(Release.fromGitHub(release(tag: '')), isNull);
+    });
+
+    test('a prerelease tag still parses', () {
+      final r = Release.fromGitHub(release(tag: 'v1.2.3-beta.2'))!;
+      expect(r.version, '1.2.3-beta.2');
+    });
   });
 }

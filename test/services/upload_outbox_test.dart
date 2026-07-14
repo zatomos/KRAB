@@ -179,6 +179,47 @@ void main() {
     expect(await UploadOutbox.instance.pendingCount(), 2);
   });
 
+  test('an offline flush hands back the claims on the photos it never reached',
+      () async {
+    sender.responses = [_offline()];
+    await UploadOutbox.instance.enqueue(await photo('f.jpg'), ['g1'], 'one');
+    await UploadOutbox.instance.enqueue(await photo('g.jpg'), ['g1'], 'two');
+
+    await UploadOutbox.instance.flush();
+    expect(sender.calls, 1);
+
+    sender.responses = [SupabaseResponse(success: true, data: 'image-1')];
+
+    expect(await UploadOutbox.instance.flush(), isTrue,
+        reason: 'the connection is back; nothing should still be claimed');
+    expect(sender.sentDescriptions, ['one', 'one', 'two']);
+    expect(await UploadOutbox.instance.pendingCount(), 0);
+  });
+
+  test('a photo nobody could send for a week is dropped, offline or not',
+      () async {
+    // Being offline does not count against the attempt cap, but it cannot buy
+    // unlimited time either, or a photo from a long-dead outing would still be
+    // trying to go out.
+    sender.responses = [_offline()];
+    await UploadOutbox.instance.enqueue(await photo('old.jpg'), ['g1'], 'stale');
+
+    // Backdate the entry past the 7-day cap, as if it had been queued then.
+    final prefs = await SharedPreferences.getInstance();
+    final entry =
+        jsonDecode(prefs.getStringList('uploadOutbox')!.single) as Map<String, dynamic>;
+    entry['createdAt'] = DateTime.now()
+        .subtract(const Duration(days: 8))
+        .toIso8601String();
+    await prefs.setStringList('uploadOutbox', [jsonEncode(entry)]);
+
+    await UploadOutbox.instance.flush();
+
+    expect(await UploadOutbox.instance.pendingCount(), 0);
+    expect(Directory('${tempDir.path}/outbox').listSync(), isEmpty,
+        reason: 'an abandoned photo must not leave its bytes behind');
+  });
+
   test('a photo the server refuses is dropped rather than retried forever',
       () async {
     sender.responses = [_rejected()];

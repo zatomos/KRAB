@@ -5,6 +5,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/pages/login_page.dart';
 import 'package:krab/services/api/supabase.dart';
+import 'package:krab/services/auth/app_auth.dart';
 import 'package:krab/services/connection_check.dart';
 import 'package:krab/services/connection_token.dart';
 import 'package:krab/services/push_helper.dart';
@@ -147,6 +148,9 @@ class _InstanceSetupPageState extends State<InstanceSetupPage> {
       _error = null;
       _connected = false;
     });
+
+    // Drop any old session
+    await AppAuth.instance.forgetSession();
 
     await UserPreferences.setSupabaseConfig(
       url: resolved.url,

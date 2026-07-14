@@ -9,7 +9,8 @@ import 'package:krab/models/user.dart' as krab_user;
 import 'package:krab/models/image_data.dart';
 import 'package:krab/models/image_ref.dart';
 import 'package:krab/pages/viewer/viewer_overlay.dart';
-import 'package:krab/widgets/reactions_bar.dart';
+import 'package:krab/services/reaction_cache.dart';
+import 'package:krab/services/viewer_cache.dart';
 
 /// Resolves the pixel dimensions of encoded image. Used to give the
 /// viewer a stable child size before the hero flight starts, so the entry

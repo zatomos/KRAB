@@ -9,7 +9,7 @@ import 'package:krab/themes/global_theme_data.dart';
 ///
 /// Used for profile pictures and group icons. Returns the cropped File, or
 /// `null` if the user cancelled either the picker or the cropper.
-Future<File?> pickAndCropSquareImage() async {
+Future<File?> pickAndCropSquareImage({required String toolbarTitle}) async {
   final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
   if (picked == null) return null;
 
@@ -20,7 +20,7 @@ Future<File?> pickAndCropSquareImage() async {
     maxWidth: 512,
     uiSettings: [
       AndroidUiSettings(
-        toolbarTitle: 'Crop Image',
+        toolbarTitle: toolbarTitle,
         toolbarColor: GlobalThemeData.darkColorScheme.surface,
         toolbarWidgetColor: Colors.white,
         activeControlsWidgetColor: GlobalThemeData.darkColorScheme.primary,

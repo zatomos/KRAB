@@ -26,7 +26,8 @@ class Release {
   static Release? fromGitHub(Map<String, dynamic> json) {
     final tag = (json['tag_name'] as String? ?? '').trim();
     final version = tag.startsWith('v') ? tag.substring(1) : tag;
-    if (version.isEmpty) return null;
+    // Check for version validity
+    if (version.isEmpty || !RegExp(r'^\d').hasMatch(version)) return null;
 
     final assets = json['assets'];
     if (assets is! List) return null;
@@ -216,7 +217,6 @@ class UpdateService {
   }
 
   /// Returns < 0 if [a] is older than [b], 0 if equal, > 0 if newer.
-  /// Throws on unparseable input so callers can decide how to handle it.
   int _compareVersions(String a, String b) {
     final pa = _parseVersion(a);
     final pb = _parseVersion(b);
@@ -241,10 +241,13 @@ class UpdateService {
     final now = DateTime.now().millisecondsSinceEpoch;
     final last = UserPreferences.getLastUpdateCheckMillis();
     if (now - last < _checkThrottle.inMilliseconds) return;
-    await UserPreferences.setLastUpdateCheckMillis(now);
 
     final result = await service.checkForUpdate();
-    if (!result.success || !result.hasUpdate || result.info == null) return;
+    if (!result.success) return;
+
+    await UserPreferences.setLastUpdateCheckMillis(now);
+
+    if (!result.hasUpdate || result.info == null) return;
 
     await showUpdateNotification(result.info!.version);
   }
@@ -261,7 +264,8 @@ class UpdateService {
     };
 
     final split = version.split('-');
-    final numbers = split[0].split('.').map(int.parse).toList();
+    final numbers =
+        split[0].split('.').map((n) => int.tryParse(n.trim()) ?? 0).toList();
     while (numbers.length < 3) {
       numbers.add(0);
     }

@@ -64,10 +64,12 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
   }
 
   Future<void> _leaveGroup() async {
-    await UserPreferences.removeFavoriteGroup(widget.group.id);
     final response = await leaveGroup(widget.group.id);
     if (!mounted) return;
     if (response.success) {
+      // Only once the server agrees we've left.
+      await UserPreferences.removeFavoriteGroup(widget.group.id);
+      if (!mounted) return;
       cacheUserGroupsForWidget();
       showSnackBar(context.l10n.left_group_success, color: Colors.green);
       Navigator.of(context).popUntil((route) => route.isFirst);
@@ -108,7 +110,8 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
     if (action == null || !mounted) return;
 
     if (action == AvatarAction.edit) {
-      final file = await pickAndCropSquareImage();
+      final file =
+          await pickAndCropSquareImage(toolbarTitle: context.l10n.crop_image);
       if (file == null || !mounted) return;
 
       final res = await editGroupIcon(file, _group.id);
@@ -217,8 +220,6 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
         destructive: true);
     if (!confirm || !mounted) return;
 
-    await UserPreferences.removeFavoriteGroup(_group.id);
-
     final res = await deleteGroup(_group.id);
     if (!mounted) return;
     if (!res.success) {
@@ -226,6 +227,10 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
           color: Colors.red);
       return;
     }
+
+    // Only once the group is actually gone.
+    await UserPreferences.removeFavoriteGroup(_group.id);
+    if (!mounted) return;
 
     cacheUserGroupsForWidget();
     showSnackBar(context.l10n.group_deleted_success, color: Colors.green);

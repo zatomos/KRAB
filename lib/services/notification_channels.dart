@@ -45,12 +45,8 @@ AppLocalizations _l10n() {
 
 final FlutterLocalNotificationsPlugin _flnp = FlutterLocalNotificationsPlugin();
 
-/// Stable notification id for one delivery of an image.
-///
-/// The same photo landing in another group later is a separate event, so it
-/// gets its own id from batchKey.
-int imageNotificationId(String imageId, {String batchKey = ''}) {
-  final source = batchKey.isEmpty ? imageId : '$imageId|$batchKey';
+/// A stable, non-negative notification id derived from a string.
+int _notificationId(String source) {
   var hash = 0x811c9dc5; // FNV-1a 32-bit offset basis
   for (final unit in source.codeUnits) {
     hash ^= unit;
@@ -58,6 +54,23 @@ int imageNotificationId(String imageId, {String batchKey = ''}) {
   }
   return hash & 0x7FFFFFFF;
 }
+
+/// Stable notification id for one delivery of an image.
+int imageNotificationId(String imageId, {String batchKey = ''}) =>
+    _notificationId(batchKey.isEmpty ? imageId : '$imageId|$batchKey');
+
+/// Stable notification id for one comment.
+int commentNotificationId(String commentId) =>
+    _notificationId('comment|$commentId');
+
+/// Stable notification id for one user's reaction to one image. A user changing
+/// their emoji replaces their notification rather than adding another.
+int reactionNotificationId(String imageId, String reactorId) =>
+    _notificationId('reaction|$imageId|$reactorId');
+
+/// Fallback id for an event we can't identify.
+int _unidentifiedNotificationId() =>
+    DateTime.now().millisecondsSinceEpoch & 0x7FFFFFFF;
 
 /// Identifies one delivery of a photo: the set of groups it reached together.
 String imageBatchKey(Iterable<String> groupIds) =>
@@ -77,7 +90,7 @@ Future<void> cancelImageNotification(String imageId) async {
       if (id == null || payload == null || payload.isEmpty) continue;
       try {
         final data = jsonDecode(payload) as Map<String, dynamic>;
-        if (data['type'] == 'new_image' && data['image_id'] == imageId) {
+        if (data['image_id'] == imageId) {
           await _flnp.cancel(id: id);
         }
       } catch (_) {
@@ -246,6 +259,7 @@ Future<void> dispatchCommentNotification(
   await showCommentNotification(
     groupId: groupId,
     groupName: groupName,
+    commentId: commentId,
     commenterUsername: commenterUsername,
     commentText: commentText,
     imageId: imageId,
@@ -284,6 +298,7 @@ Future<void> dispatchReactionNotification(Map<String, dynamic> data,
   await initCommentNotifications();
   await showReactionNotification(
     reactorUsername: reactorUsername,
+    reactorId: reactorId,
     emoji: emoji,
     imageId: imageId,
     uploaderUsername: uploaderUsername,
@@ -466,6 +481,7 @@ Future<void> showCommentNotification({
   required String commentText,
   required String imageId,
   required String type,
+  String commentId = '',
   Uint8List? commenterAvatarBytes,
   String? uploaderUsername,
   Uint8List? imageBytes,
@@ -476,7 +492,9 @@ Future<void> showCommentNotification({
   final compositeBytes = _buildImageLargeIcon(imageBytes, commenterAvatarBytes);
 
   await _flnp.show(
-    id: DateTime.now().millisecondsSinceEpoch & 0x7FFFFFFF,
+    id: commentId.isEmpty
+        ? _unidentifiedNotificationId()
+        : commentNotificationId(commentId),
     title: commenterUsername,
     body: type == 'comment_reply'
         ? _l10n().new_reply_notification
@@ -507,6 +525,7 @@ Future<void> showReactionNotification({
   required String reactorUsername,
   required String emoji,
   required String imageId,
+  String reactorId = '',
   String? uploaderUsername,
   Uint8List? reactorAvatarBytes,
   Uint8List? imageBytes,
@@ -519,7 +538,9 @@ Future<void> showReactionNotification({
   final compositeBytes = _buildImageLargeIcon(imageBytes, reactorAvatarBytes);
 
   await _flnp.show(
-    id: DateTime.now().millisecondsSinceEpoch & 0x7FFFFFFF,
+    id: reactorId.isEmpty
+        ? _unidentifiedNotificationId()
+        : reactionNotificationId(imageId, reactorId),
     title: reactorUsername,
     body: (uploaderUsername != null && uploaderUsername.isNotEmpty)
         ? _l10n().new_reaction_on_someone_notification(emoji, uploaderUsername)

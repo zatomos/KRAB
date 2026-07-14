@@ -190,9 +190,13 @@ Future<SupabaseResponse<Uint8List>> getImage(String imageId,
         "Downloading image $imageId with transform: ${lowRes ? 'low' : 'full'}");
 
     Uint8List data;
+    // Whether what we got back is what the key says it is.
+    var isThumbnail = false;
 
     if (lowRes) {
-      data = await _downloadThumbnail(imageId);
+      final thumbnail = await _downloadThumbnail(imageId);
+      data = thumbnail.bytes;
+      isThumbnail = thumbnail.isThumbnail;
     } else {
       // Fullres download
       data = await supabase.storage.from('images').download(imageId);
@@ -206,7 +210,8 @@ Future<SupabaseResponse<Uint8List>> getImage(String imageId,
     }
 
     // Populate the disk cache for next time.
-    unawaited(ImageDiskCache.instance.write(cacheKey, data));
+    unawaited(ImageDiskCache.instance
+        .write(lowRes && !isThumbnail ? '$imageId.full' : cacheKey, data));
 
     return SupabaseResponse(success: true, data: data);
   } catch (error, stack) {
@@ -221,19 +226,26 @@ Future<SupabaseResponse<Uint8List>> getImage(String imageId,
 
 /// Fetch an image's thumbnail. Prefers the pre-generated static thumbnail;
 /// when it isn't there, it falls back to the full image.
-Future<Uint8List> _downloadThumbnail(String imageId) async {
+///
+/// Reports which of the two it returned, because the thumbnail is generated
+/// asynchronously after upload: a fallback means "not yet", not "never", and
+/// the caller must not cache the original as though it were the thumbnail.
+Future<({Uint8List bytes, bool isThumbnail})> _downloadThumbnail(
+    String imageId) async {
   try {
     final data =
         await supabase.storage.from(_thumbnailsBucket).download(imageId);
     if (data.isNotEmpty) {
       debugPrint("Thumbnail $imageId served statically");
-      return data;
+      return (bytes: data, isThumbnail: true);
     }
   } catch (_) {
     // No static thumbnail yet, fall back to the full image.
   }
 
-  return supabase.storage.from('images').download(imageId);
+  debugPrint("Thumbnail $imageId not generated yet, serving the full image");
+  final full = await supabase.storage.from('images').download(imageId);
+  return (bytes: full, isThumbnail: false);
 }
 
 /// Download a profile picture from storage.

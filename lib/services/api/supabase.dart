@@ -9,6 +9,8 @@ import 'package:krab/services/exif_stripper.dart';
 import 'package:krab/services/auth/app_auth.dart';
 import 'package:krab/services/debug_notifier.dart';
 import 'package:krab/services/push_helper.dart';
+import 'package:krab/services/reaction_cache.dart';
+import 'package:krab/services/viewer_cache.dart';
 import 'package:krab/user_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -44,11 +46,33 @@ class SupabaseResponse<T> {
 
 /// Whether error looks like a transient network failure worth retrying.
 bool _isTransientError(Object error) {
-  if (error is SocketException || error is TimeoutException) return true;
+  if (error is PostgrestException ||
+      error is StorageException ||
+      error is FunctionException ||
+      error is AuthException) {
+    return false;
+  }
+
+  if (error is SocketException ||
+      error is TimeoutException ||
+      error is HttpException ||
+      error is HandshakeException) {
+    return true;
+  }
+
+  // The HTTP clients underneath postgrest/storage wrap a dead connection in
+  // their own exception types, which aren't exported for us to catch by name.
   final message = error.toString().toLowerCase();
-  return message.contains('socket') ||
-      message.contains('timeout') ||
-      message.contains('connection');
+  return message.contains('socketexception') ||
+      message.contains('clientexception') ||
+      message.contains('failed host lookup') ||
+      message.contains('connection refused') ||
+      message.contains('connection reset') ||
+      message.contains('connection closed') ||
+      message.contains('connection terminated') ||
+      message.contains('network is unreachable') ||
+      message.contains('timeoutexception') ||
+      message.contains('timed out');
 }
 
 /// Runs action, retrying on transient network errors with exponential

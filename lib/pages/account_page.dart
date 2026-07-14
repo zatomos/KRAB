@@ -176,8 +176,18 @@ class AccountPageState extends State<AccountPage> {
   }
 
   Future<void> _logout() async {
-    await logOut();
+    final res = await logOut();
     if (!mounted) return;
+
+    // A logout that failed left the session on disk.
+    if (!res.success) {
+      showSnackBar(
+        context.l10n.error_signing_out(context.errorOr(res.error)),
+        color: Colors.red,
+      );
+      return;
+    }
+
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (context) => const LoginPage()),
     );
@@ -308,7 +318,8 @@ class AccountPageState extends State<AccountPage> {
     if (action == null || !mounted) return;
 
     if (action == AvatarAction.edit) {
-      final file = await pickAndCropSquareImage();
+      final file =
+          await pickAndCropSquareImage(toolbarTitle: context.l10n.crop_image);
       if (file == null || !mounted) return;
 
       final res = await editProfilePicture(file);

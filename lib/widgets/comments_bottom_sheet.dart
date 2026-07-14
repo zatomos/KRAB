@@ -143,11 +143,21 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
 
   bool get _isAllGroupsMode => widget.primaryGroupId == null;
 
-  /// Whether changes to groupId should be reflected in the visible comment
-  /// count badge. In all-groups mode the badge counts every group, otherwise it
-  /// only tracks the group the image was opened from.
-  bool _affectsCount(String groupId) =>
-      _isAllGroupsMode || groupId == widget.primaryGroupId;
+  /// The comment total the gallery's badge is showing, as the server last
+  /// reported it. In all-groups mode the badge counts every group; otherwise it
+  /// tracks only the group the image was opened from.
+  int _trackedCount() => _sections
+      .where((s) => _isAllGroupsMode || s.groupId == widget.primaryGroupId)
+      .fold<int>(0, (sum, s) => sum + s.commentCount);
+
+  /// Refresh, and tell the gallery how much its badge actually moved.
+  Future<void> _refreshAndReportCount() async {
+    final before = _trackedCount();
+    await _fetchComments();
+    if (!mounted) return;
+    final delta = _trackedCount() - before;
+    if (delta != 0) widget.onCommentCountChanged?.call(delta);
+  }
 
   Future<void> _fetchComments() async {
     try {
@@ -185,7 +195,9 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
           );
         }).toList());
 
+        if (!mounted) return;
         setState(() {
+          final firstLoad = _sections.isEmpty;
           _sections = sections;
           // Keep the chosen group across refreshes; only fall back to the
           // default when it's gone or nothing was chosen.
@@ -194,19 +206,26 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
               (chosen != null && sections.any((s) => s.groupId == chosen))
                   ? chosen
                   : _defaultComposingGroupId(sections);
-          // Primary group is open by default, other groups stay collapsed
-          for (final section in sections) {
-            if (section.isPrimary || _isAllGroupsMode) {
-              _expandedGroupIds.add(section.groupId);
+          // Primary group is open by default, other groups stay collapsed.
+          // Only on the first load: after that the set is the user's own
+          // choice, and re-applying the default here would spring a section
+          // they collapsed back open on every post, edit and delete.
+          if (firstLoad) {
+            for (final section in sections) {
+              if (section.isPrimary || _isAllGroupsMode) {
+                _expandedGroupIds.add(section.groupId);
+              }
             }
           }
           _loading = false;
         });
       } else {
+        if (!mounted) return;
         setState(() => _loading = false);
       }
     } catch (e) {
       debugPrint("Error fetching comments: $e");
+      if (!mounted) return;
       setState(() => _loading = false);
     }
   }
@@ -245,10 +264,9 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
       _newCommentController.clear();
       _cancelReply();
       _inputFocusNode.unfocus();
-      if (_affectsCount(targetGroup)) widget.onCommentCountChanged?.call(1);
       // Make sure the thread the comment landed in is visible
       _expandedGroupIds.add(targetGroup);
-      await _fetchComments();
+      await _refreshAndReportCount();
       if (mounted) {
         setState(() => _isSending = false);
         showSnackBar(context.l10n.comment_added_success, color: Colors.green);
@@ -311,8 +329,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
         });
         _newCommentController.clear();
       }
-      if (_affectsCount(groupId)) widget.onCommentCountChanged?.call(-1);
-      await _fetchComments();
+      await _refreshAndReportCount();
       if (!mounted) return;
       showSnackBar(context.l10n.comment_deleted_success, color: Colors.green);
     } else {

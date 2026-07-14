@@ -135,18 +135,20 @@ Future<SupabaseResponse<Group>> editGroupIcon(
     final iconUrl = await cache.refresh(groupId, bucket: 'group-icons');
     await evictAvatar(groupId);
 
-    // Return the updated group
+    // The icon is uploaded either way; only the re-read of the group failed. Say
+    // so, rather than reporting success with no group attached.
     final groupResponse = await getGroupDetails(groupId);
     if (!groupResponse.success || groupResponse.data == null) {
       return SupabaseResponse(
-        success: true,
-        data: groupResponse.data?.copyWith(iconUrl: iconUrl ?? ''),
+        success: false,
+        error: groupResponse.error ?? "Icon updated, but the group could not be reloaded",
       );
     }
 
-    final updatedGroup = groupResponse.data!.copyWith(iconUrl: iconUrl ?? '');
-
-    return SupabaseResponse(success: true, data: updatedGroup);
+    return SupabaseResponse(
+      success: true,
+      data: groupResponse.data!.copyWith(iconUrl: iconUrl ?? ''),
+    );
   } catch (error) {
     return SupabaseResponse(
       success: false,

@@ -6,35 +6,10 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/models/reaction.dart';
 import 'package:krab/services/api/supabase.dart';
+import 'package:krab/services/reaction_cache.dart';
 import 'package:krab/widgets/emoji_picker_sheet.dart';
 import 'package:krab/widgets/reactors_sheet.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
-
-/// Cached reaction tallies per image, so swiping between images shows them
-/// immediately instead of flashing empty
-final Map<String, List<ReactionSummary>> _reactionsCache = {};
-
-/// Fetch an image's reaction tally and refresh the cache. Returns null on
-/// failure. Also used by the gallery to warm neighbours before they're swiped
-/// to.
-Future<List<ReactionSummary>?> fetchImageReactions(String imageId) async {
-  final response = await getImageReactions(imageId);
-  if (!response.success || response.data == null) return null;
-  final list = response.data!
-      .map((e) => ReactionSummary.fromJson(e as Map<String, dynamic>))
-      .toList();
-  _reactionsCache[imageId] = list;
-  return list;
-}
-
-/// The cached total reaction count for an image (across emojis), or null if it
-/// hasn't been loaded yet. Lets the grid reflect reactions made in the viewer,
-/// including optimistic toggles, without its own fetch.
-int? cachedReactionTotal(String imageId) {
-  final list = _reactionsCache[imageId];
-  if (list == null) return null;
-  return list.fold<int>(0, (sum, r) => sum + r.count);
-}
 
 /// Horizontal strip of emoji reaction chips with an add reaction button,
 /// laid over the dark photo viewer.
@@ -56,7 +31,7 @@ class ReactionsBarState extends State<ReactionsBar> {
   @override
   void initState() {
     super.initState();
-    _reactions = _reactionsCache[widget.imageId] ?? const [];
+    _reactions = cachedReactions(widget.imageId);
     _refresh();
   }
 
@@ -64,7 +39,7 @@ class ReactionsBarState extends State<ReactionsBar> {
   void didUpdateWidget(covariant ReactionsBar oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.imageId != widget.imageId) {
-      _reactions = _reactionsCache[widget.imageId] ?? const [];
+      _reactions = cachedReactions(widget.imageId);
       _refresh();
     }
   }
@@ -84,21 +59,22 @@ class ReactionsBarState extends State<ReactionsBar> {
 
   /// Apply emoji, then reconcile with the server.
   Future<void> _toggle(String emoji) async {
+    final imageId = widget.imageId;
     final previous = _reactions;
     final updated = _applyToggle(previous, emoji);
     setState(() => _reactions = updated);
-    _reactionsCache[widget.imageId] = updated;
+    cacheReactions(imageId, updated);
 
-    final response = await toggleReaction(widget.imageId, emoji);
-    if (!mounted) return;
-    if (!response.success) {
-      setState(() => _reactions = previous);
-      _reactionsCache[widget.imageId] = previous;
-      showSnackBar(
-        context.l10n.error_reacting(context.errorOr(response.error)),
-        color: Colors.red,
-      );
-    }
+    final response = await toggleReaction(imageId, emoji);
+    if (response.success) return;
+
+    cacheReactions(imageId, previous);
+    if (!mounted || imageId != widget.imageId) return;
+    setState(() => _reactions = previous);
+    showSnackBar(
+      context.l10n.error_reacting(context.errorOr(response.error)),
+      color: Colors.red,
+    );
   }
 
   /// Adds the emoji if the user hadn't reacted with it, removes their reaction

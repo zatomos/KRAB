@@ -224,9 +224,10 @@ class UploadOutbox {
       }
       await _write(prefs, entries);
 
-      var offline = false;
-      for (final entry in entries.where((e) => mine.contains(e.id)).toList()) {
-        if (offline) break;
+      final pending = entries.where((e) => mine.contains(e.id)).toList();
+
+      for (var i = 0; i < pending.length; i++) {
+        final entry = pending[i];
 
         // Resume under the id an earlier attempt reserved, so a retry can never
         // become a second photo. A fresh id is written down the instant it
@@ -251,13 +252,14 @@ class UploadOutbox {
           continue;
         }
 
-        offline = response.offline;
+        final offline = response.offline;
         final attempts = entry.attempts + 1;
         final expired = now.difference(entry.createdAt) > _maxAge;
 
         // An offline failure isn't the photo's fault, so it doesn't count
-        // against the attempt cap.
-        if (!offline && (attempts >= _maxAttempts || expired)) {
+        // against the attempt cap. Age still does: a photo nobody has been able
+        // to send for a week is not going out now.
+        if (expired || (!offline && attempts >= _maxAttempts)) {
           debugPrint("Outbox: giving up on ${entry.id}: ${response.error}");
           await _resolve(prefs, entry);
           continue;
@@ -280,6 +282,15 @@ class UploadOutbox {
             clearReservation: !offline,
           ),
         );
+
+        // One send that couldn't reach the server means the next can't either,
+        // so stop here.
+        if (offline) {
+          for (final skipped in pending.skip(i + 1)) {
+            await _update(prefs, skipped.copyWith(clearClaim: true));
+          }
+          break;
+        }
       }
 
       final remaining = (await _read(prefs)).length;

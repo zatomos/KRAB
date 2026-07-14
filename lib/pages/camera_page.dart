@@ -9,6 +9,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:native_device_orientation/native_device_orientation.dart';
+import 'package:path_provider/path_provider.dart';
 
 import 'package:krab/services/api/supabase.dart';
 import 'package:krab/themes/global_theme_data.dart';
@@ -356,6 +357,20 @@ class CameraPageState extends State<CameraPage> {
     }
   }
 
+  /// Delete a capture once the send dialog is done with it.
+  Future<void> _discardCapture(File imageFile) async {
+    try {
+      final temp = await getTemporaryDirectory();
+      if (!imageFile.path.startsWith(temp.path)) {
+        debugPrint("Not deleting ${imageFile.path}: outside the temp directory");
+        return;
+      }
+      if (await imageFile.exists()) await imageFile.delete();
+    } catch (e) {
+      debugPrint("Could not delete the capture: $e");
+    }
+  }
+
   Future<void> _showSendImageDialog(File imageFile) async {
     setState(() => _dialogOpen = true);
     try {
@@ -393,6 +408,7 @@ class CameraPageState extends State<CameraPage> {
           );
       }
     } finally {
+      await _discardCapture(imageFile);
       if (mounted) setState(() => _dialogOpen = false);
     }
   }

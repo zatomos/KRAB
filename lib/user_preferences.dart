@@ -114,22 +114,29 @@ class UserPreferences {
       if (!permission) return;
     }
     await _preferences?.setBool('autoImageSave', value);
+    autoImageSave = value;
   }
 
   static Future<List<String>> getFavoriteGroups() async {
     return _preferences?.getStringList('favoriteGroups') ?? [];
   }
 
+  static Future<void> _setFavoriteGroups(List<String> groups) async {
+    await _preferences?.setStringList('favoriteGroups', groups);
+    favoriteGroups = groups;
+  }
+
   static Future<void> addFavoriteGroup(String group) async {
-    final favoriteGroups = _preferences?.getStringList('favoriteGroups') ?? [];
-    favoriteGroups.add(group);
-    await _preferences?.setStringList('favoriteGroups', favoriteGroups);
+    final groups = _preferences?.getStringList('favoriteGroups') ?? [];
+    if (groups.contains(group)) return;
+    groups.add(group);
+    await _setFavoriteGroups(groups);
   }
 
   static Future<void> removeFavoriteGroup(String group) async {
-    final favoriteGroups = _preferences?.getStringList('favoriteGroups') ?? [];
-    favoriteGroups.remove(group);
-    await _preferences?.setStringList('favoriteGroups', favoriteGroups);
+    final groups = _preferences?.getStringList('favoriteGroups') ?? [];
+    groups.remove(group);
+    await _setFavoriteGroups(groups);
   }
 
   static Future<bool> isGroupFavorite(String group) async {

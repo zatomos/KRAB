@@ -6,25 +6,37 @@ import 'package:saver_gallery/saver_gallery.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:image/image.dart' as img;
 
+String _safeFileName(String uploadedBy, String createdAt) {
+  final raw = "krab_$uploadedBy-$createdAt";
+  return raw.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
+}
+
+/// Saves imageBytes to the device gallery. Returns whether it actually landed.
 Future<bool> downloadImage(
     Uint8List imageBytes, String uploadedBy, String createdAt) async {
   try {
-    // Request storage permissions
-    if (await checkAndRequestPermissions(skipIfExists: true)) {
-      // Fix image rotation before saving
-      Uint8List fixedImageBytes = _fixImageRotation(imageBytes);
-
-      final result = await SaverGallery.saveImage(
-        fixedImageBytes,
-        quality: 100,
-        fileName: "krab_$uploadedBy-$createdAt",
-        albumPath: "Pictures/krab",
-        skipIfExists: true,
-      );
-      debugPrint("Image saved successfully: $result");
-    } else {
-      throw Exception("Failed to save image");
+    if (!await checkAndRequestPermissions(skipIfExists: true)) {
+      debugPrint("Cannot save image: permission denied");
+      return false;
     }
+
+    // Fix image rotation before saving
+    final fixedImageBytes = _fixImageRotation(imageBytes);
+
+    final result = await SaverGallery.saveImage(
+      fixedImageBytes,
+      quality: 100,
+      fileName: _safeFileName(uploadedBy, createdAt),
+      albumPath: "Pictures/krab",
+      skipIfExists: true,
+    );
+
+    if (!result.isSuccess) {
+      debugPrint("Image not saved: ${result.errorMessage}");
+      return false;
+    }
+
+    debugPrint("Image saved successfully");
     return true;
   } catch (e) {
     debugPrint("Error saving image: $e");
