@@ -183,6 +183,9 @@ class _ImageViewerPageState extends State<ImageViewerPage>
 
   ModalRoute<dynamic>? _route;
 
+  /// Whether the hero has finished flying and this page is simply on screen.
+  bool _settled = false;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -191,12 +194,16 @@ class _ImageViewerPageState extends State<ImageViewerPage>
       _route?.animation?.removeStatusListener(_onRouteStatus);
       _route = route;
       _route?.animation?.addStatusListener(_onRouteStatus);
+      _settled = _route?.animation?.isCompleted ?? false;
     }
   }
 
-  /// Hide the overlay chrome the moment the page starts popping
   void _onRouteStatus(AnimationStatus status) {
+    // Hide the overlay chrome the moment the page starts popping.
     if (status == AnimationStatus.reverse) _controlsAnim.value = 0;
+
+    final settled = status == AnimationStatus.completed;
+    if (settled != _settled) setState(() => _settled = settled);
   }
 
   @override
@@ -481,6 +488,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
                     onLowBytes: (bytes) => _cachePageBytes(index, bytes),
                     onNaturalSize: (size) => _setChildSize(index, size),
                     onZoomChanged: _onPageZoomChanged,
+                    settled: _settled,
                   );
                 },
               ),
@@ -505,6 +513,9 @@ class _ViewerPhoto extends StatefulWidget {
   final void Function(Size naturalSize) onNaturalSize;
   final void Function(bool zoomed) onZoomChanged;
 
+  /// False while the hero is flying
+  final bool settled;
+
   const _ViewerPhoto({
     super.key,
     required this.displaySize,
@@ -515,6 +526,7 @@ class _ViewerPhoto extends StatefulWidget {
     required this.onLowBytes,
     required this.onNaturalSize,
     required this.onZoomChanged,
+    required this.settled,
   });
 
   @override
@@ -525,6 +537,8 @@ class _ViewerPhotoState extends State<_ViewerPhoto>
     with SingleTickerProviderStateMixin {
   Uint8List? _low;
   Uint8List? _full;
+  Uint8List? _heroBytes;
+  static const Duration _fadeInDuration = Duration(milliseconds: 250);
 
   static const double _doubleTapScale = 2.5;
 
@@ -581,6 +595,30 @@ class _ViewerPhotoState extends State<_ViewerPhoto>
     if (!mounted) return;
     setState(() => _full = full);
     _resolveNaturalSize(full);
+
+    // Hand the sharp bytes to the hero only once they have finished fading in.
+    await Future<void>.delayed(_fadeInDuration);
+    if (mounted) setState(() => _heroBytes = full);
+  }
+
+  /// The image that actually flies between the grid and the viewer.
+  Widget _buildHeroFlight(
+    BuildContext flightContext,
+    Animation<double> animation,
+    HeroFlightDirection direction,
+    BuildContext fromHeroContext,
+    BuildContext toHeroContext,
+  ) {
+    final bytes = _heroBytes ?? _low;
+    if (bytes == null) return const SizedBox.shrink();
+    return Image.memory(
+      bytes,
+      fit: direction == HeroFlightDirection.pop
+          ? BoxFit.cover // back into the grid's square tile
+          : BoxFit.contain, // out to the viewer's contained rect
+      gaplessPlayback: true,
+      filterQuality: FilterQuality.medium,
+    );
   }
 
   GestureConfig _initGestureConfig(ExtendedImageState state) {
@@ -636,8 +674,14 @@ class _ViewerPhotoState extends State<_ViewerPhoto>
       filterQuality: FilterQuality.medium,
     );
     if (widget.heroTag != null) {
-      base = Hero(tag: widget.heroTag!, child: base);
+      base = Hero(
+        tag: widget.heroTag!,
+        flightShuttleBuilder: _buildHeroFlight,
+        child: base,
+      );
     }
+
+    final showFullRes = widget.settled && _full != null;
 
     return Stack(
       fit: StackFit.expand,
@@ -646,8 +690,8 @@ class _ViewerPhotoState extends State<_ViewerPhoto>
           child: SizedBox.fromSize(size: widget.displaySize, child: base),
         ),
         AnimatedOpacity(
-          opacity: _full != null ? 1.0 : 0.0,
-          duration: const Duration(milliseconds: 250),
+          opacity: showFullRes ? 1.0 : 0.0,
+          duration: showFullRes ? _fadeInDuration : Duration.zero,
           curve: Curves.easeOut,
           child: ExtendedImage.memory(
             _full ?? low,
