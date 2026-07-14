@@ -634,7 +634,7 @@ class AccountPageState extends State<AccountPage> {
 
                 // Bottom text stays at the bottom
                 Padding(
-                  padding: const EdgeInsets.all(16.0),
+                  padding: const EdgeInsets.all(8.0),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [

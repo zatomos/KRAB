@@ -23,9 +23,6 @@ class ReactionsBar extends StatefulWidget {
 }
 
 class ReactionsBarState extends State<ReactionsBar> {
-  /// How many distinct reactions show before collapsing the rest
-  static const int _maxVisible = 4;
-
   List<ReactionSummary> _reactions = const [];
 
   @override
@@ -109,35 +106,63 @@ class ReactionsBarState extends State<ReactionsBar> {
 
   void _openReactors() => showReactorsSheet(context, widget.imageId);
 
+  /// How many reaction chips fit across the phone width.
+  static int visibleChipsFor(double width, int reactionCount) {
+    if (reactionCount == 0) return 0;
+
+    int fitting(double reserved) =>
+        ((width - reserved) / (_kChipWidth + _kChipSpacing)).floor();
+
+    // Room for the add button.
+    final withoutOverflow = fitting(_kAddChipWidth + _kChipSpacing);
+    if (reactionCount <= withoutOverflow) return reactionCount;
+
+    // They don't all fit, so the "+N" chip has to be paid for too.
+    final withOverflow = fitting(
+      _kAddChipWidth + _kChipSpacing + _kOverflowChipWidth + _kChipSpacing,
+    );
+    // Always leave at least one reaction visible.
+    return withOverflow.clamp(1, reactionCount);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final bool hasOverflow = _reactions.length > _maxVisible;
-    final visible =
-        hasOverflow ? _reactions.take(_maxVisible).toList() : _reactions;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxVisible =
+            visibleChipsFor(constraints.maxWidth, _reactions.length);
+        final hidden = _reactions.length - maxVisible;
+        final visible = _reactions.take(maxVisible);
 
-    // Right-aligned, grow upward.
-    return Wrap(
-      alignment: WrapAlignment.end,
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        for (final r in visible)
-          _ReactionChip(
-            reaction: r,
-            onTap: () => _toggle(r.emoji),
-            onLongPress: _openReactors,
-          ),
-        // Tapping the overflow chip opens the full reactors list.
-        if (hasOverflow)
-          _OverflowChip(
-            count: _reactions.length - _maxVisible,
-            onTap: _openReactors,
-          ),
-        _AddReactionChip(onTap: _openPicker),
-      ],
+        // Right-aligned, grow upward.
+        return Wrap(
+          alignment: WrapAlignment.end,
+          spacing: _kChipSpacing,
+          runSpacing: _kChipSpacing,
+          children: [
+            for (final r in visible)
+              _ReactionChip(
+                reaction: r,
+                onTap: () => _toggle(r.emoji),
+                onLongPress: _openReactors,
+              ),
+            // Tapping the overflow chip opens the full reactors list.
+            if (hidden > 0)
+              _OverflowChip(count: hidden, onTap: _openReactors),
+            _AddReactionChip(onTap: _openPicker),
+          ],
+        );
+      },
     );
   }
 }
+
+const double _kChipSpacing = 8;
+
+/// Roughly one emoji plus a two-digit count.
+const double _kChipWidth = 64;
+const double _kAddChipWidth = 44;
+const double _kOverflowChipWidth = 52;
 
 /// Shared height
 const double _kChipHeight = 42;
