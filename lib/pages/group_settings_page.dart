@@ -28,11 +28,15 @@ class GroupSettingsPage extends StatefulWidget {
   GroupSettingsPageState createState() => GroupSettingsPageState();
 }
 
+/// Members shown before the list has to be expanded.
+const _collapsedMemberCount = 10;
+
 class GroupSettingsPageState extends State<GroupSettingsPage> {
   late Group _group;
   late Future<SupabaseResponse<List<GroupMember>>> _membersFuture;
   late String? _currentUserId;
   bool _muted = false;
+  bool _showAllMembers = false;
 
   @override
   void initState() {
@@ -280,6 +284,10 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
       builder: (context, snapshot) {
         final hasData = snapshot.hasData;
         final members = snapshot.data?.data ?? [];
+        final visibleMembers =
+            _showAllMembers || members.length <= _collapsedMemberCount
+                ? members
+                : members.take(_collapsedMemberCount).toList();
         final currentRole =
             hasData ? _getCurrentUserRole(members) : (_group.role ?? 'member');
         final isManager = currentRole == 'owner' || currentRole == 'admin';
@@ -341,12 +349,10 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                 /// Members List
                 Row(
                   children: [
-                    Expanded(
-                      child: Text(
-                        context.l10n.members,
-                        style: const TextStyle(
-                            fontSize: 18, fontWeight: FontWeight.bold),
-                      ),
+                    Text(
+                      context.l10n.members,
+                      style: const TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.bold),
                     ),
                     IconButton(
                       icon: Icon(
@@ -356,7 +362,35 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                       ),
                       tooltip: context.l10n.member_roles_title,
                       onPressed: () => showMemberRolesDialog(context),
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.only(left: 6),
+                      constraints: const BoxConstraints(),
+                      style: const ButtonStyle(
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap),
                     ),
+                    const Spacer(),
+                    if (members.length > _collapsedMemberCount)
+                      TextButton.icon(
+                        onPressed: () =>
+                            setState(() => _showAllMembers = !_showAllMembers),
+                        icon: Icon(
+                          _showAllMembers
+                              ? Symbols.expand_less_rounded
+                              : Symbols.expand_more_rounded,
+                          size: 20,
+                        ),
+                        iconAlignment: IconAlignment.end,
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          visualDensity: VisualDensity.compact,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        label: Text(
+                          _showAllMembers
+                              ? context.l10n.show_fewer_members
+                              : context.l10n.show_all_members(members.length),
+                        ),
+                      ),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -367,7 +401,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                   Center(child: Text(context.l10n.no_members))
                 else
                   Column(
-                    children: members.map((member) {
+                    children: visibleMembers.map((member) {
                       final targetRole = member.role;
                       final canManage = member.user.id != _currentUserId &&
                           (currentRole == 'owner' ||

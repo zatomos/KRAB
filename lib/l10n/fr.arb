@@ -90,6 +90,8 @@
   "role_admin": "Administrateur",
   "role_admin_info": "Les administrateurs peuvent renommer le groupe, changer son icône, bannir des membres et supprimer n'importe quelle photo publiée dans le groupe. Ils ne peuvent pas gérer les autres administrateurs ni supprimer le groupe.",
   "no_members": "Aucun membre trouvé.",
+  "show_all_members": "Afficher tous ({count})",
+  "show_fewer_members": "Afficher moins",
   "your_groups_page_title": "Mes groupes",
   "create_new_group": "Créer un nouveau groupe",
   "join_group": "Rejoindre un groupe",
