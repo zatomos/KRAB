@@ -64,6 +64,13 @@ android {
     buildFeatures {
         viewBinding true
     }
+
+    // Ship multiple variants of the app
+    applicationVariants.all { variant ->
+        variant.outputs.all { output ->
+            output.versionCodeOverride = flutter.versionCode
+        }
+    }
 }
 
 kotlin {

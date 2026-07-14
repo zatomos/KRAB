@@ -49,6 +49,7 @@ gh auth status >/dev/null 2>&1 \
 
 APKSIGNER="$(find "${ANDROID_HOME:-$HOME/Android/Sdk}" -name apksigner -type f 2>/dev/null | sort -V | tail -1)"
 [[ -n "$APKSIGNER" ]] || die "apksigner not found. Set ANDROID_HOME, or install Android SDK build-tools."
+AAPT="$(find "${ANDROID_HOME:-$HOME/Android/Sdk}" -name aapt2 -type f 2>/dev/null | sort -V | tail -1)"
 
 # --- Repo, version, tag ---------------------------------------------------
 ORIGIN_REPO="$(gh repo view --json nameWithOwner -q .nameWithOwner)"
@@ -91,7 +92,10 @@ BUILD="${VERSION_LINE##*+}"
 [[ -n "$VERSION" && -n "$BUILD" && "$VERSION" != "$BUILD" ]] \
   || die "pubspec.yaml version must look like '1.2.3+45', got: '$VERSION_LINE'"
 TAG="v${VERSION}"
-APK_NAME="krab-${VERSION}.apk"
+# One APK per ABI, plus a universal one for devices whose ABI we can't determine.
+UNIVERSAL_NAME="krab-${VERSION}-universal.apk"
+SPLIT_ABIS=(arm64-v8a armeabi-v7a x86_64)
+STAGE="build/release-${VERSION}"
 
 log "Releasing $TAG (build $BUILD) to $REPO (dry-run=$DRY_RUN)"
 
@@ -175,22 +179,53 @@ else
 fi
 
 # --- Build ----------------------------------------------------------------
-log "Building the release APK"
-flutter build apk --release
+OUT="build/app/outputs/flutter-apk"
+rm -rf "$STAGE" && mkdir -p "$STAGE"
 
-APK_PATH="build/app/outputs/flutter-apk/app-release.apk"
-[[ -f "$APK_PATH" ]] || die "APK not found at $APK_PATH"
+log "Building the universal APK"
+flutter build apk --release --target-platform android-arm,android-arm64
+[[ -f "$OUT/app-release.apk" ]] || die "APK not found at $OUT/app-release.apk"
+cp "$OUT/app-release.apk" "$STAGE/$UNIVERSAL_NAME"
 
-# --- Verify the signature -------------------------------------------------
-log "Verifying the APK signature"
-"$APKSIGNER" verify "$APK_PATH" >/dev/null 2>&1 \
-  || die "apksigner could not verify the APK."
+log "Building one APK per ABI"
+flutter build apk --release --split-per-abi
+for abi in "${SPLIT_ABIS[@]}"; do
+  [[ -f "$OUT/app-${abi}-release.apk" ]] || die "APK not found at $OUT/app-${abi}-release.apk"
+  cp "$OUT/app-${abi}-release.apk" "$STAGE/krab-${VERSION}-${abi}.apk"
+done
 
-CERT="$("$APKSIGNER" verify --print-certs "$APK_PATH" 2>/dev/null | grep -m1 'certificate DN:' || true)"
-[[ -n "$CERT" ]] || die "Could not read the APK signature."
-echo "    $CERT"
-if grep -qi 'CN=Android Debug' <<<"$CERT"; then
-  die "This APK is signed with the DEBUG key. Set up android/key.properties (see README) before releasing."
+APKS=("$STAGE"/*.apk)
+
+# --- Verify the signatures ------------------------------------------------
+log "Verifying the APK signatures"
+for apk in "${APKS[@]}"; do
+  "$APKSIGNER" verify "$apk" >/dev/null 2>&1 \
+    || die "apksigner could not verify $(basename "$apk")."
+
+  CERT="$("$APKSIGNER" verify --print-certs "$apk" 2>/dev/null | grep -m1 'certificate DN:' || true)"
+  [[ -n "$CERT" ]] || die "Could not read the signature of $(basename "$apk")."
+  if grep -qi 'CN=Android Debug' <<<"$CERT"; then
+    die "$(basename "$apk") is signed with the DEBUG key. Set up android/key.properties (see README) before releasing."
+  fi
+  printf '    %-28s %5sMB  %s\n' "$(basename "$apk")" \
+    "$(( $(stat -c%s "$apk") / 1048576 ))" "$CERT"
+done
+
+# Every APK in the release must carry the same versionCode. Flutter offsets it
+# per ABI by default, which would make the universal APK a downgrade for anyone
+# already on a split and block the install.
+# android/app/build.gradle overrides that; this is the check that it still does.
+if [[ -x "$AAPT" ]]; then
+  codes="$(for apk in "${APKS[@]}"; do
+             "$AAPT" dump badging "$apk" 2>/dev/null \
+               | sed -nE "s/.*versionCode='([0-9]+)'.*/\1/p"
+           done | sort -u | tr '\n' ' ')"
+  [[ "$(wc -w <<<"$codes")" -eq 1 ]] \
+    || die "APKs disagree on versionCode ($codes). The universal APK would be
+    refused as a downgrade on devices already running a split APK."
+  echo "    versionCode $codes (identical across all APKs)"
+else
+  echo "    NOTE: aapt not found; could not check that versionCodes match."
 fi
 
 # --- Release notes --------------------------------------------------------
@@ -203,8 +238,8 @@ echo "---------------------"
 
 if [[ "$DRY_RUN" == true ]]; then
   log "Dry run: nothing was tagged or published."
-  echo "    APK: $APK_PATH"
-  echo "    It is signed and installable -- side-load it to test."
+  echo "    APKs: $STAGE"
+  echo "    They are signed and installable -- side-load one to test."
   if [[ ${#BLOCKERS[@]} -gt 0 ]]; then
     echo
     echo "A real release would be REFUSED for ${#BLOCKERS[@]} reason(s):"
@@ -218,18 +253,22 @@ fi
 
 # --- Publish --------------------------------------------------------------
 log "Publishing $TAG to $REPO"
-cp "$APK_PATH" "build/$APK_NAME"
 
 # Tag the exact commit being released.
 TARGET_ARGS=()
 [[ "$OTHER_REPO" == true ]] || TARGET_ARGS=(--target "$(git rev-parse HEAD)")
+
+ASSET_ARGS=()
+for apk in "${APKS[@]}"; do
+  ASSET_ARGS+=("$apk#$(basename "$apk")")
+done
 
 gh release create "$TAG" \
   --repo "$REPO" \
   --title "KRAB $VERSION" \
   --notes "$NOTES" \
   "${TARGET_ARGS[@]}" \
-  "build/$APK_NAME#$APK_NAME"
+  "${ASSET_ARGS[@]}"
 
 log "Done."
 gh release view "$TAG" --repo "$REPO" --json url -q .url

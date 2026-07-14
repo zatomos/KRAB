@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:convert';
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
@@ -11,17 +12,46 @@ import 'package:krab/config.dart';
 import 'package:krab/user_preferences.dart';
 import 'package:krab/services/notification_channels.dart';
 
+/// One APK attached to a release.
+class ReleaseApk {
+  final String name;
+  final String url;
+
+  ReleaseApk({required this.name, required this.url});
+}
+
 /// A single published GitHub release.
 class Release {
   final String version;
-  final String downloadUrl;
+  final List<ReleaseApk> apks;
   final List<String> changelog;
 
   Release({
     required this.version,
-    required this.downloadUrl,
+    required this.apks,
     required this.changelog,
   });
+
+  /// The universal APK, installable on any device.
+  static const universalSuffix = '-universal.apk';
+
+  /// The APK to install on a device supporting [supportedAbis], which
+  /// device_info_plus reports most-preferred first. Falls back to the universal
+  /// APK, which is what a device with an ABI we don't publish gets, as does one
+  /// whose ABIs we couldn't read at all.
+  String? apkUrlFor(List<String> supportedAbis) {
+    for (final abi in supportedAbis) {
+      for (final apk in apks) {
+        if (apk.name.toLowerCase().endsWith('-${abi.toLowerCase()}.apk')) {
+          return apk.url;
+        }
+      }
+    }
+    for (final apk in apks) {
+      if (apk.name.toLowerCase().endsWith(universalSuffix)) return apk.url;
+    }
+    return null;
+  }
 
   /// Builds a release from one entry of GitHub releases`.
   static Release? fromGitHub(Map<String, dynamic> json) {
@@ -33,16 +63,16 @@ class Release {
     final assets = json['assets'];
     if (assets is! List) return null;
 
-    String? apkUrl;
+    final apks = <ReleaseApk>[];
     for (final asset in assets) {
       if (asset is! Map) continue;
       final name = asset['name'] as String? ?? '';
-      if (name.toLowerCase().endsWith('.apk')) {
-        apkUrl = asset['browser_download_url'] as String?;
-        break;
+      final url = asset['browser_download_url'] as String? ?? '';
+      if (name.toLowerCase().endsWith('.apk') && url.isNotEmpty) {
+        apks.add(ReleaseApk(name: name, url: url));
       }
     }
-    if (apkUrl == null || apkUrl.isEmpty) return null;
+    if (apks.isEmpty) return null;
 
     final changelog = (json['body'] as String? ?? '')
         .split('\n')
@@ -56,7 +86,7 @@ class Release {
 
     return Release(
       version: version,
-      downloadUrl: apkUrl,
+      apks: apks,
       changelog: changelog,
     );
   }
@@ -94,6 +124,19 @@ class UpdateService {
 
   String get _releasesUrl =>
       'https://api.github.com/repos/$updateRepo/releases?per_page=30';
+
+  /// The ABIs this device can run, most-preferred first. Empty when they can't
+  /// be read, which leaves the caller on the universal APK.
+  Future<List<String>> _supportedAbis() async {
+    if (!Platform.isAndroid) return const [];
+    try {
+      final info = await DeviceInfoPlugin().androidInfo;
+      return info.supportedAbis;
+    } catch (e) {
+      debugPrint('Could not read supported ABIs: $e');
+      return const [];
+    }
+  }
 
   /// Never checks when this build has no repo to update from, or has updates
   /// switched off
@@ -155,12 +198,18 @@ class UpdateService {
           .reversed
           .toList();
 
+      final downloadUrl = latest.apkUrlFor(await _supportedAbis());
+      if (downloadUrl == null) {
+        debugPrint('No installable APK in release ${latest.version}');
+        return UpdateCheckResult(success: true, hasUpdate: false);
+      }
+
       return UpdateCheckResult(
         success: true,
         hasUpdate: true,
         info: UpdateInfo(
           version: latest.version,
-          downloadUrl: latest.downloadUrl,
+          downloadUrl: downloadUrl,
           releases: newer,
         ),
       );
