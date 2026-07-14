@@ -332,7 +332,16 @@ class ImageFeedPageState extends State<ImageFeedPage> {
   Widget _buildScaffold(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.group?.name ?? context.l10n.recent_photos),
+        title: widget.group != null
+            ? Text(widget.group!.name)
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Symbols.photo_library, fill: 1, size: 22),
+                  const SizedBox(width: 10),
+                  Flexible(child: Text(context.l10n.recent_photos)),
+                ],
+              ),
         actions: [
           if (widget.group != null)
             IconButton(
