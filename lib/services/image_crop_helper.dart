@@ -13,24 +13,33 @@ Future<File?> pickAndCropSquareImage({required String toolbarTitle}) async {
   final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
   if (picked == null) return null;
 
-  final cropped = await ImageCropper().cropImage(
-    sourcePath: picked.path,
-    aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
-    maxHeight: 512,
-    maxWidth: 512,
-    uiSettings: [
-      AndroidUiSettings(
-        toolbarTitle: toolbarTitle,
-        toolbarColor: GlobalThemeData.darkColorScheme.surface,
-        toolbarWidgetColor: Colors.white,
-        activeControlsWidgetColor: GlobalThemeData.darkColorScheme.primary,
-        statusBarLight: false,
-        initAspectRatio: CropAspectRatioPreset.square,
-        lockAspectRatio: true,
-      ),
-    ],
-  );
+  try {
+    final cropped = await ImageCropper().cropImage(
+      sourcePath: picked.path,
+      aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
+      maxHeight: 512,
+      maxWidth: 512,
+      uiSettings: [
+        AndroidUiSettings(
+          toolbarTitle: toolbarTitle,
+          toolbarColor: GlobalThemeData.darkColorScheme.surface,
+          toolbarWidgetColor: Colors.white,
+          activeControlsWidgetColor: GlobalThemeData.darkColorScheme.primary,
+          statusBarLight: false,
+          initAspectRatio: CropAspectRatioPreset.square,
+          lockAspectRatio: true,
+        ),
+      ],
+    );
 
-  if (cropped == null) return null;
-  return File(cropped.path);
+    if (cropped == null) return null;
+    return File(cropped.path);
+  } finally {
+    try {
+      final original = File(picked.path);
+      if (await original.exists()) await original.delete();
+    } catch (e) {
+      debugPrint('Could not delete the picked original: $e');
+    }
+  }
 }

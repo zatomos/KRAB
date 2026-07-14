@@ -17,6 +17,7 @@ import 'package:krab/services/launch_router.dart';
 import 'package:krab/services/push_handler.dart';
 import 'package:krab/services/cache/profile_picture_cache.dart';
 import 'package:krab/services/push_helper.dart';
+import 'package:krab/services/storage_cleanup.dart';
 import 'package:krab/services/supabase_bootstrap.dart';
 import 'package:krab/services/upload_outbox.dart';
 import 'package:krab/pages/login_page.dart';
@@ -54,6 +55,8 @@ void main(List<String> args) async {
     isAppInitialized = true;
 
     runApp(MyApp(navigatorKey: navigatorKey));
+
+    unawaited(StorageCleanup.sweep());
 
     if (supabaseOk) {
       _listenToAuthEvents();

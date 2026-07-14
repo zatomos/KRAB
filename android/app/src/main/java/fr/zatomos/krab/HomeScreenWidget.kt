@@ -256,6 +256,22 @@ class HomeScreenWidget : AppWidgetProvider() {
                 .remove("previousImage1SenderPfpUrl_$id")
                 .remove("previousImage2SenderPfpUrl_$id")
                 .apply()
+            deleteWidgetImages(context, id)
+        }
+
+        private fun deleteWidgetImages(context: Context, id: Int) {
+            val prefix = "krab_widget_${id}_"
+            try {
+                context.filesDir.listFiles { file ->
+                    file.isFile && file.name.startsWith(prefix)
+                }?.forEach { file ->
+                    if (!file.delete()) {
+                        Log.w(TAG, "Could not delete ${file.name}")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to delete images for widget $id", e)
+            }
         }
 
         private fun buildBaseViews(

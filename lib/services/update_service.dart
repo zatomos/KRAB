@@ -198,11 +198,15 @@ class UpdateService {
           .reversed
           .toList();
 
-      final downloadUrl = latest.apkUrlFor(await _supportedAbis());
+      final abis = await _supportedAbis();
+      final downloadUrl = latest.apkUrlFor(abis);
       if (downloadUrl == null) {
-        debugPrint('No installable APK in release ${latest.version}');
+        debugPrint(
+            'Release ${latest.version} has no APK for this device (ABIs: $abis)');
         return UpdateCheckResult(success: true, hasUpdate: false);
       }
+      debugPrint('Update ${latest.version} for ABIs $abis: '
+          '${downloadUrl.split('/').last}');
 
       return UpdateCheckResult(
         success: true,
@@ -242,7 +246,8 @@ class UpdateService {
       final file = File(savePath);
       if (await file.exists()) await file.delete();
 
-      debugPrint('Downloading update to $savePath ...');
+      debugPrint(
+          'Downloading ${downloadUrl.split('/').last} to $savePath ...');
 
       await _dio.download(
         downloadUrl,
