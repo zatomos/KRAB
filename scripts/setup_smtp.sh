@@ -26,23 +26,18 @@ require_env_file
 log "SMTP settings"
 echo "  Use an app-specific password from your provider, not your account password."
 
-SMTP_HOST="$(ask 'SMTP host' "$(env_get SMTP_HOST)")"
-[[ -n "$SMTP_HOST" ]] || die "SMTP host required"
-SMTP_PORT="$(ask 'SMTP port' "$(env_get SMTP_PORT)")"
-[[ -n "$SMTP_PORT" ]] || SMTP_PORT=587
-SMTP_USER="$(ask 'SMTP user' "$(env_get SMTP_USER)")"
-[[ -n "$SMTP_USER" ]] || die "SMTP user required"
+SMTP_HOST="$(ask_with_example 'SMTP host' 'smtp.provider.example.com' "$(smtp_get SMTP_HOST)")"
+port_default="$(smtp_get SMTP_PORT)"; [[ -n "$port_default" ]] || port_default=587
+SMTP_PORT="$(ask 'SMTP port' "$port_default")"
+SMTP_USER="$(ask_with_example 'SMTP user' 'your-email@provider.com' "$(smtp_get SMTP_USER)")"
 
-SMTP_PASS="$(ask_secret 'SMTP password (empty = keep current)')"
-if [[ -z "$SMTP_PASS" ]]; then
-  [[ -n "$(env_get SMTP_PASS)" ]] || die "SMTP password required"
-  echo "  keeping the stored password"
-fi
+SMTP_PASS="$(ask_secret_or_keep 'SMTP password' "$(smtp_get SMTP_PASS)")"
+[[ -n "$SMTP_PASS" ]] || echo "  keeping the stored password"
 
-from_default="$(env_get SMTP_ADMIN_EMAIL)"; [[ -n "$from_default" ]] || from_default="$SMTP_USER"
-SMTP_FROM="$(ask 'From email' "$from_default")"
-SMTP_SENDER_NAME="$(ask 'Sender name' "$(env_get SMTP_SENDER_NAME)")"
-[[ -n "$SMTP_SENDER_NAME" ]] || SMTP_SENDER_NAME=KRAB
+from_default="$(smtp_get SMTP_ADMIN_EMAIL)"; [[ -n "$from_default" ]] || from_default="$SMTP_USER"
+SMTP_FROM="$(ask_required 'From email' "$from_default")"
+sender_default="$(smtp_get SMTP_SENDER_NAME)"; [[ -n "$sender_default" ]] || sender_default=KRAB
+SMTP_SENDER_NAME="$(ask_required 'Sender name' "$sender_default")"
 
 log "Patching $ENV_FILE"
 set_env SMTP_HOST "$SMTP_HOST"
@@ -58,7 +53,5 @@ cat <<EOF
 
 ✅ SMTP configured ($SMTP_USER via $SMTP_HOST:$SMTP_PORT).
 
-You can run these next:
-  scripts/setup_password_reset.sh
-  scripts/setup_email_confirmation.sh
+You can now run the password reset and email confirmation setup scripts (check README).
 EOF

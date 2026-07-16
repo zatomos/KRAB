@@ -5157,6 +5157,7 @@ GRANT ALL ON FUNCTION public.promote_pending_image() TO service_role;
 --
 
 REVOKE ALL ON FUNCTION public.register_fcm_token(p_token text, p_username text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.register_fcm_token(p_token text, p_username text) TO anon;
 GRANT ALL ON FUNCTION public.register_fcm_token(p_token text, p_username text) TO authenticated;
 GRANT ALL ON FUNCTION public.register_fcm_token(p_token text, p_username text) TO service_role;
 

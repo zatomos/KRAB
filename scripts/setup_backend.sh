@@ -68,7 +68,7 @@ ip="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
 API_URL="$(ask 'API URL clients use' "http://${ip:-localhost}:8000")"
 API_URL="${API_URL%/}"
 DASH_USER="$(ask 'Studio dashboard username' "$(env_get DASHBOARD_USERNAME)")"
-DASH_PASS="$(ask_secret 'Studio dashboard password (empty = keep current)')"
+DASH_PASS="$(ask_secret_confirmed 'Studio dashboard password (empty = keep auto-generated)')"
 log "Using API_URL=$API_URL"
 
 # The notification triggers authenticate to the edge functions with the service
@@ -96,30 +96,34 @@ echo "  stock app), then download two files:"
 echo "   - google-services.json  (Project settings > Your apps)"
 echo "   - a service-account key (Project settings > Service accounts > Generate new private key)"
 
-# Ask until the answer is a file that looks right, or is deliberately blank.
-# Sets JSON_PATH.
+SHARED_DIR="$SUPABASE_DIR/volumes/functions/_shared"
+
+# Ask until the answer is a readable file that parses as JSON and is the one
+# being asked for.
 prompt_json_path() {
-  local prompt="$1" name="$2" needle="$3" path
+  local prompt="$1" name="$2" needle="$3" deployed="$4" suffix="" path
+  [[ -f "$deployed" ]] && suffix=" (blank to keep the current one)"
   while true; do
-    path="$(ask "$prompt" '')"
-    if [[ -z "$path" ]]; then JSON_PATH=""; return 0; fi
+    path="$(ask "${prompt}${suffix}" '')"
+    if [[ -z "$path" ]]; then
+      [[ -n "$suffix" ]] && { JSON_PATH=""; return 0; }
+      echo "  A path to your $name is required." >&2; continue
+    fi
     path="${path/#\~/$HOME}"
     if [[ ! -f "$path" ]]; then echo "  No such file: $path" >&2; continue; fi
-    if ! grep -q "$needle" "$path"; then echo "  That does not look like a $name" >&2; continue; fi
+    if [[ ! -r "$path" ]]; then echo "  Not readable by $(id -un): $path" >&2; continue; fi
+    if ! json_valid "$path"; then echo "  Not valid JSON: $path" >&2; continue; fi
+    if ! grep -q "$needle" "$path"; then echo "  Valid JSON, but not a $name (no $needle): $path" >&2; continue; fi
     JSON_PATH="$path"; return 0
   done
 }
 
-prompt_json_path 'Path to google-services.json (blank to keep the current one)' 'google-services.json' 'mobilesdk_app_id'
+prompt_json_path 'Path to google-services.json' 'google-services.json' 'mobilesdk_app_id' \
+  "$SHARED_DIR/google-services.json"
 GS_PATH="$JSON_PATH"
-prompt_json_path 'Path to the service-account JSON (blank to keep the current one)' 'service-account JSON' 'private_key'
+prompt_json_path 'Path to the service-account JSON' 'service-account JSON' 'private_key' \
+  "$SHARED_DIR/service-account.json"
 SA_PATH="$JSON_PATH"
-
-SHARED_DIR="$SUPABASE_DIR/volumes/functions/_shared"
-[[ -n "$GS_PATH" || -f "$SHARED_DIR/google-services.json" ]] \
-  || die "No google-services.json yet; provide the path"
-[[ -n "$SA_PATH" || -f "$SHARED_DIR/service-account.json" ]] \
-  || die "No service account yet; provide the path"
 
 # --- 1c. docker-compose override -----------------------------------------
 # One override for everything KRAB changes.
@@ -230,6 +234,19 @@ fi
 trg="$(psql_query -tAc "select count(distinct trigger_name) from information_schema.triggers where trigger_name in ('on-image-insert','on-comment-insert','on-reaction-insert','on-image-delete','on-image-insert-thumbnail');" 2>/dev/null | tr -d '[:space:]' || true)"
 [[ "$trg" == "5" ]] || warn "notification/thumbnail triggers missing ($trg/5), check supabase_functions/pg_net"
 
+# --- 4b. Wire the new-user trigger ---------------------------------------
+log "Wiring the new-user trigger"
+psql_query -tAc "select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                 where n.nspname = 'public' and p.proname = 'handle_new_user';" 2>/dev/null | grep -q 1 \
+  || die "public.handle_new_user() is missing from schema.sql; the app cannot create user profiles"
+
+psql_query -q -c "
+  drop trigger if exists on_auth_user_created on auth.users;
+  create trigger on_auth_user_created
+    after insert on auth.users
+    for each row execute function public.handle_new_user();" \
+  || die "could not create the on_auth_user_created trigger on auth.users"
+
 # --- 5. Storage buckets ---------------------------------------------------
 log "Creating storage buckets"
 for spec in "${BUCKETS[@]}"; do
@@ -298,8 +315,8 @@ else
 fi
 
 cat <<EOF
-Optional next steps:
-  scripts/setup_smtp.sh                # required by both of the below
-  scripts/setup_password_reset.sh
-  scripts/setup_email_confirmation.sh
+Optional next steps (check README):
+  Setup SMTP                # required by both of the below
+  Setup password reset
+  Setup email confirmation
 EOF

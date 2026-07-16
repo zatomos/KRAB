@@ -15,6 +15,26 @@ ask() {
   printf '%s' "${reply:-$default}"
 }
 
+# Ask until the answer is non-empty.
+ask_required() {
+  local prompt="$1" default="${2:-}" value
+  while true; do
+    value="$(ask "$prompt" "$default")"
+    [[ -n "$value" ]] && { printf '%s' "$value"; return 0; }
+    printf '  Required.\n' >&2
+  done
+}
+
+# Ask for a value that has no safe default
+ask_with_example() {
+  local label="$1" example="$2" stored="${3:-}"
+  if [[ -n "$stored" ]]; then
+    ask_required "$label" "$stored"
+  else
+    ask_required "$label (e.g. $example)"
+  fi
+}
+
 ask_secret() {
   local prompt="$1" reply
   read -rs -p "$prompt: " reply < /dev/tty
@@ -22,10 +42,50 @@ ask_secret() {
   printf '%s' "$reply"
 }
 
+# Ask for a secret twice and keep asking until both entries match.
+ask_secret_confirmed() {
+  local prompt="$1" first second
+  while true; do
+    first="$(ask_secret "$prompt")"
+    [[ -z "$first" ]] && return 0
+    second="$(ask_secret "Repeat it")"
+    [[ "$first" == "$second" ]] && { printf '%s' "$first"; return 0; }
+    printf '  They do not match, try again.\n' >&2
+  done
+}
+
+# Ask for a secret, and only offer to keep an existing one when there is one to
+# keep.
+ask_secret_or_keep() {
+  local label="$1" current="${2:-}" suffix="" value
+  [[ -n "$current" ]] && suffix=" (blank to keep the current one)"
+  while true; do
+    value="$(ask_secret_confirmed "${label}${suffix}")"
+    [[ -n "$value" ]] && { printf '%s' "$value"; return 0; }
+    [[ -n "$current" ]] && return 0
+    printf '  %s is required.\n' "$label" >&2
+  done
+}
+
 confirm() {
   local reply
   reply="$(ask "$1 [y/N]")"
   [[ "$reply" =~ ^[Yy] ]]
+}
+
+# True if the file parses as JSON.
+json_valid() {
+  local file="$1"
+  if command -v jq >/dev/null 2>&1; then
+    jq -e . "$file" >/dev/null 2>&1
+    return
+  fi
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$file" >/dev/null 2>&1
+    return
+  fi
+  # No parser on the box: at least reject what is obviously not a JSON object.
+  [[ "$(tr -d '[:space:]' < "$file" | head -c 1)" == "{" ]]
 }
 
 # --- Locating the Supabase project ----------------------------------------
@@ -127,13 +187,23 @@ fetch_to() {
 }
 
 # --- SMTP -----------------------------------------------------------------
-smtp_configured() { [[ -n "$(env_get SMTP_HOST)" ]]; }
+smtp_is_stock() { [[ "$(env_get SMTP_HOST)" == 'supabase-mail' ]]; }
+
+# The stored value, or empty while the block is still Supabase's placeholder.
+smtp_get() {
+  smtp_is_stock && return 0
+  env_get "$1"
+}
+
+smtp_configured() {
+  smtp_is_stock && return 1
+  [[ -n "$(env_get SMTP_HOST)" ]]
+}
 
 require_smtp() {
   smtp_configured && return 0
   printf 'ERROR: no SMTP_HOST in %s\n' "$ENV_FILE" >&2
-  printf '  %s needs SMTP to deliver its email. Configure it first:\n' "$1" >&2
-  printf '    bash scripts/setup_smtp.sh\n' >&2
+  printf '  %s needs SMTP to deliver its email. Configure it first.' >&2
   exit 1
 }
 
