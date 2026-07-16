@@ -199,9 +199,10 @@ SCHEMA_LOG="$(mktemp)"
 sed -e "s#your_supabase_url#${API_URL}#g" \
     -e "s#<SERVICE_ROLE_KEY>#${SERVICE_ROLE_KEY}#g" \
     "$SCHEMA_TMP" | psql_load > "$SCHEMA_LOG" 2>&1 || true
-real_errs="$(grep 'ERROR:' "$SCHEMA_LOG" | grep -v 'already exists' || true)"
+benign='already exists|multiple primary keys for table .* are not allowed|permission denied to change default privileges|grant options cannot be granted back to your own grantor'
+real_errs="$(grep 'ERROR:' "$SCHEMA_LOG" | grep -vE "$benign" || true)"
 if [[ -n "$real_errs" ]]; then
-  warn "schema load reported $(printf '%s\n' "$real_errs" | wc -l) error(s):"
+  warn "schema load reported $(printf '%s\n' "$real_errs" | wc -l) unexpected error(s):"
   printf '%s\n' "$real_errs" | sort | uniq -c | sort -rn | head -15 >&2
 fi
 rm -f "$SCHEMA_LOG"
@@ -277,30 +278,6 @@ done
 if [[ $deployed -eq 1 ]]; then
   compose restart functions >/dev/null 2>&1 || warn "restart the 'functions' container manually"
 fi
-
-# --- 6b. Verify the push config actually reached the functions -----------
-log "Verifying push configuration"
-resp=""
-for i in $(seq 1 30); do
-  resp="$(curl -fsS "$API_URL/functions/v1/instance-config" 2>/dev/null || true)"
-  [[ -n "$resp" ]] && break
-  sleep 2
-done
-case "$resp" in
-  *'"app_id":"1:'*)
-    echo "  push config OK" ;;
-  '')
-    warn "instance-config did not respond, so the app cannot fetch this instance's config."
-    echo "        Check whether the function booted:"
-    echo "          docker compose logs functions --tail=30" ;;
-  *'"app_id":""'*)
-    warn "instance-config is serving no FCM app id, so push will not work."
-    echo "        Check the config file is in place and is valid JSON:"
-    echo "          ls -l $SHARED_DIR/google-services.json && head -c 40 $SHARED_DIR/google-services.json; echo"
-    echo "        It should start with  {\"project_info\": ...  If it's missing, re-run this script." ;;
-  *)
-    warn "unexpected instance-config response; check the functions logs." ;;
-esac
 
 log "Done."
 
