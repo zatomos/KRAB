@@ -10,7 +10,7 @@ set -euo pipefail
 
 REPO_REF="${REPO_REF:-main}"
 REPO_RAW="https://raw.githubusercontent.com/zatomos/KRAB/$REPO_REF"
-_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || true)"
+_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-}")" 2>/dev/null && pwd || true)"
 if [[ -n "$_dir" && -r "$_dir/lib.sh" ]] && head -n1 "$_dir/lib.sh" | grep -q 'KRAB script helpers'; then
   source "$_dir/lib.sh"
 else

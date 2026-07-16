@@ -118,7 +118,7 @@ compose_up() {
 fetch_to() {
   local url="$1" dest="$2" tmp
   tmp="$(mktemp)"
-  if curl -fsSL "$url" -o "$tmp"; then
+  if curl -fsL "$url" -o "$tmp"; then
     mv "$tmp" "$dest"
     return 0
   fi

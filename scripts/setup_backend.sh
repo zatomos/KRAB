@@ -13,7 +13,7 @@ set -euo pipefail
 REPO_REF="${REPO_REF:-main}"
 REPO_RAW="https://raw.githubusercontent.com/zatomos/KRAB/$REPO_REF"
 
-_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || true)"
+_dir="$(cd "$(dirname "${BASH_SOURCE[0]:-}")" 2>/dev/null && pwd || true)"
 if [[ -n "$_dir" && -r "$_dir/lib.sh" ]] && head -n1 "$_dir/lib.sh" | grep -q 'KRAB script helpers'; then
   source "$_dir/lib.sh"
 else
@@ -48,14 +48,20 @@ require_tty
 
 # --- 0. Install Supabase if missing -------------------------------------
 resolve_supabase_dir
-if [[ ! -d "$SUPABASE_DIR" ]]; then
+if [[ ! -f "$ENV_FILE" ]]; then
+  if [[ -e "$SUPABASE_DIR" ]]; then
+    die "$SUPABASE_DIR exists but has no .env, so a previous install was interrupted.
+  The installer will not write into an existing directory. Check there is nothing
+  you want in there, then remove it and re-run:
+    rm -rf $SUPABASE_DIR"
+  fi
   log "Installing self-hosted Supabase into $SUPABASE_DIR"
   mkdir -p "$(dirname "$SUPABASE_DIR")" || die "Cannot create $(dirname "$SUPABASE_DIR")"
   ( cd "$(dirname "$SUPABASE_DIR")" \
       && curl -fsSL https://supabase.link/setup.sh | sh -s -- -y -p "$(basename "$SUPABASE_DIR")" ) \
     || die "Supabase install failed"
+  [[ -f "$ENV_FILE" ]] || die "The installer finished but left no .env in $SUPABASE_DIR"
 fi
-[[ -f "$ENV_FILE" ]] || die "No .env in $SUPABASE_DIR"
 
 # --- Gather answers interactively -----------------------------------------
 ip="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
@@ -171,12 +177,18 @@ psql_query() { docker exec "$DB_CONTAINER" psql -U postgres -d postgres "$@"; }
 # storage.buckets/objects are created by the 'storage' container's migrations a
 # few seconds after startup. Without them, the schema's storage RLS policies and
 # the bucket seed have nothing to attach to.
-log "Waiting for storage schema (storage.buckets)..."
+log "Waiting for the storage schema..."
 for i in $(seq 1 60); do
-  if [[ "$(psql_query -tAc "select to_regclass('storage.buckets') is not null" 2>/dev/null || true)" == "t" ]]; then break; fi
-  [[ $i -eq 60 ]] && die "storage.buckets never appeared, is the 'storage' container running?"
+  if [[ "$(psql_query -tAc "select to_regclass('storage.buckets') is not null and to_regclass('storage.objects') is not null" 2>/dev/null || true)" == "t" ]]; then break; fi
+  [[ $i -eq 60 ]] && die "the storage schema never appeared, is the 'storage' container running? (docker compose logs storage)"
   sleep 2
 done
+
+# --- 3c. Let 'postgres' manage the storage schema -------------------------
+log "Granting the storage role to postgres"
+docker exec supabase-db psql -U supabase_admin -d postgres -q \
+  -c "grant supabase_storage_admin to postgres;" 2>/dev/null \
+  || warn "could not grant supabase_storage_admin to postgres; storage policies may fail"
 
 # --- 4. Load schema -------------------------------------------------------
 # The dump includes the storage schema, which already exists on a fresh
@@ -189,13 +201,30 @@ sed -e "s#your_supabase_url#${API_URL}#g" \
     "$SCHEMA_TMP" | psql_load > "$SCHEMA_LOG" 2>&1 || true
 real_errs="$(grep 'ERROR:' "$SCHEMA_LOG" | grep -v 'already exists' || true)"
 if [[ -n "$real_errs" ]]; then
-  warn "schema load reported errors:"
-  printf '%s\n' "$real_errs" | head -20 >&2
+  warn "schema load reported $(printf '%s\n' "$real_errs" | wc -l) error(s):"
+  printf '%s\n' "$real_errs" | sort | uniq -c | sort -rn | head -15 >&2
 fi
 rm -f "$SCHEMA_LOG"
 [[ "$(psql_query -tAc "select to_regclass('public.\"Groups\"') is not null")" == "t" ]] \
   || die "Schema load failed: public.Groups not found"
 log "Schema loaded (public.Groups present)"
+
+want_pol="$(grep -oE '^CREATE POLICY "[^"]+" ON "?storage"?\."?objects"?' "$SCHEMA_TMP" \
+  | sed 's/^CREATE POLICY "//; s/" ON.*//' | sort -u || true)"
+if [[ -z "$want_pol" ]]; then
+  warn "could not read the expected storage policies out of schema.sql; skipping that check"
+else
+  have_pol="$(psql_query -tAc "select policyname from pg_policies where schemaname = 'storage' and tablename = 'objects';" 2>/dev/null | sort -u || true)"
+  missing_pol="$(comm -23 <(printf '%s\n' "$want_pol") <(printf '%s\n' "$have_pol") || true)"
+  if [[ -n "$missing_pol" ]]; then
+    die "$(printf '%s\n' "$missing_pol" | wc -l) of $(printf '%s\n' "$want_pol" | wc -l) storage policies are missing, so the app will not be able to upload or read photos:
+$(printf '%s\n' "$missing_pol" | sed 's/^/  - /')
+  Failed to grant storage admin to postgres. Check it by hand:
+    docker exec supabase-db psql -U supabase_admin -d postgres -c 'grant supabase_storage_admin to postgres;'
+  then re-run this script against a clean database (docker compose down -v)."
+  fi
+  log "Storage policies present ($(printf '%s\n' "$want_pol" | wc -l))"
+fi
 
 trg="$(psql_query -tAc "select count(distinct trigger_name) from information_schema.triggers where trigger_name in ('on-image-insert','on-comment-insert','on-reaction-insert','on-image-delete','on-image-insert-thumbnail');" 2>/dev/null | tr -d '[:space:]' || true)"
 [[ "$trg" == "5" ]] || warn "notification/thumbnail triggers missing ($trg/5), check supabase_functions/pg_net"
@@ -252,15 +281,19 @@ fi
 # --- 6b. Verify the push config actually reached the functions -----------
 log "Verifying push configuration"
 resp=""
-for i in $(seq 1 10); do
+for i in $(seq 1 30); do
   resp="$(curl -fsS "$API_URL/functions/v1/instance-config" 2>/dev/null || true)"
   [[ -n "$resp" ]] && break
-  sleep 1
+  sleep 2
 done
 case "$resp" in
   *'"app_id":"1:'*)
     echo "  push config OK" ;;
-  ''|*'"app_id":""'*)
+  '')
+    warn "instance-config did not respond, so the app cannot fetch this instance's config."
+    echo "        Check whether the function booted:"
+    echo "          docker compose logs functions --tail=30" ;;
+  *'"app_id":""'*)
     warn "instance-config is serving no FCM app id, so push will not work."
     echo "        Check the config file is in place and is valid JSON:"
     echo "          ls -l $SHARED_DIR/google-services.json && head -c 40 $SHARED_DIR/google-services.json; echo"
