@@ -60,6 +60,8 @@ void workmanagerCallbackDispatcher() {
         return Future.value(false);
       }
       if (await AppAuth.instance.getValidToken() == null) {
+        await refreshWidgetAuthState();
+
         // Queued photos keep until the user reopens the app and
         // re-authenticates.
         debugPrint('WorkManager: no valid session, skipping');

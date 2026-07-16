@@ -101,6 +101,23 @@ class AppAuth {
   Stream<AppAuthStatus> get events => _events.stream;
 
   bool get isLoggedIn => _refreshToken != null;
+
+  /// Whether a session exists on this device, asked of storage rather than of
+  /// this isolate's memory. True if storage read fails.
+  Future<bool> hasStoredSession() async {
+    if (_refreshToken != null) return true;
+    try {
+      final raw = await _storage.read(key: _sessionKey);
+      if (raw == null || raw.isEmpty) return false;
+      final session = jsonDecode(raw) as Map<String, dynamic>;
+      final refresh = session['refresh_token'] as String?;
+      return refresh != null && refresh.isNotEmpty;
+    } catch (e) {
+      debugPrint('AppAuth.hasStoredSession failed: $e');
+      return true;
+    }
+  }
+
   String? get currentUserId => _claims?['sub'] as String?;
   String? get currentUserEmail => _claims?['email'] as String?;
 

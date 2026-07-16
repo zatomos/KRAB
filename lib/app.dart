@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -87,6 +89,9 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
     // Coming back to the app is the most likely moment for a connection to have
     // returned, so try the photos that were queued without one.
     UploadOutbox.instance.flush();
+
+    // Tapping a widget that says "signed out" lands here
+    unawaited(refreshWidgetAuthState());
 
     final now = DateTime.now();
     final canRefresh = _lastWidgetRefresh == null ||

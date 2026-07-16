@@ -83,4 +83,45 @@
 
     </LinearLayout>
 
+    <!-- Signed-out state.-->
+    <LinearLayout
+        android:id="@+id/signed_out_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:padding="10dp"
+        android:visibility="gone">
+
+        <ImageView
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:layout_marginBottom="6dp"
+            android:src="@mipmap/ic_launcher"
+            android:contentDescription="@string/widget_signed_out_title" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/widget_signed_out_title"
+            android:textColor="?android:attr/textColorPrimary"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:maxLines="1"
+            android:ellipsize="end" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:text="@string/widget_signed_out_subtitle"
+            android:textColor="?android:attr/textColorSecondary"
+            android:textSize="12sp"
+            android:gravity="center"
+            android:maxLines="2"
+            android:ellipsize="end" />
+
+    </LinearLayout>
+
 </FrameLayout>

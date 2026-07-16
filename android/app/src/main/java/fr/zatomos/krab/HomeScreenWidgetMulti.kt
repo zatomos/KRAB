@@ -63,6 +63,11 @@ class HomeScreenWidgetMulti : AppWidgetProvider() {
             fun Int.px() = (this * density).toInt()
 
             val views = RemoteViews(context.packageName, R.layout.home_screen_widget_multi)
+            // Undo the signed-out state explicitly.
+            views.setViewVisibility(R.id.signed_out_container, View.GONE)
+            views.setViewVisibility(R.id.multi_main_image, View.VISIBLE)
+            views.setViewVisibility(R.id.multi_prev_image1, View.VISIBLE)
+            views.setViewVisibility(R.id.multi_prev_image2, View.VISIBLE)
             views.setImageViewResource(R.id.multi_main_image, R.drawable.ic_placeholder)
             views.setImageViewResource(R.id.multi_prev_image1, R.drawable.ic_placeholder)
             views.setImageViewResource(R.id.multi_prev_image2, R.drawable.ic_placeholder)
@@ -145,6 +150,23 @@ class HomeScreenWidgetMulti : AppWidgetProvider() {
                 val descLines = HomeScreenWidget.getDescLinesPref(context, id, default = 1).coerceIn(1, 2)
 
                 val pfpSlots = (if (showText && showPfp) 1 else 0) + (if (showPrevPfps) 2 else 0)
+
+                // The session is gone, display disconnected
+                if (prefs.getBoolean(HomeScreenWidget.PREF_SIGNED_OUT_KEY, false)) {
+                    Log.d(TAG, "Widget $id: signed out")
+                    val signedOutViews =
+                        RemoteViews(context.packageName, R.layout.home_screen_widget_multi)
+                    signedOutViews.setViewVisibility(R.id.multi_main_image, View.GONE)
+                    signedOutViews.setViewVisibility(R.id.multi_prev_image1, View.GONE)
+                    signedOutViews.setViewVisibility(R.id.multi_prev_image2, View.GONE)
+                    signedOutViews.setViewVisibility(R.id.overlay_container, View.GONE)
+                    signedOutViews.setViewVisibility(R.id.quick_snap_button, View.GONE)
+                    signedOutViews.setViewVisibility(R.id.signed_out_container, View.VISIBLE)
+                    signedOutViews.setOnClickPendingIntent(R.id.signed_out_container,
+                        HomeScreenWidget.openAppPendingIntent(context, id))
+                    manager.tryUpdateAppWidget(context, id, signedOutViews)
+                    return
+                }
 
                 // Placeholder update — no bitmaps, always succeeds
                 manager.tryUpdateAppWidget(context, id,

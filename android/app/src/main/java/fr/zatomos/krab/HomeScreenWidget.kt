@@ -58,6 +58,8 @@ class HomeScreenWidget : AppWidgetProvider() {
         const val ACTION_IMAGE_UPDATED = "fr.zatomos.krab.ACTION_IMAGE_UPDATED"
         private const val TAG = "HomeScreenWidget"
 
+        const val PREF_SIGNED_OUT_KEY = "widgetSignedOut"
+
         private const val PREF_IMAGE_URL_KEY = "recentImageUrl"
         private const val PREF_IMAGE_DESC_KEY = "recentImageDescription"
         private const val PREF_IMAGE_SENDER_KEY = "recentImageSender"
@@ -292,6 +294,9 @@ class HomeScreenWidget : AppWidgetProvider() {
             fun Int.px() = (this * density).toInt()
 
             val views = RemoteViews(context.packageName, R.layout.home_screen_widget)
+            // Undo the signed-out state explicitly.
+            views.setViewVisibility(R.id.signed_out_container, View.GONE)
+            views.setViewVisibility(R.id.recent_image, View.VISIBLE)
             views.setImageViewResource(R.id.recent_image, R.drawable.ic_placeholder)
             views.setViewVisibility(R.id.overlay_pfp, View.GONE)
 
@@ -357,6 +362,20 @@ class HomeScreenWidget : AppWidgetProvider() {
                 Log.d(TAG, "Widget $id: imageUrl=$imageUrl pfpUrl=$pfpUrl showText=$showText " +
                         "showGradient=$showGradient showPfp=$showPfp showSenderName=$showSenderName " +
                         "tapToOpen=$tapToOpen showQuickSnap=$showQuickSnap")
+
+                // The session is gone, display disconnected
+                if (prefs.getBoolean(PREF_SIGNED_OUT_KEY, false)) {
+                    Log.d(TAG, "Widget $id: signed out")
+                    val signedOutViews = RemoteViews(context.packageName, R.layout.home_screen_widget)
+                    signedOutViews.setViewVisibility(R.id.recent_image, View.GONE)
+                    signedOutViews.setViewVisibility(R.id.overlay_container, View.GONE)
+                    signedOutViews.setViewVisibility(R.id.quick_snap_button, View.GONE)
+                    signedOutViews.setViewVisibility(R.id.signed_out_container, View.VISIBLE)
+                    signedOutViews.setOnClickPendingIntent(
+                        R.id.signed_out_container, openAppPendingIntent(context, id))
+                    manager.tryUpdateAppWidget(context, id, signedOutViews)
+                    return
+                }
 
                 // Placeholder update: no bitmaps, always succeeds
                 manager.tryUpdateAppWidget(context, id,

@@ -8,6 +8,7 @@ import 'package:workmanager/workmanager.dart';
 import 'package:krab/user_preferences.dart';
 import 'package:krab/models/image_ref.dart';
 import 'package:krab/services/api/supabase.dart';
+import 'package:krab/services/auth/app_auth.dart';
 import 'package:krab/services/debug_notifier.dart';
 import 'file_saver.dart';
 
@@ -15,6 +16,25 @@ import 'file_saver.dart';
 // CSV of widget ids
 const _registrySingleKey = 'widgetRegistrySingle';
 const _registryMultiKey = 'widgetRegistryMulti';
+
+/// Read by the Kotlin providers to draw the signed-out state.
+const _signedOutKey = 'widgetSignedOut';
+
+/// Settle whether the widgets show the signed-out state. True when signed in.
+Future<bool> refreshWidgetAuthState() async {
+  final signedIn = await AppAuth.instance.hasStoredSession();
+  await _setWidgetSignedOut(!signedIn);
+  return signedIn;
+}
+
+Future<void> _setWidgetSignedOut(bool signedOut) async {
+  final previous = await HomeWidget.getWidgetData<bool>(_signedOutKey);
+  await HomeWidget.saveWidgetData(_signedOutKey, signedOut);
+  if (previous == signedOut) return;
+  debugPrint('Widget: signed-out state -> $signedOut');
+  await HomeWidget.updateWidget(name: 'HomeScreenWidget');
+  await HomeWidget.updateWidget(name: 'HomeScreenWidgetMulti');
+}
 
 /// A widget instance to update
 class _WidgetEntry {
@@ -88,6 +108,11 @@ Future<List<String>> _readWidgetGroups(int id) async {
 
 Future<void> updateHomeWidget() async {
   try {
+    if (!await refreshWidgetAuthState()) {
+      debugPrint("Widget: no session, showing the signed-out state");
+      return;
+    }
+
     debugPrint("Starting widget update process");
     await DebugNotifier.instance.notifyWidgetUpdateStarted();
 
