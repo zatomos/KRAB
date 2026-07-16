@@ -237,7 +237,7 @@ class _ReactorsSheetState extends State<_ReactorsSheet> {
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  row.username.isEmpty ? '…' : row.username,
+                  row.username.isEmpty ? '...' : row.username,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontWeight: FontWeight.w600),

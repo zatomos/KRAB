@@ -181,8 +181,12 @@ class DebugNotifier {
     await _notify('Push Sync Failed', error);
   }
 
-  Future<void> notifyPushSubscriptionSaved() async {
-    await _notify('Push', 'Subscription synced successfully');
+  Future<void> notifyPushSubscriptionSaved([String? detail]) async {
+    await _notify('Push', detail ?? 'Subscription synced successfully');
+  }
+
+  Future<void> notifyPushEndpointChanged(String detail) async {
+    await _notify('Push endpoint', detail);
   }
 
   // --- Supabase Events ---

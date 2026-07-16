@@ -2,47 +2,39 @@ part of 'supabase.dart';
 
 /// ------------------ PUSH SUBSCRIPTION & USER FUNCTIONS ------------------
 
-/// Stores the caller's Web Push subscription so the backend can push to it.
+/// Stores the caller's FCM registration token so the backend can push to it.
 ///
-/// endpoint is where the user's push service accepts messages; p256dh and
-/// auth let the backend encrypt a payload only this device can open. All three
-/// come from the distributor and any of them can change at any launch, so this
-/// is called on every new endpoint rather than once at sign-up.
-Future<SupabaseResponse<void>> savePushSubscription({
-  required String endpoint,
-  required String p256dh,
-  required String auth,
+/// The token identifies this device to FCM. It can be rotated by FCM at any
+/// time, so this is called on every new token.
+Future<SupabaseResponse<void>> saveFcmToken({
+  required String token,
   String? username,
 }) async {
   if (!AppAuth.instance.isLoggedIn) {
     return SupabaseResponse(success: false, error: errorNotLoggedIn);
   }
-  return _rpc("register_push_subscription",
+  return _rpc("register_fcm_token",
       params: {
-        "p_endpoint": endpoint,
-        "p_p256dh": p256dh,
-        "p_auth": auth,
+        "p_token": token,
         if (username != null) "p_username": username,
       },
-      errorContext: "saving push subscription");
+      errorContext: "saving push token");
 }
 
-/// Drops the caller's Web Push subscription, so the backend stops pushing to a
-/// device the user has signed out of.
-Future<SupabaseResponse<void>> clearPushSubscription() async {
+/// Drops the caller's FCM token, so the backend stops pushing to a device the
+/// user has signed out of.
+Future<SupabaseResponse<void>> clearFcmToken() async {
   if (!AppAuth.instance.isLoggedIn) {
     return SupabaseResponse(success: false, error: errorNotLoggedIn);
   }
 
   try {
     await supabase.from('Users').update({
-      'push_endpoint': null,
-      'push_p256dh': null,
-      'push_auth': null,
+      'push_fcm_token': null,
     }).eq('id', AppAuth.instance.currentUserId!);
     return SupabaseResponse(success: true);
   } catch (error) {
-    return _failure(error, "clearing the push subscription");
+    return _failure(error, "clearing the push token");
   }
 }
 
@@ -60,18 +52,28 @@ Future<SupabaseResponse<void>> fetchInstanceConfig() async {
 
     String field(String key) => (body[key] as String?) ?? '';
 
-    final vapidKey = field('vapid_public_key');
+    final fcm = body['fcm'];
+    String fcmField(String key) =>
+        (fcm is Map ? fcm[key] as String? : null) ?? '';
+
+    final fcmAppId = fcmField('app_id');
+    final fcmApiKey = fcmField('api_key');
+    final fcmSenderId = fcmField('sender_id');
+    final fcmProjectId = fcmField('project_id');
     final resetUrl = field('password_reset_url');
     final confirmUrl = field('email_confirm_url');
 
     await UserPreferences.setInstanceConfig(
-      vapidKey: vapidKey,
+      fcmAppId: fcmAppId,
+      fcmApiKey: fcmApiKey,
+      fcmSenderId: fcmSenderId,
+      fcmProjectId: fcmProjectId,
       resetUrl: resetUrl,
       confirmUrl: confirmUrl,
     );
 
     debugPrint('InstanceConfig: fetched '
-        '(vapid=${vapidKey.isNotEmpty}, '
+        '(fcm=${fcmAppId.isNotEmpty}, '
         'passwordReset=${resetUrl.isNotEmpty}, '
         'emailConfirm=${confirmUrl.isNotEmpty})');
     return SupabaseResponse(success: true);
@@ -158,9 +160,9 @@ Future<SupabaseResponse<void>> logOut() async {
     // The row can only be cleared while the session is still valid, and
     // a failure here must not strand the user in a half-logged-out state,
     // so it is best-effort.
-    final cleared = await clearPushSubscription();
+    final cleared = await clearFcmToken();
     if (!cleared.success) {
-      debugPrint('Could not clear the push subscription: ${cleared.error}');
+      debugPrint('Could not clear the push token: ${cleared.error}');
     }
     await PushHelper.unregister();
     await PushHelper.dispose();

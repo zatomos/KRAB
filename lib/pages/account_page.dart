@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:krab/services/auth/app_auth.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:simple_icons/simple_icons.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -15,7 +16,6 @@ import 'package:krab/services/api/supabase.dart';
 import 'package:krab/user_preferences.dart';
 import 'package:krab/services/debug_notifier.dart';
 import 'package:krab/services/home_widget_updater.dart';
-import 'package:krab/services/push_helper.dart';
 import 'package:krab/services/update_service.dart';
 import 'package:krab/widgets/rectangle_button.dart';
 import 'package:krab/widgets/avatars/user_avatar.dart';
@@ -24,7 +24,6 @@ import 'package:krab/widgets/dialogs/change_password_dialog.dart';
 import 'package:krab/widgets/dialogs/change_server_dialog.dart';
 import 'package:krab/widgets/dialogs/delete_account_dialog.dart';
 import 'package:krab/widgets/dialogs/edit_avatar_dialog.dart';
-import 'package:krab/widgets/dialogs/push_distributor_dialog.dart';
 import 'package:krab/widgets/dialogs/rename_dialog.dart';
 import 'package:krab/widgets/dialogs/update_dialog.dart';
 import 'login_page.dart';
@@ -56,32 +55,36 @@ class AccountPageState extends State<AccountPage> {
 
   String appVersion = "";
 
-  /// The UnifiedPush distributor in use, null while loading or if none is set.
-  String? _distributor;
-
-  /// Whether the user has a delivery choice worth showing. See [_loadDistributor].
-  bool _showDistributor = false;
+  /// Whether the app is exempt from battery optimization. Null while loading.
+  bool? _batteryOptimizationDisabled;
 
   @override
   void initState() {
     super.initState();
     _loadUserProfile();
     _loadAppVersion();
-    _loadDistributor();
+    _loadBatteryOptimization();
   }
 
-  Future<void> _loadDistributor() async {
-    final distributors = await PushHelper.availableDistributors();
-    final current = await PushHelper.currentDistributor();
-    final packageName = (await PackageInfo.fromPlatform()).packageName;
-    final onlyEmbedded =
-        distributors.length == 1 && distributors.first == packageName;
-
+  Future<void> _loadBatteryOptimization() async {
+    final granted = await Permission.ignoreBatteryOptimizations.isGranted;
     if (!mounted) return;
-    setState(() {
-      _distributor = current;
-      _showDistributor = !onlyEmbedded;
-    });
+    setState(() => _batteryOptimizationDisabled = granted);
+  }
+
+  /// Prompts for the battery-optimization exemption, sending the user to system
+  /// settings if the request can no longer be shown as a dialog.
+  Future<void> _requestBatteryOptimization() async {
+    if (_batteryOptimizationDisabled == true) {
+      // Already exempt; the toggle can only be reversed from system settings.
+      await openAppSettings();
+    } else if (await Permission
+        .ignoreBatteryOptimizations.isPermanentlyDenied) {
+      await openAppSettings();
+    } else {
+      await Permission.ignoreBatteryOptimizations.request();
+    }
+    await _loadBatteryOptimization();
   }
 
   Future<void> _loadUserProfile() async {
@@ -178,15 +181,6 @@ class AccountPageState extends State<AccountPage> {
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (context) => const LoginPage()),
     );
-  }
-
-  Future<void> openPushDistributorDialog() async {
-    await showDialog<void>(
-      context: context,
-      builder: (_) => const PushDistributorDialog(),
-    );
-    // The dialog may have switched distributor, so re-read what is in use.
-    await _loadDistributor();
   }
 
   Future<void> openChangeServerDialog() async {
@@ -472,18 +466,24 @@ class AccountPageState extends State<AccountPage> {
                           trailing: const Icon(Icons.chevron_right_rounded),
                           onTap: openChangeServerDialog,
                         ),
-                        if (_showDistributor)
-                          ListTile(
-                            leading:
-                                const Icon(Icons.notifications_active_rounded),
-                            title: Text(context.l10n.push_distributor_label),
-                            subtitle: Text(
-                              _distributor ??
-                                  context.l10n.push_distributor_none_selected,
-                            ),
-                            trailing: const Icon(Icons.chevron_right_rounded),
-                            onTap: openPushDistributorDialog,
+                        ListTile(
+                          leading: Icon(
+                            _batteryOptimizationDisabled == true
+                                ? Icons.battery_charging_full_rounded
+                                : Icons.battery_alert_rounded,
+                            color: _batteryOptimizationDisabled == false
+                                ? Theme.of(context).colorScheme.error
+                                : null
                           ),
+                          title: Text(context.l10n.battery_optimization_label),
+                          subtitle: Text(
+                            _batteryOptimizationDisabled == true
+                                ? context.l10n.battery_optimization_allowed
+                                : context.l10n.battery_optimization_restricted,
+                          ),
+                          trailing: const Icon(Icons.chevron_right_rounded),
+                          onTap: _requestBatteryOptimization,
+                        ),
                         const SizedBox(height: 27),
                         Padding(
                           padding: const EdgeInsets.only(left: 8.0),

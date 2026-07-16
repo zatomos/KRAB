@@ -89,8 +89,9 @@ configurations.configureEach {
 }
 
 dependencies {
-    implementation 'org.unifiedpush.android:embedded-fcm-distributor:3.1.0'
-    implementation 'org.unifiedpush.android:connector:3.3.3'
+    // Firebase
+    implementation platform('com.google.firebase:firebase-bom:34.16.0')
+    implementation 'com.google.firebase:firebase-messaging'
 
     // Kotlin coroutines
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.1"

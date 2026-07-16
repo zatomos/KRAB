@@ -166,12 +166,11 @@ class _InstanceSetupPageState extends State<InstanceSetupPage> {
       return;
     }
 
-    // Learn what this instance supports (its VAPID key, and whether it offers
-    // password reset or email confirmation) before the login screen is built,
-    // since the login screen decides what to show from it.
+    // Learn what this instance supports.
     await fetchInstanceConfig();
 
-    // Then subscribe against the VAPID key that just arrived.
+    // Bring Firebase up against the config that just arrived. There is no
+    // session yet, so this only initialises; the token is stored on sign-in.
     await PushHelper.ensureRegistered();
 
     if (!mounted) return;

@@ -43,7 +43,7 @@ Photos shared to a group appear directly on every member's home screen.</h4>
 - 🔄 Sharing:
   - Snap a photo to one or more groups and optionally add a caption.
   - A notification is sent to every member of the group.
-  - Photos appear instantly on every group member's home screen via a widget.
+  - Photos appear instantly on every group member's home screen widget.
   - Users can choose to display the most recent or the three most recent images they received.
 
 - 🌐 Social:
@@ -53,8 +53,7 @@ Photos shared to a group appear directly on every member's home screen.</h4>
 
 - 🛡️ Privacy:
   - Fully self-hostable backend.
-  - Push notifications use [UnifiedPush](https://unifiedpush.org) and standard Web Push. Payloads are
-    encrypted to your device, so a push service only ever sees ciphertext.
+  - Even though the app uses FCM to send push notifications, their content is hidden from Google.
 
 ## 🏗️ Architecture
 
@@ -93,11 +92,27 @@ do so by running the included scripts.
 **Prerequisites:** a Linux server with [Docker](https://docs.docker.com/engine/install/) and the
 Docker Compose plugin.
 
+#### Firebase Cloud Messaging (push)
+
+Notifications use your own Firebase project.
+
+1. At the [Firebase console](https://console.firebase.google.com), create a project. You can 
+   leave the other Firebase products disabled, this project only needs Cloud Messaging.
+2. Add an Android app whose package matches the APK you distribute (e.g. `fr.zatomos.krab` for the
+   stock build, or your own `applicationId`) and download its **`google-services.json`**.
+   This holds the app's public config.
+3. Go to Project settings > **Service accounts > Generate new private key** and download the
+   **service-account JSON**.
+
+Copy the files on your server, the setup script will ask for their path.
+
+#### Running the script
+
 Run the backend setup script `setup_backend.sh` on the server. It installs self-hosted Supabase
 (if missing), configures it for KRAB, loads the database schema, creates the storage buckets,
-generates this instance's VAPID keypair, and deploys the edge functions. It also wires the database
-triggers that call those functions, injecting your instance's service-role key as their
-authorization so the calls aren't rejected:
+stores your Firebase config, and deploys the edge functions. It also wires the database triggers that
+call those functions, injecting your instance's service-role key as their authorization so the calls
+aren't rejected:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/zatomos/KRAB/main/scripts/setup_backend.sh | bash
@@ -106,7 +121,7 @@ curl -fsSL https://raw.githubusercontent.com/zatomos/KRAB/main/scripts/setup_bac
 It will ask you for:
 - **API URL** clients use.
 - **Studio dashboard** username / password.
-- A **contact email** for push services
+- The **path to `google-services.json`** and the **path to the service-account JSON**.
 
 When it finishes, it prints a **connection token**, a single string that packs the API URL and the
 anon key. That is all a user needs to point the app at your instance; share it with the people you're

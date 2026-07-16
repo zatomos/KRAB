@@ -25,8 +25,6 @@ import 'package:krab/user_preferences.dart';
 
 /// Entry point for both the app and a push delivery.
 void main(List<String> args) async {
-  final background = args.contains('--unifiedpush-bg');
-
   try {
     WidgetsFlutterBinding.ensureInitialized();
     await UserPreferences().initPrefs();
@@ -34,12 +32,7 @@ void main(List<String> args) async {
     await initCommentNotifications(onTap: handleLocalNotificationTap);
 
     final supabaseOk = await initializeSupabaseIfNeeded();
-    await PushHelper.initialize(background: background);
-
-    if (background) {
-      isAppInitialized = true;
-      return;
-    }
+    await PushHelper.initialize(background: false);
 
     pendingLocalNotificationPayload = await getLocalNotificationLaunchPayload();
     await requestNotificationPermission();
@@ -67,9 +60,7 @@ void main(List<String> args) async {
   } catch (e, st) {
     debugPrint('Error starting app: $e');
     debugPrint('Stack trace: $st');
-    if (!background) {
-      runApp(MyApp(navigatorKey: navigatorKey));
-    }
+    runApp(MyApp(navigatorKey: navigatorKey));
   }
 }
 

@@ -1856,10 +1856,10 @@ END;$$;
 
 
 --
--- Name: register_push_subscription(text, text, text, text); Type: FUNCTION; Schema: public; Owner: -
+-- Name: register_fcm_token(text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.register_push_subscription(p_endpoint text, p_p256dh text, p_auth text, p_username text DEFAULT NULL::text) RETURNS jsonb
+CREATE FUNCTION public.register_fcm_token(p_token text, p_username text DEFAULT NULL::text) RETURNS jsonb
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public'
     AS $$BEGIN
@@ -1867,27 +1867,22 @@ CREATE FUNCTION public.register_push_subscription(p_endpoint text, p_p256dh text
     RETURN jsonb_build_object('success', false, 'error', 'Not authenticated');
   END IF;
 
-  IF p_endpoint IS NULL OR p_p256dh IS NULL OR p_auth IS NULL THEN
-    RETURN jsonb_build_object('success', false, 'error', 'Incomplete subscription');
+  IF p_token IS NULL OR p_token = '' THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Missing token');
   END IF;
 
-  -- An endpoint is a device, and a device belongs to one user at a time. If it
-  -- is still on someone else's row, release it, or the backend would go on
-  -- encrypting their notifications to keys this device holds and the new user
-  -- would be able to read them.
+  -- A token is a device, and a device belongs to one user at a time. If it is
+  -- still on someone else's row, release it, or the backend would keep pushing
+  -- this user's notifications to a device the previous user signed out of.
   UPDATE public."Users"
-     SET push_endpoint = NULL,
-         push_p256dh   = NULL,
-         push_auth     = NULL
-   WHERE push_endpoint = p_endpoint
+     SET push_fcm_token = NULL
+   WHERE push_fcm_token = p_token
      AND id <> auth.uid();
 
-  INSERT INTO public."Users" (id, push_endpoint, push_p256dh, push_auth, username)
-  VALUES (auth.uid(), p_endpoint, p_p256dh, p_auth, COALESCE(p_username, ''))
+  INSERT INTO public."Users" (id, push_fcm_token, username)
+  VALUES (auth.uid(), p_token, COALESCE(p_username, ''))
   ON CONFLICT (id) DO UPDATE
-    SET push_endpoint = EXCLUDED.push_endpoint,
-        push_p256dh   = EXCLUDED.push_p256dh,
-        push_auth     = EXCLUDED.push_auth,
+    SET push_fcm_token = EXCLUDED.push_fcm_token,
         username = CASE WHEN p_username IS NOT NULL THEN EXCLUDED.username ELSE "Users".username END;
 
   RETURN jsonb_build_object('success', true);
@@ -3588,9 +3583,7 @@ CREATE TABLE public."Users" (
     id uuid NOT NULL,
     notify_group_comments boolean DEFAULT false NOT NULL,
     notify_group_reactions boolean DEFAULT false NOT NULL,
-    push_endpoint text,
-    push_p256dh text,
-    push_auth text,
+    push_fcm_token text,
     CONSTRAINT "Users_username_check" CHECK ((length(username) < 20))
 );
 
@@ -5160,12 +5153,12 @@ GRANT ALL ON FUNCTION public.promote_pending_image() TO service_role;
 
 
 --
--- Name: FUNCTION register_push_subscription(p_endpoint text, p_p256dh text, p_auth text, p_username text); Type: ACL; Schema: public; Owner: -
+-- Name: FUNCTION register_fcm_token(p_token text, p_username text); Type: ACL; Schema: public; Owner: -
 --
 
-REVOKE ALL ON FUNCTION public.register_push_subscription(p_endpoint text, p_p256dh text, p_auth text, p_username text) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.register_push_subscription(p_endpoint text, p_p256dh text, p_auth text, p_username text) TO authenticated;
-GRANT ALL ON FUNCTION public.register_push_subscription(p_endpoint text, p_p256dh text, p_auth text, p_username text) TO service_role;
+REVOKE ALL ON FUNCTION public.register_fcm_token(p_token text, p_username text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.register_fcm_token(p_token text, p_username text) TO authenticated;
+GRANT ALL ON FUNCTION public.register_fcm_token(p_token text, p_username text) TO service_role;
 
 
 --

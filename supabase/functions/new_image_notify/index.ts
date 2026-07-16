@@ -1,6 +1,6 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { isReachable, PUSH_COLUMNS, sendPush } from '../_shared/webpush.ts'
-import type { PushSubscriptionRow } from '../_shared/webpush.ts'
+import { isReachable, PUSH_COLUMNS, sendPush } from '../_shared/fcm.ts'
+import type { PushSubscriptionRow } from '../_shared/fcm.ts'
 
 interface ImageGroups {
     id: string;

@@ -1,3 +1,5 @@
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:workmanager/workmanager.dart';
 
@@ -9,8 +11,35 @@ import 'package:krab/services/notification_channels.dart';
 import 'package:krab/services/supabase_bootstrap.dart';
 import 'package:krab/services/update_service.dart';
 import 'package:krab/services/upload_outbox.dart';
+import 'package:krab/user_preferences.dart';
 
 /// Everything here can run in a background isolate, keep it free of UI imports.
+
+/// Handles an FCM message delivered while the app is backgrounded or killed.
+@pragma('vm:entry-point')
+Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await bootstrapBackgroundIsolate();
+
+  try {
+    if (UserPreferences.hasFcmConfig && Firebase.apps.isEmpty) {
+      await Firebase.initializeApp(
+        options: FirebaseOptions(
+          apiKey: UserPreferences.fcmApiKey,
+          appId: UserPreferences.fcmAppId,
+          messagingSenderId: UserPreferences.fcmSenderId,
+          projectId: UserPreferences.fcmProjectId,
+        ),
+      );
+    }
+  } catch (e) {
+    debugPrint('Background Firebase init failed: $e');
+  }
+
+  await handlePushPayload(
+    message.data.map((k, v) => MapEntry(k, '$v')),
+    background: true,
+  );
+}
 
 @pragma('vm:entry-point')
 void workmanagerCallbackDispatcher() {

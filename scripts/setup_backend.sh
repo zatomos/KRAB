@@ -2,7 +2,7 @@
 #
 # One-shot KRAB backend bootstrap on a fresh host. Installs self-hosted Supabase if missing,
 # configures it for KRAB, loads the schema, creates the storage buckets,
-# generates this instance's VAPID keypair, and deploys the notification edge functions.
+# stores this instance's Firebase config, and deploys the notification edge functions.
 #
 # Run:
 #   curl -fsSL https://raw.githubusercontent.com/zatomos/KRAB/main/scripts/setup_backend.sh | bash
@@ -78,46 +78,43 @@ services:
 YML
 echo "  wrote auth refresh-token config to docker-compose.override.yml"
 
-# --- 1c. VAPID keypair for push ------------------------------------------
-if grep -q '^VAPID_PRIVATE_KEY=' "$ENV_FILE"; then
-  echo "  VAPID keypair already present, keeping it (rotating would break every existing subscription)"
-  VAPID_PUBLIC="$(grep -E '^VAPID_PUBLIC_KEY=' "$ENV_FILE" | cut -d= -f2- | tr -d "\r\"'")"
-else
-  log "Generating a VAPID keypair"
-  # Both halves are base64url, which is the format web-push and the app expect.
-  vapid_out="$(docker run --rm denoland/deno:alpine eval --quiet '
-    import webpush from "npm:web-push@3.6.7";
-    const k = webpush.generateVAPIDKeys();
-    console.log(k.publicKey + " " + k.privateKey);' 2>/dev/null | tail -1)"
-  VAPID_PUBLIC="${vapid_out%% *}"
-  VAPID_PRIVATE="${vapid_out##* }"
-  [[ -n "$VAPID_PUBLIC" && -n "$VAPID_PRIVATE" && "$VAPID_PUBLIC" != "$VAPID_PRIVATE" ]] \
-    || die "VAPID key generation failed (can Docker pull denoland/deno:alpine?)"
+# --- 1c. Firebase Cloud Messaging for push -------------------------------
+log "Configuring Firebase Cloud Messaging"
+echo "  Create a Firebase project at https://console.firebase.google.com, add an"
+echo "  Android app whose package matches your build (fr.zatomos.krab for the"
+echo "  stock app), then download two files:"
+echo "   - google-services.json  (Project settings > Your apps)"
+echo "   - a service-account key (Project settings > Service accounts > Generate new private key)"
 
-  grep -v -e '^VAPID_PUBLIC_KEY=' -e '^VAPID_PRIVATE_KEY=' -e '^VAPID_KEYS=' "$ENV_FILE" > "$ENV_FILE.tmp" \
-    && mv "$ENV_FILE.tmp" "$ENV_FILE"
-  printf "VAPID_PUBLIC_KEY='%s'\n"  "$VAPID_PUBLIC"  >> "$ENV_FILE"
-  printf "VAPID_PRIVATE_KEY='%s'\n" "$VAPID_PRIVATE" >> "$ENV_FILE"
-  echo "  set VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY"
-fi
+# Validate a provided file and echo its absolute path
+check_json() {
+  local path="$1" name="$2" needle="$3"
+  [[ -z "$path" ]] && return 0
+  path="${path/#\~/$HOME}"
+  [[ -f "$path" ]] || die "No such file: $path"
+  grep -q "$needle" "$path" || die "That does not look like a $name"
+  printf '%s' "$path"
+}
 
-existing_subject="$(grep -E '^VAPID_SUBJECT=' "$ENV_FILE" | cut -d= -f2- | tr -d "\r\"'")"
-VAPID_SUBJECT="$(ask 'Contact email for push services (RFC 8292)' "${existing_subject:-mailto:admin@example.com}")"
-[[ "$VAPID_SUBJECT" == mailto:* || "$VAPID_SUBJECT" == https://* ]] || VAPID_SUBJECT="mailto:$VAPID_SUBJECT"
-set_env VAPID_SUBJECT "$VAPID_SUBJECT"
+GS_PATH="$(check_json "$(ask 'Path to google-services.json (blank to keep the current one)' '')" 'google-services.json' 'mobilesdk_app_id')"
+SA_PATH="$(check_json "$(ask 'Path to the service-account JSON (blank to keep the current one)' '')" 'service-account JSON' 'private_key')"
 
-# Expose the keypair, and the per-instance settings the app fetches from
-# instance-config, to the edge-functions container.
-#
+SHARED_DIR="$SUPABASE_DIR/volumes/functions/_shared"
+[[ -n "$GS_PATH" || -f "$SHARED_DIR/google-services.json" ]] \
+  || die "No google-services.json yet; provide the path"
+[[ -n "$SA_PATH" || -f "$SHARED_DIR/service-account.json" ]] \
+  || die "No service account yet; provide the path"
+
+# Expose only the small per-instance settings to the edge-functions container.
+
 # PASSWORD_RESET_URL and EMAIL_CONFIRM_URL are set by the optional feature
-# scripts, not here. Compose substitutes an empty string when they are absent
-# from .env.
+# scripts, not here. Compose substitutes an empty string when they are absent.
 cat >> "$OVERRIDE_FILE" <<'YML'
   functions:
     environment:
-      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY}
-      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
-      VAPID_SUBJECT: ${VAPID_SUBJECT}
+      # Optional: pin which Android app to serve when google-services.json holds
+      # several (e.g. a rebranded fork). Defaults to the first client.
+      FCM_PACKAGE_NAME: ${FCM_PACKAGE_NAME:-}
       PASSWORD_RESET_URL: ${PASSWORD_RESET_URL:-}
       EMAIL_CONFIRM_URL: ${EMAIL_CONFIRM_URL:-}
 YML
@@ -191,9 +188,13 @@ deployed=1
 
 # Shared helpers
 mkdir -p "$fdir/_shared"
-curl -fsSL "$REPO_RAW/supabase/functions/_shared/webpush.ts" -o "$fdir/_shared/webpush.ts" \
-  || { echo "  WARN: failed to fetch _shared/webpush.ts"; deployed=0; }
-echo "  _shared/webpush.ts"
+curl -fsSL "$REPO_RAW/supabase/functions/_shared/fcm.ts" -o "$fdir/_shared/fcm.ts" \
+  || { echo "  WARN: failed to fetch _shared/fcm.ts"; deployed=0; }
+echo "  _shared/fcm.ts"
+
+# The Firebase config the functions read from disk.
+[[ -n "$GS_PATH" ]] && { cp "$GS_PATH" "$fdir/_shared/google-services.json" && echo "  _shared/google-services.json"; }
+[[ -n "$SA_PATH" ]] && { cp "$SA_PATH" "$fdir/_shared/service-account.json" && echo "  _shared/service-account.json"; }
 
 for pair in $FN_SLUGS; do
   src="${pair%%:*}"; slug="${pair##*:}"
@@ -205,6 +206,25 @@ for pair in $FN_SLUGS; do
 done
 [[ $deployed -eq 1 ]] && { ( cd "$SUPABASE_DIR" && docker compose restart functions ) >/dev/null 2>&1 \
   || echo "  WARN: restart the 'functions' container manually"; }
+
+# --- 6b. Verify the push config actually reached the functions -----------
+log "Verifying push configuration"
+for i in $(seq 1 10); do
+  resp="$(curl -fsS "$API_URL/functions/v1/instance-config" 2>/dev/null || true)"
+  [[ -n "$resp" ]] && break
+  sleep 1
+done
+case "$resp" in
+  *'"app_id":"1:'*)
+    echo "  push config OK" ;;
+  ''|*'"app_id":""'*)
+    echo "  WARN: instance-config is serving no FCM app id, so push will not work."
+    echo "        Check the config file is in place and is valid JSON:"
+    echo "          ls -l $SHARED_DIR/google-services.json && head -c 40 $SHARED_DIR/google-services.json; echo"
+    echo "        It should start with  {\"project_info\": ...  — if it's missing, re-run this script." ;;
+  *)
+    echo "  WARN: unexpected instance-config response; check the functions logs." ;;
+esac
 
 log "Done."
 

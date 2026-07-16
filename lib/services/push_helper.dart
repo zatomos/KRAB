@@ -1,73 +1,35 @@
 import 'dart:async';
-import 'dart:convert';
 
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
-import 'package:unifiedpush/unifiedpush.dart';
 
-import 'package:krab/app_globals.dart';
 import 'package:krab/services/api/supabase.dart';
 import 'package:krab/services/auth/app_auth.dart';
 import 'package:krab/services/debug_notifier.dart';
 import 'package:krab/services/push_handler.dart';
 import 'package:krab/user_preferences.dart';
 
-/// Decodes a decrypted push body into the flat string map the routers expect.
-Map<String, String>? decodePushPayload(Uint8List content) {
-  try {
-    final decoded = jsonDecode(utf8.decode(content));
-    if (decoded is! Map) {
-      debugPrint('Push: unexpected payload shape, ignoring');
-      return null;
-    }
-    return decoded.map((k, v) => MapEntry('$k', '$v'));
-  } catch (e) {
-    debugPrint('Push: could not decode payload: $e');
-    return null;
-  }
-}
-
-/// Push delivery over UnifiedPush / Web Push.
-///
-/// The app asks a distributor to open a subscription on its behalf, and hands
-/// the resulting endpoint to whichever KRAB backend the user is signed in to.
-/// The backend authenticates its pushes with a VAPID keypair it generated itself.
-///
-/// The one thing that must happen before subscribing is fetching this
-/// instance's VAPID public key.
+/// Push delivery over Firebase Cloud Messaging.
 class PushHelper {
   static bool _initialized = false;
+  static bool _firebaseReady = false;
+  static bool _handlersWired = false;
   static StreamSubscription<AppAuthStatus>? _authSubscription;
+  static StreamSubscription<String>? _tokenRefreshSubscription;
+  static StreamSubscription<RemoteMessage>? _onMessageSubscription;
 
-  /// The instance's VAPID public key
-  static String? _vapidKey;
-
-  /// The key we have actually registered against in this process
-  static String? _registeredWith;
-
-  /// The subscription the distributor last handed us. A distributor only hands
-  /// an endpoint over once, so it is kept here until it has been stored against
-  /// a user, which can be well after it arrives: the connect screen and a cold
-  /// start both register before anyone has logged in.
-  static _Subscription? _pending;
-
-  /// The user [_pending] has been stored for, so a second user signing in on
-  /// this device gets a subscription of their own rather than inheriting one.
+  /// The user the current token has been stored for, so a second user signing
+  /// in on this device stores a token of their own.
   static String? _savedForUser;
+  static String? _savedToken;
 
-  /// Wires the UnifiedPush callbacks. Safe to call from the background
-  /// entrypoint.
-  static Future<bool> initialize({required bool background}) async {
-    final alreadyRegistered = await UnifiedPush.initialize(
-      onNewEndpoint: _onNewEndpoint,
-      onRegistrationFailed: _onRegistrationFailed,
-      onUnregistered: _onUnregistered,
-      onMessage: (message, instance) => _onMessage(message, background),
-    );
+  /// Brings Firebase up from cached config and wires the FCM callbacks.
+  static Future<void> initialize({required bool background}) async {
+    if (background) return;
 
-    if (!_initialized && !background) {
+    if (!_initialized) {
       _initialized = true;
-      // Signing in is the point at which a subscription can finally be stored:
-      // it is what gives us a user to store it against.
       _authSubscription = AppAuth.instance.events.listen((status) async {
         if (status == AppAuthStatus.signedIn) {
           await ensureRegistered();
@@ -75,218 +37,144 @@ class PushHelper {
       });
     }
 
-    return alreadyRegistered;
+    // Config may already be cached from a previous run;
+    if (await _ensureFirebase()) {
+      _wireHandlers();
+    }
   }
 
   static Future<void> dispose() async {
     await _authSubscription?.cancel();
     _authSubscription = null;
+    await _tokenRefreshSubscription?.cancel();
+    _tokenRefreshSubscription = null;
+    await _onMessageSubscription?.cancel();
+    _onMessageSubscription = null;
     _initialized = false;
-    // Called on logout, after which the next user may be on another instance.
-    _registeredWith = null;
-    _vapidKey = null;
-    _pending = null;
+    _handlersWired = false;
     _savedForUser = null;
+    _savedToken = null;
   }
 
-  /// Subscribes via the user's current distributor, falling back to the system
-  /// default. Returns false when no distributor could be used at all.
+  /// Fetches this device's FCM token and stores it against the signed-in user.
   ///
-  /// Called both before and after a login, so it has to cope with arriving when
-  /// there is no session yet, and with being called again once there is one.
+  /// Called both before and after a login, so it copes with arriving with no
+  /// session yet and with being called again once there is one.
   static Future<bool> ensureRegistered() async {
     try {
-      // A subscription taken out before the user logged in is still perfectly
-      // good; it just had nobody to belong to. Store it now rather than
-      // re-registering, because the distributor will not hand it over twice.
-      if (await _savePending()) return true;
-
-      final usable = await UnifiedPush.tryUseCurrentOrDefaultDistributor();
-      if (!usable) {
-        debugPrint('Push: no usable distributor');
+      // Instance config may have only just arrived; bring Firebase up now and
+      // wire the callbacks that could not be set before.
+      if (!await _ensureFirebase()) {
+        debugPrint('Push: no FCM config for this instance yet');
         return false;
       }
-      await _register();
-      return true;
+      _wireHandlers();
+
+      if (AppAuth.instance.currentUserId == null) {
+        debugPrint('Push: no session; will register on sign-in');
+        return false;
+      }
+
+      final token = await FirebaseMessaging.instance.getToken();
+      if (token == null) {
+        debugPrint('Push: no FCM token available');
+        return false;
+      }
+      return _saveToken(token);
     } catch (e, st) {
       debugPrint('Push: ensureRegistered failed: $e\n$st');
       return false;
     }
   }
 
-  /// Stores the subscription we are holding, if there is one and it is not
-  /// already stored against the signed-in user. Returns whether that leaves
-  /// nothing more for [ensureRegistered] to do.
-  static Future<bool> _savePending() async {
-    final pending = _pending;
-    if (pending == null) return false;
+  /// Removes the token from FCM and forgets what we stored, on logout.
+  static Future<void> unregister() async {
+    try {
+      if (_firebaseReady) await FirebaseMessaging.instance.deleteToken();
+    } catch (e) {
+      debugPrint('Push: deleteToken failed: $e');
+    }
+    _savedForUser = null;
+    _savedToken = null;
+  }
 
-    final userId = AppAuth.instance.currentUserId;
-    if (userId == null) {
-      // Still nobody to attach it to. Keep hold of it; the signedIn listener
-      // comes back through here.
-      debugPrint('Push: no session; holding the subscription');
+  /// Initialises Firebase from the cached per-instance config. Returns whether
+  /// Firebase is usable; false when the instance has published no FCM config.
+  static Future<bool> _ensureFirebase() async {
+    if (_firebaseReady) return true;
+    if (!UserPreferences.hasFcmConfig) return false;
+
+    try {
+      if (Firebase.apps.isEmpty) {
+        await Firebase.initializeApp(options: _firebaseOptions());
+      }
+      _firebaseReady = true;
+      return true;
+    } catch (e) {
+      debugPrint('Push: Firebase init failed: $e');
       return false;
     }
+  }
 
-    if (_savedForUser == userId) return true;
+  static FirebaseOptions _firebaseOptions() => FirebaseOptions(
+        apiKey: UserPreferences.fcmApiKey,
+        appId: UserPreferences.fcmAppId,
+        messagingSenderId: UserPreferences.fcmSenderId,
+        projectId: UserPreferences.fcmProjectId,
+      );
 
-    final res = await savePushSubscription(
-      endpoint: pending.endpoint,
-      p256dh: pending.p256dh,
-      auth: pending.auth,
-    );
+  /// Wires the foreground-message and token-refresh listeners.
+  static void _wireHandlers() {
+    if (_handlersWired) return;
+    _handlersWired = true;
 
+    // Delivery while the app is backgrounded or killed runs in a dedicated
+    // isolate through this top-level handler.
+    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+
+    // The OS does not post a notification for a data message while the app is
+    // in the foreground, so route it through the same handler as the rest.
+    _onMessageSubscription = FirebaseMessaging.onMessage.listen((message) {
+      handlePushPayload(_stringData(message.data), background: false);
+    });
+
+    // A rotated token must reach the backend, or delivery silently stops until
+    // the next launch.
+    _tokenRefreshSubscription =
+        FirebaseMessaging.instance.onTokenRefresh.listen((token) {
+      _savedForUser = null;
+      _saveToken(token);
+    });
+  }
+
+  static Future<bool> _saveToken(String token) async {
+    final userId = AppAuth.instance.currentUserId;
+    if (userId == null) return false;
+    if (_savedForUser == userId && _savedToken == token) return true;
+
+    final tail = _redactToken(token);
+    final res = await saveFcmToken(token: token);
     if (res.success) {
       _savedForUser = userId;
-      debugPrint('Push: subscription saved');
-      await DebugNotifier.instance.notifyPushSubscriptionSaved();
+      _savedToken = token;
+      debugPrint('Push: token saved ($tail)');
+      await DebugNotifier.instance.notifyPushSubscriptionSaved('saved $tail');
       return true;
     }
 
-    debugPrint('Push: failed to save subscription: ${res.error}');
-    await DebugNotifier.instance.notifyPushSubscriptionFailed('${res.error}');
+    debugPrint('Push: failed to save token ($tail): ${res.error}');
+    await DebugNotifier.instance
+        .notifyPushSubscriptionFailed('$tail: ${res.error}');
     return false;
   }
 
-  /// Distributors installed on the device, so the user can be offered a choice.
-  ///
-  /// On a device with no Play Services and no UnifiedPush app installed this is
-  /// empty,and the user needs to install a distributor.
-  static Future<List<String>> availableDistributors() =>
-      UnifiedPush.getDistributors();
-
-  /// The distributor currently in use, or null if none has been picked yet.
-  static Future<String?> currentDistributor() => UnifiedPush.getDistributor();
-
-  /// Moves to distributor. Returns whether a subscription was taken out.
-  static Future<bool> useDistributor(String distributor) async {
-    await UnifiedPush.saveDistributor(distributor);
-    _registeredWith = null;
-    _pending = null;
-    _savedForUser = null;
-    await _register();
-    return _registeredWith != null;
+  /// A short, non-secret tail of a token, enough to correlate a client-side
+  /// save with the row the backend holds without logging the whole token.
+  static String _redactToken(String token) {
+    if (token.length <= 12) return token;
+    return '...${token.substring(token.length - 12)}';
   }
 
-  static Future<void> unregister() async {
-    await UnifiedPush.unregister();
-    _registeredWith = null;
-    _pending = null;
-    _savedForUser = null;
-  }
-
-  /// Registers against the current backend's VAPID key.
-  static Future<void> _register() async {
-    final vapid = await _vapidPublicKey();
-    if (vapid == null) {
-      debugPrint('Push: no VAPID key for this instance; not registering');
-      return;
-    }
-
-    if (vapid == _registeredWith) {
-      debugPrint('Push: already registered with this instance, skipping');
-      return;
-    }
-
-    await UnifiedPush.register(vapid: vapid);
-    _registeredWith = vapid;
-  }
-
-  static Future<String?> _vapidPublicKey() async {
-    if (_vapidKey != null) return _vapidKey;
-
-    final cached = UserPreferences.vapidPublicKey;
-    if (cached.isNotEmpty) {
-      _vapidKey = cached;
-      return cached;
-    }
-
-    if (!isSupabaseInitialized) return null;
-
-    // The key arrives as part of this instance's config, which is cached, so
-    // this fetch happens once per backend rather than once per registration.
-    final res = await fetchInstanceConfig();
-    if (!res.success) {
-      debugPrint('Push: could not fetch the instance config: ${res.error}');
-      return null;
-    }
-
-    final key = UserPreferences.vapidPublicKey;
-    if (key.isEmpty) {
-      debugPrint('Push: this instance has not configured push');
-      return null;
-    }
-
-    _vapidKey = key;
-    return _vapidKey;
-  }
-
-  static Future<void> _onNewEndpoint(
-      PushEndpoint endpoint, String instance) async {
-    final keys = endpoint.pubKeySet;
-    if (keys == null) {
-      // Without the key set the backend has nothing to encrypt to.
-      // Storing the endpoint alone would just make every later push fail.
-      debugPrint('Push: endpoint carries no Web Push keys, ignoring');
-      return;
-    }
-
-    // A new endpoint supersedes whatever we held, and is not yet stored for
-    // anyone.
-    _pending = _Subscription(
-      endpoint: endpoint.url,
-      p256dh: keys.pubKey,
-      auth: keys.auth,
-    );
-    _savedForUser = null;
-
-    await _savePending();
-  }
-
-  static Future<void> _onMessage(PushMessage message, bool background) async {
-    debugPrint('Push: message received '
-        '(decrypted=${message.decrypted}, ${message.content.length} bytes, '
-        'background=$background)');
-
-    // An undecrypted message is one we hold no key for. It is not ours to read,
-    // and its bytes are ciphertext, so there is nothing to route.
-    if (!message.decrypted) {
-      debugPrint('Push: received an undecryptable message, ignoring');
-      return;
-    }
-
-    final data = decodePushPayload(message.content);
-    if (data == null) return;
-
-    debugPrint('Push: payload = $data');
-
-    try {
-      await handlePushPayload(data, background: background);
-      debugPrint('Push: handler returned');
-    } catch (e, st) {
-      debugPrint('Push: failed to handle message: $e\n$st');
-    }
-  }
-
-  static void _onRegistrationFailed(FailedReason reason, String instance) {
-    debugPrint('Push: registration failed ($reason)');
-  }
-
-  static void _onUnregistered(String instance) {
-    debugPrint('Push: unregistered');
-  }
-}
-
-/// A Web Push subscription handed over by a distributor.
-class _Subscription {
-  final String endpoint;
-  final String p256dh;
-  final String auth;
-
-  const _Subscription({
-    required this.endpoint,
-    required this.p256dh,
-    required this.auth,
-  });
+  static Map<String, String> _stringData(Map<String, dynamic> data) =>
+      data.map((k, v) => MapEntry(k, '$v'));
 }

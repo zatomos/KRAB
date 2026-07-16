@@ -11,7 +11,10 @@ class UserPreferences {
 
   // Per-instance settings, fetched from the instance-config edge function and
   // cached here.
-  static late String vapidPublicKey;
+  static late String fcmAppId;
+  static late String fcmApiKey;
+  static late String fcmSenderId;
+  static late String fcmProjectId;
   static late String passwordResetUrl;
   static late String emailConfirmUrl;
   static late bool autoImageSave;
@@ -51,7 +54,10 @@ class UserPreferences {
       await _preferences?.setString('supabaseUrl', supabaseUrl);
       await _preferences?.setString('supabaseAnonKey', supabaseAnonKey);
     }
-    vapidPublicKey = _preferences?.getString('vapidPublicKey') ?? '';
+    fcmAppId = _preferences?.getString('fcmAppId') ?? '';
+    fcmApiKey = _preferences?.getString('fcmApiKey') ?? '';
+    fcmSenderId = _preferences?.getString('fcmSenderId') ?? '';
+    fcmProjectId = _preferences?.getString('fcmProjectId') ?? '';
     passwordResetUrl = _preferences?.getString('passwordResetUrl') ?? '';
     emailConfirmUrl = _preferences?.getString('emailConfirmUrl') ?? '';
     autoImageSave = _preferences?.getBool('autoImageSave') ?? false;
@@ -83,23 +89,46 @@ class UserPreferences {
 
   /// Caches what the instance-config endpoint reported for this backend.
   static Future<void> setInstanceConfig({
-    required String vapidKey,
+    required String fcmAppId,
+    required String fcmApiKey,
+    required String fcmSenderId,
+    required String fcmProjectId,
     required String resetUrl,
     required String confirmUrl,
   }) async {
-    vapidPublicKey = vapidKey;
+    UserPreferences.fcmAppId = fcmAppId;
+    UserPreferences.fcmApiKey = fcmApiKey;
+    UserPreferences.fcmSenderId = fcmSenderId;
+    UserPreferences.fcmProjectId = fcmProjectId;
     passwordResetUrl = resetUrl;
     emailConfirmUrl = confirmUrl;
-    await _preferences?.setString('vapidPublicKey', vapidKey);
+    await _preferences?.setString('fcmAppId', fcmAppId);
+    await _preferences?.setString('fcmApiKey', fcmApiKey);
+    await _preferences?.setString('fcmSenderId', fcmSenderId);
+    await _preferences?.setString('fcmProjectId', fcmProjectId);
     await _preferences?.setString('passwordResetUrl', resetUrl);
     await _preferences?.setString('emailConfirmUrl', confirmUrl);
   }
 
+  /// True once this instance's FCM config is known, so Firebase can be brought
+  /// up.
+  static bool get hasFcmConfig =>
+      fcmAppId.isNotEmpty &&
+      fcmApiKey.isNotEmpty &&
+      fcmSenderId.isNotEmpty &&
+      fcmProjectId.isNotEmpty;
+
   static Future<void> clearInstanceConfig() async {
-    vapidPublicKey = '';
+    fcmAppId = '';
+    fcmApiKey = '';
+    fcmSenderId = '';
+    fcmProjectId = '';
     passwordResetUrl = '';
     emailConfirmUrl = '';
-    await _preferences?.remove('vapidPublicKey');
+    await _preferences?.remove('fcmAppId');
+    await _preferences?.remove('fcmApiKey');
+    await _preferences?.remove('fcmSenderId');
+    await _preferences?.remove('fcmProjectId');
     await _preferences?.remove('passwordResetUrl');
     await _preferences?.remove('emailConfirmUrl');
   }

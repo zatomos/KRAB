@@ -15,11 +15,16 @@
     </queries>
 
     <application
-        android:name="${applicationName}"
+        android:name=".KrabApplication"
         android:icon="@mipmap/ic_launcher"
         android:label="KRAB"
         android:requestLegacyExternalStorage="true"
         >
+        <provider
+            android:name="com.google.firebase.provider.FirebaseInitProvider"
+            android:authorities="${applicationId}.firebaseinitprovider"
+            android:exported="false"
+            tools:node="remove" />
         <receiver
             android:name=".HomeScreenWidget"
             android:label="@string/widget_single_label"
