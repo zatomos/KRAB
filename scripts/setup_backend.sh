@@ -2,17 +2,28 @@
 #
 # One-shot KRAB backend bootstrap on a fresh host. Installs self-hosted Supabase if missing,
 # configures it for KRAB, loads the schema, creates the storage buckets,
-# stores this instance's Firebase config, and deploys the notification edge functions.
+# stores this instance's Firebase config, and deploys the edge functions.
 #
 # Run:
 #   curl -fsSL https://raw.githubusercontent.com/zatomos/KRAB/main/scripts/setup_backend.sh | bash
 
 if [ -z "${BASH_VERSION:-}" ]; then exec bash "$0" "$@"; fi
-set -uo pipefail
+set -euo pipefail
 
-SUPABASE_DIR="$HOME/supabase-project"
+REPO_REF="${REPO_REF:-main}"
+REPO_RAW="https://raw.githubusercontent.com/zatomos/KRAB/$REPO_REF"
+
+_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || true)"
+if [[ -n "$_dir" && -r "$_dir/lib.sh" ]] && head -n1 "$_dir/lib.sh" | grep -q 'KRAB script helpers'; then
+  source "$_dir/lib.sh"
+else
+  _lib="$(mktemp)"
+  curl -fsSL "$REPO_RAW/scripts/lib.sh" -o "$_lib" || { echo "ERROR: could not fetch scripts/lib.sh" >&2; exit 1; }
+  source "$_lib"
+  rm -f "$_lib"
+fi
+
 DB_CONTAINER="supabase-db"
-REPO_RAW="https://raw.githubusercontent.com/zatomos/KRAB/main"
 # bucket:size-limit-in-bytes:allowed-mime-types.
 BUCKETS=(
   "images:15728640:image/*"
@@ -20,32 +31,43 @@ BUCKETS=(
   "profile-pictures:1048576:image/*"
   "image-thumbnails:1048576:image/*"
 )
-FN_SLUGS="instance_config:instance-config new_image_notify:image-notification new_comment_notify:comment-notification new_reaction_notify:reaction-notification image_deleted_notify:image-deleted-notification generate-thumbnail:thumbnail-generation"
 
-log() { printf '\n==> %s\n' "$*"; }
-die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
-[[ -r /dev/tty ]] || die "This script is interactive; run it in a terminal."
-ask() { local p="$1" d="${2:-}" v; read -r -p "$p${d:+ [$d]}: " v < /dev/tty; printf '%s' "${v:-$d}"; }
+FN_SLUGS="
+instance_config:instance-config
+new_image_notify:image-notification
+new_comment_notify:comment-notification
+new_reaction_notify:reaction-notification
+image_deleted_notify:image-deleted-notification
+generate-thumbnail:thumbnail-generation
+auth_pages:pages
+"
+AUTH_PAGE_FILES="reset_password.ts confirmed.ts recovery_email.ts confirmation_email.ts"
+
+require_tty
+[[ $EUID -eq 0 ]] && warn "Running as root: Supabase will be installed in /root. The optional setup scripts expect the same user, so stay consistent."
 
 # --- 0. Install Supabase if missing -------------------------------------
+resolve_supabase_dir
 if [[ ! -d "$SUPABASE_DIR" ]]; then
-  log "Installing self-hosted Supabase into $HOME"
-  ( cd "$HOME" && curl -fsSL https://supabase.link/setup.sh | sh -s -- -y ) \
+  log "Installing self-hosted Supabase into $SUPABASE_DIR"
+  mkdir -p "$(dirname "$SUPABASE_DIR")" || die "Cannot create $(dirname "$SUPABASE_DIR")"
+  ( cd "$(dirname "$SUPABASE_DIR")" \
+      && curl -fsSL https://supabase.link/setup.sh | sh -s -- -y -p "$(basename "$SUPABASE_DIR")" ) \
     || die "Supabase install failed"
 fi
-ENV_FILE="$SUPABASE_DIR/.env"
 [[ -f "$ENV_FILE" ]] || die "No .env in $SUPABASE_DIR"
 
 # --- Gather answers interactively -----------------------------------------
-ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+ip="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
 API_URL="$(ask 'API URL clients use' "http://${ip:-localhost}:8000")"
-DASH_USER="$(ask 'Studio dashboard username' "$(grep -E '^DASHBOARD_USERNAME=' "$ENV_FILE" | cut -d= -f2-)")"
-read -rs -p "Studio dashboard password (empty = keep auto-generated): " DASH_PASS < /dev/tty; echo
+API_URL="${API_URL%/}"
+DASH_USER="$(ask 'Studio dashboard username' "$(env_get DASHBOARD_USERNAME)")"
+DASH_PASS="$(ask_secret 'Studio dashboard password (empty = keep current)')"
 log "Using API_URL=$API_URL"
 
 # The notification triggers authenticate to the edge functions with the service
 # role key.
-SERVICE_ROLE_KEY="$(grep -E '^SERVICE_ROLE_KEY=' "$ENV_FILE" | cut -d= -f2- | tr -d '\r"')"
+SERVICE_ROLE_KEY="$(env_get SERVICE_ROLE_KEY)"
 [[ -n "$SERVICE_ROLE_KEY" ]] || die "SERVICE_ROLE_KEY not found in $ENV_FILE"
 
 SCHEMA_TMP="$(mktemp)"; trap 'rm -f "$SCHEMA_TMP"' EXIT
@@ -53,19 +75,48 @@ curl -fsSL "$REPO_RAW/supabase/schema.sql" -o "$SCHEMA_TMP" || die "Failed to do
 
 # --- 1. Patch .env --------------------------------------------------------
 log "Patching $ENV_FILE"
-set_env() {  # plain KEY=VALUE (safe: no backslash interpretation)
-  grep -v "^$1=" "$ENV_FILE" > "$ENV_FILE.tmp" && mv "$ENV_FILE.tmp" "$ENV_FILE"
-  printf '%s=%s\n' "$1" "$2" >> "$ENV_FILE"
-  echo "  set $1"
-}
-set_env ENABLE_EMAIL_AUTOCONFIRM true
+[[ -n "$(env_get ENABLE_EMAIL_AUTOCONFIRM)" ]] || set_env ENABLE_EMAIL_AUTOCONFIRM true
 set_env FUNCTIONS_VERIFY_JWT false
 set_env SUPABASE_PUBLIC_URL "$API_URL"
 set_env API_EXTERNAL_URL "$API_URL"
-set_env DASHBOARD_USERNAME "$DASH_USER"
-[[ -n "$DASH_PASS" ]] && set_env DASHBOARD_PASSWORD "$DASH_PASS"
+if [[ -n "$DASH_USER" ]]; then set_env DASHBOARD_USERNAME "$DASH_USER"; fi
+if [[ -n "$DASH_PASS" ]]; then set_env DASHBOARD_PASSWORD "$DASH_PASS"; fi
 
-# --- 1b. docker-compose override: auth refresh-token config --------------
+# --- 1b. Firebase Cloud Messaging for push -------------------------------
+log "Configuring Firebase Cloud Messaging"
+echo "  Create a Firebase project at https://console.firebase.google.com, add an"
+echo "  Android app whose package matches your build (fr.zatomos.krab for the"
+echo "  stock app), then download two files:"
+echo "   - google-services.json  (Project settings > Your apps)"
+echo "   - a service-account key (Project settings > Service accounts > Generate new private key)"
+
+# Ask until the answer is a file that looks right, or is deliberately blank.
+# Sets JSON_PATH.
+prompt_json_path() {
+  local prompt="$1" name="$2" needle="$3" path
+  while true; do
+    path="$(ask "$prompt" '')"
+    if [[ -z "$path" ]]; then JSON_PATH=""; return 0; fi
+    path="${path/#\~/$HOME}"
+    if [[ ! -f "$path" ]]; then echo "  No such file: $path" >&2; continue; fi
+    if ! grep -q "$needle" "$path"; then echo "  That does not look like a $name" >&2; continue; fi
+    JSON_PATH="$path"; return 0
+  done
+}
+
+prompt_json_path 'Path to google-services.json (blank to keep the current one)' 'google-services.json' 'mobilesdk_app_id'
+GS_PATH="$JSON_PATH"
+prompt_json_path 'Path to the service-account JSON (blank to keep the current one)' 'service-account JSON' 'private_key'
+SA_PATH="$JSON_PATH"
+
+SHARED_DIR="$SUPABASE_DIR/volumes/functions/_shared"
+[[ -n "$GS_PATH" || -f "$SHARED_DIR/google-services.json" ]] \
+  || die "No google-services.json yet; provide the path"
+[[ -n "$SA_PATH" || -f "$SHARED_DIR/service-account.json" ]] \
+  || die "No service account yet; provide the path"
+
+# --- 1c. docker-compose override -----------------------------------------
+# One override for everything KRAB changes.
 OVERRIDE_FILE="$SUPABASE_DIR/docker-compose.override.yml"
 cat > "$OVERRIDE_FILE" <<'YML'
 # Added by KRAB setup_backend.sh. Do not edit; re-run the script to regenerate.
@@ -75,50 +126,25 @@ services:
       GOTRUE_SECURITY_REFRESH_TOKEN_REUSE_INTERVAL: "10"
       GOTRUE_SECURITY_REFRESH_TOKEN_ALGORITHM_VERSION: "2"
       GOTRUE_SECURITY_REFRESH_TOKEN_UPGRADE_PERCENTAGE: "100"
-YML
-echo "  wrote auth refresh-token config to docker-compose.override.yml"
-
-# --- 1c. Firebase Cloud Messaging for push -------------------------------
-log "Configuring Firebase Cloud Messaging"
-echo "  Create a Firebase project at https://console.firebase.google.com, add an"
-echo "  Android app whose package matches your build (fr.zatomos.krab for the"
-echo "  stock app), then download two files:"
-echo "   - google-services.json  (Project settings > Your apps)"
-echo "   - a service-account key (Project settings > Service accounts > Generate new private key)"
-
-# Validate a provided file and echo its absolute path
-check_json() {
-  local path="$1" name="$2" needle="$3"
-  [[ -z "$path" ]] && return 0
-  path="${path/#\~/$HOME}"
-  [[ -f "$path" ]] || die "No such file: $path"
-  grep -q "$needle" "$path" || die "That does not look like a $name"
-  printf '%s' "$path"
-}
-
-GS_PATH="$(check_json "$(ask 'Path to google-services.json (blank to keep the current one)' '')" 'google-services.json' 'mobilesdk_app_id')"
-SA_PATH="$(check_json "$(ask 'Path to the service-account JSON (blank to keep the current one)' '')" 'service-account JSON' 'private_key')"
-
-SHARED_DIR="$SUPABASE_DIR/volumes/functions/_shared"
-[[ -n "$GS_PATH" || -f "$SHARED_DIR/google-services.json" ]] \
-  || die "No google-services.json yet; provide the path"
-[[ -n "$SA_PATH" || -f "$SHARED_DIR/service-account.json" ]] \
-  || die "No service account yet; provide the path"
-
-# Expose only the small per-instance settings to the edge-functions container.
-
-# PASSWORD_RESET_URL and EMAIL_CONFIRM_URL are set by the optional feature
-# scripts, not here. Compose substitutes an empty string when they are absent.
-cat >> "$OVERRIDE_FILE" <<'YML'
+      GOTRUE_MAILER_TEMPLATES_RECOVERY: ${GOTRUE_MAILER_TEMPLATES_RECOVERY:-}
+      GOTRUE_MAILER_SUBJECTS_RECOVERY: ${GOTRUE_MAILER_SUBJECTS_RECOVERY:-Reset your KRAB password}
+      GOTRUE_MAILER_TEMPLATES_CONFIRMATION: ${GOTRUE_MAILER_TEMPLATES_CONFIRMATION:-}
+      GOTRUE_MAILER_SUBJECTS_CONFIRMATION: ${GOTRUE_MAILER_SUBJECTS_CONFIRMATION:-Confirm your KRAB email}
   functions:
     environment:
+      # The Firebase config is deployed as JSON files under _shared/ and imported
+      # by the functions; these are only here for operators who would rather
+      # inject it.
+      GOOGLE_SERVICES_JSON: ${GOOGLE_SERVICES_JSON:-}
+      FCM_SERVICE_ACCOUNT_JSON: ${FCM_SERVICE_ACCOUNT_JSON:-}
       # Optional: pin which Android app to serve when google-services.json holds
       # several (e.g. a rebranded fork). Defaults to the first client.
       FCM_PACKAGE_NAME: ${FCM_PACKAGE_NAME:-}
+      SUPABASE_PUBLIC_URL: ${SUPABASE_PUBLIC_URL:-}
       PASSWORD_RESET_URL: ${PASSWORD_RESET_URL:-}
       EMAIL_CONFIRM_URL: ${EMAIL_CONFIRM_URL:-}
 YML
-echo "  added functions env to docker-compose.override.yml"
+echo "  wrote docker-compose.override.yml"
 
 if grep -q '^COMPOSE_FILE=' "$ENV_FILE" \
    && ! grep '^COMPOSE_FILE=' "$ENV_FILE" | grep -q 'docker-compose.override.yml'; then
@@ -128,12 +154,12 @@ fi
 
 # --- 2. Start the stack ---------------------------------------------------
 log "Starting the stack"
-( cd "$SUPABASE_DIR" && docker compose up -d ) || die "docker compose up failed"
+compose up -d || die "docker compose up failed"
 
 # --- 3. Wait for Postgres -------------------------------------------------
 log "Waiting for $DB_CONTAINER..."
 for i in $(seq 1 60); do
-  docker exec "$DB_CONTAINER" pg_isready -U postgres -d postgres >/dev/null 2>&1 && break
+  if docker exec "$DB_CONTAINER" pg_isready -U postgres -d postgres >/dev/null 2>&1; then break; fi
   [[ $i -eq 60 ]] && die "$DB_CONTAINER not ready after 60s"
   sleep 1
 done
@@ -145,25 +171,32 @@ psql_run() { docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres "$@"; }
 # the bucket seed have nothing to attach to.
 log "Waiting for storage schema (storage.buckets)..."
 for i in $(seq 1 60); do
-  [[ "$(psql_run -tAc "select to_regclass('storage.buckets') is not null" 2>/dev/null)" == "t" ]] && break
+  if [[ "$(psql_run -tAc "select to_regclass('storage.buckets') is not null" 2>/dev/null || true)" == "t" ]]; then break; fi
   [[ $i -eq 60 ]] && die "storage.buckets never appeared, is the 'storage' container running?"
   sleep 2
 done
 
 # --- 4. Load schema -------------------------------------------------------
 # The dump includes the storage schema, which already exists on a fresh
-# Supabase, so "already exists" notices are expected. The trigger URL and the
-# service-role bearer are both substituted in
-log "Loading schema (storage 'already exists' notices are expected)"
+# Supabase, so "already exists" errors are expected and only those are ignored.
+# The trigger URL and the service-role bearer are both substituted in.
+log "Loading schema"
+SCHEMA_LOG="$(mktemp)"
 sed -e "s#your_supabase_url#${API_URL}#g" \
     -e "s#<SERVICE_ROLE_KEY>#${SERVICE_ROLE_KEY}#g" \
-    "$SCHEMA_TMP" | psql_run >/dev/null 2>&1 || true
+    "$SCHEMA_TMP" | psql_run > "$SCHEMA_LOG" 2>&1 || true
+real_errs="$(grep 'ERROR:' "$SCHEMA_LOG" | grep -v 'already exists' || true)"
+if [[ -n "$real_errs" ]]; then
+  warn "schema load reported errors:"
+  printf '%s\n' "$real_errs" | head -20 >&2
+fi
+rm -f "$SCHEMA_LOG"
 [[ "$(psql_run -tAc "select to_regclass('public.\"Groups\"') is not null")" == "t" ]] \
   || die "Schema load failed: public.Groups not found"
 log "Schema loaded (public.Groups present)"
 
-trg="$(psql_run -tAc "select count(distinct trigger_name) from information_schema.triggers where trigger_name in ('on-image-insert','on-comment-insert','on-reaction-insert','on-image-delete','on-image-insert-thumbnail');" | tr -d '[:space:]')"
-[[ "$trg" == "5" ]] || echo "  WARN: notification/thumbnail triggers missing ($trg/5), check supabase_functions/pg_net"
+trg="$(psql_run -tAc "select count(distinct trigger_name) from information_schema.triggers where trigger_name in ('on-image-insert','on-comment-insert','on-reaction-insert','on-image-delete','on-image-insert-thumbnail');" 2>/dev/null | tr -d '[:space:]' || true)"
+[[ "$trg" == "5" ]] || warn "notification/thumbnail triggers missing ($trg/5), check supabase_functions/pg_net"
 
 # --- 5. Storage buckets ---------------------------------------------------
 log "Creating storage buckets"
@@ -180,35 +213,43 @@ for spec in "${BUCKETS[@]}"; do
 done
 
 # --- 6. Deploy edge functions --------------------------------------------
-# Self-hosted edge runtime serves each subdir of volumes/functions at
-# /functions/v1/<slug>. Download the notification functions under their slugs.
 log "Deploying edge functions"
 fdir="$SUPABASE_DIR/volumes/functions"
 deployed=1
 
 # Shared helpers
 mkdir -p "$fdir/_shared"
-curl -fsSL "$REPO_RAW/supabase/functions/_shared/fcm.ts" -o "$fdir/_shared/fcm.ts" \
-  || { echo "  WARN: failed to fetch _shared/fcm.ts"; deployed=0; }
-echo "  _shared/fcm.ts"
+if fetch_to "$REPO_RAW/supabase/functions/_shared/fcm.ts" "$fdir/_shared/fcm.ts"; then
+  echo "  _shared/fcm.ts"
+else
+  warn "failed to fetch _shared/fcm.ts"; deployed=0
+fi
 
-# The Firebase config the functions read from disk.
-[[ -n "$GS_PATH" ]] && { cp "$GS_PATH" "$fdir/_shared/google-services.json" && echo "  _shared/google-services.json"; }
-[[ -n "$SA_PATH" ]] && { cp "$SA_PATH" "$fdir/_shared/service-account.json" && echo "  _shared/service-account.json"; }
+# The Firebase config, imported as JSON modules by instance_config and fcm.ts.
+if [[ -n "$GS_PATH" ]]; then cp "$GS_PATH" "$fdir/_shared/google-services.json"; echo "  _shared/google-services.json"; fi
+if [[ -n "$SA_PATH" ]]; then cp "$SA_PATH" "$fdir/_shared/service-account.json"; echo "  _shared/service-account.json"; fi
 
 for pair in $FN_SLUGS; do
   src="${pair%%:*}"; slug="${pair##*:}"
   mkdir -p "$fdir/$slug"
-  curl -fsSL "$REPO_RAW/supabase/functions/$src/index.ts" -o "$fdir/$slug/index.ts" \
-    || { echo "  WARN: failed to fetch $src/index.ts"; deployed=0; continue; }
-  curl -fsSL "$REPO_RAW/supabase/functions/$src/deno.json" -o "$fdir/$slug/deno.json" 2>/dev/null || true
+  fetch_to "$REPO_RAW/supabase/functions/$src/index.ts" "$fdir/$slug/index.ts" \
+    || { warn "failed to fetch $src/index.ts"; deployed=0; continue; }
+  fetch_to "$REPO_RAW/supabase/functions/$src/deno.json" "$fdir/$slug/deno.json" || true
   echo "  $src -> $slug"
 done
-[[ $deployed -eq 1 ]] && { ( cd "$SUPABASE_DIR" && docker compose restart functions ) >/dev/null 2>&1 \
-  || echo "  WARN: restart the 'functions' container manually"; }
+
+for page in $AUTH_PAGE_FILES; do
+  fetch_to "$REPO_RAW/supabase/functions/auth_pages/$page" "$fdir/pages/$page" \
+    || { warn "failed to fetch auth_pages/$page"; deployed=0; continue; }
+  echo "  pages/$page"
+done
+if [[ $deployed -eq 1 ]]; then
+  compose restart functions >/dev/null 2>&1 || warn "restart the 'functions' container manually"
+fi
 
 # --- 6b. Verify the push config actually reached the functions -----------
 log "Verifying push configuration"
+resp=""
 for i in $(seq 1 10); do
   resp="$(curl -fsS "$API_URL/functions/v1/instance-config" 2>/dev/null || true)"
   [[ -n "$resp" ]] && break
@@ -218,12 +259,12 @@ case "$resp" in
   *'"app_id":"1:'*)
     echo "  push config OK" ;;
   ''|*'"app_id":""'*)
-    echo "  WARN: instance-config is serving no FCM app id, so push will not work."
+    warn "instance-config is serving no FCM app id, so push will not work."
     echo "        Check the config file is in place and is valid JSON:"
     echo "          ls -l $SHARED_DIR/google-services.json && head -c 40 $SHARED_DIR/google-services.json; echo"
-    echo "        It should start with  {\"project_info\": ...  — if it's missing, re-run this script." ;;
+    echo "        It should start with  {\"project_info\": ...  If it's missing, re-run this script." ;;
   *)
-    echo "  WARN: unexpected instance-config response; check the functions logs." ;;
+    warn "unexpected instance-config response; check the functions logs." ;;
 esac
 
 log "Done."
@@ -231,18 +272,22 @@ log "Done."
 # --- Connection token -----------------------------------------------------
 # What a user pastes into the app to reach this instance. Packs the API URL and
 # the anon key into one string.
-ANON_KEY="$(grep -E '^ANON_KEY=' "$ENV_FILE" | cut -d= -f2- | tr -d '\r"')"
+ANON_KEY="$(env_get ANON_KEY)"
 if [[ -n "$ANON_KEY" ]]; then
   b64="$(printf '%s' "${API_URL}|${ANON_KEY}" | base64 -w0 | tr '+/' '-_' | tr -d '=')"
-  token="krab1:${b64}"
   echo
   echo "Share this connection token with your users. They paste it into the app"
   echo "to connect to this instance:"
   echo
-  echo "  $token"
+  echo "  krab1:${b64}"
   echo
 else
-  echo "WARN: ANON_KEY not found in $ENV_FILE; could not build a connection token."
+  warn "ANON_KEY not found in $ENV_FILE; could not build a connection token."
 fi
 
-echo "Optional: enable password reset with scripts/reset_password/setup-reset-pwd-page.sh"
+cat <<EOF
+Optional next steps:
+  scripts/setup_smtp.sh                # required by both of the below
+  scripts/setup_password_reset.sh
+  scripts/setup_email_confirmation.sh
+EOF

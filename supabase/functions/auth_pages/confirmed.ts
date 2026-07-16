@@ -1,4 +1,5 @@
-<!DOCTYPE html>
+// The landing page GoTrue redirects to once a signup link is followed
+export const HTML = `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="utf-8">
@@ -29,3 +30,4 @@
 </div>
 </body>
 </html>
+`;

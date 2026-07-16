@@ -143,9 +143,6 @@ You'll also want to put your API URL behind HTTPS for production use.
    ```bash
    cp lib/config.example.dart lib/config.dart
    ```
-   `lib/config.dart` is gitignored and the app won't compile without it. That's deliberate — it says
-   which repo the build updates itself from, and a fork must not silently inherit someone else's.
-   The defaults are safe (no self-updating); see [Auto-update](#auto-update) below.
 3. Run it:
    ```bash
    flutter run
@@ -192,41 +189,35 @@ scripts/release.sh "Added a thing" "Fixed another"
 
 Requires the [`gh` CLI](https://cli.github.com).
 
-### 3. Password reset (optional)
+### 3. Outgoing email (optional)
 
-Password reset sends an email with a link to a small web page where the user sets a new password.
-It needs a publicly reachable page and an SMTP server to send the email.
+Needed for password reset  or email verification below. **Use an app-specific password** from
+your provider, not your account password.
 
-1. Pick a public hostname for the reset page (e.g. `https://krab.example.com`) and point it
-   (via DNS / your reverse proxy) at the server.
-2. **Get an SMTP app password.** Use an *app-specific password* from your email provider, not
-   your account password.
-3. Run the setup script on the server:
-   ```bash
-   curl -fsSL https://raw.githubusercontent.com/zatomos/KRAB/main/scripts/reset_password/setup-reset-pwd-page.sh | sudo bash
-   ```
-   It asks for your Supabase URL, the public page URL, the anon key, the LAN IP the auth container
-   uses to fetch the email template, and your **SMTP host / port / user / password**. It then serves
-   the page, whitelists the redirect, installs the branded email template, and configures SMTP.
+```bash
+curl -fsSL https://raw.githubusercontent.com/zatomos/KRAB/main/scripts/setup_smtp.sh | bash
+```
 
-### 4. Email verification (optional)
+It asks for your **SMTP host / port / user / password**, sender address and name.
+
+### 4. Password reset (optional)
+
+Password reset emails a link to a page where the user sets a new password. Requires SMTP.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zatomos/KRAB/main/scripts/setup_password_reset.sh | bash
+```
+
+### 5. Email verification (optional)
 
 When enabled, signing up sends a confirmation email and the account can't log in until the link
-is clicked.
+is clicked. Requires SMTP.
 
-It reuses the same infrastructure as password reset, so set that up first; it needs a publicly
-reachable page and a working **SMTP** server.
+```bash
+curl -fsSL https://raw.githubusercontent.com/zatomos/KRAB/main/scripts/setup_email_confirmation.sh | bash
+```
 
-Run the setup script on the server:
-   ```bash
-   curl -fsSL https://raw.githubusercontent.com/zatomos/KRAB/main/scripts/email_confirmation/setup-email-confirmation.sh | sudo bash
-   ```
-   It serves an "email confirmed" landing page, whitelists the redirect, installs the confirmation
-   email template, and sets `GOTRUE_MAILER_AUTOCONFIRM=false` on the auth container. As with password
-   reset, it publishes the landing-page URL to your instance, so the app picks it up on its own.
-
-To turn it back off, remove the `docker-compose.krab-confirm.yml` override from `COMPOSE_FILE` in
-your `.env` (or set `GOTRUE_MAILER_AUTOCONFIRM=true`) and re-run `docker compose up -d auth`.
+To turn it back off, re-run with `--off`.
 
 ---
 

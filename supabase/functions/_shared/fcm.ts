@@ -31,16 +31,16 @@ interface ServiceAccount {
   projectId: string;
 }
 
-// The raw service-account JSON.
-function serviceAccountRaw(): string {
+async function serviceAccountJson(): Promise<any | null> {
   try {
-    const fromFile = Deno.readTextFileSync(
-      new URL('./service-account.json', import.meta.url),
-    ).trim();
-    if (fromFile) return fromFile;
+    const mod = await import('./service-account.json', {
+      with: { type: 'json' },
+    });
+    if (mod.default) return mod.default;
   } catch {
-    // No file mounted; fall through to the env var.
+    // Not deployed; fall through to the env var.
   }
+
   let raw = (Deno.env.get('FCM_SERVICE_ACCOUNT_JSON') ?? '').trim();
   // Some docker-compose versions leave the .env quotes on the value.
   if (
@@ -50,18 +50,23 @@ function serviceAccountRaw(): string {
   ) {
     raw = raw.slice(1, -1).trim();
   }
-  return raw;
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    console.error('FCM_SERVICE_ACCOUNT_JSON is not valid JSON:', e);
+    return null;
+  }
 }
 
 /** The instance's FCM service account.*/
-function getServiceAccount(): ServiceAccount {
-  const raw = serviceAccountRaw();
-  if (!raw) {
+async function getServiceAccount(): Promise<ServiceAccount> {
+  const parsed = await serviceAccountJson();
+  if (!parsed) {
     throw new Error(
       'No service account: put it at _shared/service-account.json or set FCM_SERVICE_ACCOUNT_JSON',
     );
   }
-  const parsed = JSON.parse(raw);
   return {
     clientEmail: parsed.client_email,
     privateKey: parsed.private_key,
@@ -102,7 +107,7 @@ export async function sendPush(
     ];
     if (tokens.length === 0) return;
 
-    const sa = getServiceAccount();
+    const sa = await getServiceAccount();
     const accessToken = await getAccessToken(sa);
     const results = await sendToTokens(sa.projectId, accessToken, tokens, data);
     await pruneDeadTokens(supabase, results);

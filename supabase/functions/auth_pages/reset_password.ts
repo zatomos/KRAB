@@ -1,4 +1,5 @@
-<!DOCTYPE html>
+// The page a password-reset email links to.
+export const HTML = `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -228,4 +229,4 @@
     }
 </script>
 </body>
-</html>
+</html>`;

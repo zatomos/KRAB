@@ -24,21 +24,28 @@ function unquote(s: string | undefined): string {
   return t;
 }
 
-// The raw google-services.json.
-function googleServicesRaw(): string {
+async function googleServices(): Promise<any | null> {
   try {
-    const fromFile = Deno.readTextFileSync(
-      new URL('../_shared/google-services.json', import.meta.url),
-    ).trim();
-    if (fromFile) return fromFile;
+    const mod = await import('../_shared/google-services.json', {
+      with: { type: 'json' },
+    });
+    if (mod.default) return mod.default;
   } catch {
-    // No file mounted; fall through to the env var.
+    // Not deployed; fall through to the env var.
   }
-  return unquote(Deno.env.get('GOOGLE_SERVICES_JSON'));
+
+  const raw = unquote(Deno.env.get('GOOGLE_SERVICES_JSON'));
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    console.error('GOOGLE_SERVICES_JSON is not valid JSON:', e);
+    return null;
+  }
 }
 
 // The public Firebase config the client needs to initialise FCM.
-function fcmFromGoogleServices(): FcmConfig {
+function fcmFromGoogleServices(gs: any | null): FcmConfig {
   const empty: FcmConfig = {
     app_id: '',
     api_key: '',
@@ -46,36 +53,28 @@ function fcmFromGoogleServices(): FcmConfig {
     project_id: '',
   };
 
-  const raw = googleServicesRaw();
-  if (!raw) return empty;
+  if (!gs) return empty;
 
-  try {
-    // deno-lint-ignore no-explicit-any
-    const gs: any = JSON.parse(raw);
-    const clients = gs.client ?? [];
-    const wanted = Deno.env.get('FCM_PACKAGE_NAME');
-    const client =
-      (wanted
-        ? clients.find(
-            (c: any) =>
-              c?.client_info?.android_client_info?.package_name === wanted,
-          )
-        : undefined) ?? clients[0];
+  const clients = gs.client ?? [];
+  const wanted = Deno.env.get('FCM_PACKAGE_NAME');
+  const client =
+    (wanted
+      ? clients.find(
+          (c: any) =>
+            c?.client_info?.android_client_info?.package_name === wanted,
+        )
+      : undefined) ?? clients[0];
 
-    return {
-      app_id: client?.client_info?.mobilesdk_app_id ?? '',
-      api_key: client?.api_key?.[0]?.current_key ?? '',
-      sender_id: gs.project_info?.project_number ?? '',
-      project_id: gs.project_info?.project_id ?? '',
-    };
-  } catch (e) {
-    console.error('GOOGLE_SERVICES_JSON is not valid JSON:', e);
-    return empty;
-  }
+  return {
+    app_id: client?.client_info?.mobilesdk_app_id ?? '',
+    api_key: client?.api_key?.[0]?.current_key ?? '',
+    sender_id: gs.project_info?.project_number ?? '',
+    project_id: gs.project_info?.project_id ?? '',
+  };
 }
 
 const CONFIG = {
-  fcm: fcmFromGoogleServices(),
+  fcm: fcmFromGoogleServices(await googleServices()),
 
   // Where GoTrue should send the user after they follow a password-reset or a
   // confirmation link. Empty when the operator has not set that flow up.
@@ -94,7 +93,10 @@ Deno.serve((req) => {
   }
 
   if (!CONFIG.fcm.app_id || !CONFIG.fcm.project_id) {
-    console.error('GOOGLE_SERVICES_JSON is missing or incomplete; push will not work');
+    console.error(
+      'google-services.json is missing or incomplete; push will not work. ' +
+        'Re-run setup_backend.sh to deploy it to _shared/.',
+    );
   }
 
   return new Response(JSON.stringify(CONFIG), {

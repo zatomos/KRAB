@@ -146,7 +146,7 @@ class HomeScreenWidgetMulti : AppWidgetProvider() {
 
                 val pfpSlots = (if (showText && showPfp) 1 else 0) + (if (showPrevPfps) 2 else 0)
 
-                // Placeholder update — no bitmaps, always succeeds
+                // Placeholder update: no bitmaps, always succeeds
                 manager.tryUpdateAppWidget(context, id,
                     buildBaseViews(context, id, showText, showGradient, showPfp, showSenderName,
                         showPrevPfps, descLines, description, sender, tapToOpen, showQuickSnap,

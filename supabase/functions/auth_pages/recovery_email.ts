@@ -1,9 +1,10 @@
-<!DOCTYPE html>
+// The recovery mail body.
+export const HTML = `<!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Confirm your email</title>
+    <title>Reset your password</title>
 </head>
 <body style="margin:0;padding:0;background:#111;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
 <table width="100%" cellpadding="0" cellspacing="0" style="background:#111;padding:40px 0;">
@@ -22,10 +23,10 @@
                 <!-- Body -->
                 <tr>
                     <td style="padding:0 32px 36px;">
-                        <p style="color:#fff;font-size:22px;font-weight:700;margin:0 0 12px;">Confirm your email</p>
+                        <p style="color:#fff;font-size:22px;font-weight:700;margin:0 0 12px;">Reset your password</p>
                         <p style="color:#aaa;font-size:15px;line-height:1.6;margin:0 0 28px;">
-                            Welcome to KRAB! Confirm this email address to finish creating your
-                            account. Once confirmed, you can log in from the app.
+                            We received a request to reset the password for your KRAB account.
+                            Click the button below to choose a new password.
                         </p>
 
                         <table width="100%" cellpadding="0" cellspacing="0">
@@ -33,14 +34,14 @@
                                 <td align="center">
                                     <a href="{{ .ConfirmationURL }}"
                                        style="display:inline-block;background:#dd6b3a;color:#fff;font-size:16px;font-weight:700;text-decoration:none;padding:14px 36px;border-radius:10px;letter-spacing:0.3px;">
-                                        Confirm Email
+                                        Reset Password
                                     </a>
                                 </td>
                             </tr>
                         </table>
 
                         <p style="color:#666;font-size:13px;margin:28px 0 0;line-height:1.5;">
-                            If you didn't create a KRAB account, you can ignore this email.
+                            If you didn't request a password reset, you can ignore this email.
                         </p>
                     </td>
                 </tr>
@@ -50,3 +51,4 @@
 </table>
 </body>
 </html>
+`;

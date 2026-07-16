@@ -118,11 +118,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
 
   void _onSheetAnim() => _inputOverlay?.markNeedsBuild();
 
-  /// Focus the composer input. The interactive field lives in the overlay and
-  /// is disabled until a target group is known (e.g. multi-group mode before a
-  /// group is chosen). A disabled field can't take focus, so rebuild the
-  /// overlay with the now-enabled field first, then request focus after that
-  /// frame — otherwise the keyboard never opens.
+  /// Focus the composer input.
   void _focusInput() {
     _inputOverlay?.markNeedsBuild();
     WidgetsBinding.instance.addPostFrameCallback((_) {
