@@ -163,7 +163,9 @@ for i in $(seq 1 60); do
   [[ $i -eq 60 ]] && die "$DB_CONTAINER not ready after 60s"
   sleep 1
 done
-psql_run() { docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres "$@"; }
+
+psql_load()  { docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres; }
+psql_query() { docker exec "$DB_CONTAINER" psql -U postgres -d postgres "$@"; }
 
 # --- 3b. Wait for the storage service to create its schema -----------------
 # storage.buckets/objects are created by the 'storage' container's migrations a
@@ -171,7 +173,7 @@ psql_run() { docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres "$@"; }
 # the bucket seed have nothing to attach to.
 log "Waiting for storage schema (storage.buckets)..."
 for i in $(seq 1 60); do
-  if [[ "$(psql_run -tAc "select to_regclass('storage.buckets') is not null" 2>/dev/null || true)" == "t" ]]; then break; fi
+  if [[ "$(psql_query -tAc "select to_regclass('storage.buckets') is not null" 2>/dev/null || true)" == "t" ]]; then break; fi
   [[ $i -eq 60 ]] && die "storage.buckets never appeared, is the 'storage' container running?"
   sleep 2
 done
@@ -184,18 +186,18 @@ log "Loading schema"
 SCHEMA_LOG="$(mktemp)"
 sed -e "s#your_supabase_url#${API_URL}#g" \
     -e "s#<SERVICE_ROLE_KEY>#${SERVICE_ROLE_KEY}#g" \
-    "$SCHEMA_TMP" | psql_run > "$SCHEMA_LOG" 2>&1 || true
+    "$SCHEMA_TMP" | psql_load > "$SCHEMA_LOG" 2>&1 || true
 real_errs="$(grep 'ERROR:' "$SCHEMA_LOG" | grep -v 'already exists' || true)"
 if [[ -n "$real_errs" ]]; then
   warn "schema load reported errors:"
   printf '%s\n' "$real_errs" | head -20 >&2
 fi
 rm -f "$SCHEMA_LOG"
-[[ "$(psql_run -tAc "select to_regclass('public.\"Groups\"') is not null")" == "t" ]] \
+[[ "$(psql_query -tAc "select to_regclass('public.\"Groups\"') is not null")" == "t" ]] \
   || die "Schema load failed: public.Groups not found"
 log "Schema loaded (public.Groups present)"
 
-trg="$(psql_run -tAc "select count(distinct trigger_name) from information_schema.triggers where trigger_name in ('on-image-insert','on-comment-insert','on-reaction-insert','on-image-delete','on-image-insert-thumbnail');" 2>/dev/null | tr -d '[:space:]' || true)"
+trg="$(psql_query -tAc "select count(distinct trigger_name) from information_schema.triggers where trigger_name in ('on-image-insert','on-comment-insert','on-reaction-insert','on-image-delete','on-image-insert-thumbnail');" 2>/dev/null | tr -d '[:space:]' || true)"
 [[ "$trg" == "5" ]] || warn "notification/thumbnail triggers missing ($trg/5), check supabase_functions/pg_net"
 
 # --- 5. Storage buckets ---------------------------------------------------
@@ -204,7 +206,7 @@ for spec in "${BUCKETS[@]}"; do
   b="${spec%%:*}"; rest="${spec#*:}"
   limit="${rest%%:*}"; mimes="${rest#*:}"
   mime_arr="ARRAY['${mimes//,/\',\'}']"
-  psql_run -c "insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+  psql_query -c "insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
                values ('$b','$b',false,$limit,$mime_arr)
                on conflict (id) do update
                  set file_size_limit = excluded.file_size_limit,
