@@ -66,37 +66,15 @@ posted.
 - When a photo or comment is posted, the database automatically triggers a function that pushes a
   notification to the other group members, whose apps then refresh their widget.
 
-### Uploading
-
-Sending a photo takes two steps, and the database closes the gap between them:
-
-1. `request_image_upload` checks the user may post to those groups, then records the photo and the
-   groups it is about to belong to.
-2. The app uploads the bytes under the id it got back. A trigger on the storage insert turns those
-   staged groups into real ones in the same transaction as the upload.
-
-So the bytes and their group links commit together or not at all. A photo that belongs to no group
-can't exist, which means a send that dies partway through leaves nothing behind.
-
 ---
 
 ## 🚀 Setup
 
-### 1. Backend setup: Supabase
-
-You can use a free or paid hosted instance at https://supabase.com, which has a reasonable
-[privacy policy](https://supabase.com/privacy). If you'd rather self-host your own instance, you can
-do so by running the included scripts.
-> See the [Supabase self-hosting guide](https://supabase.com/docs/guides/self-hosting) to learn more.
-
-**Prerequisites:** a Linux server with [Docker](https://docs.docker.com/engine/install/) and the
-Docker Compose plugin.
-
-#### Firebase Cloud Messaging (push)
+### 1. Firebase Cloud Messaging (push)
 
 Notifications use your own Firebase project.
 
-1. At the [Firebase console](https://console.firebase.google.com), create a project. You can 
+1. At the [Firebase console](https://console.firebase.google.com), create a project. You can
    leave the other Firebase products disabled, this project only needs Cloud Messaging.
 2. Add an Android app whose package matches the APK you distribute (e.g. `fr.zatomos.krab` for the
    stock build, or your own `applicationId`) and download its **`google-services.json`**.
@@ -104,15 +82,22 @@ Notifications use your own Firebase project.
 3. Go to Project settings > **Service accounts > Generate new private key** and download the
    **service-account JSON**.
 
-Copy the files on your server, the setup script will ask for their path.
+### 2. Backend setup: Supabase
+
+The project includes scripts to automatically set up a self-hosted Supabase instance.
+> See the [Supabase self-hosting guide](https://supabase.com/docs/guides/self-hosting) to learn more.
+
+**Prerequisites:** a Linux server with [Docker](https://docs.docker.com/engine/install/) and the
+Docker Compose plugin.
+
 
 #### Running the script
 
+Copy the `google-services.json` and the service-account JSON to your server.
+
 Run the backend setup script `setup_backend.sh` on the server. It installs self-hosted Supabase
-(if missing), configures it for KRAB, loads the database schema, creates the storage buckets,
-stores your Firebase config, and deploys the edge functions. It also wires the database triggers that
-call those functions, injecting your instance's service-role key as their authorization so the calls
-aren't rejected:
+instance (if missing), configures it for KRAB, loads the database schema, creates the storage
+buckets,  stores your Firebase config, and deploys the edge functions.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/zatomos/KRAB/main/scripts/setup_backend.sh | bash
@@ -128,6 +113,38 @@ anon key. That is all a user needs to point the app at your instance; share it w
 inviting.
 
 You'll also want to put your API URL behind HTTPS for production use.
+
+#### Outgoing email (optional)
+
+Needed for password reset or email verification below. **Use an app-specific password** from
+your provider, not your account password.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zatomos/KRAB/main/scripts/setup_smtp.sh | bash
+```
+
+It asks for your SMTP details, sender address and name.
+
+#### Password reset (optional)
+
+Password reset emails a link to a page where the user sets a new password. Requires SMTP.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zatomos/KRAB/main/scripts/setup_password_reset.sh | bash
+```
+
+#### Email verification (optional)
+
+When enabled, signing up sends a confirmation email and the account can't log in until the link
+is clicked. Requires SMTP.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zatomos/KRAB/main/scripts/setup_email_confirmation.sh | bash
+```
+
+To turn it back off, re-run the script with `--off`.
+
+---
 
 ### 2. Building the app (optional)
 
@@ -163,7 +180,6 @@ key.
    cp android/key.properties.example android/key.properties
    # then fill in storeFile / storePassword / keyAlias / keyPassword
    ```
-   `key.properties` and `*.jks` are gitignored.
 3. Build, and confirm it is signed with your key rather than the debug key:
    ```bash
    flutter build apk --release
@@ -188,38 +204,6 @@ scripts/release.sh "Added a thing" "Fixed another"
 ```
 
 Requires the [`gh` CLI](https://cli.github.com).
-
-### 3. Outgoing email (optional)
-
-Needed for password reset  or email verification below. **Use an app-specific password** from
-your provider, not your account password.
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/zatomos/KRAB/main/scripts/setup_smtp.sh | bash
-```
-
-It asks for your **SMTP host / port / user / password**, sender address and name.
-
-### 4. Password reset (optional)
-
-Password reset emails a link to a page where the user sets a new password. Requires SMTP.
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/zatomos/KRAB/main/scripts/setup_password_reset.sh | bash
-```
-
-### 5. Email verification (optional)
-
-When enabled, signing up sends a confirmation email and the account can't log in until the link
-is clicked. Requires SMTP.
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/zatomos/KRAB/main/scripts/setup_email_confirmation.sh | bash
-```
-
-To turn it back off, re-run with `--off`.
-
----
 
 ## 📄 License
 

@@ -305,7 +305,7 @@ ANON_KEY="$(env_get ANON_KEY)"
 if [[ -n "$ANON_KEY" ]]; then
   b64="$(printf '%s' "${API_URL}|${ANON_KEY}" | base64 -w0 | tr '+/' '-_' | tr -d '=')"
   echo
-  echo "Share this connection token with your users. They paste it into the app"
+  echo "Share this connection token with your users. They can paste it into the app"
   echo "to connect to this instance:"
   echo
   echo "  krab1:${b64}"
