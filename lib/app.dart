@@ -135,6 +135,12 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
         useMaterial3: true,
         fontFamily: GoogleFonts.rubik(fontWeight: FontWeight.w400).fontFamily,
         iconTheme: const IconThemeData(weight: 650),
+        popupMenuTheme: PopupMenuThemeData(
+          shape: RoundedRectangleBorder(
+            borderRadius:
+                BorderRadius.circular(GlobalThemeData.popupMenuRadius),
+          ),
+        ),
       ),
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,

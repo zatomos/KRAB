@@ -17,4 +17,5 @@ class GlobalThemeData {
   );
 
   static const double dialogActionsOverflowSpacing = 8.0;
+  static const double popupMenuRadius = 12.0;
 }
