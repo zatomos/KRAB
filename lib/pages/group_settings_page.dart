@@ -616,9 +616,16 @@ class _MemberTileState extends State<_MemberTile> {
       onLongPressCancel:
           widget.canManage ? () => setState(() => _highlighted = false) : null,
       onLongPress: widget.canManage ? _showMenu : null,
-      child: Container(
+      child: AnimatedContainer(
         key: _itemKey,
-        color: _highlighted ? Colors.white.withValues(alpha: 0.08) : null,
+        duration: const Duration(milliseconds: 150),
+        curve: Curves.easeOut,
+        decoration: BoxDecoration(
+          color: _highlighted
+              ? Colors.white.withValues(alpha: 0.08)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+        ),
         child: ListTile(
           leading: UserAvatar(widget.member.user, radius: 25),
           title: Text(widget.member.user.username),
