@@ -7,6 +7,7 @@ import 'package:krab/services/api/supabase.dart';
 import 'package:krab/services/upload_outbox.dart';
 import 'package:krab/user_preferences.dart';
 import 'package:krab/themes/global_theme_data.dart';
+import 'package:krab/widgets/avatars/group_avatar.dart';
 import 'package:krab/widgets/rounded_input_field.dart';
 import 'package:krab/widgets/soft_button.dart';
 
@@ -126,6 +127,7 @@ class _SendImageDialogState extends State<SendImageDialog> {
           itemBuilder: (context, index) {
             final group = groups[index];
             return CheckboxListTile(
+              secondary: GroupAvatar(group, radius: 18),
               title: Text(group.name),
               value: _selectedGroups.contains(group.id),
               onChanged: (value) => setState(() {
@@ -190,31 +192,34 @@ class _SendImageDialogState extends State<SendImageDialog> {
     return AlertDialog(
       insetPadding: isLandscape
           ? const EdgeInsets.symmetric(horizontal: 16, vertical: 4)
-          : null,
+          : const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       title: isLandscape ? null : Text(context.l10n.select_groups),
       contentPadding: (isLandscape && keyboardOpen)
           ? EdgeInsets.zero
           : isLandscape
               ? const EdgeInsets.fromLTRB(16, 16, 16, 0)
-              : null,
-      actionsPadding:
-          isLandscape ? const EdgeInsets.fromLTRB(16, 4, 16, 8) : null,
+              : const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      actionsPadding: isLandscape
+          ? const EdgeInsets.fromLTRB(16, 4, 16, 8)
+          : const EdgeInsets.fromLTRB(20, 0, 20, 20),
       content: SizedBox(
         width: screenWidth,
         child: LayoutBuilder(
           builder: (_, cst) {
             // Reserve room for description + spacer + safety margin.
             final gh = cst.maxHeight.isFinite
-                ? (cst.maxHeight - spacerH - 88).clamp(0.0, 500.0)
+                ? (cst.maxHeight - spacerH - 88).clamp(0.0, double.infinity)
                 : (MediaQuery.sizeOf(context).height * 0.5).clamp(60.0, 500.0);
             return Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Visibility(
-                  visible: !(isLandscape && keyboardOpen),
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(maxHeight: gh),
-                    child: dialogContent,
+                Flexible(
+                  child: Visibility(
+                    visible: !(isLandscape && keyboardOpen),
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(maxHeight: gh),
+                      child: dialogContent,
+                    ),
                   ),
                 ),
                 SizedBox(height: spacerH),
@@ -223,6 +228,8 @@ class _SendImageDialogState extends State<SendImageDialog> {
                   capitalizeSentences: true,
                   controller: _description,
                   maxLength: 199,
+                  minLines: 1,
+                  maxLines: 4,
                 ),
               ],
             );
@@ -231,32 +238,33 @@ class _SendImageDialogState extends State<SendImageDialog> {
       ),
       actionsOverflowButtonSpacing:
           GlobalThemeData.dialogActionsOverflowSpacing,
-      actions: keyboardOpen
-          ? null
-          : [
-              SoftButton(
-                onPressed: () => Navigator.of(context).pop(),
-                label: context.l10n.cancel,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-              if (_sending)
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 12),
-                  child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2)),
-                )
-              else
-                SoftButton(
-                  onPressed: _selectedGroups.isEmpty ? null : _send,
-                  label: context.l10n.send,
-                  color: _selectedGroups.isEmpty
-                      ? Theme.of(context).colorScheme.onSurfaceVariant
-                          .withValues(alpha: 0.4)
-                      : Theme.of(context).colorScheme.primary,
-                ),
-            ],
+      actions: [
+        SoftButton(
+          onPressed: () => Navigator.of(context).pop(),
+          label: context.l10n.cancel,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+        if (_sending)
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 12),
+            child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2)),
+          )
+        else
+          SoftButton(
+            onPressed: _selectedGroups.isEmpty ? null : _send,
+            label: context.l10n.send,
+            icon: Icons.send_rounded,
+            color: _selectedGroups.isEmpty
+                ? Theme.of(context)
+                    .colorScheme
+                    .onSurfaceVariant
+                    .withValues(alpha: 0.4)
+                : Theme.of(context).colorScheme.primary,
+          ),
+      ],
     );
   }
 }
