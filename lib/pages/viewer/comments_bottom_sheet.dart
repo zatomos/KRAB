@@ -16,6 +16,9 @@ import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/services/api/supabase.dart';
 import 'package:krab/services/time_formatting.dart';
 
+/// How long a group's thread takes to expand or collapse.
+const Duration _expandDuration = Duration(milliseconds: 200);
+
 /// A group's comment thread for a single image
 class _GroupCommentSection {
   final Group group;
@@ -584,11 +587,14 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
                 icon: Icon(Symbols.add_comment_rounded, color: color),
               ),
             const SizedBox(width: 8),
-            Icon(
-              expanded
-                  ? Symbols.expand_less_rounded
-                  : Symbols.expand_more_rounded,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            AnimatedRotation(
+              turns: expanded ? 0.5 : 0,
+              duration: _expandDuration,
+              curve: Curves.easeInOut,
+              child: Icon(
+                Symbols.expand_more_rounded,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
           ],
         ),
@@ -672,9 +678,16 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
       }
       for (final section in others) {
         widgets.add(_sectionHeader(section));
-        if (_expandedGroupIds.contains(section.groupId)) {
-          widgets.add(_sectionBody(section));
-        }
+        widgets.add(
+          AnimatedSize(
+            duration: _expandDuration,
+            curve: Curves.easeInOut,
+            alignment: Alignment.topCenter,
+            child: _expandedGroupIds.contains(section.groupId)
+                ? _sectionBody(section)
+                : const SizedBox(width: double.infinity),
+          ),
+        );
       }
     }
 

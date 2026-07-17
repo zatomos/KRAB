@@ -31,6 +31,9 @@ class GroupSettingsPage extends StatefulWidget {
 /// Members shown before the list has to be expanded.
 const _collapsedMemberCount = 10;
 
+/// How long the member list takes to expand or collapse.
+const Duration _expandDuration = Duration(milliseconds: 200);
+
 class GroupSettingsPageState extends State<GroupSettingsPage> {
   late Group _group;
   late Future<SupabaseResponse<List<GroupMember>>> _membersFuture;
@@ -373,11 +376,14 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                       TextButton.icon(
                         onPressed: () =>
                             setState(() => _showAllMembers = !_showAllMembers),
-                        icon: Icon(
-                          _showAllMembers
-                              ? Symbols.expand_less_rounded
-                              : Symbols.expand_more_rounded,
-                          size: 20,
+                        icon: AnimatedRotation(
+                          turns: _showAllMembers ? 0.5 : 0,
+                          duration: _expandDuration,
+                          curve: Curves.easeInOut,
+                          child: const Icon(
+                            Symbols.expand_more_rounded,
+                            size: 20,
+                          ),
                         ),
                         iconAlignment: IconAlignment.end,
                         style: TextButton.styleFrom(
@@ -400,25 +406,30 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                 else if (members.isEmpty)
                   Center(child: Text(context.l10n.no_members))
                 else
-                  Column(
-                    children: visibleMembers.map((member) {
-                      final targetRole = member.role;
-                      final canManage = member.user.id != _currentUserId &&
-                          (currentRole == 'owner' ||
-                              (currentRole == 'admin' &&
-                                  targetRole != 'admin' &&
-                                  targetRole != 'owner'));
+                  AnimatedSize(
+                    duration: _expandDuration,
+                    curve: Curves.easeInOut,
+                    alignment: Alignment.topCenter,
+                    child: Column(
+                      children: visibleMembers.map((member) {
+                        final targetRole = member.role;
+                        final canManage = member.user.id != _currentUserId &&
+                            (currentRole == 'owner' ||
+                                (currentRole == 'admin' &&
+                                    targetRole != 'admin' &&
+                                    targetRole != 'owner'));
 
-                      return _MemberTile(
-                        member: member,
-                        currentRole: currentRole,
-                        canManage: canManage,
-                        onRoleAction: (action) =>
-                            _manageUserRoleDialog(member.user.id, action),
-                        onBan: () => _manageUserBanDialog(member.user.id),
-                        onUnban: () => _manageUserUnbanDialog(member.user.id),
-                      );
-                    }).toList(),
+                        return _MemberTile(
+                          member: member,
+                          currentRole: currentRole,
+                          canManage: canManage,
+                          onRoleAction: (action) =>
+                              _manageUserRoleDialog(member.user.id, action),
+                          onBan: () => _manageUserBanDialog(member.user.id),
+                          onUnban: () => _manageUserUnbanDialog(member.user.id),
+                        );
+                      }).toList(),
+                    ),
                   ),
 
                 /// Group invites
