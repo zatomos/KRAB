@@ -10,6 +10,7 @@ import android.graphics.Paint
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffXfermode
 import android.graphics.Rect
+import android.graphics.Typeface
 import android.hardware.display.DisplayManager
 import android.util.DisplayMetrics
 import android.util.Log
@@ -22,6 +23,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 private const val TAG = "WidgetBitmapUtils"
+
+// Fallback colors
+private const val AVATAR_BG_COLOR = 0xFFDD6B3A.toInt()
+private const val AVATAR_TEXT_COLOR = 0x73000000
 
 @Volatile private var cachedBitmapLimit = -1
 
@@ -105,6 +110,29 @@ fun Bitmap.toCircular(): Bitmap {
     canvas.drawCircle(size / 2f, size / 2f, size / 2f, paint)
     paint.xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_IN)
     canvas.drawBitmap(this, Rect(0, 0, width, height), Rect(0, 0, size, size), paint)
+    return output
+}
+
+fun fallbackAvatarBitmap(context: Context, name: String?, sizeDp: Int): Bitmap {
+    val size = (sizeDp * context.resources.displayMetrics.density).toInt().coerceAtLeast(1)
+    val output = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(output)
+
+    val background = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = AVATAR_BG_COLOR }
+    canvas.drawCircle(size / 2f, size / 2f, size / 2f, background)
+
+    val trimmed = name?.trim().orEmpty()
+    val initial = if (trimmed.isEmpty()) "?"
+        else String(Character.toChars(trimmed.codePointAt(0))).uppercase()
+
+    val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = AVATAR_TEXT_COLOR
+        textSize = size / 2f
+        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        textAlign = Paint.Align.CENTER
+    }
+    val baseline = size / 2f - (text.descent() + text.ascent()) / 2f
+    canvas.drawText(initial, size / 2f, baseline, text)
     return output
 }
 

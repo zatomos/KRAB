@@ -6,6 +6,7 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.Uri
 import android.util.Log
@@ -109,6 +110,10 @@ class HomeScreenWidget : AppWidgetProvider() {
         private const val PREF_TAP_TO_OPEN_PREFIX = "tapToOpen_"
         private const val PREF_SHOW_QUICK_SNAP_PREFIX = "showQuickSnap_"
 
+        // Pfp view sizes
+        const val PFP_SIZE_DP = 28
+        const val PREV_PFP_SIZE_DP = 20
+
         // Request-code namespaces so each clickable slot gets its own PendingIntent
         const val REQ_CAMERA = 0x10000000
         const val REQ_PREV1 = 0x20000000
@@ -171,6 +176,22 @@ class HomeScreenWidget : AppWidgetProvider() {
 
         fun setShowQuickSnapPref(context: Context, id: Int, value: Boolean) {
             prefs(context).edit().putBoolean(PREF_SHOW_QUICK_SNAP_PREFIX + id, value).apply()
+        }
+
+        /// Circular pfp for a slot: the saved picture when there is one, otherwise
+        /// the letter avatar the app falls back to.
+        fun pfpBitmap(
+            context: Context,
+            path: String?,
+            name: String?,
+            sizeDp: Int,
+            budget: Int
+        ): Bitmap {
+            val bitmap = loadScaledBitmap(path, budget)
+                ?: return fallbackAvatarBitmap(context, name, sizeDp)
+            val circular = bitmap.toCircular()
+            bitmap.recycle()
+            return circular
         }
 
         /// PendingIntent that opens the app and is delivered to Dart as a widget click URI
@@ -257,6 +278,8 @@ class HomeScreenWidget : AppWidgetProvider() {
                 .remove("previousImage2Url_$id")
                 .remove("previousImage1SenderPfpUrl_$id")
                 .remove("previousImage2SenderPfpUrl_$id")
+                .remove("previousImage1Sender_$id")
+                .remove("previousImage2Sender_$id")
                 .apply()
             deleteWidgetImages(context, id)
         }
@@ -406,17 +429,12 @@ class HomeScreenWidget : AppWidgetProvider() {
 
                     // Main image succeeded; pfp overflow degrades gracefully - skip
                     if (showText && showPfp) {
-                        val pfpBitmap = loadScaledBitmap(pfpUrl, pfpBudget)
-                        if (pfpBitmap != null) {
-                            val circular = pfpBitmap.toCircular()
-                            pfpBitmap.recycle()
-                            views.setImageViewBitmap(R.id.overlay_pfp, circular)
-                            if (!manager.tryUpdateAppWidget(context, id, views))
-                                Log.w(TAG, "Widget $id: pfp exceeded bitmap limit, skipping")
-                        } else {
-                            views.setViewVisibility(R.id.overlay_pfp, View.GONE)
-                            manager.tryUpdateAppWidget(context, id, views)
-                        }
+                        views.setImageViewBitmap(
+                            R.id.overlay_pfp,
+                            pfpBitmap(context, pfpUrl, sender, PFP_SIZE_DP, pfpBudget)
+                        )
+                        if (!manager.tryUpdateAppWidget(context, id, views))
+                            Log.w(TAG, "Widget $id: pfp exceeded bitmap limit, skipping")
                     }
                     break
                 }
