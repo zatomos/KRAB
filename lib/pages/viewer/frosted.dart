@@ -119,7 +119,10 @@ Future<T?> showFrostedDialog<T>(
               color: frostedTint,
               borderRadius: BorderRadius.circular(16),
             ),
-            child: content(context),
+            child: Material(
+              type: MaterialType.transparency,
+              child: content(context),
+            ),
           ),
         ),
       ),
