@@ -172,6 +172,7 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
         uploaderId: widget.imageData.uploadedBy,
         imageId: widget.imageId,
         primaryGroupId: widget.groupId,
+        initialCommentCount: _commentCount,
         onCommentCountChanged: (delta) {
           setState(() => _commentCount += delta);
           widget.onCommentCountChanged?.call(delta);

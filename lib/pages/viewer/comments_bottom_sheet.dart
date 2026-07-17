@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 
 import 'package:krab/services/auth/app_auth.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import 'package:skeletonizer/skeletonizer.dart';
+
+import 'package:krab/widgets/delayed_loading.dart';
 
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/widgets/avatars/user_avatar.dart';
@@ -18,6 +21,67 @@ import 'package:krab/services/time_formatting.dart';
 
 /// How long a group's thread takes to expand or collapse.
 const Duration _expandDuration = Duration(milliseconds: 200);
+
+/// Bone placeholders
+class _CommentsSkeleton extends StatelessWidget {
+  /// Total comments the gallery badge reported, or null if unknown.
+  final int? knownCount;
+
+  const _CommentsSkeleton({this.knownCount});
+
+  /// Never guess more than this, so a large thread can't fill the sheet.
+  static const int _maxRows = 5;
+
+  /// Fallback when the count is unknown.
+  static const int _defaultRows = 3;
+
+  @override
+  Widget build(BuildContext context) {
+    final rows =
+        knownCount == null ? _defaultRows : knownCount!.clamp(0, _maxRows);
+    if (rows == 0) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 24),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [CircularProgressIndicator()],
+        ),
+      );
+    }
+    return Skeletonizer.zone(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: List.generate(
+          rows,
+          (_) => Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Bone.circle(size: 40),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: const [
+                      Bone.text(width: 120),
+                      SizedBox(height: 6),
+                      Bone.text(),
+                      SizedBox(height: 12),
+                      Bone.text(width: 180),
+                      SizedBox(height: 24),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 /// A group's comment thread for a single image
 class _GroupCommentSection {
@@ -48,12 +112,18 @@ class CommentsBottomSheet extends StatefulWidget {
   final String? primaryGroupId;
   final String uploaderId;
   final void Function(int delta)? onCommentCountChanged;
+
+  /// The comment total the gallery badge is showing, used to size the loading
+  /// skeleton. Null when unknown.
+  final int? initialCommentCount;
+
   const CommentsBottomSheet({
     super.key,
     required this.imageId,
     required this.primaryGroupId,
     required this.uploaderId,
     this.onCommentCountChanged,
+    this.initialCommentCount,
   });
 
   @override
@@ -81,6 +151,9 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
   final Set<String> _expandedGroupIds = {};
 
   final Map<String, Future<krab_user.User>> _userCache = {};
+
+  /// Authors resolved so far
+  final Map<String, krab_user.User> _resolvedUsers = {};
 
   OverlayEntry? _inputOverlay;
 
@@ -197,6 +270,9 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
             commentCount: groupComments.length,
           );
         }).toList());
+
+        // Resolve authors up front
+        await _prefetchAuthors(sections);
 
         if (!mounted) return;
         setState(() {
@@ -421,11 +497,28 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
   Future<krab_user.User> _userFor(Comment comment) {
     return _userCache.putIfAbsent(
       comment.userId,
-      () => getUserDetails(comment.userId).then((response) =>
-          (response.success && response.data != null)
-              ? response.data!
-              : krab_user.User(id: comment.userId, username: "Unknown")),
+      () => getUserDetails(comment.userId).then((response) {
+        final user = (response.success && response.data != null)
+            ? response.data!
+            : krab_user.User(id: comment.userId, username: "Unknown");
+        _resolvedUsers[comment.userId] = user;
+        return user;
+      }),
     );
+  }
+
+  /// Resolve every author across all sections.
+  Future<void> _prefetchAuthors(List<_GroupCommentSection> sections) {
+    final futures = <Future<krab_user.User>>[];
+    void visit(Comment c) {
+      futures.add(_userFor(c));
+      c.replies.forEach(visit);
+    }
+
+    for (final section in sections) {
+      section.rootComments.forEach(visit);
+    }
+    return Future.wait(futures);
   }
 
   /// Reply / edit / delete row under a comment
@@ -470,6 +563,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
           padding: EdgeInsets.only(left: effectiveDepth * 24.0),
           child: FutureBuilder<krab_user.User>(
             future: _userFor(comment),
+            initialData: _resolvedUsers[comment.userId],
             builder: (context, snapshot) {
               final username = snapshot.data?.username ?? "...";
               final user = snapshot.data ??
@@ -750,24 +844,23 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
           const SizedBox(height: 12),
 
           // Comments list
-          if (_loading)
-            const SizedBox(
-              height: 200,
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else if (_sections.isEmpty)
-            SizedBox(
-              height: 100,
-              child: Center(child: Text(context.l10n.no_comments)),
-            )
-          else
-            Flexible(
-              child: ListView(
-                shrinkWrap: true,
-                padding: const EdgeInsets.only(top: 2),
-                children: _buildCommentSections(),
-              ),
+          Flexible(
+            child: DelayedLoading(
+              loading: _loading,
+              placeholder:
+                  _CommentsSkeleton(knownCount: widget.initialCommentCount),
+              child: _sections.isEmpty
+                  ? SizedBox(
+                      height: 100,
+                      child: Center(child: Text(context.l10n.no_comments)),
+                    )
+                  : ListView(
+                      shrinkWrap: true,
+                      padding: const EdgeInsets.only(top: 2),
+                      children: _buildCommentSections(),
+                    ),
             ),
+          ),
 
           // Space reserved for the composer
           Opacity(

@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 
 import 'package:krab/services/auth/app_auth.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import 'package:skeletonizer/skeletonizer.dart';
+
+import 'package:krab/widgets/delayed_loading.dart';
 
 import 'package:krab/services/home_widget_updater.dart';
 import 'package:krab/widgets/avatars/group_avatar.dart';
@@ -401,36 +404,40 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                 ),
                 const SizedBox(height: 8),
 
-                if (!hasData)
-                  const Center(child: CircularProgressIndicator())
-                else if (members.isEmpty)
-                  Center(child: Text(context.l10n.no_members))
-                else
-                  AnimatedSize(
-                    duration: _expandDuration,
-                    curve: Curves.easeInOut,
-                    alignment: Alignment.topCenter,
-                    child: Column(
-                      children: visibleMembers.map((member) {
-                        final targetRole = member.role;
-                        final canManage = member.user.id != _currentUserId &&
-                            (currentRole == 'owner' ||
-                                (currentRole == 'admin' &&
-                                    targetRole != 'admin' &&
-                                    targetRole != 'owner'));
+                DelayedLoading(
+                  loading: !hasData,
+                  placeholder: const _MembersSkeleton(),
+                  child: members.isEmpty
+                      ? Center(child: Text(context.l10n.no_members))
+                      : AnimatedSize(
+                          duration: _expandDuration,
+                          curve: Curves.easeInOut,
+                          alignment: Alignment.topCenter,
+                          child: Column(
+                            children: visibleMembers.map((member) {
+                              final targetRole = member.role;
+                              final canManage =
+                                  member.user.id != _currentUserId &&
+                                      (currentRole == 'owner' ||
+                                          (currentRole == 'admin' &&
+                                              targetRole != 'admin' &&
+                                              targetRole != 'owner'));
 
-                        return _MemberTile(
-                          member: member,
-                          currentRole: currentRole,
-                          canManage: canManage,
-                          onRoleAction: (action) =>
-                              _manageUserRoleDialog(member.user.id, action),
-                          onBan: () => _manageUserBanDialog(member.user.id),
-                          onUnban: () => _manageUserUnbanDialog(member.user.id),
-                        );
-                      }).toList(),
-                    ),
-                  ),
+                              return _MemberTile(
+                                member: member,
+                                currentRole: currentRole,
+                                canManage: canManage,
+                                onRoleAction: (action) => _manageUserRoleDialog(
+                                    member.user.id, action),
+                                onBan: () =>
+                                    _manageUserBanDialog(member.user.id),
+                                onUnban: () =>
+                                    _manageUserUnbanDialog(member.user.id),
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                ),
 
                 /// Group invites
                 if (canCreateInvite || isManager) ...[
@@ -524,6 +531,29 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
           ),
         );
       },
+    );
+  }
+}
+
+/// Bone placeholders
+class _MembersSkeleton extends StatelessWidget {
+  const _MembersSkeleton();
+
+  static const int _rowCount = 4;
+
+  @override
+  Widget build(BuildContext context) {
+    return Skeletonizer.zone(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: List.generate(
+          _rowCount,
+          (_) => const ListTile(
+            leading: Bone.circle(size: 50),
+            title: Bone.text(width: 140),
+          ),
+        ),
+      ),
     );
   }
 }
