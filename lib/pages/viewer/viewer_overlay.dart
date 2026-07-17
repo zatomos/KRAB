@@ -472,8 +472,8 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
 
           // Top Buttons
           Positioned(
-            top: 60,
-            left: 16,
+            top: 48,
+            left: 4,
             child: CircleAction(
               icon: Symbols.close_rounded,
               onTap: () => Navigator.pop(context),
@@ -482,15 +482,13 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
           ),
 
           Positioned(
-            top: 60,
-            right: 16,
-            child: KeyedSubtree(
-              key: _menuButtonKey,
-              child: CircleAction(
-                icon: CupertinoIcons.ellipsis_vertical,
-                onTap: _openActionsMenu,
-                progress: t,
-              ),
+            top: 48,
+            right: 4,
+            child: CircleAction(
+              visualKey: _menuButtonKey,
+              icon: CupertinoIcons.ellipsis_vertical,
+              onTap: _openActionsMenu,
+              progress: t,
             ),
           ),
 

@@ -49,27 +49,42 @@ class CircleAction extends StatelessWidget {
   final VoidCallback onTap;
   final double progress;
 
+  /// Invisible margin that catches near-misses.
+  final double hitMargin;
+
+  final Key? visualKey;
+
   const CircleAction({
     super.key,
     required this.icon,
     required this.onTap,
     required this.progress,
+    this.hitMargin = 12,
+    this.visualKey,
   });
 
   @override
   Widget build(BuildContext context) {
-    return ClipOval(
-      child: RepaintBoundary(
-        child: InkWell(
-          borderRadius: BorderRadius.circular(32),
-          onTap: onTap,
-          child: FrostedSurface(
-            borderRadius: BorderRadius.circular(999),
-            tint: frostedTint,
-            progress: progress,
-            child: Padding(
-              padding: const EdgeInsets.all(8),
-              child: Icon(icon, color: Colors.white, size: 30),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Padding(
+        padding: EdgeInsets.all(hitMargin),
+        child: ClipOval(
+          key: visualKey,
+          child: RepaintBoundary(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(32),
+              onTap: onTap,
+              child: FrostedSurface(
+                borderRadius: BorderRadius.circular(999),
+                tint: frostedTint,
+                progress: progress,
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: Icon(icon, color: Colors.white, size: 30),
+                ),
+              ),
             ),
           ),
         ),
