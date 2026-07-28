@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:krab/models/user.dart' as krab_user;
+import 'package:krab/services/cache/avatar_cache.dart';
 import 'group_or_user_avatar.dart';
 
 class UserAvatar extends StatelessWidget {
@@ -17,7 +18,7 @@ class UserAvatar extends StatelessWidget {
     return GroupOrUserAvatar(
       name: user.username,
       imageUrl: user.pfpUrl,
-      cacheKey: user.id,
+      cacheKey: avatarCacheKey(user.instanceId, user.id),
       radius: radius,
       fallbackType: FallbackType.firstLetter,
     );

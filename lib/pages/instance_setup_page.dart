@@ -4,16 +4,14 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/pages/login_page.dart';
-import 'package:krab/services/api/supabase.dart';
-import 'package:krab/services/auth/app_auth.dart';
 import 'package:krab/services/connection_check.dart';
 import 'package:krab/services/connection_token.dart';
+import 'package:krab/services/instance/instance_registry.dart';
 import 'package:krab/services/push_helper.dart';
-import 'package:krab/services/supabase_bootstrap.dart';
-import 'package:krab/user_preferences.dart';
 import 'package:krab/widgets/auth_card.dart';
 import 'package:krab/widgets/rectangle_button.dart';
 import 'package:krab/widgets/rounded_input_field.dart';
+import 'package:krab/services/instance/active_instance.dart';
 
 /// Asks which KRAB backend this install should talk to.
 ///
@@ -147,31 +145,26 @@ class _InstanceSetupPageState extends State<InstanceSetupPage> {
       _connected = false;
     });
 
-    // Drop any old session
-    await AppAuth.instance.forgetSession();
-
-    await UserPreferences.setSupabaseConfig(
+    final instance = await InstanceRegistry.instance.connect(
       url: resolved.url,
       anonKey: resolved.key,
     );
 
-    // Prove the instance answers before committing to it: a wrong token or a
+    // Prove the instance answers before leaving this screen: a wrong token or a
     // typo would otherwise only surface as a confusing failure at login.
-    final ok = await initializeSupabaseIfNeeded();
-    if (!ok) {
-      await UserPreferences.setSupabaseConfig(url: '', anonKey: '');
+    // Learning what the instance supports is that same round trip.
+    final config = await instance.api.fetchInstanceConfig();
+    if (!config.success) {
+      await InstanceRegistry.instance.remove(instance.id);
       if (!mounted) return;
       setState(() => _connecting = false);
       _fail(context.l10n.instance_setup_unreachable);
       return;
     }
 
-    // Learn what this instance supports.
-    await fetchInstanceConfig();
-
     // Bring Firebase up against the config that just arrived. There is no
     // session yet, so this only initialises; the token is stored on sign-in.
-    await PushHelper.ensureRegistered();
+    await PushHelper.ensureRegistered(instance);
 
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(

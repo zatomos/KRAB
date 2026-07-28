@@ -2,7 +2,6 @@ import 'dart:typed_data';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
-import 'package:krab/services/auth/app_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:krab/l10n/l10n.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -12,8 +11,6 @@ import 'package:krab/models/user.dart' as krab_user;
 import 'package:krab/models/group.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/services/file_saver.dart';
-import 'package:krab/services/api/supabase.dart';
-import 'package:krab/services/cache/viewer_cache.dart';
 import 'package:krab/pages/viewer/comments_bottom_sheet.dart';
 import 'package:krab/pages/viewer/frosted.dart';
 import 'package:krab/pages/viewer/posted_in_badge.dart';
@@ -24,9 +21,14 @@ import 'package:krab/widgets/dialogs/dialogs.dart';
 import 'package:krab/widgets/soft_button.dart';
 import 'package:krab/widgets/reactions_bar.dart';
 import 'package:krab/widgets/avatars/user_avatar.dart';
+import 'package:krab/services/instance/active_instance.dart';
 
 /// The chrome layered over the current photo in the gallery.
 class ViewerOverlay extends StatefulWidget {
+  /// The instance holding this photo. Everything the overlay reads or changes
+  /// goes through it, so acting on a photo can never hit the wrong server.
+  final KrabInstance instance;
+
   final String imageId;
 
   /// The group the image was opened from, or null in the cross-group
@@ -58,6 +60,7 @@ class ViewerOverlay extends StatefulWidget {
 
   const ViewerOverlay({
     super.key,
+    required this.instance,
     required this.imageId,
     required this.groupId,
     required this.imageData,
@@ -106,7 +109,7 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
   void _initModeration() {
     final groupId = widget.groupId;
     if (groupId == null) return;
-    canModerateGroup(groupId).then((canModerate) {
+    widget.instance.viewer.canModerateGroup(groupId).then((canModerate) {
       if (mounted && canModerate != _canModerate) {
         setState(() => _canModerate = canModerate);
       }
@@ -128,7 +131,7 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
   /// show them synchronously so the pill doesn't flash;
   /// otherwise fetch and fill them in when ready.
   void _initPostedInGroups() {
-    final cached = cachedPostedInGroups(widget.imageId);
+    final cached = widget.instance.viewer.cachedPostedInGroups(widget.imageId);
     if (cached != null) {
       _postedInGroups = _displayGroups(cached);
     } else {
@@ -139,7 +142,7 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
 
   Future<void> _loadPostedInGroups() async {
     final imageId = widget.imageId;
-    final groups = await fetchPostedInGroups(imageId);
+    final groups = await widget.instance.viewer.fetchPostedInGroups(imageId);
     if (!mounted || imageId != widget.imageId || groups == null) return;
     setState(() => _postedInGroups = _displayGroups(groups));
   }
@@ -169,6 +172,7 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (_) => CommentsBottomSheet(
+        instance: widget.instance,
         uploaderId: widget.imageData.uploadedBy,
         imageId: widget.imageId,
         primaryGroupId: widget.groupId,
@@ -301,7 +305,7 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
 
   /// Share this already-uploaded photo to more of the user's groups.
   Future<void> _addToGroups() async {
-    final userGroups = await getUserGroups();
+    final userGroups = await widget.instance.api.getUserGroups();
     if (!mounted) return;
     if (!userGroups.success || userGroups.data == null) {
       showSnackBar(
@@ -313,7 +317,9 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
     }
 
     // Offer only groups the photo isn't already in.
-    final current = await fetchPostedInGroups(widget.imageId) ?? const [];
+    final current =
+        await widget.instance.viewer.fetchPostedInGroups(widget.imageId) ??
+            const [];
     if (!mounted) return;
     final currentIds = current.map((g) => g.id).toSet();
     final eligible =
@@ -326,7 +332,8 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
     final selected = await showAddToGroupsDialog(context, groups: eligible);
     if (selected == null || selected.isEmpty || !mounted) return;
 
-    final res = await addImageToGroups(widget.imageId, selected.toList());
+    final res = await widget.instance.api
+        .addImageToGroups(widget.imageId, selected.toList());
     if (!mounted) return;
     if (!res.success) {
       showSnackBar(
@@ -337,7 +344,7 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
     }
 
     // Reflect the new groups in the "posted in" pill.
-    invalidatePostedInGroups(widget.imageId);
+    widget.instance.viewer.invalidatePostedInGroups(widget.imageId);
     await _loadPostedInGroups();
     if (!mounted) return;
     showSnackBar(context.l10n.photo_added_success, tone: SnackTone.success);
@@ -364,7 +371,7 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
   }
 
   bool get _isOwner =>
-      widget.imageData.uploadedBy == AppAuth.instance.currentUserId;
+      widget.imageData.uploadedBy == widget.instance.auth.currentUserId;
 
   Future<void> _deleteImage() async {
     // A moderator can only remove someone else's photo from the group they
@@ -380,13 +387,16 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
         destructive: true,
       );
       if (!confirmed || !mounted) return;
-      final res = await removeImageFromGroups(widget.imageId, [groupId]);
+      final res = await widget.instance.api
+          .removeImageFromGroups(widget.imageId, [groupId]);
       _afterDelete(res.success, res.error,
           fullyDeleted: res.data ?? false, removedCurrent: true);
       return;
     }
 
-    final groups = await fetchPostedInGroups(widget.imageId) ?? const [];
+    final groups =
+        await widget.instance.viewer.fetchPostedInGroups(widget.imageId) ??
+            const [];
     if (!mounted) return;
 
     if (groups.length <= 1) {
@@ -399,7 +409,7 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
         destructive: true,
       );
       if (!confirmed || !mounted) return;
-      final res = await deleteImage(widget.imageId);
+      final res = await widget.instance.api.deleteImage(widget.imageId);
       _afterDelete(res.success, res.error,
           fullyDeleted: true, removedCurrent: true);
       return;
@@ -412,7 +422,8 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
     );
     if (selected == null || selected.isEmpty || !mounted) return;
 
-    final res = await removeImageFromGroups(widget.imageId, selected.toList());
+    final res = await widget.instance.api
+        .removeImageFromGroups(widget.imageId, selected.toList());
     _afterDelete(
       res.success,
       res.error,
@@ -432,7 +443,7 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
       return;
     }
     // Refresh the cached pill data
-    invalidatePostedInGroups(widget.imageId);
+    widget.instance.viewer.invalidatePostedInGroups(widget.imageId);
 
     final message =
         fullyDeleted ? context.l10n.photo_deleted : context.l10n.photo_removed;
@@ -501,8 +512,10 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
               right: 72,
               child: Center(
                 child: GestureDetector(
-                  onTap: () => showPostedInDialog(context, _postedInGroups),
+                  onTap: () => showPostedInDialog(
+                      context, widget.instance, _postedInGroups),
                   child: PostedInBadge(
+                    instance: widget.instance,
                     groups: _postedInGroups,
                     currentGroupId: widget.groupId,
                     progress: t,
@@ -527,6 +540,7 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
                     child: Padding(
                       padding: const EdgeInsets.only(bottom: 18, left: 2),
                       child: ReactionsBar(
+                        instance: widget.instance,
                         key: _reactionsBarKey,
                         imageId: widget.imageId,
                       ),

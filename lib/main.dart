@@ -1,13 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:home_widget/home_widget.dart';
 import 'package:workmanager/workmanager.dart';
 
 import 'package:krab/app.dart';
 import 'package:krab/app_globals.dart';
-import 'package:krab/services/api/supabase.dart';
 import 'package:krab/services/auth/app_auth.dart';
 import 'package:krab/services/debug_notifier.dart';
 import 'package:krab/services/home_widget_status.dart';
@@ -15,10 +13,11 @@ import 'package:krab/services/home_widget_updater.dart';
 import 'package:krab/services/notification_channels.dart';
 import 'package:krab/services/launch_router.dart';
 import 'package:krab/services/push_handler.dart';
-import 'package:krab/services/cache/profile_picture_cache.dart';
 import 'package:krab/services/push_helper.dart';
 import 'package:krab/services/storage_cleanup.dart';
-import 'package:krab/services/supabase_bootstrap.dart';
+import 'package:krab/services/instance/active_instance.dart';
+import 'package:krab/services/instance/instance_bootstrap.dart';
+import 'package:krab/services/instance/instance_registry.dart';
 import 'package:krab/services/upload_outbox.dart';
 import 'package:krab/pages/login_page.dart';
 import 'package:krab/user_preferences.dart';
@@ -31,7 +30,7 @@ void main(List<String> args) async {
     await DebugNotifier.instance.initialize();
     await initCommentNotifications(onTap: handleLocalNotificationTap);
 
-    final supabaseOk = await initializeSupabaseIfNeeded();
+    final connected = await loadInstances();
     await PushHelper.initialize(background: false);
 
     pendingLocalNotificationPayload = await getLocalNotificationLaunchPayload();
@@ -51,12 +50,12 @@ void main(List<String> args) async {
 
     unawaited(StorageCleanup.sweep());
 
-    if (supabaseOk) {
+    if (connected) {
       _listenToAuthEvents();
       unawaited(updateHomeWidget());
       unawaited(_warmUpFromNetwork());
     } else {
-      debugPrint('Skipping push/cache init, Supabase not initialized');
+      debugPrint('Skipping push/cache init, no instance configured');
     }
   } catch (e, st) {
     debugPrint('Error starting app: $e');
@@ -68,9 +67,13 @@ void main(List<String> args) async {
 /// Network work that runs once the UI is up.
 Future<void> _warmUpFromNetwork() async {
   try {
-    await fetchInstanceConfig();
-    await PushHelper.ensureRegistered();
-    await ProfilePictureCache.of(Supabase.instance.client).hydrate();
+    // Every connected instance, not just the one on screen: each publishes its
+    // own settings and needs its own push registration.
+    for (final instance in InstanceRegistry.instance.all) {
+      await instance.api.fetchInstanceConfig();
+      await PushHelper.ensureRegistered(instance);
+      await instance.pictures.hydrate();
+    }
     // So the widget's configure screen can offer a group filter.
     await cacheUserGroupsForWidget();
     // Photos queued while offline go out as soon as we're up again.
@@ -80,12 +83,12 @@ Future<void> _warmUpFromNetwork() async {
   }
 }
 
-/// React to session changes: surface debug notifications and bounce to the
-/// login page on an unexpected sign-out.
+/// React to session changes on any instance: surface debug notifications and
+/// bounce to the login page on an unexpected sign-out.
 void _listenToAuthEvents() {
-  AppAuth.instance.events.listen((status) async {
-    debugPrint('Auth state changed: $status');
-    switch (status) {
+  InstanceRegistry.instance.authEvents.listen((event) async {
+    debugPrint('Auth state changed on ${event.instance.id}: ${event.status}');
+    switch (event.status) {
       case AppAuthStatus.signedOut:
         // Say so on the widget now. Otherwise it keeps showing the photos from
         // just before the sign-out until some later refresh happens to notice.
@@ -94,10 +97,14 @@ void _listenToAuthEvents() {
           await DebugNotifier.instance.notifyAuthSignedOut(unexpected: false);
         } else {
           await DebugNotifier.instance.notifyAuthSignedOut();
-          navigatorKey.currentState?.pushAndRemoveUntil(
-            MaterialPageRoute(builder: (_) => const LoginPage()),
-            (route) => false,
-          );
+          // Only the instance the user is looking at should take over the
+          // screen. Another one signing out is reported, not navigated to.
+          if (event.instance.id == activeInstance.id) {
+            navigatorKey.currentState?.pushAndRemoveUntil(
+              MaterialPageRoute(builder: (_) => const LoginPage()),
+              (route) => false,
+            );
+          }
         }
         break;
       case AppAuthStatus.tokenRefreshed:

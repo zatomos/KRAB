@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import 'package:krab/services/auth/app_auth.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -12,7 +11,6 @@ import 'package:krab/config.dart';
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/models/user.dart' as krab_user;
-import 'package:krab/services/api/supabase.dart';
 import 'package:krab/user_preferences.dart';
 import 'package:krab/services/debug_notifier.dart';
 import 'package:krab/services/home_widget_updater.dart';
@@ -27,6 +25,7 @@ import 'package:krab/widgets/dialogs/edit_avatar_dialog.dart';
 import 'package:krab/widgets/dialogs/rename_dialog.dart';
 import 'package:krab/widgets/dialogs/update_dialog.dart';
 import 'login_page.dart';
+import 'package:krab/services/instance/active_instance.dart';
 
 class AccountPage extends StatefulWidget {
   const AccountPage({super.key});
@@ -39,7 +38,8 @@ class AccountPageState extends State<AccountPage> {
   final _emailController = TextEditingController();
   final _updateService = UpdateService();
 
-  krab_user.User user = const krab_user.User(id: '', username: '');
+  krab_user.User user =
+      const krab_user.User(instanceId: '', id: '', username: '');
 
   bool _isLoading = false;
 
@@ -90,7 +90,7 @@ class AccountPageState extends State<AccountPage> {
   Future<void> _loadUserProfile() async {
     setState(() => _isLoading = true);
 
-    final userId = AppAuth.instance.currentUserId;
+    final userId = activeInstance.auth.currentUserId;
     if (userId == null) {
       setState(() => _isLoading = false);
       showSnackBar(context.l10n.no_user_logged_in, tone: SnackTone.failure);
@@ -99,11 +99,11 @@ class AccountPageState extends State<AccountPage> {
 
     // Get user info
     final (userResponse, commentSetting, reactionSetting) = await (
-      getUserDetails(userId),
-      getGroupCommentNotificationSetting(),
-      getGroupReactionNotificationSetting(),
+      api.getUserDetails(userId),
+      api.getGroupCommentNotificationSetting(),
+      api.getGroupReactionNotificationSetting(),
     ).wait;
-    final emailResponse = await getEmail();
+    final emailResponse = await api.getEmail();
 
     autoImageSave = await UserPreferences.getAutoImageSave();
     debugNotificationsEnabled = await UserPreferences.getDebugNotifications();
@@ -166,7 +166,7 @@ class AccountPageState extends State<AccountPage> {
   }
 
   Future<void> _logout() async {
-    final res = await logOut();
+    final res = await api.logOut();
     if (!mounted) return;
 
     // A logout that failed left the session on disk.
@@ -200,7 +200,7 @@ class AccountPageState extends State<AccountPage> {
     );
     if (confirmed != true || !mounted) return;
 
-    final res = await deleteAccount();
+    final res = await api.deleteAccount();
     if (!mounted) return;
 
     if (!res.success) {
@@ -278,7 +278,7 @@ class AccountPageState extends State<AccountPage> {
         maxLength: 19,
         onSubmit: (value) async {
           final l10n = context.l10n;
-          final res = await editUsername(value);
+          final res = await api.editUsername(value);
           return res.success
               ? null
               : "${l10n.error_updating_username}: ${describeError(l10n, res.error)}";
@@ -298,9 +298,9 @@ class AccountPageState extends State<AccountPage> {
       AvatarTarget(
         hasImage: user.pfpUrl.isNotEmpty,
         dialogTitle: l10n.edit_pfp_title,
-        upload: editProfilePicture,
-        remove: deleteProfilePicture,
-        freshUrl: () => getProfilePictureUrl(user.id),
+        upload: api.editProfilePicture,
+        remove: api.deleteProfilePicture,
+        freshUrl: () => api.getProfilePictureUrl(user.id),
         uploadFailed: l10n.error_updating_pfp,
         removeFailed: l10n.error_deleting_pfp,
         uploadSucceeded: l10n.pfp_updated_success,
@@ -324,8 +324,8 @@ class AccountPageState extends State<AccountPage> {
 
   /// The backend's hostname, falling back to the raw URL if it can't be parsed.
   String get _serverHost {
-    final host = Uri.tryParse(UserPreferences.supabaseUrl)?.host ?? '';
-    return host.isNotEmpty ? host : UserPreferences.supabaseUrl;
+    final host = Uri.tryParse(activeInstance.url)?.host ?? '';
+    return host.isNotEmpty ? host : activeInstance.url;
   }
 
   /// A switch whose state lives on the server.
@@ -468,13 +468,12 @@ class AccountPageState extends State<AccountPage> {
                         ),
                         ListTile(
                           leading: Icon(
-                            _batteryOptimizationDisabled == true
-                                ? Icons.battery_charging_full_rounded
-                                : Icons.battery_alert_rounded,
-                            color: _batteryOptimizationDisabled == false
-                                ? Theme.of(context).colorScheme.error
-                                : null
-                          ),
+                              _batteryOptimizationDisabled == true
+                                  ? Icons.battery_charging_full_rounded
+                                  : Icons.battery_alert_rounded,
+                              color: _batteryOptimizationDisabled == false
+                                  ? Theme.of(context).colorScheme.error
+                                  : null),
                           title: Text(context.l10n.battery_optimization_label),
                           subtitle: Text(
                             _batteryOptimizationDisabled == true
@@ -511,7 +510,7 @@ class AccountPageState extends State<AccountPage> {
                           subtitle: context
                               .l10n.group_comment_notifications_description,
                           value: receiveAllGroupComments,
-                          save: setGroupCommentNotificationSetting,
+                          save: api.setGroupCommentNotificationSetting,
                           apply: (v) => receiveAllGroupComments = v,
                         ),
                         _serverSwitch(
@@ -519,7 +518,7 @@ class AccountPageState extends State<AccountPage> {
                           subtitle: context
                               .l10n.group_reaction_notifications_description,
                           value: receiveAllGroupReactions,
-                          save: setGroupReactionNotificationSetting,
+                          save: api.setGroupReactionNotificationSetting,
                           apply: (v) => receiveAllGroupReactions = v,
                         ),
                         ListTile(

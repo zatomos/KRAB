@@ -3,18 +3,25 @@ import 'package:flutter/services.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:krab/models/group_invite.dart';
-import 'package:krab/services/api/supabase.dart';
 import 'package:krab/widgets/dialogs/dialogs.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/widgets/soft_button.dart';
 import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/l10n/l10n.dart';
+import 'package:krab/services/instance/active_instance.dart';
 
 /// Management view to create, share, and revoke group invites.
 class GroupInvitesPage extends StatefulWidget {
+  /// The instance the group and its invites live on.
+  final KrabInstance instance;
+
   final String groupId;
 
-  const GroupInvitesPage({super.key, required this.groupId});
+  const GroupInvitesPage({
+    super.key,
+    required this.instance,
+    required this.groupId,
+  });
 
   @override
   State<GroupInvitesPage> createState() => _GroupInvitesPageState();
@@ -26,17 +33,19 @@ class _GroupInvitesPageState extends State<GroupInvitesPage> {
   @override
   void initState() {
     super.initState();
-    _invitesFuture = listGroupInvites(widget.groupId);
+    _invitesFuture = widget.instance.api.listGroupInvites(widget.groupId);
   }
 
   void _refresh() {
-    setState(() => _invitesFuture = listGroupInvites(widget.groupId));
+    setState(() =>
+        _invitesFuture = widget.instance.api.listGroupInvites(widget.groupId));
   }
 
   Future<void> _createInvite() async {
     final token = await showDialog<String>(
       context: context,
-      builder: (_) => CreateInviteDialog(groupId: widget.groupId),
+      builder: (_) => CreateInviteDialog(
+          instance: widget.instance, groupId: widget.groupId),
     );
     if (token == null || !mounted) return;
     await showInviteTokenDialog(context, token);
@@ -51,7 +60,7 @@ class _GroupInvitesPageState extends State<GroupInvitesPage> {
         destructive: true);
     if (!confirm) return;
 
-    final res = await revokeGroupInvite(token);
+    final res = await widget.instance.api.revokeGroupInvite(token);
     if (!mounted) return;
     if (res.success) {
       showSnackBar(context.l10n.invite_revoked_success,
@@ -144,9 +153,14 @@ class _GroupInvitesPageState extends State<GroupInvitesPage> {
 
 /// Dialog to create a new invite with an expiry and max-uses selection
 class CreateInviteDialog extends StatefulWidget {
+  final KrabInstance instance;
   final String groupId;
 
-  const CreateInviteDialog({super.key, required this.groupId});
+  const CreateInviteDialog({
+    super.key,
+    required this.instance,
+    required this.groupId,
+  });
 
   @override
   State<CreateInviteDialog> createState() => _CreateInviteDialogState();
@@ -168,7 +182,7 @@ class _CreateInviteDialogState extends State<CreateInviteDialog> {
     });
 
     final expiresAt = _expiry == null ? null : DateTime.now().add(_expiry!);
-    final res = await createGroupInvite(widget.groupId,
+    final res = await widget.instance.api.createGroupInvite(widget.groupId,
         expiresAt: expiresAt, maxUses: _maxUses);
     if (!mounted) return;
     if (!res.success) {

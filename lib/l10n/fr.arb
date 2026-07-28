@@ -320,7 +320,7 @@
   "push_distributor_none": "Aucun distributeur n'est disponible sur cet appareil. Installez une application UnifiedPush pour recevoir les notifications.",
   "push_distributor_failed": "Impossible de s'abonner avec ce distributeur.",
   "change_server_title": "Changer de serveur",
-  "change_server_description": "Cela vous déconnecte du serveur actuel et de votre compte. Vous choisirez un serveur au redémarrage de l'application.",
+  "change_server_description": "Cela vous déconnecte du serveur actuel et de votre compte. Vous choisirez ensuite un serveur auquel vous connecter.",
   "change_server_confirm": "Se déconnecter",
   "instance_setup_token_subtitle": "Collez le jeton de connexion qu'on vous a communiqué pour rejoindre un serveur KRAB.",
   "instance_setup_token_hint": "Jeton de connexion",

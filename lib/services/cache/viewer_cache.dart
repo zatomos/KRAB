@@ -1,54 +1,63 @@
 import 'package:krab/models/group.dart';
-import 'package:krab/services/api/supabase.dart';
+import 'package:krab/services/api/krab_api.dart';
 import 'package:krab/services/cache/bounded_cache.dart';
 
-final _postedInGroups = BoundedCache<List<Group>>(200);
-final Map<String, bool> _moderatedGroups = {};
+/// What the viewer holds about one instance's images: which of its groups a
+/// photo was posted to, and which of them the user may moderate.
+class ViewerCache {
+  ViewerCache(this._api);
 
-/// The groups an image was shared to that the current user can see.
-Future<List<Group>?> fetchPostedInGroups(String imageId) async {
-  final cached = _postedInGroups[imageId];
-  if (cached != null) return cached;
+  final KrabApi _api;
+  final BoundedCache<List<Group>> _postedInGroups =
+      BoundedCache<List<Group>>(200);
+  final Map<String, bool> _moderatedGroups = {};
 
-  final response = await getImageGroups(imageId);
-  if (!response.success || response.data == null) return null;
+  /// The groups an image was shared to that the current user can see.
+  Future<List<Group>?> fetchPostedInGroups(String imageId) async {
+    final cached = _postedInGroups[imageId];
+    if (cached != null) return cached;
 
-  final groups = await Future.wait((response.data!).map((e) async {
-    final map = e as Map<String, dynamic>;
-    final id = map['group_id']?.toString() ?? '';
-    return Group(
-      id: id,
-      name: map['group_name']?.toString() ?? '',
-      iconUrl: await resolveGroupIconUrl(id),
-      createdAt: '',
-    );
-  }));
+    final response = await _api.getImageGroups(imageId);
+    if (!response.success || response.data == null) return null;
 
-  _postedInGroups[imageId] = groups;
-  return groups;
-}
+    final groups = await Future.wait((response.data!).map((e) async {
+      final map = e as Map<String, dynamic>;
+      final id = map['group_id']?.toString() ?? '';
+      return Group(
+        instanceId: _api.instanceId,
+        id: id,
+        name: map['group_name']?.toString() ?? '',
+        iconUrl: await _api.resolveGroupIconUrl(id),
+        createdAt: '',
+      );
+    }));
 
-/// The cached group list for an image, or null if it hasn't been loaded.
-List<Group>? cachedPostedInGroups(String imageId) => _postedInGroups[imageId];
+    _postedInGroups[imageId] = groups;
+    return groups;
+  }
 
-/// Forget an image's cached groups so the next fetch reflects a change.
-void invalidatePostedInGroups(String imageId) =>
-    _postedInGroups.remove(imageId);
+  /// The cached group list for an image, or null if it hasn't been loaded.
+  List<Group>? cachedPostedInGroups(String imageId) => _postedInGroups[imageId];
 
-/// Whether the user owns or administers groupId, and may remove other people's
-/// photos from it.
-Future<bool> canModerateGroup(String groupId) async {
-  final cached = _moderatedGroups[groupId];
-  if (cached != null) return cached;
+  /// Forget an image's cached groups so the next fetch reflects a change.
+  void invalidatePostedInGroups(String imageId) =>
+      _postedInGroups.remove(imageId);
 
-  final res = await isGroupAdminOrOwner(groupId);
-  if (!res.success || res.data == null) return false;
-  _moderatedGroups[groupId] = res.data!;
-  return res.data!;
-}
+  /// Whether the user owns or administers groupId, and may remove other
+  /// people's photos from it.
+  Future<bool> canModerateGroup(String groupId) async {
+    final cached = _moderatedGroups[groupId];
+    if (cached != null) return cached;
 
-/// Forget everything. Called on logout.
-void clearViewerCaches() {
-  _postedInGroups.clear();
-  _moderatedGroups.clear();
+    final res = await _api.isGroupAdminOrOwner(groupId);
+    if (!res.success || res.data == null) return false;
+    _moderatedGroups[groupId] = res.data!;
+    return res.data!;
+  }
+
+  /// Forget everything. Called on logout.
+  void clear() {
+    _postedInGroups.clear();
+    _moderatedGroups.clear();
+  }
 }

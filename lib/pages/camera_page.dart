@@ -11,13 +11,13 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:native_device_orientation/native_device_orientation.dart';
 import 'package:path_provider/path_provider.dart';
 
-import 'package:krab/services/api/supabase.dart';
 import 'package:krab/models/user.dart' as krab_user;
 import 'package:krab/widgets/dialogs/image_sent_dialog.dart';
 import 'package:krab/widgets/dialogs/send_image_dialog.dart';
 import 'package:krab/widgets/avatars/user_avatar.dart';
 import 'groups_page.dart';
 import 'account_page.dart';
+import 'package:krab/services/instance/active_instance.dart';
 
 class CameraPage extends StatefulWidget {
   const CameraPage({super.key});
@@ -121,7 +121,8 @@ class CameraPageState extends State<CameraPage> {
   // ===== Initialization ========================================================
 
   Future<void> _loadCurrentUser() async {
-    currentUser = await krab_user.getCurrentUser();
+    final response = await api.getCurrentUser();
+    currentUser = response.data;
     debugPrint("Loaded current user: $currentUser");
   }
 
@@ -320,7 +321,7 @@ class CameraPageState extends State<CameraPage> {
   /// Delete the just-sent photo when the user taps Undo on the snackbar.
   Future<void> _undoSend(
       String imageId, String removedMsg, String failedMsg) async {
-    final deleted = await deleteImage(imageId);
+    final deleted = await api.deleteImage(imageId);
     if (deleted.success) {
       updateHomeWidget();
       showSnackBar(removedMsg, tone: SnackTone.success);

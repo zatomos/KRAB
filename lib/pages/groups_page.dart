@@ -5,7 +5,6 @@ import 'package:skeletonizer/skeletonizer.dart';
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/widgets/delayed_loading.dart';
 import 'package:krab/services/home_widget_updater.dart';
-import 'package:krab/services/api/supabase.dart';
 import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/widgets/soft_button.dart';
 import 'package:krab/widgets/rounded_input_field.dart';
@@ -13,6 +12,7 @@ import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/widgets/group_card.dart';
 import 'package:krab/pages/image_feed_page.dart';
 import 'package:krab/models/group.dart';
+import 'package:krab/services/instance/active_instance.dart';
 
 class GroupsPage extends StatefulWidget {
   /// Route name used so a group gallery's back button can return
@@ -41,14 +41,14 @@ class GroupsPageState extends State<GroupsPage> {
   }
 
   Future<_GroupsResult> _loadGroups() async {
-    final response = await getUserGroups();
+    final response = await api.getUserGroups();
     final groups = response.data;
     if (!response.success || groups == null) {
       return _GroupsResult(response, const {});
     }
     final counts = <String, int>{};
     await Future.wait(groups.map((group) async {
-      final res = await getGroupMemberCount(group.id);
+      final res = await api.getGroupMemberCount(group.id);
       counts[group.id] = res.error == null ? (res.data ?? 0) : 0;
     }));
     return _GroupsResult(response, counts);
@@ -229,7 +229,7 @@ class JoinGroupDialog extends StatelessWidget {
       submitIcon: Symbols.groups_rounded,
       successMessage: l10n.group_joined_success,
       onSubmit: (token) async {
-        final res = await joinGroupByInvite(token);
+        final res = await api.joinGroupByInvite(token);
         return res.success
             ? null
             : l10n.group_code_invalid(res.error ?? l10n.unknown_error);
@@ -370,7 +370,7 @@ class CreateGroupDialog extends StatelessWidget {
       successMessage: l10n.group_created_success,
       maxLength: 19,
       onSubmit: (name) async {
-        final res = await createGroup(name);
+        final res = await api.createGroup(name);
         return res.success
             ? null
             : l10n.error_creating_group(res.error ?? l10n.unknown_error);

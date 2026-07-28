@@ -1,4 +1,8 @@
 class Group {
+  /// Which instance this group lives on. Stamped where the response is decoded,
+  /// so anything acting on the group routes back to the server it came from.
+  final String instanceId;
+
   final String id;
   final String name;
   final String? iconUrl;
@@ -8,6 +12,7 @@ class Group {
   final String? role;
 
   Group({
+    required this.instanceId,
     required this.id,
     required this.name,
     this.iconUrl,
@@ -18,8 +23,10 @@ class Group {
   });
 
   // Convert a JSON Map to a Group object
-  factory Group.fromJson(Map<String, dynamic> json) {
+  factory Group.fromJson(Map<String, dynamic> json,
+      {required String instanceId}) {
     return Group(
+      instanceId: instanceId,
       id: json['id'] as String,
       name: json['name'] as String,
       iconUrl: json['icon_url'] as String?,
@@ -42,6 +49,7 @@ class Group {
     String? role,
   }) {
     return Group(
+      instanceId: instanceId,
       id: id ?? this.id,
       name: name ?? this.name,
       iconUrl: iconUrl ?? this.iconUrl,
@@ -56,6 +64,6 @@ class Group {
 
   @override
   String toString() {
-    return 'Group{id: $id, name: $name, icon_url: $iconUrl, createdAt: $createdAt, latestImageAt: $latestImageAt, invitePermission: $invitePermission, role: $role}';
+    return 'Group{instanceId: $instanceId, id: $id, name: $name, icon_url: $iconUrl, createdAt: $createdAt, latestImageAt: $latestImageAt, invitePermission: $invitePermission, role: $role}';
   }
 }

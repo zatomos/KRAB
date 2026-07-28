@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:krab/l10n/l10n.dart';
-import 'package:krab/services/api/supabase.dart';
 import 'package:krab/services/feed_events.dart';
 import 'package:krab/models/group.dart';
 import 'package:krab/models/user.dart' as krab_user;
@@ -13,8 +12,9 @@ import 'package:krab/pages/group_settings_page.dart';
 import 'package:krab/pages/groups_page.dart';
 import 'package:krab/pages/viewer/image_viewer_page.dart';
 import 'package:krab/services/cache/feed_image_cache.dart';
-import 'package:krab/services/cache/reaction_cache.dart';
 import 'package:krab/widgets/avatars/user_avatar.dart';
+import 'package:krab/services/instance/active_instance.dart';
+import 'package:krab/services/instance/instance_registry.dart';
 
 /// Number of images fetched per page in both the single-group and cross-group
 /// galleries. New pages load as the user scrolls.
@@ -58,7 +58,15 @@ class ImageFeedPageState extends State<ImageFeedPage> {
 
   /// The bytes, uploaders and tallies for the images on screen. Shared with the
   /// viewer this page opens.
-  late final FeedImageCache _cache = FeedImageCache(groupId: _groupId);
+  /// The instance this feed shows. Taken from the group when there is one, so
+  /// a gallery is always read from the server that owns it.
+  late final KrabInstance _instance = widget.group == null
+      ? activeInstance
+      : InstanceRegistry.instance.byId(widget.group!.instanceId) ??
+          activeInstance;
+
+  late final FeedImageCache _cache = FeedImageCache(
+      fetchers: InstanceImageFetchers(_instance.api), groupId: _groupId);
 
   @override
   void initState() {
@@ -91,13 +99,13 @@ class ImageFeedPageState extends State<ImageFeedPage> {
   /// otherwise fetches the first page.
   Future<SupabaseResponse<List<ImageRef>>> _fetchPage({ImageRef? after}) =>
       _groupId != null
-          ? getGroupImages(
+          ? api.getGroupImages(
               _groupId!,
               limit: _kPageSize,
               beforeCreatedAt: after?.uploadedAt,
               beforeId: after?.id,
             )
-          : getLatestImages(
+          : api.getLatestImages(
               _kPageSize,
               beforeCreatedAt: after?.uploadedAt,
               beforeId: after?.id,
@@ -132,6 +140,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
             ? _images
             : [
                 ImageRef(
+                  instanceId: _instance.id,
                   id: widget.imageId!,
                   uploadedBy: initialData.uploadedBy,
                   uploadedAt: DateTime.tryParse(initialData.createdAt),
@@ -487,7 +496,10 @@ class ImageFeedPageState extends State<ImageFeedPage> {
 
         final imageData = snapshot.data!;
         final uploader = _cache.user(imageData.uploadedBy) ??
-            krab_user.User(id: imageData.uploadedBy, username: "");
+            krab_user.User(
+                instanceId: _instance.id,
+                id: imageData.uploadedBy,
+                username: "");
         final hasDescription = imageData.description?.isNotEmpty ?? false;
         final reactions = _reactionCountFor(imageId);
         final comments = _cache.commentCount(imageId);
@@ -568,7 +580,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
 
   /// Total reactions for an image's badge
   int _reactionCountFor(String imageId) =>
-      cachedReactionTotal(imageId) ?? _cache.reactionCount(imageId);
+      _instance.reactions.cachedTotal(imageId) ?? _cache.reactionCount(imageId);
 
   /// A small frosted count badge for the grid tile corner.
   Widget _countBadge(IconData icon, int count, {Color? borderColor}) {

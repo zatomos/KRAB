@@ -4,8 +4,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:krab/models/cached_url.dart';
 
+/// Signed avatar and group-icon URLs for one instance.
+///
+/// Held per instance: an id is only unique within the server that issued it,
+/// and a signed URL is worthless anywhere else.
 class ProfilePictureCache {
-  static const _prefsKey = 'pfp_cache';
+  ProfilePictureCache({
+    required SupabaseClient client,
+    required this.instanceId,
+  }) : _supabase = client;
 
   /// How long to wait after the last change before writing to disk, so a burst
   /// of avatar fetches coalesces into one write rather than re-encoding the
@@ -15,17 +22,15 @@ class ProfilePictureCache {
   /// Retire a cached URL before its signature actually expires.
   static const _expiryMargin = Duration(minutes: 5);
 
-  static ProfilePictureCache? _instance;
+  /// The prefs key holding one instance's cache.
+  static String prefsKeyFor(String instanceId) => 'pfp_cache_$instanceId';
 
+  final String instanceId;
   final SupabaseClient _supabase;
   final Map<String, CachedUrl> _memory = {};
   Timer? _persistTimer;
 
-  ProfilePictureCache._(this._supabase);
-
-  static ProfilePictureCache of(SupabaseClient supabase) {
-    return _instance ??= ProfilePictureCache._(supabase);
-  }
+  String get _prefsKey => prefsKeyFor(instanceId);
 
   /// Load persisted cache on app startup, dropping anything already stale.
   Future<void> hydrate() async {

@@ -3,32 +3,59 @@ import 'package:flutter/foundation.dart';
 import 'package:krab/models/image_data.dart';
 import 'package:krab/models/image_details.dart';
 import 'package:krab/models/user.dart' as krab_user;
-import 'package:krab/services/api/supabase.dart';
+import 'package:krab/services/api/krab_api.dart';
 
-/// The calls [FeedImageCache] makes to fill itself. Subclass to fetch something
-/// other than the live backend; the default is the backend.
-class ImageFetchers {
-  const ImageFetchers();
+/// The calls [FeedImageCache] makes to fill itself. Implement to serve
+/// something other than a live backend; [InstanceImageFetchers] is the one that
+/// goes to the instance the gallery belongs to.
+abstract class ImageFetchers {
+  /// Which instance these photos come from.
+  String get instanceId;
 
-  Future<SupabaseResponse<Uint8List>> image(String imageId,
-          {bool lowRes = false}) =>
-      getImage(imageId, lowRes: lowRes);
+  Future<SupabaseResponse<Uint8List>> image(String imageId, {bool lowRes});
 
-  Future<SupabaseResponse<ImageDetails>> details(String imageId) =>
-      getImageDetails(imageId);
+  Future<SupabaseResponse<ImageDetails>> details(String imageId);
 
-  Future<SupabaseResponse<krab_user.User>> user(String userId) =>
-      getUserDetails(userId);
+  Future<SupabaseResponse<krab_user.User>> user(String userId);
 
   /// An image's comment count: within one group, or across every group the user
   /// shares it with when groupId is null.
+  Future<SupabaseResponse<int>> commentCount(String imageId, String? groupId);
+
+  Future<SupabaseResponse<List<dynamic>>> reactions(String imageId);
+}
+
+/// Reads a gallery from one instance.
+class InstanceImageFetchers implements ImageFetchers {
+  const InstanceImageFetchers(this._api);
+
+  final KrabApi _api;
+
+  @override
+  String get instanceId => _api.instanceId;
+
+  @override
+  Future<SupabaseResponse<Uint8List>> image(String imageId,
+          {bool lowRes = false}) =>
+      _api.getImage(imageId, lowRes: lowRes);
+
+  @override
+  Future<SupabaseResponse<ImageDetails>> details(String imageId) =>
+      _api.getImageDetails(imageId);
+
+  @override
+  Future<SupabaseResponse<krab_user.User>> user(String userId) =>
+      _api.getUserDetails(userId);
+
+  @override
   Future<SupabaseResponse<int>> commentCount(String imageId, String? groupId) =>
       groupId != null
-          ? getCommentCount(imageId, groupId)
-          : getImageCommentCount(imageId);
+          ? _api.getCommentCount(imageId, groupId)
+          : _api.getImageCommentCount(imageId);
 
+  @override
   Future<SupabaseResponse<List<dynamic>>> reactions(String imageId) =>
-      getImageReactions(imageId);
+      _api.getImageReactions(imageId);
 }
 
 /// Everything one gallery holds in memory for the images it is showing: the
@@ -47,8 +74,11 @@ class FeedImageCache {
 
   final ImageFetchers _fetch;
 
-  FeedImageCache({this.groupId, ImageFetchers fetchers = const ImageFetchers()})
+  FeedImageCache({required ImageFetchers fetchers, this.groupId})
       : _fetch = fetchers;
+
+  /// Which instance every photo in here came from.
+  String get instanceId => _fetch.instanceId;
 
   static const int maxImages = 60;
   static const int maxFullResImages = 5;
@@ -137,8 +167,8 @@ class FeedImageCache {
     final uploaderId = details.uploadedBy;
     if (!_users.containsKey(uploaderId)) {
       final response = await _fetch.user(uploaderId);
-      _users[uploaderId] =
-          response.data ?? krab_user.User(id: uploaderId, username: "");
+      _users[uploaderId] = response.data ??
+          krab_user.User(instanceId: instanceId, id: uploaderId, username: "");
     }
 
     if (countFuture != null) {

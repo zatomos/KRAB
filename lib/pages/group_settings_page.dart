@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import 'package:krab/services/auth/app_auth.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 
@@ -18,9 +17,10 @@ import 'package:krab/widgets/rectangle_button.dart';
 import 'package:krab/models/group.dart';
 import 'package:krab/models/group_member.dart';
 import 'package:krab/pages/group_invites_page.dart';
-import 'package:krab/services/api/supabase.dart';
 import 'package:krab/user_preferences.dart';
 import 'package:krab/l10n/l10n.dart';
+import 'package:krab/services/instance/active_instance.dart';
+import 'package:krab/services/instance/instance_registry.dart';
 
 class GroupSettingsPage extends StatefulWidget {
   final Group group;
@@ -39,6 +39,11 @@ const Duration _expandDuration = Duration(milliseconds: 200);
 
 class GroupSettingsPageState extends State<GroupSettingsPage> {
   late Group _group;
+
+  /// The instance this group lives on, so every change is made against the
+  /// server that owns it rather than whichever one is on screen.
+  late final KrabInstance _instance =
+      InstanceRegistry.instance.byId(_group.instanceId) ?? activeInstance;
   late Future<SupabaseResponse<List<GroupMember>>> _membersFuture;
   late String? _currentUserId;
   bool _muted = false;
@@ -48,16 +53,16 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
   void initState() {
     super.initState();
     _group = widget.group;
-    _membersFuture = getGroupMembers(_group.id);
-    _currentUserId = AppAuth.instance.currentUserId;
-    UserPreferences.isGroupMuted(_group.id).then((muted) {
+    _membersFuture = _instance.api.getGroupMembers(_group.id);
+    _currentUserId = _instance.auth.currentUserId;
+    UserPreferences.isGroupMuted(_group.instanceId, _group.id).then((muted) {
       if (mounted) setState(() => _muted = muted);
     });
   }
 
   Future<void> _toggleMuted(bool muted) async {
     setState(() => _muted = muted);
-    await UserPreferences.setGroupMuted(_group.id, muted);
+    await UserPreferences.setGroupMuted(_group.instanceId, _group.id, muted);
   }
 
   String _getCurrentUserRole(List<GroupMember> members) {
@@ -72,11 +77,12 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
   }
 
   Future<void> _leaveGroup() async {
-    final response = await leaveGroup(widget.group.id);
+    final response = await _instance.api.leaveGroup(widget.group.id);
     if (!mounted) return;
     if (response.success) {
       // Only once the server agrees we've left.
-      await UserPreferences.removeFavoriteGroup(widget.group.id);
+      await UserPreferences.removeFavoriteGroup(
+          widget.group.instanceId, widget.group.id);
       if (!mounted) return;
       cacheUserGroupsForWidget();
       showSnackBar(context.l10n.left_group_success, tone: SnackTone.success);
@@ -99,7 +105,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
         emptyError: l10n.group_name_empty,
         maxLength: 19,
         onSubmit: (value) async {
-          final res = await updateGroupName(_group.id, value);
+          final res = await _instance.api.updateGroupName(_group.id, value);
           return res.success ? null : describeError(l10n, res.error);
         },
       ),
@@ -117,9 +123,9 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
       AvatarTarget(
         hasImage: _group.iconUrl?.isNotEmpty ?? false,
         dialogTitle: l10n.edit_icon_title,
-        upload: (image) => editGroupIcon(image, _group.id),
-        remove: () => deleteGroupIcon(_group.id),
-        freshUrl: () => getGroupIconUrl(_group.id),
+        upload: (image) => _instance.api.editGroupIcon(image, _group.id),
+        remove: () => _instance.api.deleteGroupIcon(_group.id),
+        freshUrl: () => _instance.api.getGroupIconUrl(_group.id),
         uploadFailed: l10n.error_updating_icon,
         removeFailed: l10n.error_deleting_icon,
         uploadSucceeded: l10n.icon_updated_success,
@@ -148,7 +154,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
     if (!mounted) return;
     if (res.success) {
       showSnackBar(success, tone: SnackTone.success);
-      setState(() => _membersFuture = getGroupMembers(_group.id));
+      setState(() => _membersFuture = _instance.api.getGroupMembers(_group.id));
     } else {
       showSnackBar(failure(context.errorText(res.error)),
           tone: SnackTone.failure);
@@ -171,7 +177,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
     return _confirmMemberAction(
       title: title,
       message: message,
-      apply: () => changeMemberRole(_group.id, userId, action),
+      apply: () => _instance.api.changeMemberRole(_group.id, userId, action),
       success: l10n.user_role_updated_success,
       failure: l10n.error_updating_user_role,
     );
@@ -180,7 +186,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
   Future<void> _manageUserBanDialog(String userId) => _confirmMemberAction(
         title: context.l10n.ban_user,
         message: context.l10n.ban_user_confirmation,
-        apply: () => banUser(_group.id, userId),
+        apply: () => _instance.api.banUser(_group.id, userId),
         success: context.l10n.user_banned_success,
         failure: context.l10n.error_banning_user,
       );
@@ -188,7 +194,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
   Future<void> _manageUserUnbanDialog(String userId) => _confirmMemberAction(
         title: context.l10n.unban_user,
         message: context.l10n.unban_user_confirmation,
-        apply: () => unbanUser(_group.id, userId),
+        apply: () => _instance.api.unbanUser(_group.id, userId),
         success: context.l10n.user_unbanned_success,
         failure: context.l10n.error_unbanning_user,
       );
@@ -201,7 +207,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
         destructive: true);
     if (!confirm || !mounted) return;
 
-    final res = await deleteGroup(_group.id);
+    final res = await _instance.api.deleteGroup(_group.id);
     if (!mounted) return;
     if (!res.success) {
       showSnackBar(
@@ -211,7 +217,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
     }
 
     // Only once the group is actually gone.
-    await UserPreferences.removeFavoriteGroup(_group.id);
+    await UserPreferences.removeFavoriteGroup(_group.instanceId, _group.id);
     if (!mounted) return;
 
     cacheUserGroupsForWidget();
@@ -243,7 +249,8 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
   Future<void> _createInvite() async {
     final token = await showDialog<String>(
       context: context,
-      builder: (_) => CreateInviteDialog(groupId: _group.id),
+      builder: (_) =>
+          CreateInviteDialog(instance: _instance, groupId: _group.id),
     );
     if (token == null || !mounted) return;
     await showInviteTokenDialog(context, token);
@@ -272,7 +279,8 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
     );
     if (selected == null || selected == current || !mounted) return;
 
-    final res = await setGroupInvitePermission(_group.id, selected);
+    final res =
+        await _instance.api.setGroupInvitePermission(_group.id, selected);
     if (!mounted) return;
     if (res.success) {
       showSnackBar(context.l10n.invite_permission_updated,
@@ -465,7 +473,8 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                     RectangleButton(
                       onPressed: () => Navigator.of(context).push(
                         MaterialPageRoute(
-                          builder: (_) => GroupInvitesPage(groupId: _group.id),
+                          builder: (_) => GroupInvitesPage(
+                              instance: _instance, groupId: _group.id),
                         ),
                       ),
                       label: context.l10n.manage_invites,

@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:krab/l10n/l10n.dart';
-import 'package:krab/services/api/supabase.dart';
 import 'package:krab/services/home_widget_updater.dart';
 import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/widgets/auth_card.dart';
@@ -12,6 +11,7 @@ import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/widgets/rounded_input_field.dart';
 import 'package:krab/widgets/soft_button.dart';
 import 'package:krab/pages/camera_page.dart';
+import 'package:krab/services/instance/active_instance.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -53,7 +53,7 @@ class LoginPageState extends State<LoginPage> {
   Future<void> _resendConfirmation() async {
     final email = _emailController.text.trim();
     if (email.isEmpty) return;
-    final res = await resendConfirmationEmail(email);
+    final res = await api.resendConfirmationEmail(email);
     if (!mounted) return;
     showSnackBar(res.success
         ? context.l10n.confirmation_email_resent
@@ -96,7 +96,7 @@ class LoginPageState extends State<LoginPage> {
       _isLoading = true;
       _errorMessage = null;
     });
-    final response = await registerUser(username, email, password);
+    final response = await api.registerUser(username, email, password);
     if (!mounted) return;
     if (!response.success) {
       setState(() {
@@ -149,7 +149,7 @@ class LoginPageState extends State<LoginPage> {
       _errorMessage = null;
       _showResendConfirmation = false;
     });
-    final response = await loginUser(email, password);
+    final response = await api.loginUser(email, password);
     if (!mounted) return;
     if (response.success) {
       _enterApp();
@@ -215,7 +215,7 @@ class LoginPageState extends State<LoginPage> {
                         sending = true;
                         dialogError = null;
                       });
-                      final response = await sendPasswordResetEmail(email);
+                      final response = await api.sendPasswordResetEmail(email);
                       if (!context.mounted) return;
                       if (response.success) {
                         Navigator.pop(context);
@@ -327,7 +327,7 @@ class LoginPageState extends State<LoginPage> {
                           ),
                         const SizedBox(height: 12),
                         _buildButton(),
-                        if (!_isSigningUp && isPasswordResetEnabled)
+                        if (!_isSigningUp && api.isPasswordResetEnabled)
                           Align(
                             alignment: Alignment.centerRight,
                             child: TextButton(

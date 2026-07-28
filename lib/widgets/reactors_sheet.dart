@@ -4,9 +4,8 @@ import 'package:flutter/material.dart';
 
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/models/user.dart' as krab_user;
-import 'package:krab/services/api/supabase.dart';
-import 'package:krab/services/cache/profile_picture_cache.dart';
 import 'package:krab/widgets/avatars/user_avatar.dart';
+import 'package:krab/services/instance/active_instance.dart';
 
 /// One person's reaction with a given emoji.
 class Reactor {
@@ -76,7 +75,8 @@ List<String> emojisByUse(List<Reactor> reactors) {
 }
 
 /// Open the reactors sheet for an image
-Future<void> showReactorsSheet(BuildContext context, String imageId) {
+Future<void> showReactorsSheet(
+    BuildContext context, KrabInstance instance, String imageId) {
   final screenHeight = MediaQuery.sizeOf(context).height;
   return showModalBottomSheet<void>(
     context: context,
@@ -87,14 +87,17 @@ Future<void> showReactorsSheet(BuildContext context, String imageId) {
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
-    builder: (_) => _ReactorsSheet(imageId: imageId),
+    builder: (_) => _ReactorsSheet(instance: instance, imageId: imageId),
   );
 }
 
 class _ReactorsSheet extends StatefulWidget {
+  /// The instance whose reactors these are.
+  final KrabInstance instance;
+
   final String imageId;
 
-  const _ReactorsSheet({required this.imageId});
+  const _ReactorsSheet({required this.instance, required this.imageId});
 
   @override
   State<_ReactorsSheet> createState() => _ReactorsSheetState();
@@ -121,7 +124,7 @@ class _ReactorsSheetState extends State<_ReactorsSheet> {
   }
 
   Future<void> _load() async {
-    final response = await getImageReactors(widget.imageId);
+    final response = await widget.instance.api.getImageReactors(widget.imageId);
     if (!mounted) return;
     if (!response.success || response.data == null) {
       setState(() => _loading = false);
@@ -139,7 +142,7 @@ class _ReactorsSheetState extends State<_ReactorsSheet> {
     });
 
     // Resolve avatars for each distinct user
-    final cache = ProfilePictureCache.of(supabase);
+    final cache = widget.instance.pictures;
     for (final userId in reactors.map((r) => r.userId).toSet()) {
       cache.getUrl(userId, ttl: const Duration(hours: 1)).then((url) {
         if (!mounted || url == null || url.isEmpty) return;
@@ -225,6 +228,7 @@ class _ReactorsSheetState extends State<_ReactorsSheet> {
       itemBuilder: (context, i) {
         final row = rows[i];
         final user = krab_user.User(
+          instanceId: widget.instance.id,
           id: row.userId,
           username: row.username,
           pfpUrl: _pfpUrls[row.userId] ?? '',

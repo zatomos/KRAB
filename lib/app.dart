@@ -5,7 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'package:krab/app_globals.dart';
-import 'package:krab/services/auth/app_auth.dart';
+import 'package:krab/services/instance/active_instance.dart';
+import 'package:krab/services/instance/instance_registry.dart';
 import 'package:krab/services/home_widget_status.dart';
 import 'package:krab/services/home_widget_updater.dart';
 import 'package:krab/services/launch_router.dart';
@@ -79,12 +80,14 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) return;
-    if (!isSupabaseInitialized) return;
+    if (!hasInstance) return;
 
-    // Warm the token so the first post-resume request don't have to wait
-    // on a refresh. On-demand refresh still covers everything else via
-    // the accessToken hook.
-    AppAuth.instance.getValidToken();
+    // Warm the token of every connected instance, so the first post-resume
+    // request doesn't have to wait on a refresh. On-demand refresh still
+    // covers everything else via the accessToken hook.
+    for (final instance in InstanceRegistry.instance.all) {
+      instance.auth.getValidToken();
+    }
 
     // Coming back to the app is the most likely moment for a connection to have
     // returned, so try the photos that were queued without one.
@@ -174,17 +177,11 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
       }
 
       // Nothing works until we know which instance to talk to
-      if (!UserPreferences.hasSupabaseConfig) {
+      if (!hasInstance) {
         return const InstanceSetupPage();
       }
 
-      if (!isSupabaseInitialized) {
-        debugPrint(
-            'Supabase not initialized in determineHomePage, showing LoginPage');
-        return const LoginPage();
-      }
-
-      return AppAuth.instance.isLoggedIn
+      return activeInstance.auth.isLoggedIn
           ? const CameraPage()
           : const LoginPage();
     } catch (e, st) {

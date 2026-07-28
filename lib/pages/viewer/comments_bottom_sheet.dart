@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import 'package:krab/services/auth/app_auth.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 
@@ -16,8 +15,8 @@ import 'package:krab/models/user.dart' as krab_user;
 import 'package:krab/widgets/rounded_input_field.dart';
 import 'package:krab/widgets/dialogs/dialogs.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
-import 'package:krab/services/api/supabase.dart';
 import 'package:krab/services/time_formatting.dart';
+import 'package:krab/services/instance/active_instance.dart';
 
 /// How long a group's thread takes to expand or collapse.
 const Duration _expandDuration = Duration(milliseconds: 200);
@@ -104,6 +103,9 @@ class _GroupCommentSection {
 }
 
 class CommentsBottomSheet extends StatefulWidget {
+  /// The instance the image and its comments live on.
+  final KrabInstance instance;
+
   final String imageId;
 
   /// The group whose gallery the image was opened from. When null, the sheet is
@@ -119,6 +121,7 @@ class CommentsBottomSheet extends StatefulWidget {
 
   const CommentsBottomSheet({
     super.key,
+    required this.instance,
     required this.imageId,
     required this.primaryGroupId,
     required this.uploaderId,
@@ -233,7 +236,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
 
   Future<void> _fetchComments() async {
     try {
-      final response = await getImageCommentsGrouped(
+      final response = await widget.instance.api.getImageCommentsGrouped(
         widget.imageId,
         primaryGroupId: widget.primaryGroupId,
       );
@@ -253,9 +256,11 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
               parentId: commentData['parent_id']?.toString(),
             );
           }).toList();
-          final iconUrl = await resolveGroupIconUrl(groupId);
+          final iconUrl =
+              await widget.instance.api.resolveGroupIconUrl(groupId);
           return _GroupCommentSection(
             group: Group(
+              instanceId: widget.instance.api.instanceId,
               id: groupId,
               name: group['group_name']?.toString() ?? '',
               iconUrl: iconUrl,
@@ -288,8 +293,8 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
           if (firstLoad) {
             for (final section in sections) {
               // Empty groups stay collapsed
-              if ((section.isPrimary || _isAllGroupsMode)
-                  && section.rootComments.isNotEmpty) {
+              if ((section.isPrimary || _isAllGroupsMode) &&
+                  section.rootComments.isNotEmpty) {
                 _expandedGroupIds.add(section.groupId);
               }
             }
@@ -330,7 +335,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
     if (text.isEmpty || _isSending || targetGroup == null) return;
     setState(() => _isSending = true);
 
-    final response = await postComment(
+    final response = await widget.instance.api.postComment(
       widget.imageId,
       targetGroup,
       text,
@@ -365,8 +370,8 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
     if (text.isEmpty || _editingCommentId == null || _isSending) return;
     setState(() => _isSending = true);
 
-    final response =
-        await updateComment(commentId, widget.imageId, groupId, text);
+    final response = await widget.instance.api
+        .updateComment(commentId, widget.imageId, groupId, text);
     if (response.success) {
       _newCommentController.clear();
       _inputFocusNode.unfocus();
@@ -398,7 +403,8 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
         destructive: true);
     if (!confirmed) return;
 
-    final response = await deleteComment(commentId, widget.imageId, groupId);
+    final response = await widget.instance.api
+        .deleteComment(commentId, widget.imageId, groupId);
     if (!mounted) return;
 
     if (response.success) {
@@ -495,10 +501,13 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
   Future<krab_user.User> _userFor(Comment comment) {
     return _userCache.putIfAbsent(
       comment.userId,
-      () => getUserDetails(comment.userId).then((response) {
+      () => widget.instance.api.getUserDetails(comment.userId).then((response) {
         final user = (response.success && response.data != null)
             ? response.data!
-            : krab_user.User(id: comment.userId, username: "Unknown");
+            : krab_user.User(
+                instanceId: widget.instance.api.instanceId,
+                id: comment.userId,
+                username: "Unknown");
         _resolvedUsers[comment.userId] = user;
         return user;
       }),
@@ -549,7 +558,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
   }
 
   Widget _buildCommentItem(Comment comment, String groupId, {int depth = 0}) {
-    final currentUserId = AppAuth.instance.currentUserId;
+    final currentUserId = widget.instance.auth.currentUserId;
     final isCurrentUser = comment.userId == currentUserId;
     final maxDepth = 3; // Limit visual nesting depth
     final effectiveDepth = depth > maxDepth ? maxDepth : depth;
@@ -565,7 +574,10 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
             builder: (context, snapshot) {
               final username = snapshot.data?.username ?? "...";
               final user = snapshot.data ??
-                  krab_user.User(id: comment.userId, username: "");
+                  krab_user.User(
+                      instanceId: widget.instance.api.instanceId,
+                      id: comment.userId,
+                      username: "");
 
               return Container(
                 margin: const EdgeInsets.symmetric(vertical: 4),

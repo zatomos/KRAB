@@ -7,8 +7,9 @@ import 'package:krab/models/group.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/widgets/avatars/group_avatar.dart';
 import 'package:krab/user_preferences.dart';
-import 'package:krab/services/api/supabase.dart';
 import 'package:krab/services/time_formatting.dart';
+import 'package:krab/services/instance/active_instance.dart';
+import 'package:krab/services/instance/instance_registry.dart';
 
 class GroupCard extends StatefulWidget {
   final Group group;
@@ -31,6 +32,10 @@ class GroupCard extends StatefulWidget {
 
 class _GroupCardState extends State<GroupCard> {
   late Group _group;
+
+  /// The instance this group lives on.
+  late final KrabInstance _instance =
+      InstanceRegistry.instance.byId(_group.instanceId) ?? activeInstance;
   Future<int>? _memberCountFuture;
   bool isFavorite = false;
 
@@ -60,14 +65,15 @@ class _GroupCardState extends State<GroupCard> {
   }
 
   Future<void> _loadFavoriteStatus() async {
-    bool favorite = await UserPreferences.isGroupFavorite(_group.id);
+    bool favorite =
+        await UserPreferences.isGroupFavorite(_group.instanceId, _group.id);
     if (mounted) {
       setState(() => isFavorite = favorite);
     }
   }
 
   Future<int> _fetchGroupMemberCount(String groupId) async {
-    final response = await getGroupMemberCount(groupId);
+    final response = await _instance.api.getGroupMemberCount(groupId);
     if (response.error != null) {
       debugPrint("Failed to load member count: ${response.error}");
       if (!mounted) return 0;
@@ -167,10 +173,12 @@ class _GroupCardState extends State<GroupCard> {
                 onPressed: () async {
                   final l10n = context.l10n;
                   if (isFavorite) {
-                    await UserPreferences.removeFavoriteGroup(_group.id);
+                    await UserPreferences.removeFavoriteGroup(
+                        _group.instanceId, _group.id);
                     showSnackBar(l10n.removed_group_favorites(_group.name));
                   } else {
-                    await UserPreferences.addFavoriteGroup(_group.id);
+                    await UserPreferences.addFavoriteGroup(
+                        _group.instanceId, _group.id);
                     showSnackBar(l10n.added_group_favorites(_group.name));
                   }
                   if (!mounted) return;

@@ -4,41 +4,62 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 
-import 'package:krab/services/api/supabase.dart';
+import 'package:krab/services/api/krab_api.dart';
 import 'package:krab/services/auth/app_auth.dart';
 import 'package:krab/services/debug_notifier.dart';
+import 'package:krab/services/instance/instance_config.dart';
+import 'package:krab/services/instance/instance_registry.dart';
+import 'package:krab/services/instance/krab_instance.dart';
 import 'package:krab/services/push_handler.dart';
-import 'package:krab/user_preferences.dart';
 
 /// Push delivery over Firebase Cloud Messaging.
+///
+/// Registration is per instance: each backend has its own Firebase project, so
+/// each gets the token issued for its own sender and stores it against its own
+/// user row.
+///
+/// Firebase itself is still brought up once, for the active instance's project.
+/// Serving several at once needs a secondary [FirebaseApp] per instance, which
+/// is the phase 2 work — until then, an instance whose FCM config differs from
+/// the one Firebase came up with cannot be registered, and says so.
 class PushHelper {
   static bool _initialized = false;
-  static bool _firebaseReady = false;
   static bool _handlersWired = false;
-  static StreamSubscription<AppAuthStatus>? _authSubscription;
+
+  /// The instance whose FCM project Firebase was initialised from.
+  static KrabInstance? _firebaseInstance;
+
+  static StreamSubscription<InstanceAuthEvent>? _authSubscription;
   static StreamSubscription<String>? _tokenRefreshSubscription;
   static StreamSubscription<RemoteMessage>? _onMessageSubscription;
 
-  /// The user the current token has been stored for, so a second user signing
-  /// in on this device stores a token of their own.
-  static String? _savedForUser;
-  static String? _savedToken;
+  /// The user each instance's token has been stored for, so a second user
+  /// signing in on this device stores a token of their own.
+  static final Map<String, String> _savedForUser = {};
+  static final Map<String, String> _savedToken = {};
 
-  /// Brings Firebase up from cached config and wires the FCM callbacks.
+  /// Brings Firebase up from the active instance's cached config and wires the
+  /// FCM callbacks.
   static Future<void> initialize({required bool background}) async {
     if (background) return;
 
     if (!_initialized) {
       _initialized = true;
-      _authSubscription = AppAuth.instance.events.listen((status) async {
-        if (status == AppAuthStatus.signedIn) {
-          await ensureRegistered();
+      // Every instance's sign-ins, not just one session's: whichever server the
+      // user signs into needs this device's token.
+      _authSubscription =
+          InstanceRegistry.instance.authEvents.listen((event) async {
+        if (event.status == AppAuthStatus.signedIn) {
+          await ensureRegistered(event.instance);
         }
       });
     }
 
-    // Config may already be cached from a previous run;
-    if (await _ensureFirebase()) {
+    final instance = InstanceRegistry.instance.active;
+    if (instance == null) return;
+
+    // Config may already be cached from a previous run.
+    if (await _ensureFirebase(instance)) {
       _wireHandlers();
     }
   }
@@ -52,26 +73,28 @@ class PushHelper {
     _onMessageSubscription = null;
     _initialized = false;
     _handlersWired = false;
-    _savedForUser = null;
-    _savedToken = null;
+    _savedForUser.clear();
+    _savedToken.clear();
   }
 
-  /// Fetches this device's FCM token and stores it against the signed-in user.
+  /// Fetches this device's FCM token for [instance] and stores it against the
+  /// user signed into that instance.
   ///
   /// Called both before and after a login, so it copes with arriving with no
   /// session yet and with being called again once there is one.
-  static Future<bool> ensureRegistered() async {
+  static Future<bool> ensureRegistered(KrabInstance instance) async {
     try {
       // Instance config may have only just arrived; bring Firebase up now and
       // wire the callbacks that could not be set before.
-      if (!await _ensureFirebase()) {
-        debugPrint('Push: no FCM config for this instance yet');
+      if (!await _ensureFirebase(instance)) {
+        debugPrint('Push: no FCM config for ${instance.id} yet');
         return false;
       }
       _wireHandlers();
 
-      if (AppAuth.instance.currentUserId == null) {
-        debugPrint('Push: no session; will register on sign-in');
+      if (instance.auth.currentUserId == null) {
+        debugPrint('Push: no session on ${instance.id}; '
+            'will register on sign-in');
         return false;
       }
 
@@ -80,7 +103,7 @@ class PushHelper {
         debugPrint('Push: no FCM token available');
         return false;
       }
-      return _saveToken(token);
+      return _saveToken(instance, token);
     } catch (e, st) {
       debugPrint('Push: ensureRegistered failed: $e\n$st');
       return false;
@@ -88,27 +111,45 @@ class PushHelper {
   }
 
   /// Removes the token from FCM and forgets what we stored, on logout.
-  static Future<void> unregister() async {
+  ///
+  /// The token is only deleted from FCM when the instance losing it is the one
+  /// Firebase is running as; another instance's registration is not ours to
+  /// revoke.
+  static Future<void> unregister(KrabInstance instance) async {
     try {
-      if (_firebaseReady) await FirebaseMessaging.instance.deleteToken();
+      if (_firebaseInstance?.id == instance.id) {
+        await FirebaseMessaging.instance.deleteToken();
+      }
     } catch (e) {
       debugPrint('Push: deleteToken failed: $e');
     }
-    _savedForUser = null;
-    _savedToken = null;
+    _savedForUser.remove(instance.id);
+    _savedToken.remove(instance.id);
   }
 
-  /// Initialises Firebase from the cached per-instance config. Returns whether
-  /// Firebase is usable; false when the instance has published no FCM config.
-  static Future<bool> _ensureFirebase() async {
-    if (_firebaseReady) return true;
-    if (!UserPreferences.hasFcmConfig) return false;
+  /// Initialises Firebase from an instance's cached config. Returns whether
+  /// Firebase is usable for that instance: false when it published no FCM
+  /// config, and false when Firebase is already up as a *different* instance.
+  static Future<bool> _ensureFirebase(KrabInstance instance) async {
+    final existing = _firebaseInstance;
+    if (existing != null) {
+      if (existing.id == instance.id) return true;
+      // One FirebaseApp, one sender. Phase 2 gives each instance its own.
+      if (!_sameProject(existing.config, instance.config)) {
+        debugPrint('Push: Firebase is up as ${existing.id}; '
+            '${instance.id} cannot register until secondary apps land');
+        return false;
+      }
+      return true;
+    }
+
+    if (!instance.config.hasFcm) return false;
 
     try {
       if (Firebase.apps.isEmpty) {
-        await Firebase.initializeApp(options: _firebaseOptions());
+        await Firebase.initializeApp(options: _firebaseOptions(instance));
       }
-      _firebaseReady = true;
+      _firebaseInstance = instance;
       return true;
     } catch (e) {
       debugPrint('Push: Firebase init failed: $e');
@@ -116,11 +157,17 @@ class PushHelper {
     }
   }
 
-  static FirebaseOptions _firebaseOptions() => FirebaseOptions(
-        apiKey: UserPreferences.fcmApiKey,
-        appId: UserPreferences.fcmAppId,
-        messagingSenderId: UserPreferences.fcmSenderId,
-        projectId: UserPreferences.fcmProjectId,
+  /// Whether two instances are served by the same Firebase project, in which
+  /// case one FirebaseApp covers both.
+  static bool _sameProject(InstanceConfig a, InstanceConfig b) =>
+      a.fcmSenderId == b.fcmSenderId && a.fcmProjectId == b.fcmProjectId;
+
+  static FirebaseOptions _firebaseOptions(KrabInstance instance) =>
+      FirebaseOptions(
+        apiKey: instance.config.fcmApiKey,
+        appId: instance.config.fcmAppId,
+        messagingSenderId: instance.config.fcmSenderId,
+        projectId: instance.config.fcmProjectId,
       );
 
   /// Wires the foreground-message and token-refresh listeners.
@@ -138,33 +185,40 @@ class PushHelper {
       handlePushPayload(_stringData(message.data), background: false);
     });
 
-    // A rotated token must reach the backend, or delivery silently stops until
-    // the next launch.
+    // A rotated token must reach every backend registered with it, or delivery
+    // silently stops until the next launch.
     _tokenRefreshSubscription =
-        FirebaseMessaging.instance.onTokenRefresh.listen((token) {
-      _savedForUser = null;
-      _saveToken(token);
+        FirebaseMessaging.instance.onTokenRefresh.listen((token) async {
+      _savedForUser.clear();
+      for (final instance in InstanceRegistry.instance.all) {
+        if (instance.auth.isLoggedIn) await _saveToken(instance, token);
+      }
     });
   }
 
-  static Future<bool> _saveToken(String token) async {
-    final userId = AppAuth.instance.currentUserId;
+  static Future<bool> _saveToken(KrabInstance instance, String token) async {
+    final userId = instance.auth.currentUserId;
     if (userId == null) return false;
-    if (_savedForUser == userId && _savedToken == token) return true;
-
-    final tail = _redactToken(token);
-    final res = await saveFcmToken(token: token);
-    if (res.success) {
-      _savedForUser = userId;
-      _savedToken = token;
-      debugPrint('Push: token saved ($tail)');
-      await DebugNotifier.instance.notifyPushSubscriptionSaved('saved $tail');
+    if (_savedForUser[instance.id] == userId &&
+        _savedToken[instance.id] == token) {
       return true;
     }
 
-    debugPrint('Push: failed to save token ($tail): ${res.error}');
+    final tail = _redactToken(token);
+    final res = await instance.api.saveFcmToken(token: token);
+    if (res.success) {
+      _savedForUser[instance.id] = userId;
+      _savedToken[instance.id] = token;
+      debugPrint('Push: token saved for ${instance.id} ($tail)');
+      await DebugNotifier.instance
+          .notifyPushSubscriptionSaved('saved $tail (${instance.id})');
+      return true;
+    }
+
+    debugPrint('Push: failed to save token for ${instance.id} '
+        '($tail): ${res.error}');
     await DebugNotifier.instance
-        .notifyPushSubscriptionFailed('$tail: ${res.error}');
+        .notifyPushSubscriptionFailed('$tail (${instance.id}): ${res.error}');
     return false;
   }
 

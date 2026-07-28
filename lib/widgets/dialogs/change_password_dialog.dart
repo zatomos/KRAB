@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:krab/l10n/l10n.dart';
-import 'package:krab/services/api/supabase.dart';
 import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/widgets/rounded_input_field.dart';
 import 'package:krab/widgets/soft_button.dart';
+import 'package:krab/services/instance/active_instance.dart';
 
 /// Change-password dialog. Pops with true on success so the caller
 /// can show a confirmation.
@@ -66,7 +66,7 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
       _saving = true;
       _error = null;
     });
-    final response = await changePassword(current, next);
+    final response = await api.changePassword(current, next);
     if (!mounted) return;
 
     if (response.success) {
