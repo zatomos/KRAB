@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import 'package:skeletonizer/skeletonizer.dart';
 
 import 'package:krab/l10n/l10n.dart';
+import 'package:krab/widgets/delayed_loading.dart';
 import 'package:krab/services/home_widget_updater.dart';
 import 'package:krab/services/api/supabase.dart';
 import 'package:krab/themes/global_theme_data.dart';
@@ -24,18 +26,32 @@ class GroupsPage extends StatefulWidget {
 }
 
 class GroupsPageState extends State<GroupsPage> {
-  late Future<SupabaseResponse<List<Group>>> _groupsFuture;
+  late Future<_GroupsResult> _groupsFuture;
 
   @override
   void initState() {
     super.initState();
-    _groupsFuture = getUserGroups();
+    _groupsFuture = _loadGroups();
   }
 
   void _refreshData() {
     setState(() {
-      _groupsFuture = getUserGroups();
+      _groupsFuture = _loadGroups();
     });
+  }
+
+  Future<_GroupsResult> _loadGroups() async {
+    final response = await getUserGroups();
+    final groups = response.data;
+    if (!response.success || groups == null) {
+      return _GroupsResult(response, const {});
+    }
+    final counts = <String, int>{};
+    await Future.wait(groups.map((group) async {
+      final res = await getGroupMemberCount(group.id);
+      counts[group.id] = res.error == null ? (res.data ?? 0) : 0;
+    }));
+    return _GroupsResult(response, counts);
   }
 
   /// Open one of the menu's dialogs, and reload the list if it changed one.
@@ -54,6 +70,33 @@ class GroupsPageState extends State<GroupsPage> {
     );
   }
 
+  Widget _buildGroupsContent(
+    BuildContext context,
+    AsyncSnapshot<_GroupsResult> snapshot,
+  ) {
+    if (snapshot.hasError || !snapshot.hasData) {
+      debugPrint("Failed to load groups: ${snapshot.error}");
+      return Center(child: Text(context.l10n.failed_to_load_groups));
+    }
+    final response = snapshot.data!.response;
+    if (!response.success) {
+      debugPrint("Failed to load groups: ${response.error}");
+      return Center(child: Text(context.l10n.failed_to_load_groups));
+    }
+    final groups = response.data ?? [];
+    if (groups.isEmpty) {
+      return Center(child: Text(context.l10n.no_group_joined));
+    }
+    final counts = snapshot.data!.memberCounts;
+    return ListView.builder(
+      itemCount: groups.length,
+      itemBuilder: (context, index) => GroupCard(
+        group: groups[index],
+        memberCount: counts[groups[index].id],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -66,8 +109,8 @@ class GroupsPageState extends State<GroupsPage> {
             position: PopupMenuPosition.under,
             onSelected: _openDialog,
             itemBuilder: (context) => [
-              _menuItem(Symbols.group_add_rounded, context.l10n.create_new_group,
-                  const CreateGroupDialog()),
+              _menuItem(Symbols.group_add_rounded,
+                  context.l10n.create_new_group, const CreateGroupDialog()),
               _menuItem(Symbols.groups_rounded, context.l10n.join_group,
                   const JoinGroupDialog()),
             ],
@@ -78,39 +121,58 @@ class GroupsPageState extends State<GroupsPage> {
         children: [
           _RecentPhotosCard(),
           Expanded(
-            child: FutureBuilder<SupabaseResponse<List<Group>>>(
+            child: FutureBuilder<_GroupsResult>(
               future: _groupsFuture,
               builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snapshot.hasError || !snapshot.hasData) {
-                  debugPrint("Failed to load groups: ${snapshot.error}");
-                  return Center(
-                      child: Text(context.l10n.failed_to_load_groups));
-                }
-                final response = snapshot.data!;
-                if (!response.success) {
-                  debugPrint("Failed to load groups: ${response.error}");
-                  return Center(
-                      child: Text(context.l10n.failed_to_load_groups));
-                }
-                final groups = response.data ?? [];
-                if (groups.isEmpty) {
-                  return Center(child: Text(context.l10n.no_group_joined));
-                }
-                return ListView.builder(
-                  itemCount: groups.length,
-                  itemBuilder: (context, index) {
-                    return GroupCard(
-                      group: groups[index],
-                    );
-                  },
+                final loading =
+                    snapshot.connectionState == ConnectionState.waiting;
+                return DelayedLoading(
+                  loading: loading,
+                  placeholder: const _GroupsSkeleton(),
+                  child: _buildGroupsContent(context, snapshot),
                 );
               },
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// The groups list paired with each group's member count.
+class _GroupsResult {
+  final SupabaseResponse<List<Group>> response;
+  final Map<String, int> memberCounts;
+
+  _GroupsResult(this.response, this.memberCounts);
+}
+
+/// Bone placeholders
+class _GroupsSkeleton extends StatelessWidget {
+  const _GroupsSkeleton();
+
+  static const int _rowCount = 5;
+
+  @override
+  Widget build(BuildContext context) {
+    return Skeletonizer.zone(
+      child: ListView(
+        children: List.generate(
+          _rowCount,
+          (_) => const Card(
+            margin: EdgeInsets.symmetric(horizontal: 0, vertical: 8),
+            elevation: 0,
+            child: ListTile(
+              contentPadding: EdgeInsets.fromLTRB(15, 2, 5, 2),
+              minVerticalPadding: 0,
+              visualDensity: VisualDensity.compact,
+              leading: Bone.circle(size: 50),
+              title: Bone.text(width: 140),
+              subtitle: Bone.text(width: 80),
+            ),
+          ),
+        ),
       ),
     );
   }

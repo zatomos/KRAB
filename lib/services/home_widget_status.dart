@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:home_widget/home_widget.dart';
 
+import 'package:krab/services/home_widget_updater.dart';
 import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/widgets/soft_button.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
@@ -35,6 +37,8 @@ class HomeWidgetStatus {
 
         // Wait for Android to fully register the widget
         await Future.delayed(const Duration(milliseconds: 500));
+
+        unawaited(updateHomeWidget());
 
         // Show snackbar
         if (_activeContext != null && _activeContext!.mounted) {

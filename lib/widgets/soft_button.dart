@@ -52,16 +52,17 @@ class SoftButton extends StatelessWidget {
           children: [
             if (icon != null) Icon(icon, color: color),
             if (icon != null) const SizedBox(width: 8),
-            ConstrainedBox(
-              constraints: BoxConstraints(minWidth: minLabelWidth),
-              child: Text(
-                label,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: color,
-                  fontWeight: FontWeight.w600,
-                  // Equal-width digits so the count doesn't jitter per value.
-                  fontFeatures: const [FontFeature.tabularFigures()],
+            Flexible(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minWidth: minLabelWidth),
+                child: Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: color,
+                    fontWeight: FontWeight.w600,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
                 ),
               ),
             ),

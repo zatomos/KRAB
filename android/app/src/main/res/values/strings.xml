@@ -36,4 +36,8 @@
     <string name="widget_groups_hint">Only images from the selected groups are shown.</string>
     <string name="widget_groups_empty">Open the app while signed in to load your groups.</string>
     <string name="widget_groups_min_one">At least one group must be selected.</string>
+
+    <!-- Shown on the widget when the session is gone -->
+    <string name="widget_signed_out_title">Signed out</string>
+    <string name="widget_signed_out_subtitle">Tap to sign in again</string>
 </resources>

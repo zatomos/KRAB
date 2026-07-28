@@ -53,6 +53,7 @@ void main(List<String> args) async {
 
     if (supabaseOk) {
       _listenToAuthEvents();
+      unawaited(updateHomeWidget());
       unawaited(_warmUpFromNetwork());
     } else {
       debugPrint('Skipping push/cache init, Supabase not initialized');
@@ -86,6 +87,9 @@ void _listenToAuthEvents() {
     debugPrint('Auth state changed: $status');
     switch (status) {
       case AppAuthStatus.signedOut:
+        // Say so on the widget now. Otherwise it keeps showing the photos from
+        // just before the sign-out until some later refresh happens to notice.
+        unawaited(updateHomeWidget());
         if (DebugNotifier.instance.isIntentionalLogout) {
           await DebugNotifier.instance.notifyAuthSignedOut(unexpected: false);
         } else {
@@ -100,9 +104,12 @@ void _listenToAuthEvents() {
         await DebugNotifier.instance.notifyAuthTokenRefreshed();
         break;
       case AppAuthStatus.signedIn:
-        await DebugNotifier.instance.notifyAuthStateChanged('signedIn');
-        // Now that we're authenticated, refresh so the widget fills in.
+        // Before the notifier, not after: this clears the signed-out overlay and
+        // refills the widget, and it should not be reachable only if everything
+        // above it succeeds. The sign-out branch has it first for the same
+        // reason.
         unawaited(updateHomeWidget());
+        await DebugNotifier.instance.notifyAuthStateChanged('signedIn');
         break;
     }
   });

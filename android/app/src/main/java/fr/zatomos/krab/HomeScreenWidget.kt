@@ -6,6 +6,7 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.Uri
 import android.util.Log
@@ -58,6 +59,8 @@ class HomeScreenWidget : AppWidgetProvider() {
         const val ACTION_IMAGE_UPDATED = "fr.zatomos.krab.ACTION_IMAGE_UPDATED"
         private const val TAG = "HomeScreenWidget"
 
+        const val PREF_SIGNED_OUT_KEY = "widgetSignedOut"
+
         private const val PREF_IMAGE_URL_KEY = "recentImageUrl"
         private const val PREF_IMAGE_DESC_KEY = "recentImageDescription"
         private const val PREF_IMAGE_SENDER_KEY = "recentImageSender"
@@ -106,6 +109,10 @@ class HomeScreenWidget : AppWidgetProvider() {
         private const val PREF_SHOW_PREV_PFPS_PREFIX = "showPrevPfps_"
         private const val PREF_TAP_TO_OPEN_PREFIX = "tapToOpen_"
         private const val PREF_SHOW_QUICK_SNAP_PREFIX = "showQuickSnap_"
+
+        // Pfp view sizes
+        const val PFP_SIZE_DP = 28
+        const val PREV_PFP_SIZE_DP = 20
 
         // Request-code namespaces so each clickable slot gets its own PendingIntent
         const val REQ_CAMERA = 0x10000000
@@ -169,6 +176,22 @@ class HomeScreenWidget : AppWidgetProvider() {
 
         fun setShowQuickSnapPref(context: Context, id: Int, value: Boolean) {
             prefs(context).edit().putBoolean(PREF_SHOW_QUICK_SNAP_PREFIX + id, value).apply()
+        }
+
+        /// Circular pfp for a slot: the saved picture when there is one, otherwise
+        /// the letter avatar the app falls back to.
+        fun pfpBitmap(
+            context: Context,
+            path: String?,
+            name: String?,
+            sizeDp: Int,
+            budget: Int
+        ): Bitmap {
+            val bitmap = loadScaledBitmap(path, budget)
+                ?: return fallbackAvatarBitmap(context, name, sizeDp)
+            val circular = bitmap.toCircular()
+            bitmap.recycle()
+            return circular
         }
 
         /// PendingIntent that opens the app and is delivered to Dart as a widget click URI
@@ -255,6 +278,8 @@ class HomeScreenWidget : AppWidgetProvider() {
                 .remove("previousImage2Url_$id")
                 .remove("previousImage1SenderPfpUrl_$id")
                 .remove("previousImage2SenderPfpUrl_$id")
+                .remove("previousImage1Sender_$id")
+                .remove("previousImage2Sender_$id")
                 .apply()
             deleteWidgetImages(context, id)
         }
@@ -292,6 +317,9 @@ class HomeScreenWidget : AppWidgetProvider() {
             fun Int.px() = (this * density).toInt()
 
             val views = RemoteViews(context.packageName, R.layout.home_screen_widget)
+            // Undo the signed-out state explicitly.
+            views.setViewVisibility(R.id.signed_out_container, View.GONE)
+            views.setViewVisibility(R.id.recent_image, View.VISIBLE)
             views.setImageViewResource(R.id.recent_image, R.drawable.ic_placeholder)
             views.setViewVisibility(R.id.overlay_pfp, View.GONE)
 
@@ -358,6 +386,20 @@ class HomeScreenWidget : AppWidgetProvider() {
                         "showGradient=$showGradient showPfp=$showPfp showSenderName=$showSenderName " +
                         "tapToOpen=$tapToOpen showQuickSnap=$showQuickSnap")
 
+                // The session is gone, display disconnected
+                if (prefs.getBoolean(PREF_SIGNED_OUT_KEY, false)) {
+                    Log.d(TAG, "Widget $id: signed out")
+                    val signedOutViews = RemoteViews(context.packageName, R.layout.home_screen_widget)
+                    signedOutViews.setViewVisibility(R.id.recent_image, View.GONE)
+                    signedOutViews.setViewVisibility(R.id.overlay_container, View.GONE)
+                    signedOutViews.setViewVisibility(R.id.quick_snap_button, View.GONE)
+                    signedOutViews.setViewVisibility(R.id.signed_out_container, View.VISIBLE)
+                    signedOutViews.setOnClickPendingIntent(
+                        R.id.signed_out_container, openAppPendingIntent(context, id))
+                    manager.tryUpdateAppWidget(context, id, signedOutViews)
+                    return
+                }
+
                 // Placeholder update: no bitmaps, always succeeds
                 manager.tryUpdateAppWidget(context, id,
                     buildBaseViews(context, id, showText, showGradient, showPfp, showSenderName,
@@ -387,17 +429,12 @@ class HomeScreenWidget : AppWidgetProvider() {
 
                     // Main image succeeded; pfp overflow degrades gracefully - skip
                     if (showText && showPfp) {
-                        val pfpBitmap = loadScaledBitmap(pfpUrl, pfpBudget)
-                        if (pfpBitmap != null) {
-                            val circular = pfpBitmap.toCircular()
-                            pfpBitmap.recycle()
-                            views.setImageViewBitmap(R.id.overlay_pfp, circular)
-                            if (!manager.tryUpdateAppWidget(context, id, views))
-                                Log.w(TAG, "Widget $id: pfp exceeded bitmap limit, skipping")
-                        } else {
-                            views.setViewVisibility(R.id.overlay_pfp, View.GONE)
-                            manager.tryUpdateAppWidget(context, id, views)
-                        }
+                        views.setImageViewBitmap(
+                            R.id.overlay_pfp,
+                            pfpBitmap(context, pfpUrl, sender, PFP_SIZE_DP, pfpBudget)
+                        )
+                        if (!manager.tryUpdateAppWidget(context, id, views))
+                            Log.w(TAG, "Widget $id: pfp exceeded bitmap limit, skipping")
                     }
                     break
                 }

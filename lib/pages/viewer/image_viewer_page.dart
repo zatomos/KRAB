@@ -475,20 +475,22 @@ class _ImageViewerPageState extends State<ImageViewerPage>
                 itemBuilder: (context, index) {
                   _touch(index);
                   final imageId = widget.images[index].id;
-                  return _ViewerPhoto(
-                    key: ValueKey(imageId),
-                    displaySize: _displaySizeFor(index, viewport),
-                    // Only the page nearest center gets a Hero
-                    heroTag: index == _heroIndex ? "image_$imageId" : null,
-                    // Seed from the prefetch cache so a known page paints its
-                    // low-res image on the first frame instead of flashing
-                    initialBytes: _pageBytes[index],
-                    imageDataFuture: _imageDataFor(index),
-                    fullFuture: widget.cache.fullResBytes(imageId),
-                    onLowBytes: (bytes) => _cachePageBytes(index, bytes),
-                    onNaturalSize: (size) => _setChildSize(index, size),
-                    onZoomChanged: _onPageZoomChanged,
-                    settled: _settled,
+                  return RepaintBoundary(
+                    child: _ViewerPhoto(
+                      key: ValueKey(imageId),
+                      displaySize: _displaySizeFor(index, viewport),
+                      // Only the page nearest center gets a Hero
+                      heroTag: index == _heroIndex ? "image_$imageId" : null,
+                      // Seed from the prefetch cache so a known page paints its
+                      // low-res image on the first frame instead of flashing
+                      initialBytes: _pageBytes[index],
+                      imageDataFuture: _imageDataFor(index),
+                      fullFuture: widget.cache.fullResBytes(imageId),
+                      onLowBytes: (bytes) => _cachePageBytes(index, bytes),
+                      onNaturalSize: (size) => _setChildSize(index, size),
+                      onZoomChanged: _onPageZoomChanged,
+                      settled: _settled,
+                    ),
                   );
                 },
               ),
@@ -537,7 +539,6 @@ class _ViewerPhotoState extends State<_ViewerPhoto>
     with SingleTickerProviderStateMixin {
   Uint8List? _low;
   Uint8List? _full;
-  Uint8List? _heroBytes;
   static const Duration _fadeInDuration = Duration(milliseconds: 250);
 
   static const double _doubleTapScale = 2.5;
@@ -595,10 +596,6 @@ class _ViewerPhotoState extends State<_ViewerPhoto>
     if (!mounted) return;
     setState(() => _full = full);
     _resolveNaturalSize(full);
-
-    // Hand the sharp bytes to the hero only once they have finished fading in.
-    await Future<void>.delayed(_fadeInDuration);
-    if (mounted) setState(() => _heroBytes = full);
   }
 
   /// The image that actually flies between the grid and the viewer.
@@ -609,7 +606,8 @@ class _ViewerPhotoState extends State<_ViewerPhoto>
     BuildContext fromHeroContext,
     BuildContext toHeroContext,
   ) {
-    final bytes = _heroBytes ?? _low;
+    // Fly the low-res bytes
+    final bytes = _low;
     if (bytes == null) return const SizedBox.shrink();
     return Image.memory(
       bytes,
@@ -715,14 +713,14 @@ class _ViewerBackground extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bytes = blurredBytes;
-    return AnimatedOpacity(
-      opacity: bytes != null ? 1.0 : 0.0,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOut,
-      child: bytes == null
-          ? const SizedBox.expand()
-          : RepaintBoundary(
-              child: ClipRect(
+    return RepaintBoundary(
+      child: AnimatedOpacity(
+        opacity: bytes != null ? 1.0 : 0.0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+        child: bytes == null
+            ? const SizedBox.expand()
+            : ClipRect(
                 child: Transform.scale(
                   scale: 1.2,
                   child: Image.memory(
@@ -735,7 +733,7 @@ class _ViewerBackground extends StatelessWidget {
                   ),
                 ),
               ),
-            ),
+      ),
     );
   }
 }

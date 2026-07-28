@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -88,6 +90,9 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
     // returned, so try the photos that were queued without one.
     UploadOutbox.instance.flush();
 
+    // Tapping a widget that says "signed out" lands here
+    unawaited(refreshWidgetAuthState());
+
     final now = DateTime.now();
     final canRefresh = _lastWidgetRefresh == null ||
         now.difference(_lastWidgetRefresh!) >= const Duration(minutes: 5);
@@ -130,6 +135,12 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
         useMaterial3: true,
         fontFamily: GoogleFonts.rubik(fontWeight: FontWeight.w400).fontFamily,
         iconTheme: const IconThemeData(weight: 650),
+        popupMenuTheme: PopupMenuThemeData(
+          shape: RoundedRectangleBorder(
+            borderRadius:
+                BorderRadius.circular(GlobalThemeData.popupMenuRadius),
+          ),
+        ),
       ),
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,

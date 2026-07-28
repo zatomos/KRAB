@@ -63,6 +63,11 @@ class HomeScreenWidgetMulti : AppWidgetProvider() {
             fun Int.px() = (this * density).toInt()
 
             val views = RemoteViews(context.packageName, R.layout.home_screen_widget_multi)
+            // Undo the signed-out state explicitly.
+            views.setViewVisibility(R.id.signed_out_container, View.GONE)
+            views.setViewVisibility(R.id.multi_main_image, View.VISIBLE)
+            views.setViewVisibility(R.id.multi_prev_image1, View.VISIBLE)
+            views.setViewVisibility(R.id.multi_prev_image2, View.VISIBLE)
             views.setImageViewResource(R.id.multi_main_image, R.drawable.ic_placeholder)
             views.setImageViewResource(R.id.multi_prev_image1, R.drawable.ic_placeholder)
             views.setImageViewResource(R.id.multi_prev_image2, R.drawable.ic_placeholder)
@@ -88,7 +93,7 @@ class HomeScreenWidgetMulti : AppWidgetProvider() {
                 if (showGradient) {
                     views.setInt(R.id.overlay_container, "setBackgroundResource",
                         R.drawable.widget_gradient_overlay)
-                    views.setViewPadding(R.id.overlay_container, 10.px(), 24.px(), 10.px(), 8.px())
+                    views.setViewPadding(R.id.overlay_container, 10.px(), 32.px(), 10.px(), 8.px())
                 } else {
                     views.setInt(R.id.overlay_container, "setBackgroundColor",
                         Color.parseColor("#80000000"))
@@ -120,6 +125,29 @@ class HomeScreenWidgetMulti : AppWidgetProvider() {
             return views
         }
 
+        /// Draw a previous image's pfp, or hide it when the slot holds no image.
+        private suspend fun applyPrevPfp(
+            context: Context,
+            manager: AppWidgetManager,
+            views: RemoteViews,
+            id: Int,
+            slot: Int,
+            viewId: Int,
+            imageUrl: String?,
+            pfpUrl: String?,
+            sender: String?,
+            pfpBudget: Int
+        ) {
+            if (imageUrl.isNullOrEmpty()) {
+                views.setViewVisibility(viewId, View.GONE)
+            } else {
+                views.setImageViewBitmap(viewId, HomeScreenWidget.pfpBitmap(
+                    context, pfpUrl, sender, HomeScreenWidget.PREV_PFP_SIZE_DP, pfpBudget))
+            }
+            if (!manager.tryUpdateAppWidget(context, id, views))
+                Log.w(TAG, "Widget $id: prev$slot pfp exceeded bitmap limit, skipping")
+        }
+
         suspend fun updateAppWidget(context: Context, manager: AppWidgetManager, id: Int) {
             try {
                 val prefs = HomeWidgetPlugin.getData(context)
@@ -131,6 +159,8 @@ class HomeScreenWidgetMulti : AppWidgetProvider() {
                 val pfpUrl = HomeScreenWidget.keyedString(prefs, "recentSenderPfpUrl", id)
                 val prev1PfpUrl = HomeScreenWidget.keyedString(prefs, "previousImage1SenderPfpUrl",id)
                 val prev2PfpUrl = HomeScreenWidget.keyedString(prefs, "previousImage2SenderPfpUrl", id)
+                val prev1Sender = HomeScreenWidget.keyedString(prefs, "previousImage1Sender", id)
+                val prev2Sender = HomeScreenWidget.keyedString(prefs, "previousImage2Sender", id)
                 val mainId = HomeScreenWidget.keyedString(prefs, "lastImageId", id)
                 val prev1Id = HomeScreenWidget.keyedString(prefs, "previousImage1Id", id)
                 val prev2Id = HomeScreenWidget.keyedString(prefs, "previousImage2Id", id)
@@ -146,7 +176,26 @@ class HomeScreenWidgetMulti : AppWidgetProvider() {
 
                 val pfpSlots = (if (showText && showPfp) 1 else 0) + (if (showPrevPfps) 2 else 0)
 
-                // Placeholder update: no bitmaps, always succeeds
+                // The session is gone, display disconnected
+                if (prefs.getBoolean(HomeScreenWidget.PREF_SIGNED_OUT_KEY, false)) {
+                    Log.d(TAG, "Widget $id: signed out")
+                    val signedOutViews =
+                        RemoteViews(context.packageName, R.layout.home_screen_widget_multi)
+                    signedOutViews.setViewVisibility(R.id.multi_main_image, View.GONE)
+                    signedOutViews.setViewVisibility(R.id.multi_prev_image1, View.GONE)
+                    signedOutViews.setViewVisibility(R.id.multi_prev_image2, View.GONE)
+                    signedOutViews.setViewVisibility(R.id.prev_pfp_1, View.GONE)
+                    signedOutViews.setViewVisibility(R.id.prev_pfp_2, View.GONE)
+                    signedOutViews.setViewVisibility(R.id.overlay_container, View.GONE)
+                    signedOutViews.setViewVisibility(R.id.quick_snap_button, View.GONE)
+                    signedOutViews.setViewVisibility(R.id.signed_out_container, View.VISIBLE)
+                    signedOutViews.setOnClickPendingIntent(R.id.signed_out_container,
+                        HomeScreenWidget.openAppPendingIntent(context, id))
+                    manager.tryUpdateAppWidget(context, id, signedOutViews)
+                    return
+                }
+
+                // Placeholder update — no bitmaps, always succeeds
                 manager.tryUpdateAppWidget(context, id,
                     buildBaseViews(context, id, showText, showGradient, showPfp, showSenderName,
                         showPrevPfps, descLines, description, sender, tapToOpen, showQuickSnap,
@@ -200,27 +249,17 @@ class HomeScreenWidgetMulti : AppWidgetProvider() {
 
                     // Pfp overflows degrade gracefully
                     if (showText && showPfp) {
-                        loadScaledBitmap(pfpUrl, pfpBudget)?.let { bm ->
-                            val circular = bm.toCircular(); bm.recycle()
-                            views.setImageViewBitmap(R.id.overlay_pfp, circular)
-                            if (!manager.tryUpdateAppWidget(context, id, views))
-                                Log.w(TAG, "Widget $id: pfp exceeded bitmap limit, skipping")
-                        }
+                        views.setImageViewBitmap(R.id.overlay_pfp, HomeScreenWidget.pfpBitmap(
+                            context, pfpUrl, sender, HomeScreenWidget.PFP_SIZE_DP, pfpBudget))
+                        if (!manager.tryUpdateAppWidget(context, id, views))
+                            Log.w(TAG, "Widget $id: pfp exceeded bitmap limit, skipping")
                     }
 
                     if (showPrevPfps) {
-                        loadScaledBitmap(prev1PfpUrl, pfpBudget)?.let { bm ->
-                            val circular = bm.toCircular(); bm.recycle()
-                            views.setImageViewBitmap(R.id.prev_pfp_1, circular)
-                            if (!manager.tryUpdateAppWidget(context, id, views))
-                                Log.w(TAG, "Widget $id: prev1 pfp exceeded bitmap limit, skipping")
-                        }
-                        loadScaledBitmap(prev2PfpUrl, pfpBudget)?.let { bm ->
-                            val circular = bm.toCircular(); bm.recycle()
-                            views.setImageViewBitmap(R.id.prev_pfp_2, circular)
-                            if (!manager.tryUpdateAppWidget(context, id, views))
-                                Log.w(TAG, "Widget $id: prev2 pfp exceeded bitmap limit, skipping")
-                        }
+                        applyPrevPfp(context, manager, views, id, 1,
+                            R.id.prev_pfp_1, prev1Url, prev1PfpUrl, prev1Sender, pfpBudget)
+                        applyPrevPfp(context, manager, views, id, 2,
+                            R.id.prev_pfp_2, prev2Url, prev2PfpUrl, prev2Sender, pfpBudget)
                     }
 
                     break

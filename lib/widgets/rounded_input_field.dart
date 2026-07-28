@@ -9,6 +9,8 @@ class RoundedInputField extends StatelessWidget {
   final bool obscureText;
   final bool capitalizeSentences;
   final int? maxLength;
+  final int? maxLines;
+  final int? minLines;
   final double borderRadius;
   final Icon? icon;
   final Widget? suffixIcon;
@@ -26,6 +28,8 @@ class RoundedInputField extends StatelessWidget {
     this.obscureText = false,
     this.capitalizeSentences = false,
     this.maxLength,
+    this.maxLines = 1,
+    this.minLines,
     this.borderRadius = 12.0,
     this.icon,
     this.suffixIcon,
@@ -51,6 +55,8 @@ class RoundedInputField extends StatelessWidget {
             ? TextCapitalization.sentences
             : TextCapitalization.none,
         maxLength: maxLength,
+        maxLines: obscureText ? 1 : maxLines,
+        minLines: minLines,
         // Enforce the limit without showing the counter.
         buildCounter: (_,
                 {required int currentLength,
