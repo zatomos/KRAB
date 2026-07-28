@@ -104,8 +104,10 @@ curl -fsSL https://raw.githubusercontent.com/zatomos/KRAB/main/scripts/setup_bac
 ```
 
 It will ask you for:
+- **Supabase project** location (defaults to `~/supabase-project`).
 - **API URL** clients use.
 - **Studio dashboard** username / password.
+- Whether to keep the **database and photos** in the project directory, or put them somewhere else.
 - The **path to `google-services.json`** and the **path to the service-account JSON**.
 
 When it finishes, it prints a **connection token**, a single string that packs the API URL and the
