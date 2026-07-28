@@ -73,6 +73,17 @@ confirm() {
   [[ "$reply" =~ ^[Yy] ]]
 }
 
+# Ask until the answer is an absolute path.
+ask_abs_dir() {
+  local prompt="$1" default="${2:-}" value
+  while true; do
+    value="$(ask_required "$prompt" "$default")"
+    value="${value/#\~/$HOME}"
+    [[ "$value" == /* ]] && { printf '%s' "${value%/}"; return 0; }
+    printf '  Needs to be an absolute path, starting with /\n' >&2
+  done
+}
+
 # True if the file parses as JSON.
 json_valid() {
   local file="$1"
@@ -92,6 +103,71 @@ json_valid() {
 resolve_supabase_dir() {
   SUPABASE_DIR="${SUPABASE_DIR:-$HOME/supabase-project}"
   ENV_FILE="$SUPABASE_DIR/.env"
+}
+
+# Ask where the project itself goes.
+prompt_supabase_dir() {
+  resolve_supabase_dir
+  log "Supabase project location"
+  echo "  This holds the compose files, the .env and the edge functions. The"
+  echo "  database and the photos live inside it too unless you move them."
+  SUPABASE_DIR="$(ask_abs_dir 'Directory for the Supabase project' "$SUPABASE_DIR")"
+  ENV_FILE="$SUPABASE_DIR/.env"
+}
+
+# --- Persistent data locations --------------------------------------------
+default_db_data_dir()      { printf '%s' "$SUPABASE_DIR/volumes/db/data"; }
+default_storage_data_dir() { printf '%s' "$SUPABASE_DIR/volumes/storage"; }
+
+# Sets DB_DATA_DIR / STORAGE_DATA_DIR, both empty when the defaults are in use.
+prompt_data_dirs() {
+  local prev_db prev_storage db storage
+  prev_db="$(env_get KRAB_DB_DATA_DIR)"
+  prev_storage="$(env_get KRAB_STORAGE_DIR)"
+  DB_DATA_DIR=""; STORAGE_DATA_DIR=""
+
+  log "Database and the photos location"
+  echo "  database: ${prev_db:-$(default_db_data_dir)}"
+  echo "  photos:   ${prev_storage:-$(default_storage_data_dir)}"
+
+  if [[ -n "$prev_db" || -n "$prev_storage" ]]; then
+    if ! confirm "Change these?"; then
+      DB_DATA_DIR="$prev_db"; STORAGE_DATA_DIR="$prev_storage"
+      return 0
+    fi
+  else
+    echo "  Both are inside the project directory."
+    confirm "Store them somewhere else?" || return 0
+  fi
+
+  db="$(ask_abs_dir 'Directory for the database' "${prev_db:-$(default_db_data_dir)}")"
+  storage="$(ask_abs_dir 'Directory for the photos' "${prev_storage:-$(default_storage_data_dir)}")"
+  # Answering with the default is the same as not overriding it at all.
+  [[ "$db" == "$(default_db_data_dir)" ]] && db=""
+  [[ "$storage" == "$(default_storage_data_dir)" ]] && storage=""
+
+  guard_data_move "The database" "$db" "$(default_db_data_dir)" PG_VERSION "$prev_db"
+  guard_data_move "The photo storage" "$storage" "$(default_storage_data_dir)" "" "$prev_storage"
+  DB_DATA_DIR="$db"; STORAGE_DATA_DIR="$storage"
+}
+
+# Refuse to point a service at a new empty directory while its data is still
+# sitting in the old one
+guard_data_move() {
+  local label="$1" new="$2" default="$3" marker="$4" prev="${5:-}"
+  [[ -n "$new" ]] || return 0
+  prev="${prev:-$default}"
+  [[ "${prev%/}" == "$new" ]] && return 0
+  if [[ -n "$marker" ]]; then
+    [[ -e "$prev/$marker" ]] || return 0
+  else
+    [[ -d "$prev" && -n "$(ls -A "$prev" 2>/dev/null)" ]] || return 0
+  fi
+  die "$label already holds data in $prev, and you asked for $new.
+  This script will not move it for you. Stop the stack, copy the data across,
+  then run this script again and give it the new path:
+    cd $SUPABASE_DIR && docker compose down
+    mkdir -p $new && cp -a $prev/. $new/"
 }
 
 require_env_file() {

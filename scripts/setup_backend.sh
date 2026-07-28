@@ -44,16 +44,27 @@ auth_pages:pages
 AUTH_PAGE_FILES="reset_password.ts confirmed.ts recovery_email.ts confirmation_email.ts"
 
 require_tty
-[[ $EUID -eq 0 ]] && warn "Running as root: Supabase will be installed in /root. The optional setup scripts expect the same user, so stay consistent."
+[[ $EUID -eq 0 ]] && warn "Running as root, so the default install location is under /root. The optional setup scripts expect the same user, so stay consistent."
 
 # --- 0. Install Supabase if missing -------------------------------------
-resolve_supabase_dir
+prompt_supabase_dir
 if [[ ! -f "$ENV_FILE" ]]; then
+  # A directory with no .env means a previous install died partway.
   if [[ -e "$SUPABASE_DIR" ]]; then
-    die "$SUPABASE_DIR exists but has no .env, so a previous install was interrupted.
-  The installer will not write into an existing directory. Check there is nothing
-  you want in there, then remove it and re-run:
-    rm -rf $SUPABASE_DIR"
+    if [[ -z "$(ls -A "$SUPABASE_DIR" 2>/dev/null)" ]]; then
+      rmdir "$SUPABASE_DIR" || die "Cannot remove the empty $SUPABASE_DIR"
+    else
+      salvage="$SUPABASE_DIR.interrupted-$(date +%Y%m%d%H%M%S)"
+      warn "$SUPABASE_DIR exists but has no .env, so a previous install was interrupted."
+      echo "  Nothing in there is configured yet, but it may hold data from a run that got"
+      echo "  further than it looks. It can be moved to $salvage and the install restarted."
+      confirm "Move $SUPABASE_DIR aside and reinstall?" \
+        || die "Leaving $SUPABASE_DIR alone. Move or remove it, then re-run.
+  To install somewhere else instead, re-run and give a different directory when
+  asked where the Supabase project goes."
+      mv "$SUPABASE_DIR" "$salvage" || die "Cannot move $SUPABASE_DIR to $salvage"
+      log "Moved the interrupted install to $salvage"
+    fi
   fi
   log "Installing self-hosted Supabase into $SUPABASE_DIR"
   mkdir -p "$(dirname "$SUPABASE_DIR")" || die "Cannot create $(dirname "$SUPABASE_DIR")"
@@ -71,6 +82,8 @@ DASH_USER="$(ask 'Studio dashboard username' "$(env_get DASHBOARD_USERNAME)")"
 DASH_PASS="$(ask_secret_confirmed 'Studio dashboard password (empty = keep auto-generated)')"
 log "Using API_URL=$API_URL"
 
+prompt_data_dirs
+
 # The notification triggers authenticate to the edge functions with the service
 # role key.
 SERVICE_ROLE_KEY="$(env_get SERVICE_ROLE_KEY)"
@@ -87,6 +100,15 @@ set_env SUPABASE_PUBLIC_URL "$API_URL"
 set_env API_EXTERNAL_URL "$API_URL"
 if [[ -n "$DASH_USER" ]]; then set_env DASHBOARD_USERNAME "$DASH_USER"; fi
 if [[ -n "$DASH_PASS" ]]; then set_env DASHBOARD_PASSWORD "$DASH_PASS"; fi
+# Remember any relocated directories so the next run offers the same layout.
+if [[ -n "$DB_DATA_DIR" ]]; then
+  mkdir -p "$DB_DATA_DIR" || die "Cannot create $DB_DATA_DIR"
+  set_env KRAB_DB_DATA_DIR "$DB_DATA_DIR"
+fi
+if [[ -n "$STORAGE_DATA_DIR" ]]; then
+  mkdir -p "$STORAGE_DATA_DIR" || die "Cannot create $STORAGE_DATA_DIR"
+  set_env KRAB_STORAGE_DIR "$STORAGE_DATA_DIR"
+fi
 
 # --- 1b. Firebase Cloud Messaging for push -------------------------------
 log "Configuring Firebase Cloud Messaging"
@@ -154,6 +176,47 @@ services:
       PASSWORD_RESET_URL: ${PASSWORD_RESET_URL:-}
       EMAIL_CONFIRM_URL: ${EMAIL_CONFIRM_URL:-}
 YML
+
+# Where the data lives.
+if [[ -n "$DB_DATA_DIR" ]]; then
+  cat >> "$OVERRIDE_FILE" <<YML
+  db:
+    volumes:
+      - $DB_DATA_DIR:/var/lib/postgresql/data:Z
+YML
+  echo "  database -> $DB_DATA_DIR"
+else
+  cat >> "$OVERRIDE_FILE" <<YML
+  # The database currently lives in the project directory. To move it, re-run
+  # setup_backend.sh and answer the storage question.
+  #db:
+  #  volumes:
+  #    - /absolute/path/on/the/host:/var/lib/postgresql/data:Z
+YML
+fi
+if [[ -n "$STORAGE_DATA_DIR" ]]; then
+  # imgproxy reads the same tree to render thumbnails, so both have to follow.
+  cat >> "$OVERRIDE_FILE" <<YML
+  storage:
+    volumes:
+      - $STORAGE_DATA_DIR:/var/lib/storage:z
+  imgproxy:
+    volumes:
+      - $STORAGE_DATA_DIR:/var/lib/storage:z
+YML
+  echo "  photos   -> $STORAGE_DATA_DIR"
+else
+  cat >> "$OVERRIDE_FILE" <<YML
+  # Same for the photos. imgproxy reads the same tree to render thumbnails, so
+  # both services have to point at it.
+  #storage:
+  #  volumes:
+  #    - /absolute/path/on/the/host:/var/lib/storage:z
+  #imgproxy:
+  #  volumes:
+  #    - /absolute/path/on/the/host:/var/lib/storage:z
+YML
+fi
 echo "  wrote docker-compose.override.yml"
 
 if grep -q '^COMPOSE_FILE=' "$ENV_FILE" \
