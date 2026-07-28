@@ -1,11 +1,8 @@
-/// Build-time configuration. Copy this file before building:
-///
-///   cp lib/config.example.dart lib/config.dart
+/// Build-time configuration. Copy this file before building.
 library;
 
 /// The GitHub repository this build checks for its own updates.
-/// Point this at *your* repository. Left empty, the app never checks for
-/// updates.
+/// Point this at your repository. Left empty, the app never checks for updates.
 const updateRepo = '';
 
 /// The KRAB project itself.
