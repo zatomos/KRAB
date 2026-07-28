@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:krab/models/group.dart';
+import 'package:krab/services/cache/avatar_cache.dart';
 import 'group_or_user_avatar.dart';
 
 class GroupAvatar extends StatelessWidget {
@@ -17,7 +18,7 @@ class GroupAvatar extends StatelessWidget {
     return GroupOrUserAvatar(
       name: group.name,
       imageUrl: group.iconUrl,
-      cacheKey: group.id,
+      cacheKey: avatarCacheKey(group.instanceId, group.id),
       radius: radius,
       useRandomColor: true,
       fallbackType: FallbackType.icon,

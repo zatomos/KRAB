@@ -7,7 +7,8 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:image/image.dart' as img;
 import 'package:krab/l10n/app_localizations.dart';
-import 'package:krab/services/api/supabase.dart';
+import 'package:krab/services/api/krab_api.dart';
+import 'package:krab/services/instance/krab_instance.dart';
 import 'package:krab/user_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -140,12 +141,14 @@ Future<void> _createFlnpChannel(String channelId, String channelName) async {
 /// The avatar and photo thumbnail a notification illustrates itself with,
 /// fetched together.
 Future<({Uint8List? avatar, Uint8List? image})> _notificationMedia(
-    String userId, String imageId) async {
+    KrabInstance instance, String userId, String imageId) async {
   const missing = SupabaseResponse<Uint8List>(success: false);
   final results = await Future.wait([
-    userId.isNotEmpty ? getProfilePictureBytes(userId) : Future.value(missing),
+    userId.isNotEmpty
+        ? instance.api.getProfilePictureBytes(userId)
+        : Future.value(missing),
     imageId.isNotEmpty
-        ? getImage(imageId, lowRes: true)
+        ? instance.api.getImage(imageId, lowRes: true)
         : Future.value(missing),
   ]);
   return (avatar: results[0].data, image: results[1].data);
@@ -219,7 +222,7 @@ Uint8List? _buildImageLargeIcon(Uint8List? imageBytes, Uint8List? pfpBytes,
 }
 
 Future<void> dispatchCommentNotification(
-    Map<String, dynamic> data, String type) async {
+    KrabInstance instance, Map<String, dynamic> data, String type) async {
   final commentId = data['comment_id'] ?? '';
 
   String groupId;
@@ -231,7 +234,7 @@ Future<void> dispatchCommentNotification(
   String? uploaderUsername;
 
   if (commentId.isNotEmpty) {
-    final ctx = await getCommentNotificationContext(commentId);
+    final ctx = await instance.api.getCommentNotificationContext(commentId);
     if (!ctx.success || ctx.data == null) return;
     final d = ctx.data!;
     groupId = (d['group_id'] as String?) ?? '';
@@ -248,7 +251,7 @@ Future<void> dispatchCommentNotification(
     groupId = data['group_id'] ?? '';
     imageId = data['image_id'] ?? '';
     commenterId = data['commenter_id'] ?? '';
-    final groupResponse = await getGroupDetails(groupId);
+    final groupResponse = await instance.api.getGroupDetails(groupId);
     groupName = (groupResponse.success && groupResponse.data != null)
         ? groupResponse.data!.name
         : '';
@@ -258,10 +261,10 @@ Future<void> dispatchCommentNotification(
   }
 
   if (groupId.isEmpty || groupName.isEmpty) return;
-  if (await UserPreferences.isGroupMuted(groupId)) return;
+  if (await UserPreferences.isGroupMuted(instance.id, groupId)) return;
   if (commenterUsername.isEmpty) commenterUsername = 'Someone';
 
-  final media = await _notificationMedia(commenterId, imageId);
+  final media = await _notificationMedia(instance, commenterId, imageId);
   await showCommentNotification(
     groupId: groupId,
     groupName: groupName,
@@ -276,7 +279,8 @@ Future<void> dispatchCommentNotification(
   );
 }
 
-Future<void> dispatchReactionNotification(Map<String, dynamic> data,
+Future<void> dispatchReactionNotification(
+    KrabInstance instance, Map<String, dynamic> data,
     [String type = 'new_reaction']) async {
   final imageId = data['image_id'] ?? '';
   final reactorId = data['reactor_id'] ?? '';
@@ -284,7 +288,8 @@ Future<void> dispatchReactionNotification(Map<String, dynamic> data,
 
   if (imageId.isEmpty) return;
 
-  final ctx = await getReactionNotificationContext(imageId, reactorId);
+  final ctx =
+      await instance.api.getReactionNotificationContext(imageId, reactorId);
   if (!ctx.success || ctx.data == null) return;
   final d = ctx.data!;
 
@@ -294,7 +299,7 @@ Future<void> dispatchReactionNotification(Map<String, dynamic> data,
   final uploaderUsername =
       type == 'group_reaction' ? d['uploader_username'] as String? : null;
 
-  final media = await _notificationMedia(reactorId, imageId);
+  final media = await _notificationMedia(instance, reactorId, imageId);
   await showReactionNotification(
     reactorUsername: reactorUsername,
     reactorId: reactorId,
@@ -306,7 +311,8 @@ Future<void> dispatchReactionNotification(Map<String, dynamic> data,
   );
 }
 
-Future<void> dispatchImageNotification(Map<String, dynamic> data) async {
+Future<void> dispatchImageNotification(
+    KrabInstance instance, Map<String, dynamic> data) async {
   final groupId = data['group_id'] ?? '';
   final imageId = data['image_id'] ?? '';
 
@@ -315,7 +321,7 @@ Future<void> dispatchImageNotification(Map<String, dynamic> data) async {
     return;
   }
 
-  final ctx = await getImageNotificationContext(imageId);
+  final ctx = await instance.api.getImageNotificationContext(imageId);
   if (!ctx.success || ctx.data == null) {
     debugPrint(
         'Notify: no context for image $imageId (${ctx.error}), dropping');
@@ -353,7 +359,7 @@ Future<void> dispatchImageNotification(Map<String, dynamic> data) async {
   // Drop muted groups; only suppress the notification if every group is muted.
   final unmuted = <({String id, String name})>[];
   for (final g in delivered) {
-    if (!await UserPreferences.isGroupMuted(g.id)) unmuted.add(g);
+    if (!await UserPreferences.isGroupMuted(instance.id, g.id)) unmuted.add(g);
   }
   if (unmuted.isEmpty) {
     debugPrint('Notify: every group for image $imageId is muted, dropping');
@@ -371,7 +377,7 @@ Future<void> dispatchImageNotification(Map<String, dynamic> data) async {
   if (senderUsername.isEmpty) senderUsername = 'Someone';
   final imageDescription = (ctx.data!['description'] as String?) ?? '';
 
-  final media = await _notificationMedia(senderId, imageId);
+  final media = await _notificationMedia(instance, senderId, imageId);
   await showImageNotification(
     groupId: channel.id,
     groupName: channel.name,

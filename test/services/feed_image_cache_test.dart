@@ -3,12 +3,15 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:krab/models/image_details.dart';
 import 'package:krab/models/user.dart' as krab_user;
-import 'package:krab/services/api/supabase.dart';
+import 'package:krab/services/api/krab_api.dart';
 import 'package:krab/services/cache/feed_image_cache.dart';
 
 /// Serves made-up images and counts what was asked for, so the tests can tell a
 /// cache hit from a fetch.
-class _FakeFetchers extends ImageFetchers {
+class _FakeFetchers implements ImageFetchers {
+  @override
+  final String instanceId = 'inst_test';
+
   final List<String> lowResFetches = [];
   final List<String> fullResFetches = [];
   final List<String> detailFetches = [];
@@ -49,7 +52,8 @@ class _FakeFetchers extends ImageFetchers {
     userFetches.add(userId);
     return SupabaseResponse(
       success: true,
-      data: krab_user.User(id: userId, username: 'name-of-$userId'),
+      data: krab_user.User(
+          instanceId: instanceId, id: userId, username: 'name-of-$userId'),
     );
   }
 
@@ -73,7 +77,7 @@ class _FakeFetchers extends ImageFetchers {
 }
 
 /// Serves nothing, so failures can be exercised.
-class _FailingFetchers extends ImageFetchers {
+class _FailingFetchers extends _FakeFetchers {
   @override
   Future<SupabaseResponse<Uint8List>> image(String imageId,
           {bool lowRes = false}) async =>

@@ -7,8 +7,8 @@ import 'package:workmanager/workmanager.dart';
 
 import 'package:krab/user_preferences.dart';
 import 'package:krab/models/image_ref.dart';
-import 'package:krab/services/api/supabase.dart';
-import 'package:krab/services/auth/app_auth.dart';
+import 'package:krab/services/instance/active_instance.dart';
+import 'package:krab/services/instance/instance_registry.dart';
 import 'package:krab/services/debug_notifier.dart';
 import 'file_saver.dart';
 
@@ -22,7 +22,15 @@ const _signedOutKey = 'widgetSignedOut';
 
 /// Settle whether the widgets show the signed-out state. True when signed in.
 Future<bool> refreshWidgetAuthState() async {
-  final signedIn = await AppAuth.instance.hasStoredSession();
+  // Signed in anywhere is signed in: the widget draws its signed-out state only
+  // when there is nothing at all to show.
+  var signedIn = false;
+  for (final instance in InstanceRegistry.instance.all) {
+    if (await instance.auth.hasStoredSession()) {
+      signedIn = true;
+      break;
+    }
+  }
   await _setWidgetSignedOut(!signedIn);
   return signedIn;
 }
@@ -53,7 +61,7 @@ class _WidgetEntry {
 /// its group filter without a network call.
 Future<void> cacheUserGroupsForWidget() async {
   try {
-    final result = await getUserGroups();
+    final result = await api.getUserGroups();
     if (!result.success || result.data == null) return;
     final list = result.data!.map((g) => {'id': g.id, 'name': g.name}).toList();
     await HomeWidget.saveWidgetData('cachedGroups', jsonEncode(list));
@@ -156,7 +164,8 @@ Future<void> updateHomeWidget() async {
 
       List<ImageRef>? images = fetchCache[cacheKey];
       if (images == null) {
-        final result = await getLatestImages(needed, groupIds: entry.groupIds);
+        final result =
+            await api.getLatestImages(needed, groupIds: entry.groupIds);
         if (!result.success || result.data == null) {
           debugPrint("Widget ${entry.id}: fetch failed: ${result.error}");
           await DebugNotifier.instance
@@ -233,7 +242,7 @@ Future<({bool changed, bool newImage})> _syncWidget(
   if (latestId != lastId) {
     // New main image for this widget. Previous-image slots are reconciled by
     // id in _ensurePrevImages below, so there is no fragile file rotation here.
-    final imgResult = await getImage(latestId);
+    final imgResult = await api.getImage(latestId);
     final bytes = imgResult.data;
     if (bytes == null) {
       debugPrint("Widget $id: main image download failed");
@@ -243,12 +252,12 @@ Future<({bool changed, bool newImage})> _syncWidget(
     await File(mainPath).writeAsBytes(bytes, flush: true);
     await HomeWidget.saveWidgetData('recentImageUrl_$id', mainPath);
 
-    final details = await getImageDetails(latestId);
+    final details = await api.getImageDetails(latestId);
     final description = details.data?.description ?? "";
     final uploaderId = details.data?.uploadedBy;
     final uploaderName = uploaderId == null
         ? "Unknown"
-        : (await getUserDetails(uploaderId)).data?.username ?? "Unknown";
+        : (await api.getUserDetails(uploaderId)).data?.username ?? "Unknown";
     await HomeWidget.saveWidgetData('recentImageDescription_$id', description);
     await HomeWidget.saveWidgetData('recentImageSender_$id', uploaderName);
     await HomeWidget.saveWidgetData('recentSenderUserId_$id', uploaderId);
@@ -256,10 +265,11 @@ Future<({bool changed, bool newImage})> _syncWidget(
     try {
       if (uploaderId != null) {
         final pfpFile = File(_pfpPath(dir, id));
-        final pfp = await getProfilePictureBytes(uploaderId);
+        final pfp = await api.getProfilePictureBytes(uploaderId);
         if (pfp.success && pfp.data != null) {
           await pfpFile.writeAsBytes(pfp.data!, flush: true);
-          await HomeWidget.saveWidgetData('recentSenderPfpUrl_$id', pfpFile.path);
+          await HomeWidget.saveWidgetData(
+              'recentSenderPfpUrl_$id', pfpFile.path);
         } else {
           // No pfp: clear the path
           if (await pfpFile.exists()) await pfpFile.delete();
@@ -322,21 +332,24 @@ Future<bool> _ensurePrevImages(
     final storedId = await HomeWidget.getWidgetData<String>(idKey);
 
     if (storedId != prevId || !await imgFile.exists()) {
-      final result = await getImage(prevId, lowRes: true);
+      final result = await api.getImage(prevId, lowRes: true);
       if (result.success && result.data != null) {
         await imgFile.writeAsBytes(result.data!, flush: true);
         await HomeWidget.saveWidgetData(urlKey, imgFile.path);
         await HomeWidget.saveWidgetData(idKey, prevId);
         changed = true;
         // The uploader may have changed, so refresh their name and pfp too.
-        if (await _savePrevSender(prevId, pfpFile, pfpKey, nameKey)) changed = true;
+        if (await _savePrevSender(prevId, pfpFile, pfpKey, nameKey)) {
+          changed = true;
+        }
       }
     } else {
       // Image already correct. Repair the sender name if it was never stored,
       // and the pfp if its file went missing.
       final storedName = await HomeWidget.getWidgetData<String>(nameKey);
       final storedPfp = await HomeWidget.getWidgetData<String>(pfpKey);
-      final pfpLost = (storedPfp?.isNotEmpty ?? false) && !await pfpFile.exists();
+      final pfpLost =
+          (storedPfp?.isNotEmpty ?? false) && !await pfpFile.exists();
       if (storedName == null || pfpLost) {
         await _savePrevSender(prevId, pfpFile, pfpKey, nameKey);
         changed = true;
@@ -352,12 +365,13 @@ Future<bool> _ensurePrevImages(
 Future<bool> _savePrevSender(
     String prevId, File pfpFile, String pfpKey, String nameKey) async {
   try {
-    final details = await getImageDetails(prevId);
+    final details = await api.getImageDetails(prevId);
     final uploaderId = details.data?.uploadedBy;
     if (uploaderId == null) return false;
-    final name = (await getUserDetails(uploaderId)).data?.username ?? "Unknown";
+    final name =
+        (await api.getUserDetails(uploaderId)).data?.username ?? "Unknown";
     await HomeWidget.saveWidgetData(nameKey, name);
-    final result = await getProfilePictureBytes(uploaderId);
+    final result = await api.getProfilePictureBytes(uploaderId);
     if (result.success && result.data != null) {
       await pfpFile.writeAsBytes(result.data!, flush: true);
       await HomeWidget.saveWidgetData(pfpKey, pfpFile.path);

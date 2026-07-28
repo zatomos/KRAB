@@ -2,7 +2,10 @@ import 'dart:convert';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:krab/services/auth/app_auth.dart';
 import 'package:krab/services/home_widget_updater.dart';
+import 'package:krab/services/instance/instance_registry.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Stands in for the Android side of home_widget
 class _FakeWidgetHost {
@@ -54,13 +57,13 @@ class _FakeSecureStorage {
     });
   }
 
-  void signIn() => items['krab_session'] = jsonEncode({
+  void signIn() => items[sessionStorageKey('inst_1')] = jsonEncode({
         'access_token': 'a',
         'refresh_token': 'r',
         'expires_at': DateTime.now().millisecondsSinceEpoch ~/ 1000 + 3600,
       });
 
-  void signOut() => items.remove('krab_session');
+  void signOut() => items.remove(sessionStorageKey('inst_1'));
 }
 
 void main() {
@@ -68,9 +71,22 @@ void main() {
   late _FakeWidgetHost host;
   late _FakeSecureStorage storage;
 
-  setUp(() {
+  setUp(() async {
     host = _FakeWidgetHost()..install();
     storage = _FakeSecureStorage()..install();
+
+    // The widget asks the registry which instances could be signed in, so give
+    // it one to ask about.
+    SharedPreferences.setMockInitialValues({
+      InstanceRegistry.prefsKey: jsonEncode([
+        {
+          'id': 'inst_1',
+          'url': 'https://one.example',
+          'anon_key': 'anon',
+        }
+      ]),
+    });
+    await InstanceRegistry.instance.load();
   });
 
   test('no session raises the flag on both widget kinds', () async {

@@ -320,7 +320,7 @@
   "push_distributor_none": "No distributor is available on this device. Install a UnifiedPush app to receive notifications.",
   "push_distributor_failed": "Could not subscribe with that distributor.",
   "change_server_title": "Change server",
-  "change_server_description": "This disconnects you from the current server and signs you out. You'll choose a server when the app reopens.",
+  "change_server_description": "This disconnects you from the current server and signs you out. You'll then choose a server to connect to.",
   "change_server_confirm": "Disconnect",
   "instance_setup_token_subtitle": "Paste the connection token you were given to join a KRAB server.",
   "instance_setup_token_hint": "Connection token",

@@ -42,39 +42,49 @@ String _session({String refresh = 'r-token'}) => jsonEncode({
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   late _FakeSecureStorage storage;
+  late AppAuth auth;
+
+  /// Where this instance's session is stored. Keyed by instance, so two
+  /// backends can be signed into at once without sharing a session.
+  final key = sessionStorageKey('inst_1');
 
   setUp(() {
     storage = _FakeSecureStorage()..install();
+    auth = AppAuth(
+      instanceId: 'inst_1',
+      url: 'https://one.example',
+      anonKey: 'anon',
+    );
   });
 
   test('no session stored means signed out', () async {
-    expect(await AppAuth.instance.hasStoredSession(), isFalse);
+    expect(await auth.hasStoredSession(), isFalse);
   });
 
   test('a session another isolate stored is seen without loading it', () async {
-    expect(AppAuth.instance.isLoggedIn, isFalse,
+    expect(auth.isLoggedIn, isFalse,
         reason: 'in-memory state is what made this wrong');
 
-    storage.items['krab_session'] = _session();
+    storage.items[key] = _session();
 
-    expect(await AppAuth.instance.hasStoredSession(), isTrue,
+    expect(await auth.hasStoredSession(), isTrue,
         reason: 'storage is the only thing every isolate agrees on');
   });
 
   test('a stored session with no refresh token is not a session', () async {
-    storage.items['krab_session'] = _session(refresh: '');
-    expect(await AppAuth.instance.hasStoredSession(), isFalse);
+    storage.items[key] = _session(refresh: '');
+    expect(await auth.hasStoredSession(), isFalse);
   });
 
   test('unreadable storage does not claim a sign-out', () async {
     storage.throwOnRead = true;
-    expect(await AppAuth.instance.hasStoredSession(), isTrue,
+    expect(await auth.hasStoredSession(), isTrue,
         reason: 'a storage failure is not a sign-out; claiming one would blank '
             'the widget over a transient error');
   });
 
   test('garbage in storage does not claim a sign-out', () async {
-    storage.items['krab_session'] = 'not json';
-    expect(await AppAuth.instance.hasStoredSession(), isTrue);
+    storage.items[key] = 'not json';
+    expect(await auth.hasStoredSession(), isTrue);
   });
 }

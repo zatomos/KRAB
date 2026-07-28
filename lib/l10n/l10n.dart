@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:krab/l10n/app_localizations.dart';
-import 'package:krab/services/api/supabase.dart';
+import 'package:krab/services/api/krab_api.dart';
 
 export 'package:krab/l10n/app_localizations.dart';
 

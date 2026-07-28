@@ -12,8 +12,10 @@ void main() {
         'latest_image_at': '2026-02-03T04:05:06Z',
         'invite_permission': 'admin',
         'role': 'member',
-      });
+      }, instanceId: 'inst_1');
 
+      expect(g.instanceId, 'inst_1',
+          reason: 'a group is only meaningful on the instance it came from');
       expect(g.id, 'g1');
       expect(g.name, 'Friends');
       expect(g.iconUrl, 'http://x/i.png');
@@ -27,7 +29,7 @@ void main() {
         'id': 'g2',
         'name': 'Solo',
         'created_at': '2026-01-01T00:00:00Z',
-      });
+      }, instanceId: 'inst_1');
 
       expect(g.iconUrl, isNull);
       expect(g.latestImageAt, isNull);
@@ -42,11 +44,13 @@ void main() {
         'id': 'g1',
         'name': 'Old',
         'created_at': '2026-01-01T00:00:00Z',
-      });
+      }, instanceId: 'inst_1');
       final renamed = original.copyWith(name: 'New');
 
       expect(renamed.id, 'g1');
       expect(renamed.name, 'New');
+      expect(renamed.instanceId, 'inst_1',
+          reason: 'a copy must not lose track of where the group lives');
     });
   });
 }

@@ -4,14 +4,24 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
-/// On-disk cache for image bytes, behind `getImage`, so the feed, viewer and
-/// home-screen widget all share it.
+/// The directory every instance's image cache lives under. Named here so
+/// [StorageCleanup] can leave it alone.
+const String imageCacheDirName = 'image_cache';
+
+/// On-disk cache for one instance's image bytes, behind `getImage`, so the
+/// feed, viewer and home-screen widget all share it.
 ///
 /// Photos are keyed by UUID and never change, so entries are only evicted for
 /// space. Writes are atomic, and every I/O failure is swallowed as a miss.
+///
+/// Each instance gets its own subdirectory: ids collide across servers in
+/// principle, and dropping one instance's photos must not touch another's. The
+/// size cap is therefore per instance, not per device.
 class ImageDiskCache {
-  ImageDiskCache._();
-  static final ImageDiskCache instance = ImageDiskCache._();
+  ImageDiskCache({required this.instanceId});
+
+  /// Which instance's photos these are. Names the subdirectory.
+  final String instanceId;
 
   static const int _maxBytes = 50 * 1024 * 1024; // 50 MB
 
@@ -29,7 +39,7 @@ class ImageDiskCache {
     if (existing != null) return Future.value(existing);
     return _dirFuture ??= () async {
       final base = await getApplicationCacheDirectory();
-      final dir = Directory('${base.path}/image_cache');
+      final dir = Directory('${base.path}/$imageCacheDirName/$instanceId');
       if (!await dir.exists()) await dir.create(recursive: true);
       _dir = dir;
       return dir;

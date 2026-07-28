@@ -1,7 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:krab/l10n/l10n.dart';
-import 'package:krab/services/api/supabase.dart';
+import 'package:krab/services/api/krab_api.dart';
 
 void main() {
   late AppLocalizations en;

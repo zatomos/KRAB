@@ -3,15 +3,14 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:workmanager/workmanager.dart';
 
-import 'package:krab/services/auth/app_auth.dart';
 import 'package:krab/services/debug_notifier.dart';
 import 'package:krab/services/feed_events.dart';
 import 'package:krab/services/home_widget_updater.dart';
+import 'package:krab/services/instance/instance_bootstrap.dart';
+import 'package:krab/services/instance/instance_registry.dart';
 import 'package:krab/services/notification_channels.dart';
-import 'package:krab/services/supabase_bootstrap.dart';
 import 'package:krab/services/update_service.dart';
 import 'package:krab/services/upload_outbox.dart';
-import 'package:krab/user_preferences.dart';
 
 /// Everything here can run in a background isolate, keep it free of UI imports.
 
@@ -20,14 +19,19 @@ import 'package:krab/user_preferences.dart';
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await bootstrapBackgroundIsolate();
 
+  final data = message.data.map((k, v) => MapEntry(k, '$v'));
+
   try {
-    if (UserPreferences.hasFcmConfig && Firebase.apps.isEmpty) {
+    // Bring Firebase up as whichever instance this message came from, so the
+    // isolate is talking to the project that sent it.
+    final instance = instanceForPayload(data);
+    if (instance != null && instance.config.hasFcm && Firebase.apps.isEmpty) {
       await Firebase.initializeApp(
         options: FirebaseOptions(
-          apiKey: UserPreferences.fcmApiKey,
-          appId: UserPreferences.fcmAppId,
-          messagingSenderId: UserPreferences.fcmSenderId,
-          projectId: UserPreferences.fcmProjectId,
+          apiKey: instance.config.fcmApiKey,
+          appId: instance.config.fcmAppId,
+          messagingSenderId: instance.config.fcmSenderId,
+          projectId: instance.config.fcmProjectId,
         ),
       );
     }
@@ -35,10 +39,7 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     debugPrint('Background Firebase init failed: $e');
   }
 
-  await handlePushPayload(
-    message.data.map((k, v) => MapEntry(k, '$v')),
-    background: true,
-  );
+  await handlePushPayload(data, background: true);
 }
 
 @pragma('vm:entry-point')
@@ -54,12 +55,12 @@ void workmanagerCallbackDispatcher() {
         await UpdateService.maybeCheckAndNotifyUpdate();
       }
 
-      final supabaseOk = await initializeBackgroundSupabase();
-      if (!supabaseOk) {
-        debugPrint('WorkManager: Supabase init failed, nothing to do');
+      final instance = InstanceRegistry.instance.active;
+      if (instance == null) {
+        debugPrint('WorkManager: no instance configured, nothing to do');
         return Future.value(false);
       }
-      if (await AppAuth.instance.getValidToken() == null) {
+      if (await instance.auth.getValidToken() == null) {
         await refreshWidgetAuthState();
 
         // Queued photos keep until the user reopens the app and
@@ -108,24 +109,28 @@ Future<void> handlePushPayload(
     if (background) {
       await bootstrapBackgroundIsolate();
       await DebugNotifier.instance.notifyBackgroundTaskStarted();
+    }
 
-      final supabaseOk = await initializeBackgroundSupabase();
-      if (!supabaseOk) {
-        debugPrint('Supabase not initialized (background)');
+    // Which server sent this. Everything below reads and writes through it, so
+    // a message can never be answered against the wrong instance.
+    final instance = instanceForPayload(data);
+    if (instance == null) {
+      debugPrint('Push: no instance for this message, dropping');
+      if (background) {
         await DebugNotifier.instance
-            .notifySupabaseInitFailed('Background: Supabase init failed');
-        return;
+            .notifySupabaseInitFailed('Background: no instance configured');
       }
+      return;
+    }
 
-      if (await AppAuth.instance.getValidToken() == null) {
-        await DebugNotifier.instance.notifyBackgroundTaskFailed(
-            'Background session unavailable, reopen the app to re-authenticate');
-        return;
-      }
+    if (background && await instance.auth.getValidToken() == null) {
+      await DebugNotifier.instance.notifyBackgroundTaskFailed(
+          'Background session unavailable, reopen the app to re-authenticate');
+      return;
     }
 
     if (type == 'new_image') {
-      await dispatchImageNotification(data);
+      await dispatchImageNotification(instance, data);
       await updateHomeWidget();
       if (!background) {
         // Let an open feed surface a new photos pill without a refresh
@@ -141,9 +146,9 @@ Future<void> handlePushPayload(
       await updateHomeWidget();
     } else if (type == 'new_reaction' || type == 'group_reaction') {
       // Non-null: the guard above returned for every other value of type.
-      await dispatchReactionNotification(data, type!);
+      await dispatchReactionNotification(instance, data, type!);
     } else {
-      await dispatchCommentNotification(data, type!);
+      await dispatchCommentNotification(instance, data, type!);
     }
 
     debugPrint('Push message processed successfully');

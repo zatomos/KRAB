@@ -4,11 +4,9 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:krab/services/auth/gotrue_api.dart';
 import 'package:krab/services/auth/jwt.dart';
-import 'package:krab/user_preferences.dart';
 
 enum AppAuthStatus { signedIn, signedOut, tokenRefreshed }
 
@@ -51,6 +49,13 @@ const Set<String> fatalRefreshCodes = {
 /// Whether a refresh rejection carrying code means the session is dead.
 bool isFatalRefreshCode(String code) => fatalRefreshCodes.contains(code);
 
+/// The secure-storage key holding one instance's session.
+String sessionStorageKey(String instanceId) => 'krab_session_$instanceId';
+
+/// The secure-storage key sessions lived under before KRAB knew about more than
+/// one instance. The registry moves it onto the migrated instance's key once.
+const String legacySessionStorageKey = 'krab_session';
+
 /// Result of an auth action. error is a GoTrue error code when success is false
 class AuthResult {
   const AuthResult(this.success, [this.error]);
@@ -58,18 +63,32 @@ class AuthResult {
   final String? error;
 }
 
-/// The single source of truth for the user's session, shared by every isolate.
+/// The source of truth for the user's session **on one instance**, shared by
+/// every isolate.
 ///
-/// The Supabase clients hold no session of their own: they call getValidToken
-/// for every request through supabase_flutter's accessToken hook. So there is
-/// exactly one refresh chain, owned here, single-flighted across isolates with
-/// a file lock and speaking only to the GoTrue REST API.
+/// The Supabase client for that instance holds no session of its own: it calls
+/// [getValidToken] for every request through supabase's `accessToken` hook. So
+/// there is exactly one refresh chain per instance, owned here, single-flighted
+/// across isolates with a per-instance file lock and speaking only to that
+/// instance's GoTrue REST API.
+///
+/// Instances are independent: a refresh against one server never blocks or
+/// signs out another, because the lock file, the storage key and the chain are
+/// all keyed by [instanceId].
 class AppAuth {
-  AppAuth._();
-  static final AppAuth instance = AppAuth._();
+  AppAuth({
+    required this.instanceId,
+    required this.url,
+    required this.anonKey,
+  });
+
+  /// Which instance's session this owns. Also names the storage key and the
+  /// lock file, so it must be safe in both.
+  final String instanceId;
+  final String url;
+  final String anonKey;
 
   static const FlutterSecureStorage _storage = FlutterSecureStorage();
-  static const String _sessionKey = 'krab_session';
 
   /// Refresh this many seconds before the access token expires.
   static const int _refreshMarginSeconds = 300;
@@ -83,7 +102,7 @@ class AppAuth {
   int? _expiresAt; // epoch seconds
   Map<String, dynamic>? _claims;
 
-  // Serialization of refreshes; the file lock serializes across.
+  // Serialization of refreshes; the file lock serializes across isolates.
   Future<void> _chain = Future<void>.value();
 
   // A refresh token the server has rejected, and how many times running.
@@ -94,16 +113,22 @@ class AppAuth {
   /// the session is treated as genuinely dead.
   static const int _maxRejections = 3;
 
-  GotrueApi get _api =>
-      GotrueApi(UserPreferences.supabaseUrl, UserPreferences.supabaseAnonKey);
+  String get _sessionKey => sessionStorageKey(instanceId);
 
-  /// Emits when the user signs in/out or the token is refreshed.
+  GotrueApi get _api => GotrueApi(url, anonKey);
+
+  /// Emits when the user signs in/out of this instance, or its token is
+  /// refreshed.
   Stream<AppAuthStatus> get events => _events.stream;
 
   bool get isLoggedIn => _refreshToken != null;
 
-  /// Whether a session exists on this device, asked of storage rather than of
-  /// this isolate's memory. True if storage read fails.
+  Future<void> dispose() async {
+    await _events.close();
+  }
+
+  /// Whether a session exists on this device for this instance, asked of
+  /// storage rather than of this isolate's memory. True if storage read fails.
   Future<bool> hasStoredSession() async {
     if (_refreshToken != null) return true;
     try {
@@ -113,7 +138,7 @@ class AppAuth {
       final refresh = session['refresh_token'] as String?;
       return refresh != null && refresh.isNotEmpty;
     } catch (e) {
-      debugPrint('AppAuth.hasStoredSession failed: $e');
+      debugPrint('AppAuth[$instanceId].hasStoredSession failed: $e');
       return true;
     }
   }
@@ -122,41 +147,20 @@ class AppAuth {
   String? get currentUserEmail => _claims?['email'] as String?;
 
   /// Load the persisted session into memory. Call once per isolate at startup,
-  /// before initializing Supabase. Only reads storage.
+  /// before building this instance's Supabase client. Only reads storage.
   Future<void> load() async {
     try {
-      var raw = await _storage.read(key: _sessionKey);
-      raw ??= await _migrateLegacySession();
+      final raw = await _storage.read(key: _sessionKey);
       if (raw != null && raw.isNotEmpty) {
         await _apply(jsonDecode(raw) as Map<String, dynamic>, persist: false);
       }
     } catch (e) {
-      debugPrint('AppAuth.load failed: $e');
+      debugPrint('AppAuth[$instanceId].load failed: $e');
     }
   }
 
-  /// One-time migration for users logged in on the previous build.
-  Future<String?> _migrateLegacySession() async {
-    try {
-      final url = UserPreferences.supabaseUrl;
-      if (url.isEmpty) return null;
-      final host = Uri.parse(url).host;
-      if (host.isEmpty) return null;
-      final legacyKey = 'sb-${host.split('.').first}-auth-token';
-      final prefs = await SharedPreferences.getInstance();
-      final legacy = prefs.getString(legacyKey);
-      if (legacy == null || legacy.isEmpty) return null;
-      await _storage.write(key: _sessionKey, value: legacy);
-      debugPrint('AppAuth: migrated legacy session from SharedPreferences.');
-      return legacy;
-    } catch (e) {
-      debugPrint('AppAuth: legacy migration failed: $e');
-      return null;
-    }
-  }
-
-  /// The `accessToken` callback wired into every Supabase client. Returns a
-  /// valid JWT, refreshing if near expiry, or null when logged out.
+  /// The `accessToken` callback wired into this instance's Supabase client.
+  /// Returns a valid JWT, refreshing if near expiry, or null when logged out.
   Future<String?> getValidToken() async {
     if (_refreshToken == null) return null;
     if (_accessToken != null && !_isNearExpiry()) return _accessToken;
@@ -245,7 +249,7 @@ class AppAuth {
     try {
       await _storage.delete(key: _sessionKey);
     } catch (e) {
-      debugPrint('AppAuth.forgetSession failed: $e');
+      debugPrint('AppAuth[$instanceId].forgetSession failed: $e');
     }
   }
 
@@ -270,7 +274,7 @@ class AppAuth {
   }
 
   // ---------------------------------------------------------------------------
-  // Refresh (single-flight, cross-isolate)
+  // Refresh (single-flight, cross-isolate, per instance)
   // ---------------------------------------------------------------------------
 
   Future<void> _ensureFresh() {
@@ -302,12 +306,12 @@ class AppAuth {
         _events.add(AppAuthStatus.tokenRefreshed);
       } on GotrueNetworkException {
         // Transient; keep the session and try again next time.
-        debugPrint('AppAuth: refresh skipped (offline)');
+        debugPrint('AppAuth[$instanceId]: refresh skipped (offline)');
       } on GotrueAuthException catch (e) {
         await _handleRefreshRejection(e, used);
       }
     } catch (e) {
-      debugPrint('AppAuth._refreshLocked failed: $e');
+      debugPrint('AppAuth[$instanceId]._refreshLocked failed: $e');
     } finally {
       if (lock != null) {
         try {
@@ -324,7 +328,7 @@ class AppAuth {
       GotrueAuthException e, String used) async {
     await _reloadFromStore();
     if (_refreshToken != null && _refreshToken != used) {
-      debugPrint('AppAuth: refresh raced (${e.code}); '
+      debugPrint('AppAuth[$instanceId]: refresh raced (${e.code}); '
           'adopted the session another isolate stored');
       _rejectedToken = null;
       _rejectionCount = 0;
@@ -332,7 +336,8 @@ class AppAuth {
     }
 
     if (isFatalRefreshCode(e.code)) {
-      debugPrint('AppAuth: refresh rejected (${e.code}); signing out');
+      debugPrint(
+          'AppAuth[$instanceId]: refresh rejected (${e.code}); signing out');
       await _clear();
       return;
     }
@@ -341,13 +346,14 @@ class AppAuth {
     _rejectedToken = used;
 
     if (_rejectionCount >= _maxRejections) {
-      debugPrint('AppAuth: refresh rejected (${e.code}) '
+      debugPrint('AppAuth[$instanceId]: refresh rejected (${e.code}) '
           '$_rejectionCount times running; signing out');
       await _clear();
       return;
     }
 
-    debugPrint('AppAuth: refresh failed (${e.code}, attempt $_rejectionCount); '
+    debugPrint('AppAuth[$instanceId]: refresh failed '
+        '(${e.code}, attempt $_rejectionCount); '
         'keeping the session and retrying later');
   }
 
@@ -394,20 +400,24 @@ class AppAuth {
   /// caller then adopts the persisted session rather than refreshing unlocked:
   /// with token rotation, a parallel refresh hands one of the two callers a
   /// spent-token rejection.
+  ///
+  /// The lock is per instance, so a server that is slow to answer a refresh
+  /// cannot stall the refresh chain of any other.
   Future<RandomAccessFile?> _acquireLock() async {
     try {
-      final file = File('${Directory.systemTemp.path}/krab_auth.lock');
+      final file =
+          File('${Directory.systemTemp.path}/krab_auth_$instanceId.lock');
       final raf = await file.open(mode: FileMode.write);
       try {
         await raf.lock(FileLock.exclusive).timeout(const Duration(seconds: 8));
         return raf;
       } catch (e) {
         await raf.close();
-        debugPrint('AppAuth: proceeding without lock: $e');
+        debugPrint('AppAuth[$instanceId]: proceeding without lock: $e');
         return null;
       }
     } catch (e) {
-      debugPrint('AppAuth: lock unavailable: $e');
+      debugPrint('AppAuth[$instanceId]: lock unavailable: $e');
       return null;
     }
   }

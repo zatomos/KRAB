@@ -10,8 +10,8 @@ import 'package:krab/models/image_data.dart';
 import 'package:krab/models/image_ref.dart';
 import 'package:krab/pages/viewer/viewer_overlay.dart';
 import 'package:krab/services/cache/feed_image_cache.dart';
-import 'package:krab/services/cache/reaction_cache.dart';
-import 'package:krab/services/cache/viewer_cache.dart';
+import 'package:krab/services/instance/active_instance.dart';
+import 'package:krab/services/instance/instance_registry.dart';
 
 /// Resolves the pixel dimensions of an encoded image.
 /// Used to give the viewer a stable child size before the hero flight starts,
@@ -118,6 +118,12 @@ class ImageViewerPage extends StatefulWidget {
 class _ImageViewerPageState extends State<ImageViewerPage>
     with SingleTickerProviderStateMixin {
   late final ExtendedPageController _pageController;
+
+  /// The instance the gallery being viewed came from, so groups and reactions
+  /// are read from the server that holds these photos.
+  late final KrabInstance _instance =
+      InstanceRegistry.instance.byId(widget.cache.instanceId) ?? activeInstance;
+
   late int _currentIndex;
   // The page nearest screen-center, so popping mid-swipe flies a single image.
   late int _heroIndex;
@@ -242,8 +248,8 @@ class _ImageViewerPageState extends State<ImageViewerPage>
   void _prefetchNeighbors(int index) {
     for (final i in [index - 1, index + 1]) {
       if (i < 0 || i >= widget.images.length) continue;
-      fetchPostedInGroups(widget.images[i].id);
-      fetchImageReactions(widget.images[i].id);
+      _instance.viewer.fetchPostedInGroups(widget.images[i].id);
+      _instance.reactions.fetch(widget.images[i].id);
       if (_pageBytes.containsKey(i)) continue;
       _imageDataFor(i).then((data) {
         if (mounted) _cachePageBytes(i, data.imageBytes);
@@ -429,9 +435,13 @@ class _ImageViewerPageState extends State<ImageViewerPage>
               final data = snapshot.data;
               if (data == null) return const SizedBox.shrink();
               final uploader = widget.cache.user(data.uploadedBy) ??
-                  krab_user.User(id: data.uploadedBy, username: '');
+                  krab_user.User(
+                      instanceId: widget.cache.instanceId,
+                      id: data.uploadedBy,
+                      username: '');
               return ViewerOverlay(
                 key: ValueKey(imageId),
+                instance: _instance,
                 imageId: imageId,
                 groupId: widget.groupId,
                 imageData: data,

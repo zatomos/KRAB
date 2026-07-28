@@ -12,9 +12,6 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 /// Completes with the navigator once the widget tree's first frame is up.
 final Completer<NavigatorState> navigatorReady = Completer<NavigatorState>();
 
-/// True once `Supabase.initialize` has completed in this isolate.
-bool isSupabaseInitialized = false;
-
 /// True once the foreground boot sequence in `main` has finished.
 bool isAppInitialized = false;
 

@@ -3,13 +3,13 @@ import 'package:flutter/material.dart';
 
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/models/group.dart';
-import 'package:krab/services/api/supabase.dart';
 import 'package:krab/services/upload_outbox.dart';
 import 'package:krab/user_preferences.dart';
 import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/widgets/avatars/group_avatar.dart';
 import 'package:krab/widgets/rounded_input_field.dart';
 import 'package:krab/widgets/soft_button.dart';
+import 'package:krab/services/instance/active_instance.dart';
 
 /// How a send ended: it went out, it was held for later because the device is
 /// offline, or it failed for a reason the user has to see.
@@ -53,7 +53,7 @@ class _SendImageDialogState extends State<SendImageDialog> {
   @override
   void initState() {
     super.initState();
-    _groupsFuture = getUserGroups();
+    _groupsFuture = api.getUserGroups();
     UserPreferences.getFavoriteGroups().then((favorites) {
       if (mounted) setState(() => _selectedGroups.addAll(favorites));
     });
@@ -75,7 +75,7 @@ class _SendImageDialogState extends State<SendImageDialog> {
     // the photo a second time.
     String? reserved;
 
-    final response = await sendImageToGroups(
+    final response = await api.sendImageToGroups(
       widget.imageFile,
       groups,
       _description.text,
@@ -85,6 +85,7 @@ class _SendImageDialogState extends State<SendImageDialog> {
     // Couldn't reach the server: hold the photo and send it when we can
     if (!response.success && response.offline) {
       await UploadOutbox.instance.enqueue(
+        api.instanceId,
         widget.imageFile,
         groups,
         _description.text,

@@ -5,18 +5,24 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/models/reaction.dart';
-import 'package:krab/services/api/supabase.dart';
-import 'package:krab/services/cache/reaction_cache.dart';
 import 'package:krab/widgets/emoji_picker_sheet.dart';
 import 'package:krab/widgets/reactors_sheet.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
+import 'package:krab/services/instance/active_instance.dart';
 
 /// Horizontal strip of emoji reaction chips with an add reaction button,
 /// laid over the dark photo viewer.
 class ReactionsBar extends StatefulWidget {
+  /// The instance the image lives on; its tallies are read and written there.
+  final KrabInstance instance;
+
   final String imageId;
 
-  const ReactionsBar({super.key, required this.imageId});
+  const ReactionsBar({
+    super.key,
+    required this.instance,
+    required this.imageId,
+  });
 
   @override
   State<ReactionsBar> createState() => ReactionsBarState();
@@ -28,7 +34,7 @@ class ReactionsBarState extends State<ReactionsBar> {
   @override
   void initState() {
     super.initState();
-    _reactions = cachedReactions(widget.imageId);
+    _reactions = widget.instance.reactions.cached(widget.imageId);
     _refresh();
   }
 
@@ -36,7 +42,7 @@ class ReactionsBarState extends State<ReactionsBar> {
   void didUpdateWidget(covariant ReactionsBar oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.imageId != widget.imageId) {
-      _reactions = cachedReactions(widget.imageId);
+      _reactions = widget.instance.reactions.cached(widget.imageId);
       _refresh();
     }
   }
@@ -49,7 +55,7 @@ class ReactionsBarState extends State<ReactionsBar> {
   /// place rather than blanking out.
   Future<void> _refresh() async {
     final imageId = widget.imageId;
-    final list = await fetchImageReactions(imageId);
+    final list = await widget.instance.reactions.fetch(imageId);
     if (!mounted || imageId != widget.imageId || list == null) return;
     setState(() => _reactions = list);
   }
@@ -60,12 +66,12 @@ class ReactionsBarState extends State<ReactionsBar> {
     final previous = _reactions;
     final updated = applyToggle(previous, emoji);
     setState(() => _reactions = updated);
-    cacheReactions(imageId, updated);
+    widget.instance.reactions.put(imageId, updated);
 
-    final response = await toggleReaction(imageId, emoji);
+    final response = await widget.instance.api.toggleReaction(imageId, emoji);
     if (response.success) return;
 
-    cacheReactions(imageId, previous);
+    widget.instance.reactions.put(imageId, previous);
     if (!mounted || imageId != widget.imageId) return;
     setState(() => _reactions = previous);
     showSnackBar(
@@ -104,7 +110,8 @@ class ReactionsBarState extends State<ReactionsBar> {
     if (emoji != null) await _toggle(emoji);
   }
 
-  void _openReactors() => showReactorsSheet(context, widget.imageId);
+  void _openReactors() =>
+      showReactorsSheet(context, widget.instance, widget.imageId);
 
   /// How many reaction chips fit across the phone width.
   static int visibleChipsFor(double width, int reactionCount) {
@@ -147,8 +154,7 @@ class ReactionsBarState extends State<ReactionsBar> {
                 onLongPress: _openReactors,
               ),
             // Tapping the overflow chip opens the full reactors list.
-            if (hidden > 0)
-              _OverflowChip(count: hidden, onTap: _openReactors),
+            if (hidden > 0) _OverflowChip(count: hidden, onTap: _openReactors),
             _AddReactionChip(onTap: _openPicker),
           ],
         );

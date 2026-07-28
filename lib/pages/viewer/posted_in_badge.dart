@@ -5,8 +5,8 @@ import 'package:krab/l10n/l10n.dart';
 import 'package:krab/models/group.dart';
 import 'package:krab/pages/image_feed_page.dart';
 import 'package:krab/pages/viewer/frosted.dart';
-import 'package:krab/services/api/supabase.dart';
 import 'package:krab/widgets/avatars/group_avatar.dart';
+import 'package:krab/services/instance/active_instance.dart';
 
 /// How far the current-group highlight ring extends past an avatar's radius.
 const double _highlightExtra = 1.5;
@@ -22,6 +22,9 @@ const int _maxVisible = 4;
 /// The pill over the photo showing which groups it was posted in: an
 /// overlapping cluster of group avatars, with the one being viewed ringed.
 class PostedInBadge extends StatelessWidget {
+  /// The instance these groups live on.
+  final KrabInstance instance;
+
   /// The groups, already ordered with the current one first.
   final List<Group> groups;
 
@@ -33,6 +36,7 @@ class PostedInBadge extends StatelessWidget {
 
   const PostedInBadge({
     super.key,
+    required this.instance,
     required this.groups,
     required this.currentGroupId,
     this.progress = 1,
@@ -139,7 +143,8 @@ class _PillAvatar extends StatelessWidget {
 }
 
 /// The frosted dialog behind the pill, listing the groups in full.
-Future<void> showPostedInDialog(BuildContext context, List<Group> groups) {
+Future<void> showPostedInDialog(
+    BuildContext context, KrabInstance instance, List<Group> groups) {
   return showFrostedDialog<void>(
     context,
     padding: const EdgeInsets.fromLTRB(18, 18, 18, 8),
@@ -176,7 +181,8 @@ Future<void> showPostedInDialog(BuildContext context, List<Group> groups) {
             padding: EdgeInsets.zero,
             shrinkWrap: true,
             itemCount: groups.length,
-            itemBuilder: (context, index) => _GroupTile(group: groups[index]),
+            itemBuilder: (context, index) =>
+                _GroupTile(instance: instance, group: groups[index]),
           ),
         ),
       ],
@@ -186,9 +192,10 @@ Future<void> showPostedInDialog(BuildContext context, List<Group> groups) {
 
 /// One group in the posted-in dialog. Tapping it opens that group's gallery.
 class _GroupTile extends StatelessWidget {
+  final KrabInstance instance;
   final Group group;
 
-  const _GroupTile({required this.group});
+  const _GroupTile({required this.instance, required this.group});
 
   @override
   Widget build(BuildContext context) {
@@ -201,7 +208,7 @@ class _GroupTile extends StatelessWidget {
             const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
       ),
       subtitle: FutureBuilder<SupabaseResponse<int>>(
-        future: getGroupMemberCount(group.id),
+        future: instance.api.getGroupMemberCount(group.id),
         builder: (context, snapshot) {
           final count = snapshot.data?.data;
           return Text(
