@@ -26,18 +26,32 @@ class GroupsPage extends StatefulWidget {
 }
 
 class GroupsPageState extends State<GroupsPage> {
-  late Future<SupabaseResponse<List<Group>>> _groupsFuture;
+  late Future<_GroupsResult> _groupsFuture;
 
   @override
   void initState() {
     super.initState();
-    _groupsFuture = getUserGroups();
+    _groupsFuture = _loadGroups();
   }
 
   void _refreshData() {
     setState(() {
-      _groupsFuture = getUserGroups();
+      _groupsFuture = _loadGroups();
     });
+  }
+
+  Future<_GroupsResult> _loadGroups() async {
+    final response = await getUserGroups();
+    final groups = response.data;
+    if (!response.success || groups == null) {
+      return _GroupsResult(response, const {});
+    }
+    final counts = <String, int>{};
+    await Future.wait(groups.map((group) async {
+      final res = await getGroupMemberCount(group.id);
+      counts[group.id] = res.error == null ? (res.data ?? 0) : 0;
+    }));
+    return _GroupsResult(response, counts);
   }
 
   /// Open one of the menu's dialogs, and reload the list if it changed one.
@@ -58,13 +72,13 @@ class GroupsPageState extends State<GroupsPage> {
 
   Widget _buildGroupsContent(
     BuildContext context,
-    AsyncSnapshot<SupabaseResponse<List<Group>>> snapshot,
+    AsyncSnapshot<_GroupsResult> snapshot,
   ) {
     if (snapshot.hasError || !snapshot.hasData) {
       debugPrint("Failed to load groups: ${snapshot.error}");
       return Center(child: Text(context.l10n.failed_to_load_groups));
     }
-    final response = snapshot.data!;
+    final response = snapshot.data!.response;
     if (!response.success) {
       debugPrint("Failed to load groups: ${response.error}");
       return Center(child: Text(context.l10n.failed_to_load_groups));
@@ -73,9 +87,13 @@ class GroupsPageState extends State<GroupsPage> {
     if (groups.isEmpty) {
       return Center(child: Text(context.l10n.no_group_joined));
     }
+    final counts = snapshot.data!.memberCounts;
     return ListView.builder(
       itemCount: groups.length,
-      itemBuilder: (context, index) => GroupCard(group: groups[index]),
+      itemBuilder: (context, index) => GroupCard(
+        group: groups[index],
+        memberCount: counts[groups[index].id],
+      ),
     );
   }
 
@@ -103,7 +121,7 @@ class GroupsPageState extends State<GroupsPage> {
         children: [
           _RecentPhotosCard(),
           Expanded(
-            child: FutureBuilder<SupabaseResponse<List<Group>>>(
+            child: FutureBuilder<_GroupsResult>(
               future: _groupsFuture,
               builder: (context, snapshot) {
                 final loading =
@@ -120,6 +138,14 @@ class GroupsPageState extends State<GroupsPage> {
       ),
     );
   }
+}
+
+/// The groups list paired with each group's member count.
+class _GroupsResult {
+  final SupabaseResponse<List<Group>> response;
+  final Map<String, int> memberCounts;
+
+  _GroupsResult(this.response, this.memberCounts);
 }
 
 /// Bone placeholders

@@ -14,7 +14,16 @@ class GroupCard extends StatefulWidget {
   final Group group;
   final VoidCallback? onReturn;
 
-  const GroupCard({super.key, required this.group, this.onReturn});
+  /// Member count resolved by the caller. When provided the card shows it
+  /// directly instead of fetching its own.
+  final int? memberCount;
+
+  const GroupCard({
+    super.key,
+    required this.group,
+    this.onReturn,
+    this.memberCount,
+  });
 
   @override
   State<GroupCard> createState() => _GroupCardState();
@@ -22,24 +31,25 @@ class GroupCard extends StatefulWidget {
 
 class _GroupCardState extends State<GroupCard> {
   late Group _group;
-  // Memoized so the FutureBuilder doesn't refetch on every rebuild.
-  late Future<int> _memberCountFuture;
+  Future<int>? _memberCountFuture;
   bool isFavorite = false;
 
   @override
   void initState() {
     super.initState();
     _group = widget.group; // make a mutable copy
-    _memberCountFuture = _fetchGroupMemberCount(_group.id);
+    if (widget.memberCount == null) {
+      _memberCountFuture = _fetchGroupMemberCount(_group.id);
+    }
   }
 
   @override
   void didUpdateWidget(GroupCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Refetch only if the card is now showing a different group.
     if (oldWidget.group.id != widget.group.id) {
       _group = widget.group;
-      _memberCountFuture = _fetchGroupMemberCount(_group.id);
+      _memberCountFuture =
+          widget.memberCount == null ? _fetchGroupMemberCount(_group.id) : null;
     }
   }
 
@@ -66,6 +76,15 @@ class _GroupCardState extends State<GroupCard> {
       return 0;
     }
     return response.data!;
+  }
+
+  Widget _memberCountLabel(BuildContext context, int count) {
+    final noun =
+        count == 1 ? context.l10n.member_singular : context.l10n.members_plural;
+    return Text(
+      "$count $noun",
+      style: const TextStyle(fontSize: 14, color: Colors.grey),
+    );
   }
 
   @override
@@ -115,22 +134,20 @@ class _GroupCardState extends State<GroupCard> {
               ],
             ),
 
-            subtitle: FutureBuilder<int>(
-              future: _memberCountFuture,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Text(" ");
-                } else if (snapshot.hasError) {
-                  return Text(context.l10n.error_loading_members);
-                } else {
-                  final count = snapshot.data ?? 0;
-                  return Text(
-                    "$count ${count == 1 ? context.l10n.member_singular : context.l10n.members_plural}",
-                    style: const TextStyle(fontSize: 14, color: Colors.grey),
-                  );
-                }
-              },
-            ),
+            subtitle: widget.memberCount != null
+                ? _memberCountLabel(context, widget.memberCount!)
+                : FutureBuilder<int>(
+                    future: _memberCountFuture,
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Text(" ");
+                      } else if (snapshot.hasError) {
+                        return Text(context.l10n.error_loading_members);
+                      } else {
+                        return _memberCountLabel(context, snapshot.data ?? 0);
+                      }
+                    },
+                  ),
 
             // STAR FAVORITE BUTTON (moved closer to right edge)
             trailing: Padding(
