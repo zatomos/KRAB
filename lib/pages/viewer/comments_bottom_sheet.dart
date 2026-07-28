@@ -291,7 +291,9 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
           // they collapsed back open on every post, edit and delete.
           if (firstLoad) {
             for (final section in sections) {
-              if (section.isPrimary || _isAllGroupsMode) {
+              // Empty groups stay collapsed
+              if ((section.isPrimary || _isAllGroupsMode)
+                  && section.rootComments.isNotEmpty) {
                 _expandedGroupIds.add(section.groupId);
               }
             }
@@ -731,7 +733,10 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
     // In all-groups mode every group is shown. In a single-group gallery only
     // other groups that actually have comments are shown.
     final others = _isAllGroupsMode
-        ? _sections.toList()
+        ? [
+            ..._sections.where((s) => s.rootComments.isNotEmpty),
+            ..._sections.where((s) => s.rootComments.isEmpty),
+          ]
         : _sections
             .where((s) => !s.isPrimary && s.rootComments.isNotEmpty)
             .toList();
