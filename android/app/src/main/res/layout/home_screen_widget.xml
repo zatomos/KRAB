@@ -66,6 +66,10 @@
                 android:textColor="#FFFFFF"
                 android:textSize="13sp"
                 android:textStyle="bold"
+                android:shadowColor="#B3000000"
+                android:shadowDx="0"
+                android:shadowDy="1"
+                android:shadowRadius="3"
                 android:maxLines="1"
                 android:ellipsize="end" />
 

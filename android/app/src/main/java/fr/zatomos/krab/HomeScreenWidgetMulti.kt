@@ -93,7 +93,7 @@ class HomeScreenWidgetMulti : AppWidgetProvider() {
                 if (showGradient) {
                     views.setInt(R.id.overlay_container, "setBackgroundResource",
                         R.drawable.widget_gradient_overlay)
-                    views.setViewPadding(R.id.overlay_container, 10.px(), 24.px(), 10.px(), 8.px())
+                    views.setViewPadding(R.id.overlay_container, 10.px(), 32.px(), 10.px(), 8.px())
                 } else {
                     views.setInt(R.id.overlay_container, "setBackgroundColor",
                         Color.parseColor("#80000000"))
