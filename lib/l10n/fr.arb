@@ -363,7 +363,15 @@
   "servers_disconnect_title": "Oublier {server} ?",
   "servers_disconnect_description": "Cela vous déconnecte et oublie ce serveur. Votre compte et vos photos sur le serveur ne sont pas touchés.",
   "servers_sign_out_title": "Se déconnecter de {server} ?",
-  "servers_unreachable": "Injoignable",
+  "servers_unreachable": "Connexion impossible",
+  "servers_still_loading": "Chargement depuis {servers}...",
+  "@servers_still_loading": {
+    "placeholders": {
+      "servers": {
+        "type": "String"
+      }
+    }
+  },
   "groups_server_unavailable": "Les groupes de {servers} n'ont pas pu être chargés.",
   "feed_server_unavailable": "Les photos de {servers} n'ont pas pu être chargées.",
   "servers_account": "Compte",

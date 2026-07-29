@@ -19,7 +19,6 @@ import 'package:krab/widgets/dialogs/send_image_dialog.dart';
 import 'package:krab/widgets/avatars/user_avatar.dart';
 import 'groups_page.dart';
 import 'account_page.dart';
-import 'servers_page.dart';
 import 'package:krab/models/shared_image.dart';
 import 'package:krab/services/instance/instances.dart';
 import 'package:krab/services/instance/instance_registry.dart';
@@ -131,20 +130,44 @@ class CameraPageState extends State<CameraPage> {
 
   // ===== Initialization ========================================================
 
-  /// The account shown on the camera's own button, being the one on the server
-  /// the user ranked first.
-  KrabInstance? get _topInstance =>
-      InstanceRegistry.instance.signedIn.firstOrNull;
+  /// The account the camera speaks for: the highest-ranked server that can
+  /// actually answer for it.
+  KrabInstance? _accountInstance;
 
+  /// The servers to try, best first, being the order the user chose.
+  List<KrabInstance> get _rankedSignedIn => InstanceRegistry.instance.signedIn;
+
+  /// Find the account to show, taking the next server when one cannot answer.
   Future<void> _loadCurrentUser() async {
-    final top = _topInstance;
-    if (top == null) {
-      if (mounted) setState(() => currentUser = null);
-      return;
+    final ranked = _rankedSignedIn;
+    // Asked all at once, then read back in the user's own order: the best server
+    // that answers wins, and a server that is down costs the timeout once rather
+    // than once per server ahead of the one that works.
+    final asked = [
+      for (final instance in ranked) instance.api.getCurrentUser().orGiveUp()
+    ];
+
+    for (var i = 0; i < ranked.length; i++) {
+      final response = await asked[i];
+      if (!mounted) return;
+      if (response.success && response.data != null) {
+        setState(() {
+          _accountInstance = ranked[i];
+          currentUser = response.data;
+        });
+        return;
+      }
+      debugPrint('Camera: ${ranked[i].id} could not say who the user is '
+          '(${response.error}), trying the next server');
     }
-    final response = await top.api.getCurrentUser();
-    debugPrint("Loaded current user: ${response.data}");
-    if (mounted) setState(() => currentUser = response.data);
+
+    // Nobody answered, or nobody is signed in.
+    if (mounted) {
+      setState(() {
+        _accountInstance = null;
+        currentUser = null;
+      });
+    }
   }
 
   Future<void> _initializeCamera() async {
@@ -423,10 +446,12 @@ class CameraPageState extends State<CameraPage> {
 
   Widget _accountButton() {
     Future<void> onTap() async {
-      final top = _topInstance;
-      await _navigateWithCameraDispose(
-        top == null ? const ServersPage() : AccountPage(instance: top),
-      );
+      final instance = _accountInstance ??
+          _rankedSignedIn.firstOrNull ??
+          InstanceRegistry.instance.all.firstOrNull;
+      if (instance == null) return;
+
+      await _navigateWithCameraDispose(AccountPage(instance: instance));
       await _loadCurrentUser();
     }
 

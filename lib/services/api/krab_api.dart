@@ -48,6 +48,23 @@ class SupabaseResponse<T> {
 /// The device could not reach the server.
 const String errorNetwork = 'network_error';
 
+/// How long a screen that reads several servers at once waits on any one of
+/// them before going on without it.
+const Duration instanceReadTimeout = Duration(seconds: 8);
+
+extension FanOutRead<T> on Future<SupabaseResponse<T>> {
+  /// Give up on one server so the others can be shown.
+  Future<SupabaseResponse<T>> orGiveUp() => timeout(
+        instanceReadTimeout,
+        onTimeout: () => SupabaseResponse<T>(
+          success: false,
+          offline: true,
+          error: errorNetwork,
+        ),
+      );
+}
+
+
 /// The server was reached, but the call failed.
 const String errorServer = 'server_error';
 

@@ -81,7 +81,7 @@ Future<void> cacheUserGroupsForWidget() async {
     if (sources.isEmpty) return;
 
     final responses =
-        await Future.wait(sources.map((i) => i.api.getUserGroups()));
+        await Future.wait(sources.map((i) => i.api.getUserGroups().orGiveUp()));
 
     final list = <Map<String, String>>[];
     for (var i = 0; i < sources.length; i++) {
@@ -278,8 +278,9 @@ Future<List<ImageRef>?> _latestAcross(int needed, List<String> groupIds) async {
       .toList();
   if (sources.isEmpty) return null;
 
-  final results = await Future.wait(sources.map((instance) =>
-      instance.api.getLatestImages(needed, groupIds: wanted[instance.id])));
+  final results = await Future.wait(sources.map((instance) => instance.api
+      .getLatestImages(needed, groupIds: wanted[instance.id])
+      .orGiveUp()));
 
   final refs = <ImageRef>[];
   var anySucceeded = false;
