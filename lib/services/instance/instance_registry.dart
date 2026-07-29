@@ -21,64 +21,38 @@ class InstanceAuthEvent {
 }
 
 /// Every KRAB backend this install is connected to.
-///
-/// The list is the app's single source of truth for "which servers are we
-/// talking to". It is persisted as a JSON array under [prefsKey] so the native
-/// side can read it too: `KrabApplication` needs the FCM config before any
-/// Dart runs, to bring Firebase up for a push that arrives while the app is
-/// dead.
-///
-/// Phase 1 carries exactly one instance, but nothing here assumes that: the
-/// shape, the persistence and the auth-event stream are all list-based, so
-/// turning on more is a UI change rather than a rewrite.
 class InstanceRegistry {
   InstanceRegistry._();
   static final InstanceRegistry instance = InstanceRegistry._();
-
-  /// JSON array of instances. Also read natively — see the class doc.
   static const String prefsKey = 'krab_instances';
 
-  /// Id of the instance the UI is currently showing.
-  static const String activePrefsKey = 'krab_active_instance';
-
-  /// Highest instance id handed out so far. See [_nextId].
+  /// Highest instance id handed out so far.
   static const String counterPrefsKey = 'krab_instance_counter';
 
   static const FlutterSecureStorage _storage = FlutterSecureStorage();
 
   final List<KrabInstance> _instances = [];
-  String? _activeId;
 
   final StreamController<InstanceAuthEvent> _authEvents =
       StreamController<InstanceAuthEvent>.broadcast();
   final Map<String, StreamSubscription<AppAuthStatus>> _authSubscriptions = {};
 
   /// Auth events from every instance, tagged with the one they came from.
-  ///
-  /// Callers listen here rather than to a single session, so a sign-out on one
-  /// server is reported as exactly that instead of as an app-wide sign-out.
   Stream<InstanceAuthEvent> get authEvents => _authEvents.stream;
 
   List<KrabInstance> get all => List.unmodifiable(_instances);
 
   bool get isEmpty => _instances.isEmpty;
 
-  /// The instance the UI is currently working against, or null when this
-  /// install is not connected to any backend yet.
-  KrabInstance? get active {
-    if (_instances.isEmpty) return null;
-    return byId(_activeId) ?? _instances.first;
-  }
+  /// The instances the user is signed into. The ones that can answer for
+  /// anything.
+  List<KrabInstance> get signedIn =>
+      _instances.where((i) => i.auth.isLoggedIn).toList();
 
-  /// The active instance, for the many call sites that only run once there is
-  /// one. Throws if called before a backend is configured.
-  KrabInstance get requireActive {
-    final current = active;
-    if (current == null) {
-      throw StateError('No KRAB instance is configured');
-    }
-    return current;
-  }
+  bool get anySignedIn => _instances.any((i) => i.auth.isLoggedIn);
+
+  /// The one instance, when there is exactly one.
+  KrabInstance? get sole => _instances.length == 1 ? _instances.first : null;
 
   KrabInstance? byId(String? id) {
     if (id == null) return null;
@@ -88,8 +62,7 @@ class InstanceRegistry {
     return null;
   }
 
-  /// Read the persisted instances, migrating a pre-multi-instance install on
-  /// the way. Call once per isolate, at startup, before anything else here.
+  /// Read the persisted instances
   Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.reload();
@@ -110,17 +83,14 @@ class InstanceRegistry {
       }
     }
 
-    _activeId = prefs.getString(activePrefsKey);
-    if (byId(_activeId) == null) {
-      _activeId = _instances.isEmpty ? null : _instances.first.id;
-    }
-
     for (final instance in _instances) {
       _attach(instance);
     }
 
-    debugPrint('InstanceRegistry: ${_instances.length} instance(s), '
-        'active=$_activeId');
+    // Remove leftover, TODO: remove later
+    await prefs.remove('krab_active_instance');
+
+    debugPrint('InstanceRegistry: ${_instances.length} instance(s)');
   }
 
   /// Load the sessions of every instance into memory.
@@ -139,7 +109,6 @@ class InstanceRegistry {
           decoded.add(
               KrabInstance.fromJson(Map<String, dynamic>.from(entry as Map)));
         } catch (e) {
-          // One unreadable entry must not take the others with it.
           debugPrint('InstanceRegistry: dropping unreadable instance: $e');
         }
       }
@@ -163,10 +132,7 @@ class InstanceRegistry {
     await _persist(prefs);
   }
 
-  /// Connect this install to a backend, and make it the active one.
-  ///
-  /// An existing instance for the same URL is reused rather than duplicated, so
-  /// re-entering a server the user is already connected to keeps their session.
+  /// Connect this install to a backend.
   Future<KrabInstance> connect({
     required String url,
     required String anonKey,
@@ -176,13 +142,9 @@ class InstanceRegistry {
     final normalized = _normalizeUrl(url);
 
     final existing = _instances.where((i) => i.url == normalized).firstOrNull;
-    if (existing != null && existing.anonKey == anonKey) {
-      await activate(existing.id);
-      return existing;
-    }
+    if (existing != null && existing.anonKey == anonKey) return existing;
 
-    // Same server, new key: replace it, keeping the id so the session and the
-    // cached photos survive a rotated anon key.
+    // Same server, new key
     if (existing != null) {
       final replacement = KrabInstance(
         id: existing.id,
@@ -197,7 +159,6 @@ class InstanceRegistry {
       await existing.dispose();
       _attach(replacement);
       await _persist(prefs);
-      await activate(replacement.id);
       return replacement;
     }
 
@@ -210,16 +171,21 @@ class InstanceRegistry {
     _instances.add(instance);
     _attach(instance);
     await _persist(prefs);
-    await activate(instance.id);
     return instance;
   }
 
-  /// Make an instance the one the UI works against.
-  Future<void> activate(String id) async {
-    if (byId(id) == null) return;
-    _activeId = id;
+  /// Move an instance to a new position in the list.
+  Future<void> reorder(int oldIndex, int newIndex) async {
+    if (oldIndex < 0 || oldIndex >= _instances.length) return;
+
+    final target = newIndex.clamp(0, _instances.length - 1);
+    if (target == oldIndex) return;
+
+    final moved = _instances.removeAt(oldIndex);
+    _instances.insert(target, moved);
+
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(activePrefsKey, id);
+    await _persist(prefs);
   }
 
   /// Disconnect from an instance: forget its session, its caches and its entry.
@@ -236,22 +202,9 @@ class InstanceRegistry {
 
     final prefs = await SharedPreferences.getInstance();
     await _persist(prefs);
-
-    if (_activeId == id) {
-      _activeId = _instances.isEmpty ? null : _instances.first.id;
-      if (_activeId == null) {
-        await prefs.remove(activePrefsKey);
-      } else {
-        await prefs.setString(activePrefsKey, _activeId!);
-      }
-    }
   }
 
   /// Ids look like `inst_3`, handed out from a counter that only ever goes up.
-  ///
-  /// It has to be persisted rather than derived from the instances in hand: an
-  /// id names a session key, a lock file and a cache directory, so reusing one
-  /// after a removal would hand a new backend the leftovers of an old one.
   Future<String> _nextId(SharedPreferences prefs) async {
     var next = prefs.getInt(counterPrefsKey) ?? 0;
     for (final instance in _instances) {
@@ -263,7 +216,6 @@ class InstanceRegistry {
     return 'inst_$next';
   }
 
-  /// Trailing slashes make two spellings of the same server look different.
   static String _normalizeUrl(String url) {
     var trimmed = url.trim();
     while (trimmed.endsWith('/')) {
@@ -291,7 +243,7 @@ class InstanceRegistry {
   }
 
   // ---------------------------------------------------------------------------
-  // Migration off the single-instance layout
+  // Migration off the single-instance layout: TODO: remove later
   // ---------------------------------------------------------------------------
 
   /// Prefs keys the single-instance build used, cleared once migrated.
@@ -307,8 +259,7 @@ class InstanceRegistry {
   ];
 
   /// Build the first instance from whatever the single-instance build left
-  /// behind, or from this build's baked-in backend. Null when neither exists,
-  /// which is a fresh install that must go through the connect screen.
+  /// behind.
   Future<KrabInstance?> _migrateLegacyInstance(SharedPreferences prefs) async {
     final url = _clean(prefs.getString('supabaseUrl') ?? bakedSupabaseUrl);
     final anonKey =
@@ -340,8 +291,6 @@ class InstanceRegistry {
     return instance;
   }
 
-  /// The favourite and muted lists held bare group ids; scope them to the
-  /// instance those groups actually live on, so the user's choices survive.
   Future<void> _migrateGroupLists(
       SharedPreferences prefs, String instanceId) async {
     for (final key in ['favoriteGroups', 'mutedGroups']) {
@@ -356,8 +305,6 @@ class InstanceRegistry {
     }
   }
 
-  /// Move the session the single-instance build stored onto this instance's
-  /// key, so migrating does not sign the user out.
   Future<void> _migrateLegacySession(
       SharedPreferences prefs, KrabInstance instance) async {
     final target = sessionStorageKey(instance.id);
@@ -366,7 +313,6 @@ class InstanceRegistry {
 
       var session = await _storage.read(key: legacySessionStorageKey);
 
-      // Older still: supabase_flutter's own SharedPreferences entry.
       if (session == null || session.isEmpty) {
         final host = Uri.tryParse(instance.url)?.host ?? '';
         if (host.isNotEmpty) {
@@ -380,7 +326,6 @@ class InstanceRegistry {
       await _storage.delete(key: legacySessionStorageKey);
       debugPrint('InstanceRegistry: moved the stored session to $target');
     } catch (e) {
-      // A failure here costs one sign-in, not the migration.
       debugPrint('InstanceRegistry: session migration failed: $e');
     }
   }

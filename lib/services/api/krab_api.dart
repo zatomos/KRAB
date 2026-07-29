@@ -11,6 +11,7 @@ import 'package:krab/services/debug_notifier.dart';
 import 'package:krab/services/instance/instance_config.dart';
 import 'package:krab/services/instance/krab_instance.dart';
 import 'package:krab/services/push_helper.dart';
+import 'package:krab/services/share_ledger.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:krab/models/group.dart';
@@ -58,7 +59,7 @@ const String errorPhotoTooLarge = 'photo_too_large';
 
 const String errorNameTooShort = 'name_too_short';
 
-/// Failure codes KRAB produces, which the UI translates.
+/// Failure codes we produces
 const Set<String> errorCodes = {
   errorNetwork,
   errorServer,
@@ -67,12 +68,7 @@ const Set<String> errorCodes = {
   errorNameTooShort,
 };
 
-/// Everything the app asks of **one** KRAB backend.
-///
-/// Every call goes through the client, session and caches of the instance that
-/// owns this object, so nothing here can reach across to another server. The
-/// split into groups/images/comments/reactions/account lives in the part files
-/// as extensions, which share this library and so may use its private members.
+/// Everything the app asks of one KRAB backend.
 class KrabApi {
   KrabApi(this.instance);
 
@@ -111,7 +107,6 @@ class KrabApi {
     try {
       final response = await _client.rpc(fn, params: params);
       if (response is Map && response['success'] == false) {
-        // The server explains its own refusals; pass its message through.
         return SupabaseResponse(
             success: false,
             error: response['error']?.toString() ?? errorServer);
@@ -139,8 +134,6 @@ bool _isTransientError(Object error) {
     return true;
   }
 
-  // The HTTP clients underneath postgrest/storage wrap a dead connection in
-  // their own exception types, which aren't exported for us to catch by name.
   final message = error.toString().toLowerCase();
   return message.contains('socketexception') ||
       message.contains('clientexception') ||

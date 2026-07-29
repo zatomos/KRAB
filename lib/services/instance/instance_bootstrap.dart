@@ -25,12 +25,32 @@ Future<void> bootstrapBackgroundIsolate() async {
 }
 
 /// The instance a push belongs to.
-///
-/// The payload names it, so a message can be routed to the right server no
-/// matter which one the UI happens to be showing. Messages sent before the
-/// backend started stamping `instance_id` fall back to the active instance,
-/// which is correct while this install has only one.
-KrabInstance? instanceForPayload(Map<String, String> data) {
+KrabInstance? instanceForPayload(Map<String, String> data, {String? senderId}) {
   final registry = InstanceRegistry.instance;
-  return registry.byId(data['instance_id']) ?? registry.active;
+
+  final url = _normalize(data['instance_url']);
+  if (url != null) {
+    for (final instance in registry.all) {
+      if (_normalize(instance.url) == url) return instance;
+    }
+    debugPrint('Push: message from $url, which is not a connected instance');
+    return null;
+  }
+
+  if (senderId != null && senderId.isNotEmpty) {
+    final matches =
+        registry.all.where((i) => i.config.fcmSenderId == senderId).toList();
+    if (matches.length == 1) return matches.first;
+  }
+
+  return registry.sole;
+}
+
+String? _normalize(String? url) {
+  if (url == null) return null;
+  var trimmed = url.trim().toLowerCase();
+  while (trimmed.endsWith('/')) {
+    trimmed = trimmed.substring(0, trimmed.length - 1);
+  }
+  return trimmed.isEmpty ? null : trimmed;
 }

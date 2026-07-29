@@ -4,7 +4,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 
 import 'package:krab/app_globals.dart';
-import 'package:krab/services/instance/active_instance.dart';
+import 'package:krab/services/instance/instances.dart';
 import 'package:krab/services/instance/instance_bootstrap.dart';
 import 'package:krab/models/group.dart';
 import 'package:krab/pages/groups_page.dart';
@@ -47,7 +47,7 @@ Future<void> handleWidgetLaunch(Uri? uri) async {
     if (nav == null) return;
 
     // Only act on an authenticated session; otherwise the app just opens
-    if (!hasInstance || !activeInstance.auth.isLoggedIn) {
+    if (!hasInstance || !anySignedIn) {
       return;
     }
 

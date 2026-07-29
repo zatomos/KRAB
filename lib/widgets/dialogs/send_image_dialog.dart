@@ -1,37 +1,62 @@
 import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/models/group.dart';
+import 'package:krab/models/image_ref.dart';
+import 'package:krab/models/shared_image.dart';
+import 'package:krab/services/instance/instance_registry.dart';
+import 'package:krab/services/share_id.dart';
+import 'package:krab/services/share_ledger.dart';
 import 'package:krab/services/upload_outbox.dart';
 import 'package:krab/user_preferences.dart';
 import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/widgets/avatars/group_avatar.dart';
 import 'package:krab/widgets/rounded_input_field.dart';
 import 'package:krab/widgets/soft_button.dart';
-import 'package:krab/services/instance/active_instance.dart';
+import 'package:krab/services/instance/instances.dart';
 
-/// How a send ended: it went out, it was held for later because the device is
-/// offline, or it failed for a reason the user has to see.
-enum SendOutcome { sent, queued, failed }
+/// How a send ended
+enum SendOutcome { sent, sentPartially, queued, failed }
 
 class SendImageResult {
   final SendOutcome outcome;
 
-  /// Set when the photo went out, so the caller can offer to undo it.
-  final String? imageId;
+  /// What was sent, so the caller can offer to undo it. Holds every copy when
+  /// the image went to more than one instance, so undoing takes them all back.
+  final SharedImage? image;
   final String? error;
 
-  const SendImageResult.sent(this.imageId)
+  /// Labels of the servers that refused their copy, in the order they were
+  /// tried.
+  final List<String> refusedBy;
+
+  const SendImageResult.sent(this.image)
       : outcome = SendOutcome.sent,
-        error = null;
+        error = null,
+        refusedBy = const [];
+
+  /// Some copies landed and at least one server refused its own.
+  const SendImageResult.sentPartially(this.image, this.error, this.refusedBy)
+      : outcome = SendOutcome.sentPartially;
   const SendImageResult.queued()
       : outcome = SendOutcome.queued,
-        imageId = null,
-        error = null;
+        image = null,
+        error = null,
+        refusedBy = const [];
   const SendImageResult.failed(this.error)
       : outcome = SendOutcome.failed,
-        imageId = null;
+        image = null,
+        refusedBy = const [];
+}
+
+/// One instance's groups, for the picker.
+class _InstanceGroups {
+  const _InstanceGroups(this.instance, this.groups);
+  final KrabInstance instance;
+  final List<Group> groups;
 }
 
 /// Group picker and description dialog for sending a captured image.
@@ -46,17 +71,40 @@ class SendImageDialog extends StatefulWidget {
 
 class _SendImageDialogState extends State<SendImageDialog> {
   final TextEditingController _description = TextEditingController();
-  final Set<String> _selectedGroups = {};
-  late final Future<SupabaseResponse<List<Group>>> _groupsFuture;
+
+  /// Selected groups, as `instanceId/groupId`.
+  final Set<String> _selected = {};
+
+  late final Future<List<_InstanceGroups>> _groupsFuture;
   bool _sending = false;
 
   @override
   void initState() {
     super.initState();
-    _groupsFuture = api.getUserGroups();
+    _groupsFuture = _loadGroups();
     UserPreferences.getFavoriteGroups().then((favorites) {
-      if (mounted) setState(() => _selectedGroups.addAll(favorites));
+      if (mounted) setState(() => _selected.addAll(favorites));
     });
+  }
+
+  /// Every connected instance's groups, fetched together.
+  Future<List<_InstanceGroups>> _loadGroups() async {
+    final instances = InstanceRegistry.instance.all;
+    final responses =
+        await Future.wait(instances.map((i) => i.api.getUserGroups()));
+
+    final loaded = <_InstanceGroups>[];
+    for (var i = 0; i < instances.length; i++) {
+      final response = responses[i];
+      if (!response.success || response.data == null) {
+        debugPrint('Send: groups from ${instances[i].id} unavailable '
+            '(${response.error})');
+        continue;
+      }
+      if (response.data!.isEmpty) continue;
+      loaded.add(_InstanceGroups(instances[i], response.data!));
+    }
+    return loaded;
   }
 
   @override
@@ -65,41 +113,114 @@ class _SendImageDialogState extends State<SendImageDialog> {
     super.dispose();
   }
 
+  /// The selected groups, split by the instance that owns them.
+  Map<String, List<String>> _selectionByInstance() {
+    final byInstance = <String, List<String>>{};
+    for (final key in _selected) {
+      final slash = key.indexOf('/');
+      if (slash <= 0) continue;
+      (byInstance[key.substring(0, slash)] ??= [])
+          .add(key.substring(slash + 1));
+    }
+    return byInstance;
+  }
+
   Future<void> _send() async {
-    if (_selectedGroups.isEmpty || _sending) return;
+    if (_selected.isEmpty || _sending) return;
     setState(() => _sending = true);
 
-    final groups = _selectedGroups.toList();
+    final byInstance = _selectionByInstance();
 
-    // The outbox has to retry under any id this send reserved, or it would send
-    // the photo a second time.
-    String? reserved;
+    // One id shared by every copy, so the copies can be recognised later as the
+    // one image they are.
+    final shareId = newShareId();
 
-    final response = await api.sendImageToGroups(
-      widget.imageFile,
-      groups,
-      _description.text,
-      onReserved: (imageId) async => reserved = imageId,
-    );
-
-    // Couldn't reach the server: hold the photo and send it when we can
-    if (!response.success && response.offline) {
-      await UploadOutbox.instance.enqueue(
-        api.instanceId,
-        widget.imageFile,
-        groups,
-        _description.text,
-        reservedImageId: reserved,
-      );
+    // Prepared once and handed to every instance, so the copies are byte
+    // identical and the image is only re-encoded once.
+    final Uint8List prepared;
+    try {
+      prepared = await prepareImageForUpload(widget.imageFile);
+    } catch (error) {
+      debugPrint('Send: could not prepare the image: $error');
       if (!mounted) return;
-      Navigator.of(context).pop(const SendImageResult.queued());
+      Navigator.of(context).pop(const SendImageResult.failed(errorServer));
       return;
     }
 
+    final sent = <ImageRef>[];
+    final refusedBy = <String>[];
+    var queuedAny = false;
+    String? failure;
+
+    for (final entry in byInstance.entries) {
+      final instance = InstanceRegistry.instance.byId(entry.key);
+      if (instance == null) continue;
+
+      // The outbox has to retry under any id this send reserved, or it would
+      // send the image a second time.
+      String? reserved;
+      // Set only when this instance could not store the share id, which is the
+      // only case the ledger is there for.
+      var needsLedger = false;
+
+      final response = await instance.api.sendImageToGroups(
+        widget.imageFile,
+        entry.value,
+        _description.text,
+        shareId: shareId,
+        preparedBytes: prepared,
+        onReserved: (imageId) async => reserved = imageId,
+        onShareIdNotStored: () async => needsLedger = true,
+      );
+
+      if (response.success && response.data != null) {
+        final imageId = response.data!;
+        if (needsLedger) {
+          await ShareLedger.instance.record(
+            instanceId: instance.id,
+            imageId: imageId,
+            shareId: shareId,
+          );
+        }
+        sent.add(ImageRef(
+          instanceId: instance.id,
+          id: imageId,
+          shareId: shareId,
+        ));
+        continue;
+      }
+
+      // Couldn't reach this server: hold its copy and send it when we can.
+      if (response.offline) {
+        await UploadOutbox.instance.enqueue(
+          instance.id,
+          widget.imageFile,
+          entry.value,
+          _description.text,
+          reservedImageId: reserved,
+          shareId: shareId,
+        );
+        queuedAny = true;
+        continue;
+      }
+
+      debugPrint('Send: ${instance.id} refused the image (${response.error})');
+      failure ??= response.error;
+      refusedBy.add(instance.label);
+    }
+
     if (!mounted) return;
-    Navigator.of(context).pop(response.success
-        ? SendImageResult.sent(response.data)
-        : SendImageResult.failed(response.error));
+
+    if (sent.isNotEmpty) {
+      Navigator.of(context).pop(failure == null
+          ? SendImageResult.sent(SharedImage(sent))
+          : SendImageResult.sentPartially(SharedImage(sent), failure, refusedBy));
+      return;
+    }
+    // Nothing landed.
+    Navigator.of(context).pop(queuedAny
+        ? const SendImageResult.queued()
+        : SendImageResult.failed(failure ?? errorServer));
   }
 
   Widget _buildGroups() {
@@ -112,36 +233,51 @@ class _SendImageDialogState extends State<SendImageDialog> {
             child: CircularProgressIndicator(),
           );
         }
-        if (snapshot.hasError ||
-            !snapshot.hasData ||
-            !(snapshot.data?.success ?? false)) {
-          debugPrint(
-              "Failed to load groups: ${snapshot.error ?? snapshot.data?.error}");
+        if (snapshot.hasError || !snapshot.hasData) {
+          debugPrint("Failed to load groups: ${snapshot.error}");
           return Center(child: Text(context.l10n.failed_to_load_groups));
         }
-        final groups = snapshot.data!.data ?? [];
-        if (groups.isEmpty) {
+        final loaded = snapshot.data!;
+        if (loaded.isEmpty) {
           return Center(child: Text(context.l10n.join_group_first));
         }
-        return ListView.builder(
-          itemCount: groups.length,
-          itemBuilder: (context, index) {
-            final group = groups[index];
-            return CheckboxListTile(
-              secondary: GroupAvatar(group, radius: 18),
-              title: Text(group.name),
-              value: _selectedGroups.contains(group.id),
-              onChanged: (value) => setState(() {
-                if (value == true) {
-                  _selectedGroups.add(group.id);
-                } else {
-                  _selectedGroups.remove(group.id);
-                }
-              }),
-            );
-          },
-        );
+
+        final showInstances = loaded.length > 1;
+        final rows = <Widget>[];
+        for (final entry in loaded) {
+          if (showInstances) rows.add(_instanceHeader(entry.instance));
+          rows.addAll(entry.groups.map(_groupTile));
+        }
+
+        return ListView(children: rows);
       },
+    );
+  }
+
+  Widget _instanceHeader(KrabInstance instance) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+        child: Text(
+          instance.label,
+          style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w700,
+              ),
+        ),
+      );
+
+  Widget _groupTile(Group group) {
+    final key = UserPreferences.groupKey(group.instanceId, group.id);
+    return CheckboxListTile(
+      secondary: GroupAvatar(group, radius: 18),
+      title: Text(group.name),
+      value: _selected.contains(key),
+      onChanged: (value) => setState(() {
+        if (value == true) {
+          _selected.add(key);
+        } else {
+          _selected.remove(key);
+        }
+      }),
     );
   }
 
@@ -255,10 +391,10 @@ class _SendImageDialogState extends State<SendImageDialog> {
           )
         else
           SoftButton(
-            onPressed: _selectedGroups.isEmpty ? null : _send,
+            onPressed: _selected.isEmpty ? null : _send,
             label: context.l10n.send,
             icon: Icons.send_rounded,
-            color: _selectedGroups.isEmpty
+            color: _selected.isEmpty
                 ? Theme.of(context)
                     .colorScheme
                     .onSurfaceVariant

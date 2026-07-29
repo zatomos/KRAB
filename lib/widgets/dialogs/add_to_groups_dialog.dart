@@ -2,13 +2,15 @@ import 'package:flutter/material.dart';
 
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/models/group.dart';
+import 'package:krab/services/instance/instance_registry.dart';
 import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/widgets/avatars/group_avatar.dart';
 import 'package:krab/widgets/soft_button.dart';
 
-/// Lets the uploader pick which additional groups to share an existing photo to.
-/// [groups] should already be filtered to the groups the photo isn't in yet.
+/// Lets the uploader pick which additional groups to share an existing image to.
+/// groups should already be filtered to the groups the image isn't in yet.
 /// Returns the chosen group ids, or null if cancelled.
+
 Future<Set<String>?> showAddToGroupsDialog(
   BuildContext context, {
   required List<Group> groups,
@@ -31,6 +33,52 @@ class _AddToGroupsDialog extends StatefulWidget {
 class _AddToGroupsDialogState extends State<_AddToGroupsDialog> {
   final Set<String> _selected = {};
 
+  /// The groups in the order given, headed by the server that owns them.
+  List<Widget> _rows() {
+    final byInstance = <String, List<Group>>{};
+    for (final group in widget.groups) {
+      (byInstance[group.instanceId] ??= []).add(group);
+    }
+
+    final rows = <Widget>[];
+    for (final entry in byInstance.entries) {
+      if (byInstance.length > 1) {
+        final instance = InstanceRegistry.instance.byId(entry.key);
+        rows.add(_instanceHeader(instance?.label ?? entry.key));
+      }
+      rows.addAll(entry.value.map(_groupTile));
+    }
+    return rows;
+  }
+
+  Widget _instanceHeader(String label) => Padding(
+        padding: const EdgeInsets.fromLTRB(8, 12, 8, 4),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            label,
+            style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w700,
+                ),
+          ),
+        ),
+      );
+
+  Widget _groupTile(Group group) => CheckboxListTile(
+        value: _selected.contains(group.id),
+        onChanged: (checked) => setState(() {
+          if (checked == true) {
+            _selected.add(group.id);
+          } else {
+            _selected.remove(group.id);
+          }
+        }),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+        secondary: GroupAvatar(group, radius: 18),
+        title: Text(group.name, overflow: TextOverflow.ellipsis),
+      );
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
@@ -47,22 +95,7 @@ class _AddToGroupsDialogState extends State<_AddToGroupsDialog> {
             child: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
-                children: [
-                  for (final group in widget.groups)
-                    CheckboxListTile(
-                      value: _selected.contains(group.id),
-                      onChanged: (checked) => setState(() {
-                        if (checked == true) {
-                          _selected.add(group.id);
-                        } else {
-                          _selected.remove(group.id);
-                        }
-                      }),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-                      secondary: GroupAvatar(group, radius: 18),
-                      title: Text(group.name, overflow: TextOverflow.ellipsis),
-                    ),
-                ],
+                children: _rows(),
               ),
             ),
           ),
@@ -83,7 +116,9 @@ class _AddToGroupsDialogState extends State<_AddToGroupsDialog> {
           label: context.l10n.add,
           icon: Icons.add,
           color: _selected.isEmpty
-              ? Theme.of(context).colorScheme.onSurfaceVariant
+              ? Theme.of(context)
+                  .colorScheme
+                  .onSurfaceVariant
                   .withValues(alpha: 0.4)
               : Theme.of(context).colorScheme.primary,
         ),

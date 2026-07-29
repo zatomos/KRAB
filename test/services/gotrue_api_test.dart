@@ -41,7 +41,8 @@ ResponseBody _json(Object body, {int status = 200}) => ResponseBody.fromString(
 
 /// Wires a GotrueApi to a fake adapter.
 /// Returns both so tests can inspect the recorded request afterwards.
-(GotrueApi, _FakeAdapter) _apiReturning(ResponseBody Function(RequestOptions) r) {
+(GotrueApi, _FakeAdapter) _apiReturning(
+    ResponseBody Function(RequestOptions) r) {
   final adapter = _FakeAdapter(r);
   final dio = Dio()..httpClientAdapter = adapter;
   final api = GotrueApi('https://auth.example', 'anon-key-123', dio: dio);
@@ -50,9 +51,10 @@ ResponseBody _json(Object body, {int status = 200}) => ResponseBody.fromString(
 
 void main() {
   group('request building', () {
-    test('passwordGrant posts email/password with the password grant', () async {
-      final (api, adapter) =
-          _apiReturning((_) => _json({'access_token': 'a', 'refresh_token': 'r'}));
+    test('passwordGrant posts email/password with the password grant',
+        () async {
+      final (api, adapter) = _apiReturning(
+          (_) => _json({'access_token': 'a', 'refresh_token': 'r'}));
 
       final session = await api.passwordGrant('me@x.com', 'pw');
 
@@ -68,8 +70,8 @@ void main() {
     });
 
     test('refreshGrant uses the refresh_token grant', () async {
-      final (api, adapter) =
-          _apiReturning((_) => _json({'access_token': 'a', 'refresh_token': 'r2'}));
+      final (api, adapter) = _apiReturning(
+          (_) => _json({'access_token': 'a', 'refresh_token': 'r2'}));
 
       await api.refreshGrant('old-refresh');
 
@@ -137,7 +139,8 @@ void main() {
 
       await api.recover('me@x.com');
 
-      expect(adapter.lastRequest!.uri.queryParameters.containsKey('redirect_to'),
+      expect(
+          adapter.lastRequest!.uri.queryParameters.containsKey('redirect_to'),
           isFalse);
     });
 
@@ -180,7 +183,8 @@ void main() {
 
       expect(
         () => api.passwordGrant('a', 'b'),
-        throwsA(isA<GotrueAuthException>().having((e) => e.code, 'code', 'first')),
+        throwsA(
+            isA<GotrueAuthException>().having((e) => e.code, 'code', 'first')),
       );
     });
 

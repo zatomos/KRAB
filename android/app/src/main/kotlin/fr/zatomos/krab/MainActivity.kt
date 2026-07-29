@@ -39,6 +39,29 @@ class MainActivity : FlutterActivity() {
                 }
             }
 
+        // One FCM registration token per connected KRAB server.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "krab/push")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "instanceTokens" -> {
+                        val context = applicationContext
+                        Thread {
+                            val tokens = try {
+                                InstanceFirebase.tokens(
+                                    context,
+                                    InstanceFirebase.configs(context),
+                                )
+                            } catch (e: Exception) {
+                                Log.e("KRAB", "instanceTokens failed", e)
+                                emptyMap<String, String>()
+                            }
+                            runOnUiThread { result.success(tokens) }
+                        }.start()
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+
         // Hands a downloaded APK to the system package installer
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "krab/installer")
             .setMethodCallHandler { call, result ->

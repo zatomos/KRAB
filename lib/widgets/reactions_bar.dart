@@ -8,21 +8,19 @@ import 'package:krab/models/reaction.dart';
 import 'package:krab/widgets/emoji_picker_sheet.dart';
 import 'package:krab/widgets/reactors_sheet.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
-import 'package:krab/services/instance/active_instance.dart';
+import 'package:krab/models/shared_image.dart';
+import 'package:krab/services/cache/reaction_cache.dart';
+import 'package:krab/services/instance/instance_registry.dart';
+import 'package:krab/services/shared_image_api.dart';
 
 /// Horizontal strip of emoji reaction chips with an add reaction button,
-/// laid over the dark photo viewer.
+/// laid over the dark image viewer.
 class ReactionsBar extends StatefulWidget {
-  /// The instance the image lives on; its tallies are read and written there.
-  final KrabInstance instance;
+  /// The image, with every copy of it. Tallies are added up across the copies
+  /// and a new reaction is written to one of them.
+  final SharedImage image;
 
-  final String imageId;
-
-  const ReactionsBar({
-    super.key,
-    required this.instance,
-    required this.imageId,
-  });
+  const ReactionsBar({super.key, required this.image});
 
   @override
   State<ReactionsBar> createState() => ReactionsBarState();
@@ -31,18 +29,27 @@ class ReactionsBar extends StatefulWidget {
 class ReactionsBarState extends State<ReactionsBar> {
   List<ReactionSummary> _reactions = const [];
 
+  SharedImageApi get _api => SharedImageApi(widget.image);
+
+  /// The merged tally is cached against the image's primary copy
+  ReactionCache? get _cache => InstanceRegistry.instance
+      .byId(widget.image.primary.instanceId)
+      ?.reactions;
+
+  String get _cacheKey => widget.image.primary.id;
+
   @override
   void initState() {
     super.initState();
-    _reactions = widget.instance.reactions.cached(widget.imageId);
+    _reactions = _cache?.cached(_cacheKey) ?? const [];
     _refresh();
   }
 
   @override
   void didUpdateWidget(covariant ReactionsBar oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.imageId != widget.imageId) {
-      _reactions = widget.instance.reactions.cached(widget.imageId);
+    if (oldWidget.image.identity != widget.image.identity) {
+      _reactions = _cache?.cached(_cacheKey) ?? const [];
       _refresh();
     }
   }
@@ -54,25 +61,26 @@ class ReactionsBarState extends State<ReactionsBar> {
   /// Pull the latest tally without clearing what's shown, so the bar updates in
   /// place rather than blanking out.
   Future<void> _refresh() async {
-    final imageId = widget.imageId;
-    final list = await widget.instance.reactions.fetch(imageId);
-    if (!mounted || imageId != widget.imageId || list == null) return;
+    final identity = widget.image.identity;
+    final list = await _api.reactions();
+    if (!mounted || identity != widget.image.identity || list == null) return;
+    _cache?.put(_cacheKey, list);
     setState(() => _reactions = list);
   }
 
   /// Apply emoji, then reconcile with the server.
   Future<void> _toggle(String emoji) async {
-    final imageId = widget.imageId;
+    final identity = widget.image.identity;
     final previous = _reactions;
     final updated = applyToggle(previous, emoji);
     setState(() => _reactions = updated);
-    widget.instance.reactions.put(imageId, updated);
+    _cache?.put(_cacheKey, updated);
 
-    final response = await widget.instance.api.toggleReaction(imageId, emoji);
+    final response = await _api.toggleReaction(emoji);
     if (response.success) return;
 
-    widget.instance.reactions.put(imageId, previous);
-    if (!mounted || imageId != widget.imageId) return;
+    _cache?.put(_cacheKey, previous);
+    if (!mounted || identity != widget.image.identity) return;
     setState(() => _reactions = previous);
     showSnackBar(
       context.l10n.error_reacting(context.errorText(response.error)),
@@ -110,8 +118,7 @@ class ReactionsBarState extends State<ReactionsBar> {
     if (emoji != null) await _toggle(emoji);
   }
 
-  void _openReactors() =>
-      showReactorsSheet(context, widget.instance, widget.imageId);
+  void _openReactors() => showReactorsSheet(context, widget.image);
 
   /// How many reaction chips fit across the phone width.
   static int visibleChipsFor(double width, int reactionCount) {

@@ -61,7 +61,7 @@ void main() {
 
       await InstanceRegistry.instance.load();
 
-      final instance = InstanceRegistry.instance.active!;
+      final instance = InstanceRegistry.instance.all.single;
       expect(instance.id, 'inst_1');
       expect(instance.url, 'https://one.example',
           reason: 'a trailing slash must not make one server look like two');
@@ -82,7 +82,7 @@ void main() {
       await InstanceRegistry.instance.load();
       await InstanceRegistry.instance.loadSessions();
 
-      expect(InstanceRegistry.instance.active!.auth.isLoggedIn, isTrue);
+      expect(InstanceRegistry.instance.all.single.auth.isLoggedIn, isTrue);
       expect(storage.items[sessionStorageKey('inst_1')], isNotNull);
       expect(storage.items[legacySessionStorageKey], isNull,
           reason: 'a stale copy of a live refresh token is worth nothing and '
@@ -100,8 +100,7 @@ void main() {
       await InstanceRegistry.instance.load();
 
       final prefs = await SharedPreferences.getInstance();
-      expect(prefs.getStringList('favoriteGroups'),
-          ['inst_1/g1', 'inst_1/g2']);
+      expect(prefs.getStringList('favoriteGroups'), ['inst_1/g1', 'inst_1/g2']);
       expect(prefs.getStringList('mutedGroups'), ['inst_1/g3']);
     });
 
@@ -111,7 +110,7 @@ void main() {
       await InstanceRegistry.instance.load();
 
       expect(InstanceRegistry.instance.isEmpty, isTrue);
-      expect(InstanceRegistry.instance.active, isNull);
+      expect(InstanceRegistry.instance.sole, isNull);
     });
   });
 
@@ -126,7 +125,7 @@ void main() {
       await InstanceRegistry.instance.load();
 
       expect(InstanceRegistry.instance.all, hasLength(1));
-      expect(InstanceRegistry.instance.active!.url, 'https://two.example');
+      expect(InstanceRegistry.instance.all.single.url, 'https://two.example');
     });
 
     test('the stored shape is a JSON array, which the native side parses',
@@ -201,6 +200,68 @@ void main() {
 
       expect(InstanceRegistry.instance.all, hasLength(1));
       expect(InstanceRegistry.instance.all.single.id, 'inst_2');
+    });
+  });
+
+  group('ranking', () {
+    Future<void> connectThree() async {
+      SharedPreferences.setMockInitialValues({});
+      await InstanceRegistry.instance.load();
+      for (final host in ['one', 'two', 'three']) {
+        await InstanceRegistry.instance
+            .connect(url: 'https://$host.example', anonKey: 'k');
+      }
+    }
+
+    List<String> hosts() => [
+          for (final i in InstanceRegistry.instance.all)
+            Uri.parse(i.url).host.split('.').first
+        ];
+
+    test('moving a server down lands it where it was dropped', () async {
+      await connectThree();
+
+      await InstanceRegistry.instance.reorder(0, 1);
+
+      expect(hosts(), ['two', 'one', 'three']);
+    });
+
+    test('moving a server up lands it where it was dropped', () async {
+      await connectThree();
+
+      await InstanceRegistry.instance.reorder(2, 0);
+
+      expect(hosts(), ['three', 'one', 'two']);
+    });
+
+    test('the ranking survives a restart', () async {
+      await connectThree();
+      await InstanceRegistry.instance.reorder(2, 0);
+
+      await InstanceRegistry.instance.load();
+
+      expect(hosts(), ['three', 'one', 'two'],
+          reason: 'the order decides which account the camera shows, so it '
+              'cannot reset every launch');
+    });
+
+    test('a no-op reorder changes nothing', () async {
+      await connectThree();
+
+      await InstanceRegistry.instance.reorder(1, 1);
+
+      expect(hosts(), ['one', 'two', 'three']);
+    });
+
+    test('an out-of-range index is ignored rather than throwing', () async {
+      await connectThree();
+
+      await InstanceRegistry.instance.reorder(7, 0);
+      await InstanceRegistry.instance.reorder(0, 99);
+
+      expect(hosts(), ['two', 'three', 'one'],
+          reason: 'a target past the end clamps to last; a source that is not '
+              'in the list is nothing to move');
     });
   });
 

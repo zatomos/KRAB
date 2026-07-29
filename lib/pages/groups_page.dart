@@ -12,7 +12,8 @@ import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/widgets/group_card.dart';
 import 'package:krab/pages/image_feed_page.dart';
 import 'package:krab/models/group.dart';
-import 'package:krab/services/instance/active_instance.dart';
+import 'package:krab/services/instance/instances.dart';
+import 'package:krab/services/instance/instance_registry.dart';
 
 class GroupsPage extends StatefulWidget {
   /// Route name used so a group gallery's back button can return
@@ -40,18 +41,51 @@ class GroupsPageState extends State<GroupsPage> {
     });
   }
 
+  /// Ask every signed-in server for the user's groups and show them as one
+  /// list.
   Future<_GroupsResult> _loadGroups() async {
-    final response = await api.getUserGroups();
-    final groups = response.data;
-    if (!response.success || groups == null) {
-      return _GroupsResult(response, const {});
+    final sources =
+        InstanceRegistry.instance.all.where((i) => i.auth.isLoggedIn).toList();
+    if (sources.isEmpty) return _GroupsResult(const [], const {}, const []);
+
+    final responses = await Future.wait(
+        sources.map((instance) => instance.api.getUserGroups()));
+
+    final groups = <Group>[];
+    final unavailable = <KrabInstance>[];
+    for (var i = 0; i < sources.length; i++) {
+      final response = responses[i];
+      if (!response.success || response.data == null) {
+        debugPrint('Groups: ${sources[i].id} failed (${response.error})');
+        unavailable.add(sources[i]);
+        continue;
+      }
+      groups.addAll(response.data!);
     }
+
+    if (groups.isEmpty && unavailable.length == sources.length) {
+      return _GroupsResult(const [], const {}, unavailable);
+    }
+
+    // Newest activity first
+    groups.sort((a, b) {
+      final aAt = a.latestImageAt;
+      final bAt = b.latestImageAt;
+      if (aAt == null && bAt == null) return a.name.compareTo(b.name);
+      if (aAt == null) return 1;
+      if (bAt == null) return -1;
+      return bAt.compareTo(aAt);
+    });
+
     final counts = <String, int>{};
     await Future.wait(groups.map((group) async {
-      final res = await api.getGroupMemberCount(group.id);
-      counts[group.id] = res.error == null ? (res.data ?? 0) : 0;
+      final instance = InstanceRegistry.instance.byId(group.instanceId);
+      if (instance == null) return;
+      final res = await instance.api.getGroupMemberCount(group.id);
+      counts['${group.instanceId}/${group.id}'] =
+          res.error == null ? (res.data ?? 0) : 0;
     }));
-    return _GroupsResult(response, counts);
+    return _GroupsResult(groups, counts, unavailable);
   }
 
   /// Open one of the menu's dialogs, and reload the list if it changed one.
@@ -78,22 +112,34 @@ class GroupsPageState extends State<GroupsPage> {
       debugPrint("Failed to load groups: ${snapshot.error}");
       return Center(child: Text(context.l10n.failed_to_load_groups));
     }
-    final response = snapshot.data!.response;
-    if (!response.success) {
-      debugPrint("Failed to load groups: ${response.error}");
+    final result = snapshot.data!;
+    final groups = result.groups;
+    final unavailable = result.unavailable;
+
+    // Nothing came back from anywhere -> failure
+    if (groups.isEmpty && unavailable.isNotEmpty) {
       return Center(child: Text(context.l10n.failed_to_load_groups));
     }
-    final groups = response.data ?? [];
     if (groups.isEmpty) {
       return Center(child: Text(context.l10n.no_group_joined));
     }
-    final counts = snapshot.data!.memberCounts;
+
+    final counts = result.memberCounts;
+    final showOrigin = InstanceRegistry.instance.all.length > 1;
+
     return ListView.builder(
-      itemCount: groups.length,
-      itemBuilder: (context, index) => GroupCard(
-        group: groups[index],
-        memberCount: counts[groups[index].id],
-      ),
+      itemCount: groups.length + (unavailable.isEmpty ? 0 : 1),
+      itemBuilder: (context, index) {
+        if (index == groups.length) {
+          return _UnavailableServersNotice(instances: unavailable);
+        }
+        final group = groups[index];
+        return GroupCard(
+          group: group,
+          memberCount: counts['${group.instanceId}/${group.id}'],
+          showOrigin: showOrigin,
+        );
+      },
     );
   }
 
@@ -140,12 +186,47 @@ class GroupsPageState extends State<GroupsPage> {
   }
 }
 
-/// The groups list paired with each group's member count.
+/// Every server's groups in one list, with each group's member count and the
+/// servers that could not be asked.
 class _GroupsResult {
-  final SupabaseResponse<List<Group>> response;
+  /// Keyed `instanceId/groupId`, since ids only mean something per server.
   final Map<String, int> memberCounts;
 
-  _GroupsResult(this.response, this.memberCounts);
+  final List<Group> groups;
+
+  /// Signed-in servers that failed to answer, so the list can say what is
+  /// missing.
+  final List<KrabInstance> unavailable;
+
+  const _GroupsResult(this.groups, this.memberCounts, this.unavailable);
+}
+
+/// Names the servers whose groups are missing from the list above it.
+class _UnavailableServersNotice extends StatelessWidget {
+  const _UnavailableServersNotice({required this.instances});
+
+  final List<KrabInstance> instances;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      child: Row(
+        children: [
+          Icon(Symbols.cloud_off_rounded, size: 18, color: colors.error),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              context.l10n.groups_server_unavailable(
+                  instances.map((i) => i.label).join(', ')),
+              style: TextStyle(color: colors.error, fontSize: 13),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// Bone placeholders
@@ -228,8 +309,8 @@ class JoinGroupDialog extends StatelessWidget {
       submitLabel: l10n.join,
       submitIcon: Symbols.groups_rounded,
       successMessage: l10n.group_joined_success,
-      onSubmit: (token) async {
-        final res = await api.joinGroupByInvite(token);
+      onSubmit: (token, instance) async {
+        final res = await instance.api.joinGroupByInvite(token);
         return res.success
             ? null
             : l10n.group_code_invalid(res.error ?? l10n.unknown_error);
@@ -250,7 +331,7 @@ class _GroupFormDialog extends StatefulWidget {
   final int? maxLength;
 
   /// Returns null on success, or the message to show under the field.
-  final Future<String?> Function(String value) onSubmit;
+  final Future<String?> Function(String value, KrabInstance instance) onSubmit;
 
   const _GroupFormDialog({
     required this.title,
@@ -272,6 +353,11 @@ class _GroupFormDialogState extends State<_GroupFormDialog> {
   String? _error;
   bool _loading = false;
 
+  late final List<KrabInstance> _targets =
+      InstanceRegistry.instance.all.where((i) => i.auth.isLoggedIn).toList();
+
+  late KrabInstance? _target = _targets.length == 1 ? _targets.first : null;
+
   @override
   void dispose() {
     _controller.dispose();
@@ -285,6 +371,15 @@ class _GroupFormDialogState extends State<_GroupFormDialog> {
       _loading = true;
     });
 
+    final target = _target;
+    if (target == null) {
+      setState(() {
+        _error = context.l10n.servers_pick_one;
+        _loading = false;
+      });
+      return;
+    }
+
     final value = _controller.text.trim();
     if (value.isEmpty) {
       setState(() {
@@ -296,7 +391,7 @@ class _GroupFormDialogState extends State<_GroupFormDialog> {
 
     String? error;
     try {
-      error = await widget.onSubmit(value);
+      error = await widget.onSubmit(value, target);
     } catch (e) {
       error = e.toString();
     }
@@ -321,11 +416,39 @@ class _GroupFormDialogState extends State<_GroupFormDialog> {
       title: Text(widget.title),
       content: SizedBox(
         width: double.maxFinite,
-        child: RoundedInputField(
-          controller: _controller,
-          hintText: widget.hintText,
-          errorText: _error,
-          maxLength: widget.maxLength,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            RoundedInputField(
+              controller: _controller,
+              hintText: widget.hintText,
+              errorText: _error,
+              maxLength: widget.maxLength,
+            ),
+            if (_targets.length > 1) ...[
+              const SizedBox(height: 12),
+              DropdownButtonFormField<KrabInstance>(
+                initialValue: _target,
+                hint: Text(context.l10n.servers_pick_one),
+                isExpanded: true,
+                decoration: InputDecoration(
+                  labelText: context.l10n.server_label,
+                  prefixIcon: const Icon(Symbols.dns_rounded),
+                ),
+                items: [
+                  for (final instance in _targets)
+                    DropdownMenuItem(
+                      value: instance,
+                      child:
+                          Text(instance.label, overflow: TextOverflow.ellipsis),
+                    ),
+                ],
+                onChanged: (picked) {
+                  if (picked != null) setState(() => _target = picked);
+                },
+              ),
+            ],
+          ],
         ),
       ),
       actionsOverflowButtonSpacing:
@@ -369,8 +492,8 @@ class CreateGroupDialog extends StatelessWidget {
       submitIcon: Symbols.group_add_rounded,
       successMessage: l10n.group_created_success,
       maxLength: 19,
-      onSubmit: (name) async {
-        final res = await api.createGroup(name);
+      onSubmit: (name, instance) async {
+        final res = await instance.api.createGroup(name);
         return res.success
             ? null
             : l10n.error_creating_group(res.error ?? l10n.unknown_error);

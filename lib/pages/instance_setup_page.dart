@@ -11,16 +11,14 @@ import 'package:krab/services/push_helper.dart';
 import 'package:krab/widgets/auth_card.dart';
 import 'package:krab/widgets/rectangle_button.dart';
 import 'package:krab/widgets/rounded_input_field.dart';
-import 'package:krab/services/instance/active_instance.dart';
+import 'package:krab/services/instance/instances.dart';
 
 /// Asks which KRAB backend this install should talk to.
-///
-/// KRAB has no central server, so the app cannot be compiled against one
-/// instance. The normal path is a single connection token the operator hands
-/// out (it packs the URL and the anon key), with manual URL + anon-key entry as
-/// a fallback for anyone who would rather type them.
 class InstanceSetupPage extends StatefulWidget {
-  const InstanceSetupPage({super.key});
+  /// Whether this is a new server rather than the first.
+  final bool addingAnother;
+
+  const InstanceSetupPage({super.key, this.addingAnother = false});
 
   @override
   State<InstanceSetupPage> createState() => _InstanceSetupPageState();
@@ -150,9 +148,7 @@ class _InstanceSetupPageState extends State<InstanceSetupPage> {
       anonKey: resolved.key,
     );
 
-    // Prove the instance answers before leaving this screen: a wrong token or a
-    // typo would otherwise only surface as a confusing failure at login.
-    // Learning what the instance supports is that same round trip.
+    // Prove the instance answers before leaving this screen
     final config = await instance.api.fetchInstanceConfig();
     if (!config.success) {
       await InstanceRegistry.instance.remove(instance.id);
@@ -167,8 +163,22 @@ class _InstanceSetupPageState extends State<InstanceSetupPage> {
     await PushHelper.ensureRegistered(instance);
 
     if (!mounted) return;
+
+    if (widget.addingAnother) {
+      // Sign in right away
+      await Navigator.of(context).push(MaterialPageRoute(
+        builder: (_) => LoginPage(
+          instance: instance,
+          enterAppOnSuccess: false,
+        ),
+      ));
+      if (!mounted) return;
+      Navigator.of(context).pop(instance);
+      return;
+    }
+
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const LoginPage()),
+      MaterialPageRoute(builder: (_) => LoginPage(instance: instance)),
       (route) => false,
     );
   }

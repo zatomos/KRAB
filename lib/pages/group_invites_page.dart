@@ -8,7 +8,7 @@ import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/widgets/soft_button.dart';
 import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/l10n/l10n.dart';
-import 'package:krab/services/instance/active_instance.dart';
+import 'package:krab/services/instance/instances.dart';
 
 /// Management view to create, share, and revoke group invites.
 class GroupInvitesPage extends StatefulWidget {

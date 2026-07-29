@@ -47,6 +47,8 @@ require_tty
 [[ $EUID -eq 0 ]] && warn "Running as root, so the default install location is under /root. The optional setup scripts expect the same user, so stay consistent."
 
 # --- 0. Install Supabase if missing -------------------------------------
+RECREATE=0
+
 prompt_supabase_dir
 if [[ ! -f "$ENV_FILE" ]]; then
   # A directory with no .env means a previous install died partway.
@@ -62,7 +64,13 @@ if [[ ! -f "$ENV_FILE" ]]; then
         || die "Leaving $SUPABASE_DIR alone. Move or remove it, then re-run.
   To install somewhere else instead, re-run and give a different directory when
   asked where the Supabase project goes."
+      if [[ -f "$SUPABASE_DIR/docker-compose.yml" ]]; then
+        log "Stopping the containers still running from the interrupted install"
+        compose down --remove-orphans >/dev/null 2>&1 \
+          || warn "could not stop them; if this install misbehaves, run 'docker compose down' in $salvage and re-run"
+      fi
       mv "$SUPABASE_DIR" "$salvage" || die "Cannot move $SUPABASE_DIR to $salvage"
+      RECREATE=1
       log "Moved the interrupted install to $salvage"
     fi
   fi
@@ -94,7 +102,11 @@ curl -fsSL "$REPO_RAW/supabase/schema.sql" -o "$SCHEMA_TMP" || die "Failed to do
 
 # --- 1. Patch .env --------------------------------------------------------
 log "Patching $ENV_FILE"
-[[ -n "$(env_get ENABLE_EMAIL_AUTOCONFIRM)" ]] || set_env ENABLE_EMAIL_AUTOCONFIRM true
+if [[ -n "$(env_get GOTRUE_MAILER_TEMPLATES_CONFIRMATION)" ]]; then
+  log "Leaving ENABLE_EMAIL_AUTOCONFIRM=$(env_get ENABLE_EMAIL_AUTOCONFIRM) (email confirmation is set up)"
+else
+  set_env ENABLE_EMAIL_AUTOCONFIRM true
+fi
 set_env FUNCTIONS_VERIFY_JWT false
 set_env SUPABASE_PUBLIC_URL "$API_URL"
 set_env API_EXTERNAL_URL "$API_URL"
@@ -227,7 +239,11 @@ fi
 
 # --- 2. Start the stack ---------------------------------------------------
 log "Starting the stack"
-compose up -d || die "docker compose up failed"
+if [[ $RECREATE -eq 1 ]]; then
+  compose up -d --force-recreate || die "docker compose up failed"
+else
+  compose up -d || die "docker compose up failed"
+fi
 
 # --- 3. Wait for Postgres -------------------------------------------------
 log "Waiting for $DB_CONTAINER..."

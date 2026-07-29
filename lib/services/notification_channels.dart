@@ -57,8 +57,10 @@ int _notificationId(String source) {
 }
 
 /// Stable notification id for one delivery of an image.
-int imageNotificationId(String imageId, {String batchKey = ''}) =>
-    _notificationId(batchKey.isEmpty ? imageId : '$imageId|$batchKey');
+int imageNotificationId(String imageId,
+        {String batchKey = '', String? shareId}) =>
+    _notificationId(
+        shareId ?? (batchKey.isEmpty ? imageId : '$imageId|$batchKey'));
 
 /// Stable notification id for one comment.
 int commentNotificationId(String commentId) =>
@@ -78,11 +80,14 @@ String imageBatchKey(Iterable<String> groupIds) =>
     (groupIds.toList()..sort()).join(',');
 
 /// Dismiss a deleted image's notifications and drop its cached big-picture file.
-Future<void> cancelImageNotification(String imageId) async {
+Future<void> cancelImageNotification(String imageId, {String? shareId}) async {
   await _ensureFlnpInitialized();
 
   // A notification shown by an older build carries the bare-image-id form.
   await _flnp.cancel(id: imageNotificationId(imageId));
+  if (shareId != null) {
+    await _flnp.cancel(id: imageNotificationId(imageId, shareId: shareId));
+  }
 
   try {
     for (final notification in await _flnp.getActiveNotifications()) {
@@ -266,6 +271,7 @@ Future<void> dispatchCommentNotification(
 
   final media = await _notificationMedia(instance, commenterId, imageId);
   await showCommentNotification(
+    instance: instance,
     groupId: groupId,
     groupName: groupName,
     commentId: commentId,
@@ -301,6 +307,7 @@ Future<void> dispatchReactionNotification(
 
   final media = await _notificationMedia(instance, reactorId, imageId);
   await showReactionNotification(
+    instance: instance,
     reactorUsername: reactorUsername,
     reactorId: reactorId,
     emoji: emoji,
@@ -379,6 +386,7 @@ Future<void> dispatchImageNotification(
 
   final media = await _notificationMedia(instance, senderId, imageId);
   await showImageNotification(
+    instance: instance,
     groupId: channel.id,
     groupName: channel.name,
     groupsDisplay: groupsDisplay,
@@ -395,6 +403,7 @@ Future<void> dispatchImageNotification(
 }
 
 Future<void> showImageNotification({
+  required KrabInstance instance,
   required String groupId,
   required String groupName,
   required String senderUsername,
@@ -467,6 +476,7 @@ Future<void> showImageNotification({
     ),
     payload: jsonEncode({
       'type': 'new_image',
+      'instance_url': instance.url,
       'image_id': imageId,
       'group_id': tapGroupId ?? '',
     }),
@@ -474,6 +484,7 @@ Future<void> showImageNotification({
 }
 
 Future<void> showCommentNotification({
+  required KrabInstance instance,
   required String groupId,
   required String groupName,
   required String commenterUsername,
@@ -513,12 +524,17 @@ Future<void> showCommentNotification({
         styleInformation: BigTextStyleInformation(commentText),
       ),
     ),
-    payload:
-        jsonEncode({'type': type, 'image_id': imageId, 'group_id': groupId}),
+    payload: jsonEncode({
+      'type': type,
+      'instance_url': instance.url,
+      'image_id': imageId,
+      'group_id': groupId,
+    }),
   );
 }
 
 Future<void> showReactionNotification({
+  required KrabInstance instance,
   required String reactorUsername,
   required String emoji,
   required String imageId,
@@ -553,7 +569,11 @@ Future<void> showReactionNotification({
             : null,
       ),
     ),
-    payload: jsonEncode({'type': 'new_reaction', 'image_id': imageId}),
+    payload: jsonEncode({
+      'type': 'new_reaction',
+      'instance_url': instance.url,
+      'image_id': imageId
+    }),
   );
 }
 

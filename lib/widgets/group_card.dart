@@ -6,9 +6,10 @@ import 'package:krab/pages/image_feed_page.dart';
 import 'package:krab/models/group.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/widgets/avatars/group_avatar.dart';
+import 'package:krab/widgets/server_label.dart';
 import 'package:krab/user_preferences.dart';
 import 'package:krab/services/time_formatting.dart';
-import 'package:krab/services/instance/active_instance.dart';
+import 'package:krab/services/instance/instances.dart';
 import 'package:krab/services/instance/instance_registry.dart';
 
 class GroupCard extends StatefulWidget {
@@ -19,11 +20,16 @@ class GroupCard extends StatefulWidget {
   /// directly instead of fetching its own.
   final int? memberCount;
 
+  /// Whether to name the server this group is on if we are connected to more
+  /// than one server.
+  final bool showOrigin;
+
   const GroupCard({
     super.key,
     required this.group,
     this.onReturn,
     this.memberCount,
+    this.showOrigin = false,
   });
 
   @override
@@ -33,9 +39,9 @@ class GroupCard extends StatefulWidget {
 class _GroupCardState extends State<GroupCard> {
   late Group _group;
 
-  /// The instance this group lives on.
-  late final KrabInstance _instance =
-      InstanceRegistry.instance.byId(_group.instanceId) ?? activeInstance;
+  /// The server this group lives on. Null once that server is disconnected.
+  KrabInstance? get _instance =>
+      InstanceRegistry.instance.byId(_group.instanceId);
   Future<int>? _memberCountFuture;
   bool isFavorite = false;
 
@@ -73,7 +79,9 @@ class _GroupCardState extends State<GroupCard> {
   }
 
   Future<int> _fetchGroupMemberCount(String groupId) async {
-    final response = await _instance.api.getGroupMemberCount(groupId);
+    final instance = _instance;
+    if (instance == null) return 0;
+    final response = await instance.api.getGroupMemberCount(groupId);
     if (response.error != null) {
       debugPrint("Failed to load member count: ${response.error}");
       if (!mounted) return 0;
@@ -140,22 +148,31 @@ class _GroupCardState extends State<GroupCard> {
               ],
             ),
 
-            subtitle: widget.memberCount != null
-                ? _memberCountLabel(context, widget.memberCount!)
-                : FutureBuilder<int>(
-                    future: _memberCountFuture,
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const Text(" ");
-                      } else if (snapshot.hasError) {
-                        return Text(context.l10n.error_loading_members);
-                      } else {
-                        return _memberCountLabel(context, snapshot.data ?? 0);
-                      }
-                    },
-                  ),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                widget.memberCount != null
+                    ? _memberCountLabel(context, widget.memberCount!)
+                    : FutureBuilder<int>(
+                        future: _memberCountFuture,
+                        builder: (context, snapshot) {
+                          if (snapshot.connectionState ==
+                              ConnectionState.waiting) {
+                            return const Text(" ");
+                          } else if (snapshot.hasError) {
+                            return Text(context.l10n.error_loading_members);
+                          } else {
+                            return _memberCountLabel(
+                                context, snapshot.data ?? 0);
+                          }
+                        },
+                      ),
+                if (widget.showOrigin) ServerLabel(_instance),
+              ],
+            ),
 
-            // STAR FAVORITE BUTTON (moved closer to right edge)
+            // Star favorite button
             trailing: Padding(
               padding: EdgeInsets.zero,
               child: IconButton(

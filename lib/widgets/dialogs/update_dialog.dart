@@ -124,8 +124,7 @@ Future<void> showUpdateDialog({
                 const SizedBox(height: 16),
                 LinearProgressIndicator(
                   value: progress,
-                  backgroundColor:
-                      Theme.of(context).colorScheme.surfaceBright,
+                  backgroundColor: Theme.of(context).colorScheme.surfaceBright,
                   color: Theme.of(context).colorScheme.primary,
                 ),
                 const SizedBox(height: 8),

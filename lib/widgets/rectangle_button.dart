@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-
 class RectangleButton extends StatelessWidget {
   final String label;
   final IconData? icon;

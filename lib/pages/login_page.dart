@@ -11,16 +11,30 @@ import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/widgets/rounded_input_field.dart';
 import 'package:krab/widgets/soft_button.dart';
 import 'package:krab/pages/camera_page.dart';
-import 'package:krab/services/instance/active_instance.dart';
+import 'package:krab/services/instance/instances.dart';
 
 class LoginPage extends StatefulWidget {
-  const LoginPage({super.key});
+  /// The server being signed into.
+  final KrabInstance instance;
+
+  /// Whether signing in should take over the app. False when the user is
+  /// adding a server from the servers screen, where success means going back to
+  /// the list rather than jumping into a camera on a different account.
+  final bool enterAppOnSuccess;
+
+  const LoginPage({
+    super.key,
+    required this.instance,
+    this.enterAppOnSuccess = true,
+  });
 
   @override
   LoginPageState createState() => LoginPageState();
 }
 
 class LoginPageState extends State<LoginPage> {
+  KrabApi get _api => widget.instance.api;
+
   final _usernameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -53,7 +67,7 @@ class LoginPageState extends State<LoginPage> {
   Future<void> _resendConfirmation() async {
     final email = _emailController.text.trim();
     if (email.isEmpty) return;
-    final res = await api.resendConfirmationEmail(email);
+    final res = await _api.resendConfirmationEmail(email);
     if (!mounted) return;
     showSnackBar(res.success
         ? context.l10n.confirmation_email_resent
@@ -96,7 +110,7 @@ class LoginPageState extends State<LoginPage> {
       _isLoading = true;
       _errorMessage = null;
     });
-    final response = await api.registerUser(username, email, password);
+    final response = await _api.registerUser(username, email, password);
     if (!mounted) return;
     if (!response.success) {
       setState(() {
@@ -125,10 +139,15 @@ class LoginPageState extends State<LoginPage> {
     showSnackBar(context.l10n.register_user_success);
   }
 
-  /// Leave the login screen for the camera, now that there's a session.
+  /// Leave the login screen, now that there's a session: into the app when this
+  /// is the way in, or back to wherever asked for the sign-in.
   void _enterApp() {
     unawaited(cacheUserGroupsForWidget());
     TextInput.finishAutofillContext(shouldSave: true);
+    if (!widget.enterAppOnSuccess) {
+      Navigator.of(context).pop(true);
+      return;
+    }
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => const CameraPage()),
     );
@@ -149,7 +168,7 @@ class LoginPageState extends State<LoginPage> {
       _errorMessage = null;
       _showResendConfirmation = false;
     });
-    final response = await api.loginUser(email, password);
+    final response = await _api.loginUser(email, password);
     if (!mounted) return;
     if (response.success) {
       _enterApp();
@@ -215,7 +234,7 @@ class LoginPageState extends State<LoginPage> {
                         sending = true;
                         dialogError = null;
                       });
-                      final response = await api.sendPasswordResetEmail(email);
+                      final response = await _api.sendPasswordResetEmail(email);
                       if (!context.mounted) return;
                       if (response.success) {
                         Navigator.pop(context);
@@ -327,7 +346,7 @@ class LoginPageState extends State<LoginPage> {
                           ),
                         const SizedBox(height: 12),
                         _buildButton(),
-                        if (!_isSigningUp && api.isPasswordResetEnabled)
+                        if (!_isSigningUp && _api.isPasswordResetEnabled)
                           Align(
                             alignment: Alignment.centerRight,
                             child: TextButton(

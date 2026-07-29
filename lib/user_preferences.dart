@@ -51,8 +51,18 @@ class UserPreferences {
   static String groupKey(String instanceId, String groupId) =>
       '$instanceId/$groupId';
 
+  /// Every favorite, as stored: `instanceId/groupId`.
   static Future<List<String>> getFavoriteGroups() async {
     return _preferences?.getStringList('favoriteGroups') ?? [];
+  }
+
+  /// The favorites on one instance.
+  static Future<List<String>> favoriteGroupsOn(String instanceId) async {
+    final prefix = '$instanceId/';
+    return (_preferences?.getStringList('favoriteGroups') ?? [])
+        .where((key) => key.startsWith(prefix))
+        .map((key) => key.substring(prefix.length))
+        .toList();
   }
 
   static Future<void> _setFavoriteGroups(List<String> groups) async {
