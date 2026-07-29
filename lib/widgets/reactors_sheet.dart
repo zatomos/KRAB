@@ -89,7 +89,11 @@ List<String> emojisByUse(List<Reactor> reactors) {
 }
 
 /// Open the reactors sheet for an image
-Future<void> showReactorsSheet(BuildContext context, SharedImage image) {
+Future<void> showReactorsSheet(
+  BuildContext context,
+  SharedImage image, {
+  String? preferInstanceId,
+}) {
   final screenHeight = MediaQuery.sizeOf(context).height;
   return showModalBottomSheet<void>(
     context: context,
@@ -100,14 +104,19 @@ Future<void> showReactorsSheet(BuildContext context, SharedImage image) {
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
-    builder: (_) => _ReactorsSheet(image: image),
+    builder: (_) =>
+        _ReactorsSheet(image: image, preferInstanceId: preferInstanceId),
   );
 }
 
 class _ReactorsSheet extends StatefulWidget {
   final SharedImage image;
 
-  const _ReactorsSheet({required this.image});
+  /// The server whose group the image was opened from, or null in the
+  /// cross-group feed. Given one, only that server's reactors are listed.
+  final String? preferInstanceId;
+
+  const _ReactorsSheet({required this.image, this.preferInstanceId});
 
   @override
   State<_ReactorsSheet> createState() => _ReactorsSheetState();
@@ -125,6 +134,10 @@ class _ReactorsSheetState extends State<_ReactorsSheet> {
 
   /// Resolved profile-picture URL per user id
   final Map<String, String> _pfpUrls = {};
+
+  /// `instanceId/userId` of the viewer's own accounts among the copies read, so
+  /// their row can say so. Built for the dedupe below and kept for that.
+  Set<String> _mine = const {};
   bool _loading = true;
 
   @override
@@ -135,7 +148,7 @@ class _ReactorsSheetState extends State<_ReactorsSheet> {
 
   /// Every copy's reactors, gathered into one list.
   Future<void> _load() async {
-    final reachable = [
+    final held = [
       for (final copy in widget.image.copies)
         if (InstanceRegistry.instance.byId(copy.instanceId) != null)
           (
@@ -144,19 +157,41 @@ class _ReactorsSheetState extends State<_ReactorsSheet> {
           )
     ];
 
+    // Scoped to the copy this view is about, or every copy in the cross-group
+    // feed.
+    final reachable = widget.preferInstanceId == null
+        ? held
+        : held.where((p) => p.instance.id == widget.preferInstanceId).toList();
+
     final responses = await Future.wait(reachable
         .map((pair) => pair.instance.api.getImageReactors(pair.copy.id)));
     if (!mounted) return;
 
     final reactors = <Reactor>[];
     var anySucceeded = false;
+
+    // A tap writes the reaction to every copy, so the viewer comes back from
+    // each of them under a different account. Listed once.
+    final mine = <String>{
+      for (final pair in reachable)
+        if (pair.instance.auth.currentUserId != null)
+          '${pair.instance.id}/${pair.instance.auth.currentUserId}'
+    };
+    final myEmojisSeen = <String>{};
+
     for (var i = 0; i < responses.length; i++) {
       final response = responses[i];
       if (!response.success || response.data == null) continue;
       anySucceeded = true;
-      reactors.addAll(response.data!.map((e) => Reactor.fromJson(
-          e as Map<String, dynamic>,
-          instanceId: reachable[i].instance.id)));
+      final instanceId = reachable[i].instance.id;
+      for (final raw in response.data!) {
+        final reactor = Reactor.fromJson(raw as Map<String, dynamic>,
+            instanceId: instanceId);
+        if (mine.contains('$instanceId/${reactor.userId}')) {
+          if (!myEmojisSeen.add(reactor.emoji)) continue;
+        }
+        reactors.add(reactor);
+      }
     }
 
     if (!anySucceeded) {
@@ -165,6 +200,7 @@ class _ReactorsSheetState extends State<_ReactorsSheet> {
     }
 
     setState(() {
+      _mine = mine;
       _reactors = reactors;
       _emojis = emojisByUse(reactors);
       _loading = false;
@@ -278,11 +314,27 @@ class _ReactorsSheetState extends State<_ReactorsSheet> {
               UserAvatar(user, radius: _avatarRadius),
               const SizedBox(width: 12),
               Expanded(
-                child: Text(
-                  row.username.isEmpty ? '...' : row.username,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        row.username.isEmpty ? '...' : row.username,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    if (_mine.contains('${row.instanceId}/${row.userId}')) ...[
+                      const SizedBox(width: 6),
+                      Text(
+                        context.l10n.reactor_you,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
               const SizedBox(width: 8),

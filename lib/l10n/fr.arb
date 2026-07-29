@@ -304,6 +304,7 @@
   "error_reacting": "Erreur lors de l'ajout de la réaction : {errorMsg}",
   "reactions_title": "Réactions",
   "reactions_all": "Toutes",
+  "reactor_you": "(vous)",
   "no_reactions": "Aucune réaction pour l'instant.",
   "quick_access_emoji": "Accès rapide",
   "no_recents": "Aucun emoji récent",

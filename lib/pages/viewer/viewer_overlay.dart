@@ -555,6 +555,7 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
                       child: ReactionsBar(
                         key: _reactionsBarKey,
                         image: widget.image,
+                        preferInstanceId: widget.group?.instanceId,
                       ),
                     ),
                   ),

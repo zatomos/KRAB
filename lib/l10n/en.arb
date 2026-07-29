@@ -304,6 +304,7 @@
   "error_reacting": "Error adding reaction: {errorMsg}",
   "reactions_title": "Reactions",
   "reactions_all": "All",
+  "reactor_you": "(you)",
   "no_reactions": "No reactions yet.",
   "quick_access_emoji": "Quick access",
   "no_recents": "No recent emojis",

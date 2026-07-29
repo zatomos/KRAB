@@ -20,7 +20,11 @@ class ReactionsBar extends StatefulWidget {
   /// and a new reaction is written to one of them.
   final SharedImage image;
 
-  const ReactionsBar({super.key, required this.image});
+  /// The server whose group the image was opened from, or null in the
+  /// cross-group feed.
+  final String? preferInstanceId;
+
+  const ReactionsBar({super.key, required this.image, this.preferInstanceId});
 
   @override
   State<ReactionsBar> createState() => ReactionsBarState();
@@ -29,12 +33,23 @@ class ReactionsBar extends StatefulWidget {
 class ReactionsBarState extends State<ReactionsBar> {
   List<ReactionSummary> _reactions = const [];
 
+  /// Which emoji the viewer holds on each copy, so a write can leave alone the
+  /// copies already in the state being asked for.
+  Map<String, Set<String>> _mineByInstance = const {};
+
   SharedImageApi get _api => SharedImageApi(widget.image);
 
-  /// The merged tally is cached against the image's primary copy
-  ReactionCache? get _cache => InstanceRegistry.instance
-      .byId(widget.image.primary.instanceId)
-      ?.reactions;
+  /// Whether this bar speaks for one server rather than the whole image.
+  bool get _scoped => widget.preferInstanceId != null;
+
+  /// The shared cache holds the whole image's tally, keyed by its primary copy.
+  /// A scoped bar is showing something else, so it keeps its tally to itself
+  /// rather than writing one view's answer where the other reads it.
+  ReactionCache? get _cache => _scoped
+      ? null
+      : InstanceRegistry.instance
+          .byId(widget.image.primary.instanceId)
+          ?.reactions;
 
   String get _cacheKey => widget.image.primary.id;
 
@@ -62,10 +77,13 @@ class ReactionsBarState extends State<ReactionsBar> {
   /// place rather than blanking out.
   Future<void> _refresh() async {
     final identity = widget.image.identity;
-    final list = await _api.reactions();
-    if (!mounted || identity != widget.image.identity || list == null) return;
-    _cache?.put(_cacheKey, list);
-    setState(() => _reactions = list);
+    final result = await _api.reactions(onlyOn: widget.preferInstanceId);
+    if (!mounted || identity != widget.image.identity || result == null) return;
+    _cache?.put(_cacheKey, result.tally);
+    setState(() {
+      _reactions = result.tally;
+      _mineByInstance = result.mineByInstance;
+    });
   }
 
   /// Apply emoji, then reconcile with the server.
@@ -76,8 +94,20 @@ class ReactionsBarState extends State<ReactionsBar> {
     setState(() => _reactions = updated);
     _cache?.put(_cacheKey, updated);
 
-    final response = await _api.toggleReaction(emoji);
-    if (response.success) return;
+    // A gallery acts on its own server, either way: what is on screen is that
+    // server's tally, and it is what changes. The feed acts on every copy.
+    final wasReacted = previous.any((r) => r.emoji == emoji && r.reactedByMe);
+    final response = await _api.setReaction(
+      emoji,
+      on: !wasReacted,
+      mineByInstance: _mineByInstance,
+      onlyOn: widget.preferInstanceId,
+    );
+    if (response.success) {
+      // So a second tap knows which copies it still has to change.
+      if (response.data != null) _mineByInstance = response.data!;
+      return;
+    }
 
     _cache?.put(_cacheKey, previous);
     if (!mounted || identity != widget.image.identity) return;
@@ -118,7 +148,8 @@ class ReactionsBarState extends State<ReactionsBar> {
     if (emoji != null) await _toggle(emoji);
   }
 
-  void _openReactors() => showReactorsSheet(context, widget.image);
+  void _openReactors() => showReactorsSheet(context, widget.image,
+      preferInstanceId: widget.preferInstanceId);
 
   /// How many reaction chips fit across the phone width.
   static int visibleChipsFor(double width, int reactionCount) {
