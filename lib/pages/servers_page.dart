@@ -39,8 +39,12 @@ class _ServersPageState extends State<ServersPage> {
   /// The signed-in user per instance, filled in as they resolve.
   final Map<String, krab_user.User> _users = {};
 
-  /// Instances that answered nothing.
+  /// Instances that could not tell us who the user is.
   final Set<String> _unreachable = {};
+
+  /// Instances still being asked. Kept apart from the two answers so a card is
+  /// never showing a verdict before there is one.
+  final Set<String> _pending = {};
 
   @override
   void initState() {
@@ -48,17 +52,38 @@ class _ServersPageState extends State<ServersPage> {
     _loadUsers();
   }
 
-  /// Ask every signed-in instance who it thinks the user is.
+  /// Ask every server whether it is there, and then who it thinks the user is.
   Future<void> _loadUsers() async {
-    await Future.wait(InstanceRegistry.instance.all.map((instance) async {
-      if (!instance.auth.isLoggedIn) return;
-      final response = await instance.api.getCurrentUser();
+    final all = InstanceRegistry.instance.all;
+    _pending.addAll(all.map((i) => i.id));
+
+    await Future.wait(all.map((instance) async {
+      final reachable = await instance.api.fetchInstanceConfig().orGiveUp();
+      if (!mounted) return;
+
+      if (!reachable.success) {
+        setState(() {
+          _unreachable.add(instance.id);
+          _pending.remove(instance.id);
+        });
+        return;
+      }
+
+      _unreachable.remove(instance.id);
+
+      // Answered, and says we have no session.
+      if (!instance.auth.isLoggedIn) {
+        setState(() => _pending.remove(instance.id));
+        return;
+      }
+
+      final response = await instance.api.getCurrentUser().orGiveUp();
       if (!mounted) return;
       setState(() {
+        _pending.remove(instance.id);
         if (response.success && response.data != null) {
           _users[instance.id] = response.data!;
-          _unreachable.remove(instance.id);
-        } else if (response.offline) {
+        } else {
           _unreachable.add(instance.id);
         }
       });
@@ -204,6 +229,7 @@ class _ServersPageState extends State<ServersPage> {
                   instance: instance,
                   user: _users[instance.id],
                   unreachable: _unreachable.contains(instance.id),
+                  pending: _pending.contains(instance.id),
                   onSignIn: () => _signIn(instance),
                   onSignOut: () => _signOut(instance),
                   onDisconnect: () => _disconnect(instance),
@@ -243,6 +269,7 @@ class _ServerCard extends StatelessWidget {
     required this.instance,
     required this.user,
     required this.unreachable,
+    required this.pending,
     required this.onSignIn,
     required this.onSignOut,
     required this.onDisconnect,
@@ -255,6 +282,9 @@ class _ServerCard extends StatelessWidget {
   final KrabInstance instance;
   final krab_user.User? user;
   final bool unreachable;
+
+  /// Still waiting on this server, so neither a tick nor a warning is honest yet.
+  final bool pending;
   final VoidCallback onSignIn;
   final VoidCallback onSignOut;
   final VoidCallback onDisconnect;
@@ -268,10 +298,12 @@ class _ServerCard extends StatelessWidget {
     final account = user;
 
     final String status;
-    if (!signedIn) {
-      status = context.l10n.servers_not_signed_in;
+    if (pending) {
+      status = '...';
     } else if (unreachable) {
       status = context.l10n.servers_unreachable;
+    } else if (!signedIn) {
+      status = context.l10n.servers_not_signed_in;
     } else if (account != null) {
       status = context.l10n.servers_signed_in_as(account.username);
     } else {
@@ -279,9 +311,22 @@ class _ServerCard extends StatelessWidget {
     }
 
     // Signed out and unreachable are both worth noticing.
-    final statusColor = unreachable
+    final statusColor = unreachable && !pending
         ? colors.error
         : (signedIn ? colors.onSurfaceVariant : colors.tertiary);
+
+    final IconData statusIcon;
+    if (pending) {
+      statusIcon = Symbols.more_horiz_rounded;
+    } else if (unreachable) {
+      statusIcon = Symbols.warning_rounded;
+    } else if (!signedIn) {
+      statusIcon = Symbols.error_rounded;
+    } else if (account == null) {
+      statusIcon = Symbols.warning_rounded;
+    } else {
+      statusIcon = Symbols.check_circle_rounded;
+    }
 
     return Card(
       key: ValueKey('card-${instance.id}'),
@@ -324,9 +369,7 @@ class _ServerCard extends StatelessWidget {
                         Padding(
                           padding: const EdgeInsets.only(top: 2),
                           child: Icon(
-                            signedIn && !unreachable
-                                ? Symbols.check_circle_rounded
-                                : Symbols.error_rounded,
+                            statusIcon,
                             size: 14,
                             fill: 1,
                             color: statusColor,

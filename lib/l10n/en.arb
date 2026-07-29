@@ -384,7 +384,15 @@
       }
     }
   },
-  "servers_unreachable": "Could not be reached",
+  "servers_unreachable": "Couldn't connect",
+  "servers_still_loading": "Still loading from {servers}...",
+  "@servers_still_loading": {
+    "placeholders": {
+      "servers": {
+        "type": "String"
+      }
+    }
+  },
   "groups_server_unavailable": "Groups from {servers} could not be loaded.",
   "@groups_server_unavailable": {
     "placeholders": {

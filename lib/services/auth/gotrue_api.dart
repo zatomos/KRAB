@@ -51,8 +51,16 @@ class GotrueApi {
       return data is Map<String, dynamic> ? data : <String, dynamic>{};
     } on DioException catch (e) {
       // No response object => connection/timeout => transient.
-      if (e.response == null) throw const GotrueNetworkException();
-      throw GotrueAuthException(_extractCode(e.response!.data));
+      final response = e.response;
+      if (response == null) throw const GotrueNetworkException();
+
+      final status = response.statusCode ?? 0;
+      final body = response.data;
+
+      final serverSide = status >= 500 || status == 408 || status == 429;
+      if (serverSide || body is! Map) throw const GotrueNetworkException();
+
+      throw GotrueAuthException(_extractCode(body));
     }
   }
 

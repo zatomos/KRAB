@@ -90,7 +90,7 @@ class _SendImageDialogState extends State<SendImageDialog> {
   Future<List<_InstanceGroups>> _loadGroups() async {
     final instances = InstanceRegistry.instance.all;
     final responses =
-        await Future.wait(instances.map((i) => i.api.getUserGroups()));
+        await Future.wait(instances.map((i) => i.api.getUserGroups().orGiveUp()));
 
     final loaded = <_InstanceGroups>[];
     for (var i = 0; i < instances.length; i++) {

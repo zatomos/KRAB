@@ -15,6 +15,7 @@ import 'package:krab/pages/groups_page.dart';
 import 'package:krab/pages/viewer/image_viewer_page.dart';
 import 'package:krab/services/cache/feed_image_cache.dart';
 import 'package:krab/widgets/avatars/user_avatar.dart';
+import 'package:krab/widgets/instance_status_footer.dart';
 import 'package:krab/services/instance/instances.dart';
 import 'package:krab/services/instance/instance_registry.dart';
 
@@ -70,6 +71,9 @@ class ImageFeedPageState extends State<ImageFeedPage> {
 
   /// Signed-in instances whose last page failed.
   List<KrabInstance> _unavailable = const [];
+
+  /// Instances still being asked for the current page.
+  List<KrabInstance> _pendingSources = const [];
 
   /// Instances that have run out of images.
   final Set<String> _exhausted = {};
@@ -153,8 +157,8 @@ class ImageFeedPageState extends State<ImageFeedPage> {
         continue;
       }
       if (ref.shareId == null) continue;
-      final held = _refs.indexWhere(
-          (r) => r.instanceId == ref.instanceId && r.id == ref.id);
+      final held = _refs
+          .indexWhere((r) => r.instanceId == ref.instanceId && r.id == ref.id);
       if (held >= 0 && _refs[held].shareId == null) _refs[held] = ref;
     }
   }
@@ -187,65 +191,94 @@ class ImageFeedPageState extends State<ImageFeedPage> {
     _refKeys.clear();
   }
 
-  /// Fetch one page from every instance this feed reads from.
+  /// Fetch one page from every instance this feed reads from, showing each
+  /// server's images as they arrive.
+  ///
+  /// Not gathered and shown together: a server that has to time out would hold
+  /// up every other server's images for as long as it takes.
   ///
   /// reset starts again from the top rather than continuing from the cursors.
-  /// Returns null when nothing could be loaded at all.
-  Future<List<ImageRef>?> _fetchPage({bool reset = false}) async {
+  /// Returns whether any server could be read at all.
+  Future<bool> _fetchPages({bool reset = false}) async {
     final sources = _sources;
     if (reset) {
       _cursors.clear();
       _exhausted.clear();
+      _resetRefs();
     }
 
-    final pages = await Future.wait(sources.map((instance) async {
-      if (_exhausted.contains(instance.id)) {
-        return const SupabaseResponse<List<ImageRef>>(success: true, data: []);
-      }
-      final after = _cursors[instance.id];
-      return _groupId != null
-          ? instance.api.getGroupImages(
-              _groupId!,
-              limit: _kPageSize,
-              beforeCreatedAt: after?.uploadedAt,
-              beforeId: after?.id,
-            )
-          : instance.api.getLatestImages(
-              _kPageSize,
-              beforeCreatedAt: after?.uploadedAt,
-              beforeId: after?.id,
-            );
-    }));
-
-    final refs = <ImageRef>[];
     final failed = <KrabInstance>[];
+    final waiting = List<KrabInstance>.of(sources);
     var anySucceeded = false;
+    if (mounted) setState(() => _pendingSources = List.of(waiting));
 
-    for (var i = 0; i < sources.length; i++) {
-      final response = pages[i];
+    await Future.wait(sources.map((instance) async {
+      final response = _exhausted.contains(instance.id)
+          ? const SupabaseResponse<List<ImageRef>>(success: true, data: [])
+          : await _pageFrom(instance);
+      if (!mounted) return;
+
+      waiting.remove(instance);
+
       if (!response.success || response.data == null) {
-        debugPrint('Feed: ${sources[i].id} page failed (${response.error})');
-        failed.add(sources[i]);
-        continue;
+        debugPrint('Feed: ${instance.id} page failed (${response.error})');
+        failed.add(instance);
+        // Say which servers are missing as soon as we know, rather than only
+        // once the slowest has finished.
+        setState(() {
+          _unavailable = List.of(failed);
+          _pendingSources = List.of(waiting);
+        });
+        return;
       }
+
       anySucceeded = true;
       final page = response.data!;
-      refs.addAll(page);
 
       // This instance has no more to give once it returns a short page.
       if (page.length < _kPageSize) {
-        _exhausted.add(sources[i].id);
+        _exhausted.add(instance.id);
       } else if (page.isNotEmpty) {
-        _cursors[sources[i].id] = page.last;
+        _cursors[instance.id] = page.last;
       }
-    }
 
-    // Say which servers are missing rather than quietly showing a short feed:
-    // an image that isn't there looks the same as an image nobody posted.
-    _unavailable = failed;
+      final images = await _absorb(page);
+      if (!mounted) return;
+      setState(() {
+        _images
+          ..clear()
+          ..addAll(images);
+        _hasMore = _moreRemains;
+        _pendingSources = List.of(waiting);
+        // The first server to answer is enough to have something to show.
+        _loadingInitial = false;
+        _error = null;
+      });
+    }));
 
-    if (!anySucceeded) return null;
-    return refs;
+    if (!mounted) return anySucceeded;
+    setState(() {
+      _unavailable = List.of(failed);
+      _pendingSources = const [];
+    });
+    return anySucceeded;
+  }
+
+  Future<SupabaseResponse<List<ImageRef>>> _pageFrom(KrabInstance instance) {
+    final after = _cursors[instance.id];
+    return (_groupId != null
+            ? instance.api.getGroupImages(
+                _groupId!,
+                limit: _kPageSize,
+                beforeCreatedAt: after?.uploadedAt,
+                beforeId: after?.id,
+              )
+            : instance.api.getLatestImages(
+                _kPageSize,
+                beforeCreatedAt: after?.uploadedAt,
+                beforeId: after?.id,
+              ))
+        .orGiveUp();
   }
 
   bool get _moreRemains => _sources.any((i) => !_exhausted.contains(i.id));
@@ -334,25 +367,13 @@ class ImageFeedPageState extends State<ImageFeedPage> {
   }
 
   Future<void> _loadInitial() async {
-    final page = await _fetchPage(reset: true);
-    if (!mounted) return;
-    if (page == null) {
-      setState(() {
-        _loadingInitial = false;
-        _error = context.l10n.unknown_error;
-      });
-      return;
-    }
-    _resetRefs();
-    final images = await _absorb(page);
-    if (!mounted) return;
+    // Each server's images appear as they arrive; only the case where none of
+    // them could answer is left to report here.
+    final any = await _fetchPages(reset: true);
+    if (!mounted || any) return;
     setState(() {
-      _images
-        ..clear()
-        ..addAll(images);
-      _hasMore = _moreRemains;
       _loadingInitial = false;
-      _error = null;
+      _error = context.l10n.unknown_error;
     });
   }
 
@@ -360,24 +381,9 @@ class ImageFeedPageState extends State<ImageFeedPage> {
     if (_loadingMore || !_hasMore || _images.isEmpty) return;
     setState(() => _loadingMore = true);
 
-    final page = await _fetchPage();
+    await _fetchPages();
     if (!mounted) return;
-    if (page == null) {
-      // Leave _hasMore set so a later scroll can retry.
-      setState(() => _loadingMore = false);
-      return;
-    }
-    // Merged against everything already loaded, so a copy of an image further
-    // up the list joins it instead of being dropped as an image already shown.
-    final images = await _absorb(page);
-    if (!mounted) return;
-    setState(() {
-      _images
-        ..clear()
-        ..addAll(images);
-      _hasMore = _moreRemains;
-      _loadingMore = false;
-    });
+    setState(() => _loadingMore = false);
   }
 
   void _onScroll() {
@@ -433,8 +439,8 @@ class ImageFeedPageState extends State<ImageFeedPage> {
     for (final copy in image.copies) {
       _refKeys.remove('${copy.instanceId}/${copy.id}');
     }
-    _refs.removeWhere(
-        (r) => image.copies.any((c) => c.instanceId == r.instanceId && c.id == r.id));
+    _refs.removeWhere((r) =>
+        image.copies.any((c) => c.instanceId == r.instanceId && c.id == r.id));
     if (!mounted) return;
     setState(() => _images.removeWhere((p) => p.identity == image.identity));
   }
@@ -445,20 +451,9 @@ class ImageFeedPageState extends State<ImageFeedPage> {
 
   /// Pull-to-refresh
   Future<void> _refreshGroupImages() async {
-    final page = await _fetchPage(reset: true);
-    if (!mounted || page == null) return;
-    _resetRefs();
-    final images = await _absorb(page);
-    if (!mounted) return;
-    setState(() {
-      _cache.clear();
-      _images
-        ..clear()
-        ..addAll(images);
-      _hasMore = _moreRemains;
-      _error = null;
-      _hasNewPhotos = false;
-    });
+    _cache.clear();
+    if (mounted) setState(() => _hasNewPhotos = false);
+    await _fetchPages(reset: true);
   }
 
   /// Bring the user back to the group list, regardless of how this single
@@ -521,7 +516,17 @@ class ImageFeedPageState extends State<ImageFeedPage> {
       ),
       body: Stack(
         children: [
-          _buildBody(context),
+          Column(
+            children: [
+              Expanded(child: _buildBody(context)),
+              InstanceStatusFooter(
+                pending: _pendingSources,
+                unavailable: _unavailable,
+                failure: (servers) =>
+                    context.l10n.feed_server_unavailable(servers),
+              ),
+            ],
+          ),
           Positioned(
             top: 8,
             left: 0,
@@ -593,8 +598,6 @@ class ImageFeedPageState extends State<ImageFeedPage> {
               : context.l10n.no_recent_photos));
     }
 
-    final unavailable = _unavailable;
-
     return RefreshIndicator(
       onRefresh: _refreshGroupImages,
       child: CustomScrollView(
@@ -617,29 +620,6 @@ class ImageFeedPageState extends State<ImageFeedPage> {
               ),
             ),
           ),
-          if (unavailable.isNotEmpty)
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-                child: Row(
-                  children: [
-                    Icon(Symbols.cloud_off_rounded,
-                        size: 18, color: Theme.of(context).colorScheme.error),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        context.l10n.feed_server_unavailable(
-                            unavailable.map((i) => i.label).join(', ')),
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.error,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
           if (_loadingMore)
             const SliverToBoxAdapter(
               child: Padding(

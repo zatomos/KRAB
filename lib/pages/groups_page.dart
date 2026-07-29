@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:skeletonizer/skeletonizer.dart';
@@ -10,6 +11,7 @@ import 'package:krab/widgets/soft_button.dart';
 import 'package:krab/widgets/rounded_input_field.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/widgets/group_card.dart';
+import 'package:krab/widgets/instance_status_footer.dart';
 import 'package:krab/pages/image_feed_page.dart';
 import 'package:krab/models/group.dart';
 import 'package:krab/services/instance/instances.dart';
@@ -27,48 +29,93 @@ class GroupsPage extends StatefulWidget {
 }
 
 class GroupsPageState extends State<GroupsPage> {
-  late Future<_GroupsResult> _groupsFuture;
+  /// Every server's groups, added to as each server answers.
+  final List<Group> _groups = [];
+
+  /// Member counts, filled in behind the list rather than held up for.
+  final Map<String, int> _counts = {};
+
+  /// Servers that could not be asked, named under the list.
+  List<KrabInstance> _unavailable = const [];
+
+  /// Servers not heard from yet, so the footer can say it is waiting rather than
+  /// declaring what already failed.
+  List<KrabInstance> _pending = const [];
+
+  /// True until the first server has answered, one way or the other.
+  bool _loading = true;
+
+  /// Set when every server failed, which is the only case worth an error.
+  bool _allFailed = false;
+
+  /// Guards against a reload's results landing on top of a newer one.
+  int _load = 0;
 
   @override
   void initState() {
     super.initState();
-    _groupsFuture = _loadGroups();
+    _loadGroups();
   }
 
   void _refreshData() {
     setState(() {
-      _groupsFuture = _loadGroups();
+      _groups.clear();
+      _counts.clear();
+      _unavailable = const [];
+      _pending = const [];
+      _loading = true;
+      _allFailed = false;
     });
+    _loadGroups();
   }
 
-  /// Ask every signed-in server for the user's groups and show them as one
-  /// list.
-  Future<_GroupsResult> _loadGroups() async {
-    final sources =
-        InstanceRegistry.instance.all.where((i) => i.auth.isLoggedIn).toList();
-    if (sources.isEmpty) return _GroupsResult(const [], const {}, const []);
+  /// Ask every signed-in server for the user's groups, showing each server's as
+  /// it answers.
+  Future<void> _loadGroups() async {
+    final load = ++_load;
+    final sources = InstanceRegistry.instance.all;
+    if (sources.isEmpty) {
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
 
-    final responses = await Future.wait(
-        sources.map((instance) => instance.api.getUserGroups()));
+    final failed = <KrabInstance>[];
+    final waiting = List<KrabInstance>.of(sources);
+    setState(() => _pending = List.of(waiting));
 
-    final groups = <Group>[];
-    final unavailable = <KrabInstance>[];
-    for (var i = 0; i < sources.length; i++) {
-      final response = responses[i];
+    await Future.wait(sources.map((instance) async {
+      final response = await instance.api.getUserGroups().orGiveUp();
+      if (!mounted || load != _load) return;
+      waiting.remove(instance);
+
       if (!response.success || response.data == null) {
-        debugPrint('Groups: ${sources[i].id} failed (${response.error})');
-        unavailable.add(sources[i]);
-        continue;
+        debugPrint('Groups: ${instance.id} failed (${response.error})');
+        failed.add(instance);
+        setState(() {
+          _unavailable = List.of(failed);
+          _pending = List.of(waiting);
+          _loading = false;
+          _allFailed = failed.length == sources.length;
+        });
+        return;
       }
-      groups.addAll(response.data!);
-    }
 
-    if (groups.isEmpty && unavailable.length == sources.length) {
-      return _GroupsResult(const [], const {}, unavailable);
-    }
+      setState(() {
+        _groups.addAll(response.data!);
+        _sortGroups();
+        _pending = List.of(waiting);
+        _loading = false;
+      });
 
-    // Newest activity first
-    groups.sort((a, b) {
+      // Behind the list: a count is a detail on a card that is already useful
+      // without it.
+      unawaited(_loadCounts(instance, response.data!, load));
+    }));
+  }
+
+  /// Newest activity first.
+  void _sortGroups() {
+    _groups.sort((a, b) {
       final aAt = a.latestImageAt;
       final bAt = b.latestImageAt;
       if (aAt == null && bAt == null) return a.name.compareTo(b.name);
@@ -76,16 +123,16 @@ class GroupsPageState extends State<GroupsPage> {
       if (bAt == null) return -1;
       return bAt.compareTo(aAt);
     });
+  }
 
-    final counts = <String, int>{};
+  Future<void> _loadCounts(
+      KrabInstance instance, List<Group> groups, int load) async {
     await Future.wait(groups.map((group) async {
-      final instance = InstanceRegistry.instance.byId(group.instanceId);
-      if (instance == null) return;
-      final res = await instance.api.getGroupMemberCount(group.id);
-      counts['${group.instanceId}/${group.id}'] =
-          res.error == null ? (res.data ?? 0) : 0;
+      final res = await instance.api.getGroupMemberCount(group.id).orGiveUp();
+      if (!mounted || load != _load) return;
+      setState(() => _counts['${group.instanceId}/${group.id}'] =
+          res.error == null ? (res.data ?? 0) : 0);
     }));
-    return _GroupsResult(groups, counts, unavailable);
   }
 
   /// Open one of the menu's dialogs, and reload the list if it changed one.
@@ -104,35 +151,24 @@ class GroupsPageState extends State<GroupsPage> {
     );
   }
 
-  Widget _buildGroupsContent(
-    BuildContext context,
-    AsyncSnapshot<_GroupsResult> snapshot,
-  ) {
-    if (snapshot.hasError || !snapshot.hasData) {
-      debugPrint("Failed to load groups: ${snapshot.error}");
-      return Center(child: Text(context.l10n.failed_to_load_groups));
-    }
-    final result = snapshot.data!;
-    final groups = result.groups;
-    final unavailable = result.unavailable;
+  Widget _buildGroupsContent(BuildContext context) {
+    final groups = _groups;
 
-    // Nothing came back from anywhere -> failure
-    if (groups.isEmpty && unavailable.isNotEmpty) {
+    // Nothing came back from anywhere, and the footer alone would leave an empty
+    // screen with no explanation in it.
+    if (groups.isEmpty && _allFailed) {
       return Center(child: Text(context.l10n.failed_to_load_groups));
     }
     if (groups.isEmpty) {
       return Center(child: Text(context.l10n.no_group_joined));
     }
 
-    final counts = result.memberCounts;
+    final counts = _counts;
     final showOrigin = InstanceRegistry.instance.all.length > 1;
 
     return ListView.builder(
-      itemCount: groups.length + (unavailable.isEmpty ? 0 : 1),
+      itemCount: groups.length,
       itemBuilder: (context, index) {
-        if (index == groups.length) {
-          return _UnavailableServersNotice(instances: unavailable);
-        }
         final group = groups[index];
         return GroupCard(
           group: group,
@@ -167,67 +203,25 @@ class GroupsPageState extends State<GroupsPage> {
         children: [
           _RecentPhotosCard(),
           Expanded(
-            child: FutureBuilder<_GroupsResult>(
-              future: _groupsFuture,
-              builder: (context, snapshot) {
-                final loading =
-                    snapshot.connectionState == ConnectionState.waiting;
-                return DelayedLoading(
-                  loading: loading,
-                  placeholder: const _GroupsSkeleton(),
-                  child: _buildGroupsContent(context, snapshot),
-                );
-              },
+            child: DelayedLoading(
+              loading: _loading,
+              placeholder: const _GroupsSkeleton(),
+              child: _buildGroupsContent(context),
             ),
+          ),
+          InstanceStatusFooter(
+            pending: _pending,
+            unavailable: _unavailable,
+            failure: (servers) =>
+                context.l10n.groups_server_unavailable(servers),
           ),
         ],
       ),
     );
   }
-}
-
-/// Every server's groups in one list, with each group's member count and the
-/// servers that could not be asked.
-class _GroupsResult {
-  /// Keyed `instanceId/groupId`, since ids only mean something per server.
-  final Map<String, int> memberCounts;
-
-  final List<Group> groups;
-
-  /// Signed-in servers that failed to answer, so the list can say what is
-  /// missing.
-  final List<KrabInstance> unavailable;
-
-  const _GroupsResult(this.groups, this.memberCounts, this.unavailable);
 }
 
 /// Names the servers whose groups are missing from the list above it.
-class _UnavailableServersNotice extends StatelessWidget {
-  const _UnavailableServersNotice({required this.instances});
-
-  final List<KrabInstance> instances;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-      child: Row(
-        children: [
-          Icon(Symbols.cloud_off_rounded, size: 18, color: colors.error),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              context.l10n.groups_server_unavailable(
-                  instances.map((i) => i.label).join(', ')),
-              style: TextStyle(color: colors.error, fontSize: 13),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 /// Bone placeholders
 class _GroupsSkeleton extends StatelessWidget {
