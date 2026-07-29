@@ -44,48 +44,189 @@ class SharedImageApi {
   // Reactions
   // ---------------------------------------------------------------------------
 
-  /// Every copy's tally, added up.
-  Future<List<ReactionSummary>?> reactions() async {
-    final results = await Future.wait(_present
+  /// A tally to show, and where the viewer's own reactions actually live.
+  ///
+  /// onlyOn narrows this to one server's copy.
+  ///
+  /// mineByInstance is which emoji the viewer holds on each copy. The copies
+  /// can legitimately disagree, since a gallery reacts on its own server alone,
+  /// so a write cannot just toggle them all; setReaction needs to know which
+  /// ones are already in the state being asked for.
+  Future<
+      ({
+        List<ReactionSummary> tally,
+        Map<String, Set<String>> mineByInstance
+      })?> reactions({String? onlyOn}) async {
+    final copies = onlyOn == null
+        ? _present
+        : _present.where((p) => p.instance.id == onlyOn).toList();
+    if (copies.isEmpty) return null;
+
+    final results = await Future.wait(copies
         .map((pair) => pair.instance.api.getImageReactions(pair.copy.id)));
 
-    final totals = <String, ReactionSummary>{};
-    var anySucceeded = false;
+    final perCopy = <List<ReactionSummary>>[];
+    final mine = <String, Set<String>>{};
+    var anyAnswered = false;
 
-    for (final response in results) {
+    for (var i = 0; i < results.length; i++) {
+      final response = results[i];
       if (!response.success || response.data == null) continue;
-      anySucceeded = true;
-      for (final raw in response.data!) {
-        final summary = ReactionSummary.fromJson(raw as Map<String, dynamic>);
+      anyAnswered = true;
+      final tally = [
+        for (final raw in response.data!)
+          ReactionSummary.fromJson(raw as Map<String, dynamic>)
+      ];
+      perCopy.add(tally);
+      mine[copies[i].instance.id] = {
+        for (final r in tally)
+          if (r.reactedByMe) r.emoji
+      };
+    }
+
+    final merged = mergeTallies(perCopy, anyAnswered: anyAnswered);
+    if (merged == null) return null;
+    return (tally: merged, mineByInstance: mine);
+  }
+
+  /// Which copies a write has to touch to leave the viewer's reaction [on].
+  ///
+  /// onlyOn confines the write to one server.Left null every copy is written to.
+  ///
+  /// A copy already in the wanted state is left out.
+  @visibleForTesting
+  static List<String> copiesToToggle({
+    required List<String> writable,
+    required Map<String, Set<String>> mineByInstance,
+    required String emoji,
+    required bool on,
+    String? onlyOn,
+  }) {
+    final considered =
+        onlyOn == null ? writable : writable.where((id) => id == onlyOn);
+    return [
+      for (final id in considered)
+        if ((mineByInstance[id]?.contains(emoji) ?? false) != on) id
+    ];
+  }
+
+  /// Put the viewer's reaction into a known state, rather than toggling.
+  ///
+  /// onlyOn is the server the view is about, and the write goes there alone.
+  /// From the cross-group feed it is null, and the write reaches every copy.
+  ///
+  /// mineByInstance comes from reactions: a copy already in the wanted state
+  /// is left alone, because the underlying call toggles and would undo it.
+  ///
+  /// Returns where the viewer's reactions stand afterwards, so the caller can go
+  /// again without re-reading.
+  Future<SupabaseResponse<Map<String, Set<String>>>> setReaction(
+    String emoji, {
+    required bool on,
+    required Map<String, Set<String>> mineByInstance,
+    String? onlyOn,
+  }) async {
+    final writable = [
+      for (final pair in _present)
+        if (pair.instance.auth.isLoggedIn) pair
+    ];
+    if (writable.isEmpty) {
+      return const SupabaseResponse(success: false, error: errorServer);
+    }
+
+    // What the caller should believe afterwards, copied so the argument is left
+    // as it was.
+    final updated = {
+      for (final entry in mineByInstance.entries)
+        entry.key: Set<String>.of(entry.value)
+    };
+
+    final wanted = copiesToToggle(
+      writable: [for (final p in writable) p.instance.id],
+      mineByInstance: mineByInstance,
+      emoji: emoji,
+      on: on,
+      onlyOn: onlyOn,
+    ).toSet();
+    final needed =
+        writable.where((p) => wanted.contains(p.instance.id)).toList();
+    // Already as asked everywhere that matters.
+    if (needed.isEmpty) return SupabaseResponse(success: true, data: updated);
+
+    final results = await Future.wait(needed
+        .map((pair) => pair.instance.api.toggleReaction(pair.copy.id, emoji)));
+
+    final failed = [
+      for (var i = 0; i < results.length; i++)
+        if (!results[i].success) needed[i].instance.id
+    ];
+    if (failed.length == results.length) {
+      return SupabaseResponse(
+        success: false,
+        error: results.first.error,
+        offline: results.every((r) => r.offline),
+      );
+    }
+    if (failed.isNotEmpty) {
+      debugPrint('SharedImage: reaction not written to ${failed.join(', ')}');
+    }
+
+    // Only the copies that actually took it.
+    for (var i = 0; i < needed.length; i++) {
+      if (!results[i].success) continue;
+      final set = updated.putIfAbsent(needed[i].instance.id, () => <String>{});
+      if (on) {
+        set.add(emoji);
+      } else {
+        set.remove(emoji);
+      }
+    }
+    return SupabaseResponse(success: true, data: updated);
+  }
+
+  /// Add up one tally per copy, counting the viewer once.
+  @visibleForTesting
+  static List<ReactionSummary>? mergeTallies(
+    Iterable<List<ReactionSummary>> perCopy, {
+    required bool anyAnswered,
+  }) {
+    if (!anyAnswered) return null;
+
+    final totals = <String, ReactionSummary>{};
+    // How many copies reported the viewer's own reaction, per emoji.
+    final mineOn = <String, int>{};
+
+    for (final tally in perCopy) {
+      for (final summary in tally) {
+        if (summary.reactedByMe) {
+          mineOn[summary.emoji] = (mineOn[summary.emoji] ?? 0) + 1;
+        }
         final running = totals[summary.emoji];
         totals[summary.emoji] = running == null
             ? summary
             : running.copyWith(
                 count: running.count + summary.count,
+                // Reacted here or there is reacted.
                 reactedByMe: running.reactedByMe || summary.reactedByMe,
               );
       }
     }
 
-    // Every copy failing is a failure
-    if (!anySucceeded) return null;
-
-    final merged = totals.values.toList()
-      ..sort((a, b) {
-        final byCount = b.count.compareTo(a.count);
-        return byCount != 0 ? byCount : a.emoji.compareTo(b.emoji);
-      });
-    return merged;
-  }
-
-  /// Add or remove the user's reaction, on the primary copy only.
-  Future<SupabaseResponse<bool>> toggleReaction(String emoji) {
-    final target = writeTarget;
-    if (target == null) {
-      return Future.value(
-          const SupabaseResponse(success: false, error: errorServer));
+    final merged = <ReactionSummary>[];
+    for (final entry in totals.entries) {
+      // A tap in the cross-group feed wrote the same reaction to every copy, so
+      // all but one of those are the same tap coming back again.
+      final duplicates = (mineOn[entry.key] ?? 0) - 1;
+      merged.add(duplicates > 0
+          ? entry.value.copyWith(count: entry.value.count - duplicates)
+          : entry.value);
     }
-    return target.instance.api.toggleReaction(target.copy.id, emoji);
+
+    merged.sort((a, b) {
+      final byCount = b.count.compareTo(a.count);
+      return byCount != 0 ? byCount : a.emoji.compareTo(b.emoji);
+    });
+    return merged;
   }
 
   // ---------------------------------------------------------------------------
@@ -95,8 +236,8 @@ class SharedImageApi {
   /// Total comments on the image, across every copy.
   Future<int> commentCount() async {
     final present = _present;
-    final results = await Future.wait(
-        present.map((pair) => pair.instance.api.getImageCommentCount(pair.copy.id)));
+    final results = await Future.wait(present
+        .map((pair) => pair.instance.api.getImageCommentCount(pair.copy.id)));
     var total = 0;
     for (var i = 0; i < results.length; i++) {
       final response = results[i];
@@ -213,8 +354,8 @@ class SharedImageApi {
 
     // Only worth asking for when a copy has to be made somewhere new; linking
     // groups on servers that already hold one needs no id at all.
-    final needsCopy = byInstance.keys
-        .any((id) => !_present.any((p) => p.instance.id == id));
+    final needsCopy =
+        byInstance.keys.any((id) => !_present.any((p) => p.instance.id == id));
     final had = image.primary.shareId;
     String? shareId = had;
     if (needsCopy && shareId == null) shareId = await _ensureShareId();
@@ -355,8 +496,7 @@ class SharedImageApi {
     } finally {
       try {
         if (scratch != null && await scratch.exists()) await scratch.delete();
-      } catch (_) {
-      }
+      } catch (_) {}
     }
   }
 

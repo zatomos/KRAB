@@ -94,7 +94,7 @@ class RegistryImageFetchers implements ImageFetchers {
   Future<int> reactionCount(SharedImage image) async {
     final reactions = await SharedImageApi(image).reactions();
     if (reactions == null) return 0;
-    return reactions.fold<int>(0, (sum, r) => sum + r.count);
+    return reactions.tally.fold<int>(0, (sum, r) => sum + r.count);
   }
 }
 
