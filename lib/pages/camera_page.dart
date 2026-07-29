@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
@@ -17,7 +19,11 @@ import 'package:krab/widgets/dialogs/send_image_dialog.dart';
 import 'package:krab/widgets/avatars/user_avatar.dart';
 import 'groups_page.dart';
 import 'account_page.dart';
-import 'package:krab/services/instance/active_instance.dart';
+import 'servers_page.dart';
+import 'package:krab/models/shared_image.dart';
+import 'package:krab/services/instance/instances.dart';
+import 'package:krab/services/instance/instance_registry.dart';
+import 'package:krab/services/shared_image_api.dart';
 
 class CameraPage extends StatefulWidget {
   const CameraPage({super.key});
@@ -69,10 +75,15 @@ class CameraPageState extends State<CameraPage> {
     _allowAllOrientations();
     _initializeCamera();
     _loadCurrentUser();
+    _authSubscription =
+        InstanceRegistry.instance.authEvents.listen((_) => _loadCurrentUser());
   }
+
+  StreamSubscription<InstanceAuthEvent>? _authSubscription;
 
   @override
   void dispose() {
+    _authSubscription?.cancel();
     _lockPortrait();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     _zoomNotifier.dispose();
@@ -120,10 +131,20 @@ class CameraPageState extends State<CameraPage> {
 
   // ===== Initialization ========================================================
 
+  /// The account shown on the camera's own button, being the one on the server
+  /// the user ranked first.
+  KrabInstance? get _topInstance =>
+      InstanceRegistry.instance.signedIn.firstOrNull;
+
   Future<void> _loadCurrentUser() async {
-    final response = await api.getCurrentUser();
-    currentUser = response.data;
-    debugPrint("Loaded current user: $currentUser");
+    final top = _topInstance;
+    if (top == null) {
+      if (mounted) setState(() => currentUser = null);
+      return;
+    }
+    final response = await top.api.getCurrentUser();
+    debugPrint("Loaded current user: ${response.data}");
+    if (mounted) setState(() => currentUser = response.data);
   }
 
   Future<void> _initializeCamera() async {
@@ -318,10 +339,10 @@ class CameraPageState extends State<CameraPage> {
     }
   }
 
-  /// Delete the just-sent photo when the user taps Undo on the snackbar.
+  /// Delete the just-sent image when the user taps Undo on the snackbar.
   Future<void> _undoSend(
-      String imageId, String removedMsg, String failedMsg) async {
-    final deleted = await api.deleteImage(imageId);
+      SharedImage image, String removedMsg, String failedMsg) async {
+    final deleted = await SharedImageApi(image).delete();
     if (deleted.success) {
       updateHomeWidget();
       showSnackBar(removedMsg, tone: SnackTone.success);
@@ -358,21 +379,25 @@ class CameraPageState extends State<CameraPage> {
 
       switch (result.outcome) {
         case SendOutcome.sent:
+        case SendOutcome.sentPartially:
+          final partial = result.outcome == SendOutcome.sentPartially;
           updateHomeWidget();
           // Confirm the send with a snackbar that also offers a quick Undo.
-          final imageId = result.imageId;
+          final image = result.image;
           final removedMsg = l10n.photo_removed;
           final failedMsg = l10n.failed_to_delete_photo;
           showSnackBar(
-            l10n.photo_sent,
-            tone: SnackTone.success,
-            actionLabel: imageId == null ? null : l10n.undo,
-            onAction: imageId == null
+            partial
+                ? l10n.photo_sent_partially(result.refusedBy.join(', '))
+                : l10n.photo_sent,
+            tone: partial ? SnackTone.warning : SnackTone.success,
+            actionLabel: image == null ? null : l10n.undo,
+            onAction: image == null
                 ? null
-                : () => _undoSend(imageId, removedMsg, failedMsg),
+                : () => _undoSend(image, removedMsg, failedMsg),
           );
         case SendOutcome.queued:
-          // The photo is safe in the outbox, so this reads as a success.
+          // The image is safe in the outbox, so this reads as a success.
           showSnackBar(l10n.photo_queued_offline, tone: SnackTone.success);
         case SendOutcome.failed:
           await showDialog(
@@ -398,7 +423,10 @@ class CameraPageState extends State<CameraPage> {
 
   Widget _accountButton() {
     Future<void> onTap() async {
-      await _navigateWithCameraDispose(const AccountPage());
+      final top = _topInstance;
+      await _navigateWithCameraDispose(
+        top == null ? const ServersPage() : AccountPage(instance: top),
+      );
       await _loadCurrentUser();
     }
 

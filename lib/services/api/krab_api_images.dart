@@ -15,22 +15,44 @@ bool _isAlreadyUploaded(Object error) =>
 /// when a thumbnail hasn't been generated.
 const String _thumbnailsBucket = 'image-thumbnails';
 
+/// Strip EXIF metadata, and shrink the photo if this build asks for it.
+Future<Uint8List> prepareImageForUpload(File imageFile) async =>
+    stripImageMetadata(
+      await imageFile.readAsBytes(),
+      maxDimension: maxUploadDimension,
+      quality: uploadJpegQuality,
+    );
+
+/// Whether the server refused `p_share_id`
+bool _isUnknownShareIdArgument(Object error) {
+  if (error is! PostgrestException) return false;
+  if (error.code == '42883' || error.code == 'PGRST202') return true;
+  final message = error.message.toLowerCase();
+  return message.contains('p_share_id') ||
+      message.contains('could not find the function');
+}
+
 extension KrabApiImages on KrabApi {
   /// Send an image to selected groups with an optional description.
+  ///
+  /// shareId is what lets every copy of a photo be recognised as one photo
+  /// later.
   Future<SupabaseResponse<String>> sendImageToGroups(
     File imageFile,
     List<String> selectedGroups,
     String description, {
     String? resumeImageId,
+    String? shareId,
+    Uint8List? preparedBytes,
     Future<void> Function(String imageId)? onReserved,
+    Future<void> Function()? onShareIdNotStored,
   }) async {
     try {
-      // Strip EXIF metadata, and shrink the photo if this build asks for it
-      final imageBytes = await stripImageMetadata(
-        await imageFile.readAsBytes(),
-        maxDimension: maxUploadDimension,
-        quality: uploadJpegQuality,
-      );
+      // Sending one photo to several instances prepares the bytes once and
+      // hands them to each, so a fan-out re-encodes the photo once rather than
+      // once per server.
+      final imageBytes =
+          preparedBytes ?? await prepareImageForUpload(imageFile);
 
       if (imageBytes.length > maxImageUploadBytes) {
         return SupabaseResponse(success: false, error: errorPhotoTooLarge);
@@ -40,11 +62,9 @@ extension KrabApiImages on KrabApi {
 
       if (imageId == null) {
         // Open the upload: checks the groups, and reserves the id to store under
-        final opened =
-            await _withRetry(() => _client.rpc("request_image_upload", params: {
-                  "p_group_ids": selectedGroups,
-                  "p_description": description,
-                }));
+        final result = await _withRetry(
+            () => _requestUpload(selectedGroups, description, shareId));
+        final opened = result.opened;
 
         if (opened['success'] == false) {
           return SupabaseResponse(
@@ -54,6 +74,7 @@ extension KrabApiImages on KrabApi {
         }
 
         imageId = opened['image_id'] as String;
+        if (!result.storedShareId) await onShareIdNotStored?.call();
         await onReserved?.call(imageId);
       }
 
@@ -74,6 +95,30 @@ extension KrabApiImages on KrabApi {
       return SupabaseResponse(success: true, data: imageId);
     } catch (error) {
       return _failure(error, "sending image");
+    }
+  }
+
+  /// Opens the upload, carrying the share id when there is one.
+  Future<({dynamic opened, bool storedShareId})> _requestUpload(
+      List<String> groupIds, String description, String? shareId) async {
+    Future<dynamic> call({required bool withShareId}) =>
+        _client.rpc("request_image_upload", params: {
+          "p_group_ids": groupIds,
+          "p_description": description,
+          if (withShareId) "p_share_id": shareId,
+        });
+
+    if (shareId == null) {
+      return (opened: await call(withShareId: false), storedShareId: false);
+    }
+
+    try {
+      return (opened: await call(withShareId: true), storedShareId: true);
+    } catch (error) {
+      if (!_isUnknownShareIdArgument(error)) rethrow;
+      debugPrint('Instance $instanceId does not know share_id; '
+          'sending without it');
+      return (opened: await call(withShareId: false), storedShareId: false);
     }
   }
 
@@ -131,8 +176,7 @@ extension KrabApiImages on KrabApi {
           },
           errorContext: "loading group images",
           parse: (r) => (r['images'] as List)
-              .map((e) => ImageRef.fromJson(e as Map<String, dynamic>,
-                  instanceId: instanceId))
+              .map((e) => _imageRef(e as Map<String, dynamic>))
               .toList());
 
   /// Get the N most recent images accessible to the user, deduplicated
@@ -156,9 +200,44 @@ extension KrabApiImages on KrabApi {
           },
           errorContext: "loading latest images",
           parse: (r) => (r['images'] as List)
-              .map((e) => ImageRef.fromJson(e as Map<String, dynamic>,
-                  instanceId: instanceId))
+              .map((e) => _imageRef(e as Map<String, dynamic>))
               .toList());
+
+  /// Decode one listed image, taking its share id from the server and
+  /// from this device's own ledger otherwise.
+  ImageRef _imageRef(Map<String, dynamic> json) {
+    final ref = ImageRef.fromJson(json, instanceId: instanceId);
+    if (ref.shareId != null) return ref;
+    final recorded = ShareLedger.instance.cachedShareIdFor(instanceId, ref.id);
+    return recorded == null ? ref : ref.copyWith(shareId: recorded);
+  }
+
+  /// The copies this instance holds of any of shareIds.
+  Future<SupabaseResponse<List<ImageRef>>> findImagesByShareId(
+      List<String> shareIds) async {
+    if (shareIds.isEmpty) {
+      return const SupabaseResponse(success: true, data: []);
+    }
+    try {
+      final response = await _client
+          .rpc('get_images_by_share_id', params: {'p_share_ids': shareIds});
+      if (response is Map && response['success'] == false) {
+        return SupabaseResponse(
+            success: false, error: response['error']?.toString());
+      }
+      final images = (response['images'] as List?) ?? const [];
+      return SupabaseResponse(
+        success: true,
+        data: images.map((e) => _imageRef(e as Map<String, dynamic>)).toList(),
+      );
+    } catch (error) {
+      if (_isUnknownShareIdArgument(error)) {
+        debugPrint('Instance $instanceId cannot look photos up by share id');
+        return const SupabaseResponse(success: true, data: []);
+      }
+      return _failure(error, 'looking up shared copies');
+    }
+  }
 
   /// Download an image from storage, backed by a persistent on-disk cache.
   Future<SupabaseResponse<Uint8List>> getImage(String imageId,

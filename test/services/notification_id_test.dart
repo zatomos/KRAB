@@ -24,10 +24,13 @@ void main() {
       );
     });
 
-    test('a later delivery of the same photo gets its own id, so the two '
+    test(
+        'a later delivery of the same photo gets its own id, so the two '
         'notifications coexist instead of replacing each other', () {
-      final firstSend = imageNotificationId(image, batchKey: imageBatchKey(['a', 'b']));
-      final addedLater = imageNotificationId(image, batchKey: imageBatchKey(['d']));
+      final firstSend =
+          imageNotificationId(image, batchKey: imageBatchKey(['a', 'b']));
+      final addedLater =
+          imageNotificationId(image, batchKey: imageBatchKey(['d']));
       expect(firstSend, isNot(addedLater));
     });
 
@@ -40,11 +43,13 @@ void main() {
     test('no batch key reproduces the id an older build used', () {
       // cancelImageNotification relies on this to dismiss a notification that
       // was posted before the app was updated.
-      expect(imageNotificationId(image, batchKey: ''), imageNotificationId(image));
+      expect(
+          imageNotificationId(image, batchKey: ''), imageNotificationId(image));
     });
 
     test('is a valid Android notification id', () {
-      final id = imageNotificationId(image, batchKey: imageBatchKey(['a', 'b']));
+      final id =
+          imageNotificationId(image, batchKey: imageBatchKey(['a', 'b']));
       expect(id, greaterThanOrEqualTo(0));
       expect(id, lessThanOrEqualTo(0x7FFFFFFF));
     });

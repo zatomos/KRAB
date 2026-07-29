@@ -101,9 +101,7 @@ extension KrabApiAccount on KrabApi {
       await PushHelper.ensureRegistered(instance);
       return SupabaseResponse(success: true, data: true);
     }
-    // Verification required; the username was stored via signup metadata and
-    // the profile is created server-side, so nothing else to do until they
-    // confirm.
+    // Verification required
     return SupabaseResponse(success: true, data: false);
   }
 
@@ -130,8 +128,6 @@ extension KrabApiAccount on KrabApi {
   /// Log out the current user of this instance.
   Future<SupabaseResponse<void>> logOut() async {
     try {
-      // Mark this as an intentional logout to prevent the "unexpected signout"
-      // notification.
       DebugNotifier.instance.markIntentionalLogout();
 
       // The row can only be cleared while the session is still valid, and
@@ -143,11 +139,10 @@ extension KrabApiAccount on KrabApi {
       }
       await PushHelper.unregister(instance);
 
-      // Only this instance's caches: signing out of one server must leave
-      // whatever else is signed in untouched.
+      // Only this instance's caches
       await instance.clearCaches();
 
-      // Revoke server-side + clear this instance's session.
+      // Revoke server-side and clear this instance's session.
       await _auth.logout();
       return SupabaseResponse(success: true);
     } catch (error) {

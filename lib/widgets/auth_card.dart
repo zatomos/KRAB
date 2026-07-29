@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-
 /// The panel the connect and login screens sit on.
 class AuthCard extends StatelessWidget {
   final Widget child;

@@ -5,7 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'package:krab/app_globals.dart';
-import 'package:krab/services/instance/active_instance.dart';
+import 'package:krab/services/instance/instances.dart';
 import 'package:krab/services/instance/instance_registry.dart';
 import 'package:krab/services/home_widget_status.dart';
 import 'package:krab/services/home_widget_updater.dart';
@@ -16,7 +16,7 @@ import 'package:krab/widgets/update_checker.dart';
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/pages/instance_setup_page.dart';
 import 'package:krab/pages/welcome_page.dart';
-import 'package:krab/pages/login_page.dart';
+import 'package:krab/pages/servers_page.dart';
 import 'package:krab/pages/camera_page.dart';
 import 'package:krab/user_preferences.dart';
 
@@ -158,7 +158,7 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
           }
 
           return UpdateChecker(
-            child: snapshot.data ?? const LoginPage(),
+            child: snapshot.data ?? signInScreen(),
           );
         },
       ),
@@ -181,13 +181,11 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
         return const InstanceSetupPage();
       }
 
-      return activeInstance.auth.isLoggedIn
-          ? const CameraPage()
-          : const LoginPage();
+      return anySignedIn ? const CameraPage() : signInScreen();
     } catch (e, st) {
       debugPrint('Error determining home page: $e');
       debugPrint(st.toString());
-      return const LoginPage();
+      return signInScreen();
     }
   }
 }

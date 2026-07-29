@@ -8,6 +8,7 @@ import 'package:workmanager/workmanager.dart';
 
 import 'package:krab/services/api/krab_api.dart';
 import 'package:krab/services/instance/instance_registry.dart';
+import 'package:krab/services/share_ledger.dart';
 import 'package:krab/services/home_widget_updater.dart';
 
 /// WorkManager task name for a flush, and the unique name that keeps at most
@@ -37,6 +38,7 @@ class _OutboxEntry {
   final String path;
   final List<String> groupIds;
   final String description;
+  final String? shareId;
   final DateTime createdAt;
   final int attempts;
   final DateTime? claimedAt;
@@ -51,6 +53,7 @@ class _OutboxEntry {
     required this.groupIds,
     required this.description,
     required this.createdAt,
+    this.shareId,
     this.attempts = 0,
     this.claimedAt,
     this.reservedImageId,
@@ -70,6 +73,7 @@ class _OutboxEntry {
         groupIds: groupIds,
         description: description,
         createdAt: createdAt,
+        shareId: shareId,
         attempts: attempts ?? this.attempts,
         claimedAt: clearClaim ? null : (claimedAt ?? this.claimedAt),
         reservedImageId:
@@ -82,6 +86,7 @@ class _OutboxEntry {
         'path': path,
         'groupIds': groupIds,
         'description': description,
+        'shareId': shareId,
         'createdAt': createdAt.toIso8601String(),
         'attempts': attempts,
         'claimedAt': claimedAt?.toIso8601String(),
@@ -98,6 +103,7 @@ class _OutboxEntry {
       path: json['path'] as String,
       groupIds: (json['groupIds'] as List).cast<String>(),
       description: json['description'] as String? ?? '',
+      shareId: json['shareId'] as String?,
       createdAt: DateTime.parse(json['createdAt'] as String),
       attempts: json['attempts'] as int? ?? 0,
       claimedAt: claimedAt == null ? null : DateTime.parse(claimedAt),
@@ -113,6 +119,7 @@ typedef ImageSender = Future<SupabaseResponse<String>> Function(
   List<String> groupIds,
   String description, {
   String? resumeImageId,
+  String? shareId,
   Future<void> Function(String imageId)? onReserved,
 });
 
@@ -124,6 +131,7 @@ Future<SupabaseResponse<String>> _sendToInstance(
   List<String> groupIds,
   String description, {
   String? resumeImageId,
+  String? shareId,
   Future<void> Function(String imageId)? onReserved,
 }) async {
   final instance = InstanceRegistry.instance.byId(instanceId);
@@ -131,13 +139,31 @@ Future<SupabaseResponse<String>> _sendToInstance(
     debugPrint('Outbox: instance $instanceId is gone, dropping the photo');
     return const SupabaseResponse(success: false, error: errorServer);
   }
-  return instance.api.sendImageToGroups(
+  // Set only when this instance could not store the share id
+  var needsLedger = false;
+
+  final response = await instance.api.sendImageToGroups(
     imageFile,
     groupIds,
     description,
     resumeImageId: resumeImageId,
+    shareId: shareId,
     onReserved: onReserved,
+    onShareIdNotStored: () async => needsLedger = true,
   );
+
+  final unknown = resumeImageId != null;
+  if ((needsLedger || unknown) &&
+      response.success &&
+      response.data != null &&
+      shareId != null) {
+    await ShareLedger.instance.record(
+      instanceId: instanceId,
+      imageId: response.data!,
+      shareId: shareId,
+    );
+  }
+  return response;
 }
 
 /// Photos that couldn't be sent because the device was offline, held until it
@@ -190,6 +216,7 @@ class UploadOutbox {
     List<String> groupIds,
     String description, {
     String? reservedImageId,
+    String? shareId,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     final entries = await _read(prefs);
@@ -207,6 +234,7 @@ class UploadOutbox {
       groupIds: groupIds,
       description: description,
       reservedImageId: reservedImageId,
+      shareId: shareId,
       createdAt: DateTime.now(),
     ));
 
@@ -268,6 +296,7 @@ class UploadOutbox {
           entry.groupIds,
           entry.description,
           resumeImageId: reserved,
+          shareId: entry.shareId,
           onReserved: (imageId) async {
             reserved = imageId;
             await _update(prefs, entry.copyWith(reservedImageId: imageId));

@@ -16,7 +16,9 @@ import 'package:krab/widgets/rounded_input_field.dart';
 import 'package:krab/widgets/dialogs/dialogs.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/services/time_formatting.dart';
-import 'package:krab/services/instance/active_instance.dart';
+import 'package:krab/models/shared_image.dart';
+import 'package:krab/services/instance/instances.dart';
+import 'package:krab/services/shared_image_api.dart';
 
 /// How long a group's thread takes to expand or collapse.
 const Duration _expandDuration = Duration(milliseconds: 200);
@@ -82,8 +84,13 @@ class _CommentsSkeleton extends StatelessWidget {
   }
 }
 
-/// A group's comment thread for a single image
+/// A group's comment thread for a single copy of an image.
 class _GroupCommentSection {
+  final KrabInstance instance;
+
+  /// The image's id on the instance
+  final String imageId;
+
   final Group group;
   final bool isPrimary;
   final List<Comment> rootComments;
@@ -92,6 +99,8 @@ class _GroupCommentSection {
   final int commentCount;
 
   _GroupCommentSection({
+    required this.instance,
+    required this.imageId,
     required this.group,
     required this.isPrimary,
     required this.rootComments,
@@ -100,18 +109,20 @@ class _GroupCommentSection {
 
   String get groupId => group.id;
   String get groupName => group.name;
+
+  /// Identifies the section across every server in play.
+  String get key => '${instance.id}/${group.id}';
 }
 
 class CommentsBottomSheet extends StatefulWidget {
-  /// The instance the image and its comments live on.
-  final KrabInstance instance;
-
-  final String imageId;
+  /// The image, with every copy of it. Comments are gathered from all of them
+  /// and shown as one conversation.
+  final SharedImage image;
 
   /// The group whose gallery the image was opened from. When null, the sheet is
   /// in "all groups" mode: comments from every group the image is shared with
   /// are shown together, grouped by group.
-  final String? primaryGroupId;
+  final Group? primaryGroup;
   final String uploaderId;
   final void Function(int delta)? onCommentCountChanged;
 
@@ -121,9 +132,8 @@ class CommentsBottomSheet extends StatefulWidget {
 
   const CommentsBottomSheet({
     super.key,
-    required this.instance,
-    required this.imageId,
-    required this.primaryGroupId,
+    required this.image,
+    required this.primaryGroup,
     required this.uploaderId,
     this.onCommentCountChanged,
     this.initialCommentCount,
@@ -142,16 +152,16 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
 
   // Active composing context
   String? _editingCommentId;
-  String? _editingGroupId;
+  String? _editingSectionKey;
   String? _replyingToCommentId;
   String? _replyingToUsername;
-  String? _replyingGroupId;
+  String? _replyingSectionKey;
 
-  /// Group a brand-new top-level comment will be posted to
-  String? _composingGroupId;
+  /// The section a new top-level comment will be posted to.
+  String? _composingSectionKey;
 
-  /// Groups whose comment threads are currently expanded
-  final Set<String> _expandedGroupIds = {};
+  /// Sections whose comment threads are currently expanded
+  final Set<String> _expandedKeys = {};
 
   final Map<String, Future<krab_user.User>> _userCache = {};
 
@@ -165,7 +175,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
     super.initState();
     // In a single-group gallery, the target group is known up front, so the
     // input is ready immediately.
-    _composingGroupId = widget.primaryGroupId;
+    _composingSectionKey = null;
     // Rebuild when the input gains/loses focus so that we can fade in/out.
     _inputFocusNode.addListener(_onFocusChange);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -216,13 +226,23 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
     super.dispose();
   }
 
-  bool get _isAllGroupsMode => widget.primaryGroupId == null;
+  bool get _isAllGroupsMode => widget.primaryGroup == null;
+
+  String? get _primaryGroupId => widget.primaryGroup?.id;
+
+  _GroupCommentSection? _sectionFor(String? key) {
+    if (key == null) return null;
+    for (final section in _sections) {
+      if (section.key == key) return section;
+    }
+    return null;
+  }
 
   /// The comment total the gallery's badge is showing, as the server last
   /// reported it. In all-groups mode the badge counts every group; otherwise it
   /// tracks only the group the image was opened from.
   int _trackedCount() => _sections
-      .where((s) => _isAllGroupsMode || s.groupId == widget.primaryGroupId)
+      .where((s) => _isAllGroupsMode || s.groupId == _primaryGroupId)
       .fold<int>(0, (sum, s) => sum + s.commentCount);
 
   /// Refresh, and tell the gallery how much its badge actually moved.
@@ -236,75 +256,69 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
 
   Future<void> _fetchComments() async {
     try {
-      final response = await widget.instance.api.getImageCommentsGrouped(
-        widget.imageId,
-        primaryGroupId: widget.primaryGroupId,
-      );
-      if (response.success && response.data != null) {
-        final sections = await Future.wait(response.data!.map((raw) async {
-          final group = raw as Map<String, dynamic>;
-          final groupId = group['group_id']?.toString() ?? '';
-          final groupComments =
-              ((group['comments'] as List?) ?? []).map((commentData) {
-            return Comment(
-              id: commentData['id']?.toString() ?? '',
-              userId: commentData['user_id']?.toString() ?? '',
-              text: commentData['text']?.toString() ?? '',
-              createdAt: commentData['created_at'] != null
-                  ? DateTime.parse(commentData['created_at'])
-                  : DateTime.now(),
-              parentId: commentData['parent_id']?.toString(),
-            );
-          }).toList();
-          final iconUrl =
-              await widget.instance.api.resolveGroupIconUrl(groupId);
-          return _GroupCommentSection(
-            group: Group(
-              instanceId: widget.instance.api.instanceId,
-              id: groupId,
-              name: group['group_name']?.toString() ?? '',
-              iconUrl: iconUrl,
-              createdAt: '',
-            ),
-            isPrimary: group['is_primary'] == true,
-            rootComments: buildCommentTree(groupComments),
-            commentCount: groupComments.length,
+      // Every copy's sections, gathered.
+      final raws = await SharedImageApi(widget.image)
+          .commentsGrouped(primaryGroupId: _primaryGroupId);
+      final sections = await Future.wait(raws.map((entry) async {
+        final instance = entry.instance;
+        final group = entry.section;
+        final groupId = group['group_id']?.toString() ?? '';
+        final groupComments =
+            ((group['comments'] as List?) ?? []).map((commentData) {
+          return Comment(
+            id: commentData['id']?.toString() ?? '',
+            userId: commentData['user_id']?.toString() ?? '',
+            text: commentData['text']?.toString() ?? '',
+            createdAt: commentData['created_at'] != null
+                ? DateTime.parse(commentData['created_at'])
+                : DateTime.now(),
+            parentId: commentData['parent_id']?.toString(),
           );
-        }).toList());
+        }).toList();
+        final iconUrl = await instance.api.resolveGroupIconUrl(groupId);
+        return _GroupCommentSection(
+          instance: instance,
+          imageId: widget.image.copyOn(instance.id)?.id ?? '',
+          group: Group(
+            instanceId: instance.id,
+            id: groupId,
+            name: group['group_name']?.toString() ?? '',
+            iconUrl: iconUrl,
+            createdAt: '',
+          ),
+          isPrimary: group['is_primary'] == true,
+          rootComments: buildCommentTree(groupComments),
+          commentCount: groupComments.length,
+        );
+      }).toList());
 
-        // Resolve authors up front
-        await _prefetchAuthors(sections);
+      // Resolve authors up front
+      await _prefetchAuthors(sections);
 
-        if (!mounted) return;
-        setState(() {
-          final firstLoad = _sections.isEmpty;
-          _sections = sections;
-          // Keep the chosen group across refreshes; only fall back to the
-          // default when it's gone or nothing was chosen.
-          final chosen = _composingGroupId;
-          _composingGroupId =
-              (chosen != null && sections.any((s) => s.groupId == chosen))
-                  ? chosen
-                  : _defaultComposingGroupId(sections);
-          // Primary group is open by default, other groups stay collapsed.
-          // Only on the first load: after that the set is the user's own
-          // choice, and re-applying the default here would spring a section
-          // they collapsed back open on every post, edit and delete.
-          if (firstLoad) {
-            for (final section in sections) {
-              // Empty groups stay collapsed
-              if ((section.isPrimary || _isAllGroupsMode) &&
-                  section.rootComments.isNotEmpty) {
-                _expandedGroupIds.add(section.groupId);
-              }
+      if (!mounted) return;
+      setState(() {
+        final firstLoad = _sections.isEmpty;
+        _sections = sections;
+        // Keep the chosen group across refreshes; only fall back to the
+        // default when it's gone or nothing was chosen.
+        final chosen = _composingSectionKey;
+        _composingSectionKey =
+            (chosen != null && sections.any((s) => s.key == chosen))
+                ? chosen
+                : _defaultComposingKey(sections);
+        // Primary group is open by default, other groups stay collapsed.
+        // Only on the first load.
+        if (firstLoad) {
+          for (final section in sections) {
+            // Empty groups stay collapsed
+            if ((section.isPrimary || _isAllGroupsMode) &&
+                section.rootComments.isNotEmpty) {
+              _expandedKeys.add(section.key);
             }
           }
-          _loading = false;
-        });
-      } else {
-        if (!mounted) return;
-        setState(() => _loading = false);
-      }
+        }
+        _loading = false;
+      });
     } catch (e) {
       debugPrint("Error fetching comments: $e");
       if (!mounted) return;
@@ -312,13 +326,13 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
     }
   }
 
-  String? _defaultComposingGroupId(List<_GroupCommentSection> sections) {
+  String? _defaultComposingKey(List<_GroupCommentSection> sections) {
     if (sections.isEmpty) return null;
     final primary = sections.where((s) => s.isPrimary);
-    if (primary.isNotEmpty) return primary.first.groupId;
+    if (primary.isNotEmpty) return primary.first.key;
     // All-groups mode: only one group means there's no ambiguity, so select it.
     // With several groups, don't assume; the user must pick one.
-    if (sections.length == 1) return sections.first.groupId;
+    if (sections.length == 1) return sections.first.key;
     return null;
   }
 
@@ -327,17 +341,19 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
   bool get _canSubmit =>
       _editingCommentId != null ||
       _replyingToCommentId != null ||
-      _composingGroupId != null;
+      _composingSectionKey != null;
 
   Future<void> _postComment() async {
     final text = _newCommentController.text.trim();
-    final targetGroup = _replyingGroupId ?? _composingGroupId;
-    if (text.isEmpty || _isSending || targetGroup == null) return;
+    // The section decides which server the comment goes to, and under which of
+    // the image's ids.
+    final target = _sectionFor(_replyingSectionKey ?? _composingSectionKey);
+    if (text.isEmpty || _isSending || target == null) return;
     setState(() => _isSending = true);
 
-    final response = await widget.instance.api.postComment(
-      widget.imageId,
-      targetGroup,
+    final response = await target.instance.api.postComment(
+      target.imageId,
+      target.groupId,
       text,
       parentId: _replyingToCommentId,
     );
@@ -347,7 +363,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
       _cancelReply();
       _inputFocusNode.unfocus();
       // Make sure the thread the comment landed in is visible
-      _expandedGroupIds.add(targetGroup);
+      _expandedKeys.add(target.key);
       await _refreshAndReportCount();
       if (mounted) {
         setState(() => _isSending = false);
@@ -365,19 +381,20 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
     }
   }
 
-  Future<void> _updateComment(String commentId, String groupId) async {
+  Future<void> _updateComment(
+      String commentId, _GroupCommentSection section) async {
     final text = _newCommentController.text.trim();
     if (text.isEmpty || _editingCommentId == null || _isSending) return;
     setState(() => _isSending = true);
 
-    final response = await widget.instance.api
-        .updateComment(commentId, widget.imageId, groupId, text);
+    final response = await section.instance.api
+        .updateComment(commentId, section.imageId, section.groupId, text);
     if (response.success) {
       _newCommentController.clear();
       _inputFocusNode.unfocus();
       setState(() {
         _editingCommentId = null;
-        _editingGroupId = null;
+        _editingSectionKey = null;
         _isSending = false;
       });
       await _fetchComments();
@@ -396,22 +413,23 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
     }
   }
 
-  Future<void> _deleteComment(String commentId, String groupId) async {
+  Future<void> _deleteComment(
+      String commentId, _GroupCommentSection section) async {
     final confirmed = await showConfirmDialog(context,
         title: context.l10n.confirm_delete_comment,
         confirmLabel: context.l10n.confirm,
         destructive: true);
     if (!confirmed) return;
 
-    final response = await widget.instance.api
-        .deleteComment(commentId, widget.imageId, groupId);
+    final response = await section.instance.api
+        .deleteComment(commentId, section.imageId, section.groupId);
     if (!mounted) return;
 
     if (response.success) {
       if (_editingCommentId == commentId) {
         setState(() {
           _editingCommentId = null;
-          _editingGroupId = null;
+          _editingSectionKey = null;
         });
         _newCommentController.clear();
       }
@@ -430,18 +448,19 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
   /// Drop any reply or edit in progress.
   void _clearComposeTarget() {
     _editingCommentId = null;
-    _editingGroupId = null;
+    _editingSectionKey = null;
     _replyingToCommentId = null;
     _replyingToUsername = null;
-    _replyingGroupId = null;
+    _replyingSectionKey = null;
   }
 
-  void _startReply(Comment comment, String username, String groupId) {
+  void _startReply(
+      Comment comment, String username, _GroupCommentSection section) {
     setState(() {
       _clearComposeTarget();
       _replyingToCommentId = comment.id;
       _replyingToUsername = username;
-      _replyingGroupId = groupId;
+      _replyingSectionKey = section.key;
     });
     _newCommentController.clear();
     _focusInput();
@@ -451,15 +470,15 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
     setState(() {
       _replyingToCommentId = null;
       _replyingToUsername = null;
-      _replyingGroupId = null;
+      _replyingSectionKey = null;
     });
   }
 
-  void _startEdit(Comment comment, String groupId) {
+  void _startEdit(Comment comment, _GroupCommentSection section) {
     setState(() {
       _clearComposeTarget();
       _editingCommentId = comment.id;
-      _editingGroupId = groupId;
+      _editingSectionKey = section.key;
       _newCommentController.text = comment.text;
       // Put the cursor at the end of the existing text
       _newCommentController.selection = TextSelection.collapsed(
@@ -472,7 +491,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
   void _cancelEdit() {
     setState(() {
       _editingCommentId = null;
-      _editingGroupId = null;
+      _editingSectionKey = null;
     });
     _newCommentController.clear();
     _inputFocusNode.unfocus();
@@ -482,33 +501,40 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
   void _composeIn(_GroupCommentSection section) {
     setState(() {
       _clearComposeTarget();
-      _composingGroupId = section.groupId;
-      _expandedGroupIds.add(section.groupId);
+      _composingSectionKey = section.key;
+      _expandedKeys.add(section.key);
     });
     _newCommentController.clear();
     _focusInput();
   }
 
-  void _toggleExpanded(String groupId) {
+  void _toggleExpanded(String key) {
     setState(() {
-      if (!_expandedGroupIds.remove(groupId)) {
-        _expandedGroupIds.add(groupId);
+      if (!_expandedKeys.remove(key)) {
+        _expandedKeys.add(key);
       }
     });
   }
 
-  /// Resolve the author of a comment
-  Future<krab_user.User> _userFor(Comment comment) {
+  /// The key an author is cached under.
+  String _authorKey(_GroupCommentSection section, Comment comment) =>
+      '${section.instance.id}/${comment.userId}';
+
+  /// Resolve the author of a comment, on the server the comment lives on.
+  Future<krab_user.User> _userFor(
+      Comment comment, _GroupCommentSection section) {
+    final key = _authorKey(section, comment);
     return _userCache.putIfAbsent(
-      comment.userId,
-      () => widget.instance.api.getUserDetails(comment.userId).then((response) {
+      key,
+      () =>
+          section.instance.api.getUserDetails(comment.userId).then((response) {
         final user = (response.success && response.data != null)
             ? response.data!
             : krab_user.User(
-                instanceId: widget.instance.api.instanceId,
+                instanceId: section.instance.id,
                 id: comment.userId,
                 username: "Unknown");
-        _resolvedUsers[comment.userId] = user;
+        _resolvedUsers[key] = user;
         return user;
       }),
     );
@@ -517,20 +543,20 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
   /// Resolve every author across all sections.
   Future<void> _prefetchAuthors(List<_GroupCommentSection> sections) {
     final futures = <Future<krab_user.User>>[];
-    void visit(Comment c) {
-      futures.add(_userFor(c));
-      c.replies.forEach(visit);
-    }
-
     for (final section in sections) {
+      void visit(Comment c) {
+        futures.add(_userFor(c, section));
+        c.replies.forEach(visit);
+      }
+
       section.rootComments.forEach(visit);
     }
     return Future.wait(futures);
   }
 
   /// Reply / edit / delete row under a comment
-  Widget _commentActions(
-      Comment comment, String username, bool isCurrentUser, String groupId) {
+  Widget _commentActions(Comment comment, String username, bool isCurrentUser,
+      _GroupCommentSection section) {
     final muted = Theme.of(context).colorScheme.onSurfaceVariant;
     return Padding(
       padding: const EdgeInsets.fromLTRB(0, 12, 0, 18),
@@ -538,16 +564,16 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
         spacing: 32,
         children: [
           GestureDetector(
-            onTap: () => _startReply(comment, username, groupId),
+            onTap: () => _startReply(comment, username, section),
             child: Icon(Symbols.chat_rounded, size: 20, color: muted),
           ),
           if (isCurrentUser) ...[
             GestureDetector(
-              onTap: () => _startEdit(comment, groupId),
+              onTap: () => _startEdit(comment, section),
               child: Icon(Symbols.edit_rounded, size: 20, color: muted),
             ),
             GestureDetector(
-              onTap: () => _deleteComment(comment.id, groupId),
+              onTap: () => _deleteComment(comment.id, section),
               child: Icon(Symbols.delete_rounded,
                   size: 20, color: Theme.of(context).colorScheme.error),
             ),
@@ -557,8 +583,10 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
     );
   }
 
-  Widget _buildCommentItem(Comment comment, String groupId, {int depth = 0}) {
-    final currentUserId = widget.instance.auth.currentUserId;
+  Widget _buildCommentItem(Comment comment, _GroupCommentSection section,
+      {int depth = 0}) {
+    // Whose comment this is
+    final currentUserId = section.instance.auth.currentUserId;
     final isCurrentUser = comment.userId == currentUserId;
     final maxDepth = 3; // Limit visual nesting depth
     final effectiveDepth = depth > maxDepth ? maxDepth : depth;
@@ -569,13 +597,13 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
         Padding(
           padding: EdgeInsets.only(left: effectiveDepth * 24.0),
           child: FutureBuilder<krab_user.User>(
-            future: _userFor(comment),
-            initialData: _resolvedUsers[comment.userId],
+            future: _userFor(comment, section),
+            initialData: _resolvedUsers[_authorKey(section, comment)],
             builder: (context, snapshot) {
               final username = snapshot.data?.username ?? "...";
               final user = snapshot.data ??
                   krab_user.User(
-                      instanceId: widget.instance.api.instanceId,
+                      instanceId: section.instance.id,
                       id: comment.userId,
                       username: "");
 
@@ -617,7 +645,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
                           // Comment text
                           Text(comment.text),
                           _commentActions(
-                              comment, username, isCurrentUser, groupId),
+                              comment, username, isCurrentUser, section),
                         ],
                       ),
                     ),
@@ -629,7 +657,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
         ),
         // Render replies recursively
         ...comment.replies.map(
-            (reply) => _buildCommentItem(reply, groupId, depth: depth + 1)),
+            (reply) => _buildCommentItem(reply, section, depth: depth + 1)),
       ],
     );
   }
@@ -637,10 +665,10 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
   /// Tappable header for a group's thread
   Widget _sectionHeader(_GroupCommentSection section) {
     final color = colorFromName(section.groupName, context);
-    final expanded = _expandedGroupIds.contains(section.groupId);
+    final expanded = _expandedKeys.contains(section.key);
     return InkWell(
       borderRadius: BorderRadius.circular(8),
-      onTap: () => _toggleExpanded(section.groupId),
+      onTap: () => _toggleExpanded(section.key),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),
         child: Row(
@@ -730,7 +758,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: section.rootComments
-                  .map((c) => _buildCommentItem(c, section.groupId))
+                  .map((c) => _buildCommentItem(c, section))
                   .toList(),
             ),
     );
@@ -755,8 +783,8 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
       if (section.rootComments.isEmpty) {
         widgets.add(_emptyPlaceholder());
       } else {
-        widgets.addAll(section.rootComments
-            .map((c) => _buildCommentItem(c, section.groupId)));
+        widgets.addAll(
+            section.rootComments.map((c) => _buildCommentItem(c, section)));
       }
     }
 
@@ -790,7 +818,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
             duration: _expandDuration,
             curve: Curves.easeInOut,
             alignment: Alignment.topCenter,
-            child: _expandedGroupIds.contains(section.groupId)
+            child: _expandedKeys.contains(section.key)
                 ? _sectionBody(section)
                 : const SizedBox(width: double.infinity),
           ),
@@ -812,22 +840,22 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
   /// Whether to show the "commenting in" banner: only when the user has chosen
   /// to comment in a group other than the one currently being viewed.
   bool get _showComposingBanner {
-    if (_composingGroupId == null) return false;
+    if (_composingSectionKey == null) return false;
     // In all-groups mode the banner clarifies which group a comment lands in,
     // but that's only meaningful when the image spans multiple groups.
     if (_isAllGroupsMode) return _sections.length > 1;
-    return _composingGroupId != widget.primaryGroupId;
+    return _sectionFor(_composingSectionKey)?.groupId != _primaryGroupId;
   }
 
   void _resetComposingGroup() {
-    setState(() => _composingGroupId = _defaultComposingGroupId(_sections));
+    setState(() => _composingSectionKey = _defaultComposingKey(_sections));
     _inputFocusNode.unfocus();
   }
 
-  String? _groupNameFor(String? groupId) {
-    if (groupId == null) return null;
+  String? _groupNameFor(String? key) {
+    if (key == null) return null;
     for (final section in _sections) {
-      if (section.groupId == groupId) return section.groupName;
+      if (section.key == key) return section.groupName;
     }
     return null;
   }
@@ -984,8 +1012,10 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
                 onPressed: interactive && _canSubmit
                     ? () {
                         if (_editingCommentId != null) {
-                          _updateComment(
-                              _editingCommentId!, _editingGroupId ?? '');
+                          final section = _sectionFor(_editingSectionKey);
+                          if (section != null) {
+                            _updateComment(_editingCommentId!, section);
+                          }
                         } else {
                           _postComment();
                         }
@@ -1011,7 +1041,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
     final t = (_sheetAnim?.value ?? 1.0).clamp(0.0, 1.0);
     return Stack(
       children: [
-        // Scrim over everything (photo + sheet); taps dismiss the keyboard.
+        // Scrim over everything (image + sheet); taps dismiss the keyboard.
         Positioned.fill(
           child: IgnorePointer(
             ignoring: !focused,
@@ -1052,7 +1082,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
 
   /// Indicator showing which group a new top-level comment will be posted to
   Widget _composingBanner() {
-    final name = _groupNameFor(_composingGroupId) ?? '';
+    final name = _groupNameFor(_composingSectionKey) ?? '';
     final color = colorFromName(name, context);
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -1090,7 +1120,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
     final base = "${context.l10n.replying_to} $_replyingToUsername";
     // Surface the target group only when comments span multiple groups
     if (_sections.length > 1) {
-      final groupName = _groupNameFor(_replyingGroupId);
+      final groupName = _groupNameFor(_replyingSectionKey);
       if (groupName != null) return "$base • $groupName";
     }
     return base;

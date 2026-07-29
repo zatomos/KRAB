@@ -74,6 +74,14 @@
   "delete_photo_group_confirm": "Delete this photo from this group? This can't be undone.",
   "photo_deleted": "Photo deleted",
   "photo_sent": "Photo sent",
+  "photo_sent_partially": "Photo sent, but {server} refused it",
+  "@photo_sent_partially": {
+    "placeholders": {
+      "server": {
+        "type": "String"
+      }
+    }
+  },
   "photo_queued_offline": "Queued; will send when you're back online",
   "photo_removed": "Photo removed",
   "failed_to_delete_photo": "Failed to delete photo",
@@ -319,9 +327,6 @@
   "push_distributor_description": "KRAB delivers notifications through a UnifiedPush distributor. Choose which one to use.",
   "push_distributor_none": "No distributor is available on this device. Install a UnifiedPush app to receive notifications.",
   "push_distributor_failed": "Could not subscribe with that distributor.",
-  "change_server_title": "Change server",
-  "change_server_description": "This disconnects you from the current server and signs you out. You'll then choose a server to connect to.",
-  "change_server_confirm": "Disconnect",
   "instance_setup_token_subtitle": "Paste the connection token you were given to join a KRAB server.",
   "instance_setup_token_hint": "Connection token",
   "instance_setup_paste": "Paste",
@@ -345,5 +350,75 @@
     }
   },
   "error_name_too_short": "That name is too short.",
-  "error_opening_link": "Couldn't open that link."
+  "error_opening_link": "Couldn't open that link.",
+  "servers_title": "Servers",
+  "servers_subtitle": "KRAB shows photos from every server you are signed into, together.",
+  "servers_add": "Add a server",
+  "servers_signed_in_as": "Signed in as {username}",
+  "@servers_signed_in_as": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "servers_not_signed_in": "Not signed in",
+  "servers_sign_in": "Sign in",
+  "servers_sign_out": "Sign out",
+  "servers_disconnect": "Disconnect",
+  "servers_disconnect_title": "Disconnect from {server}?",
+  "@servers_disconnect_title": {
+    "placeholders": {
+      "server": {
+        "type": "String"
+      }
+    }
+  },
+  "servers_disconnect_description": "This signs you out and forgets this server. Your account and photos on the server itself are untouched.",
+  "servers_sign_out_title": "Sign out of {server}?",
+  "@servers_sign_out_title": {
+    "placeholders": {
+      "server": {
+        "type": "String"
+      }
+    }
+  },
+  "servers_unreachable": "Could not be reached",
+  "groups_server_unavailable": "Groups from {servers} could not be loaded.",
+  "@groups_server_unavailable": {
+    "placeholders": {
+      "servers": {
+        "type": "String"
+      }
+    }
+  },
+  "feed_server_unavailable": "Photos from {servers} could not be loaded.",
+  "@feed_server_unavailable": {
+    "placeholders": {
+      "servers": {
+        "type": "String"
+      }
+    }
+  },
+  "servers_account": "Account",
+  "servers_pick_one": "Choose a server",
+  "servers_share": "Share",
+  "servers_token_copied": "Connection token copied. Anyone you send it to can connect to this server.",
+  "servers_subtitle_ordered": "Photos from every server you are signed into, together. Drag to reorder them.",
+  "servers_share_subject": "Join me on {server}",
+  "@servers_share_subject": {
+    "placeholders": {
+      "server": {
+        "type": "String"
+      }
+    }
+  },
+  "server_label_count": "Servers · {count}",
+  "@server_label_count": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  }
 }

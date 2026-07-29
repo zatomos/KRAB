@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import 'package:krab/l10n/l10n.dart';
-import 'package:krab/services/instance/active_instance.dart';
+import 'package:krab/services/instance/instances.dart';
 import 'package:krab/user_preferences.dart';
 import 'package:krab/pages/camera_page.dart';
 import 'package:krab/pages/instance_setup_page.dart';
-import 'package:krab/pages/login_page.dart';
+import 'package:krab/pages/servers_page.dart';
 import 'package:krab/widgets/soft_button.dart';
 import 'package:krab/services/home_widget_status.dart';
 
@@ -48,10 +48,10 @@ class _WelcomePageState extends State<WelcomePage> {
     final Widget next;
     if (!hasInstance) {
       next = const InstanceSetupPage();
-    } else if (activeInstance.auth.isLoggedIn) {
+    } else if (anySignedIn) {
       next = const CameraPage();
     } else {
-      next = const LoginPage();
+      next = signInScreen();
     }
 
     if (!context.mounted) return;

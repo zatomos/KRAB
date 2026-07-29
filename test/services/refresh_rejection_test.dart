@@ -23,7 +23,8 @@ void main() {
       expect(isFatalRefreshCode('502 Bad Gateway'), isFalse);
     });
 
-    test('an ambiguous invalid_grant does not, on its own, end the session', () {
+    test('an ambiguous invalid_grant does not, on its own, end the session',
+        () {
       expect(isFatalRefreshCode('invalid_grant'), isFalse);
     });
 

@@ -19,22 +19,27 @@ import 'package:krab/widgets/rectangle_button.dart';
 import 'package:krab/widgets/avatars/user_avatar.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/widgets/dialogs/change_password_dialog.dart';
-import 'package:krab/widgets/dialogs/change_server_dialog.dart';
 import 'package:krab/widgets/dialogs/delete_account_dialog.dart';
 import 'package:krab/widgets/dialogs/edit_avatar_dialog.dart';
 import 'package:krab/widgets/dialogs/rename_dialog.dart';
 import 'package:krab/widgets/dialogs/update_dialog.dart';
-import 'login_page.dart';
-import 'package:krab/services/instance/active_instance.dart';
+import 'package:krab/pages/servers_page.dart';
+import 'package:krab/services/instance/instance_registry.dart';
+import 'package:krab/services/instance/instances.dart';
 
 class AccountPage extends StatefulWidget {
-  const AccountPage({super.key});
+  /// The server whose account this is.
+  final KrabInstance instance;
+
+  const AccountPage({super.key, required this.instance});
 
   @override
   AccountPageState createState() => AccountPageState();
 }
 
 class AccountPageState extends State<AccountPage> {
+  KrabApi get _api => widget.instance.api;
+
   final _emailController = TextEditingController();
   final _updateService = UpdateService();
 
@@ -90,7 +95,7 @@ class AccountPageState extends State<AccountPage> {
   Future<void> _loadUserProfile() async {
     setState(() => _isLoading = true);
 
-    final userId = activeInstance.auth.currentUserId;
+    final userId = widget.instance.auth.currentUserId;
     if (userId == null) {
       setState(() => _isLoading = false);
       showSnackBar(context.l10n.no_user_logged_in, tone: SnackTone.failure);
@@ -99,11 +104,11 @@ class AccountPageState extends State<AccountPage> {
 
     // Get user info
     final (userResponse, commentSetting, reactionSetting) = await (
-      api.getUserDetails(userId),
-      api.getGroupCommentNotificationSetting(),
-      api.getGroupReactionNotificationSetting(),
+      _api.getUserDetails(userId),
+      _api.getGroupCommentNotificationSetting(),
+      _api.getGroupReactionNotificationSetting(),
     ).wait;
-    final emailResponse = await api.getEmail();
+    final emailResponse = await _api.getEmail();
 
     autoImageSave = await UserPreferences.getAutoImageSave();
     debugNotificationsEnabled = await UserPreferences.getDebugNotifications();
@@ -166,7 +171,7 @@ class AccountPageState extends State<AccountPage> {
   }
 
   Future<void> _logout() async {
-    final res = await api.logOut();
+    final res = await _api.logOut();
     if (!mounted) return;
 
     // A logout that failed left the session on disk.
@@ -179,18 +184,28 @@ class AccountPageState extends State<AccountPage> {
     }
 
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (context) => const LoginPage()),
+      MaterialPageRoute(builder: (context) => signInScreen()),
     );
   }
 
-  Future<void> openChangeServerDialog() async {
-    await showDialog<void>(
-      context: context,
-      builder: (_) => const ChangeServerDialog(),
+  /// How many servers this install is connected to.
+  int get _serverCount => InstanceRegistry.instance.all.length;
+
+  String get _serverAddress {
+    final url = widget.instance.url;
+    final uri = Uri.tryParse(url);
+    if (uri == null || !uri.hasAuthority) return url;
+    final port = uri.hasPort ? ':${uri.port}' : '';
+    final path = uri.path == '/' ? '' : uri.path;
+    return '${uri.host}$port$path';
+  }
+
+  Future<void> openServersPage() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const ServersPage()),
     );
-    // The dialog closes the app on a successful switch; if we are still here the
-    // user cancelled, so just refresh the shown host.
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {});
   }
 
   Future<void> _deleteAccount() async {
@@ -200,7 +215,7 @@ class AccountPageState extends State<AccountPage> {
     );
     if (confirmed != true || !mounted) return;
 
-    final res = await api.deleteAccount();
+    final res = await _api.deleteAccount();
     if (!mounted) return;
 
     if (!res.success) {
@@ -214,7 +229,7 @@ class AccountPageState extends State<AccountPage> {
 
     showSnackBar(context.l10n.account_deleted_success, tone: SnackTone.success);
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (context) => const LoginPage()),
+      MaterialPageRoute(builder: (context) => signInScreen()),
     );
   }
 
@@ -278,7 +293,7 @@ class AccountPageState extends State<AccountPage> {
         maxLength: 19,
         onSubmit: (value) async {
           final l10n = context.l10n;
-          final res = await api.editUsername(value);
+          final res = await _api.editUsername(value);
           return res.success
               ? null
               : "${l10n.error_updating_username}: ${describeError(l10n, res.error)}";
@@ -298,9 +313,9 @@ class AccountPageState extends State<AccountPage> {
       AvatarTarget(
         hasImage: user.pfpUrl.isNotEmpty,
         dialogTitle: l10n.edit_pfp_title,
-        upload: api.editProfilePicture,
-        remove: api.deleteProfilePicture,
-        freshUrl: () => api.getProfilePictureUrl(user.id),
+        upload: _api.editProfilePicture,
+        remove: _api.deleteProfilePicture,
+        freshUrl: () => _api.getProfilePictureUrl(user.id),
         uploadFailed: l10n.error_updating_pfp,
         removeFailed: l10n.error_deleting_pfp,
         uploadSucceeded: l10n.pfp_updated_success,
@@ -314,18 +329,12 @@ class AccountPageState extends State<AccountPage> {
   Future<void> openChangePasswordDialog() async {
     final changed = await showDialog<bool>(
       context: context,
-      builder: (_) => const ChangePasswordDialog(),
+      builder: (_) => ChangePasswordDialog(instance: widget.instance),
     );
     if (changed == true && mounted) {
       showSnackBar(context.l10n.password_updated_success,
           tone: SnackTone.success);
     }
-  }
-
-  /// The backend's hostname, falling back to the raw URL if it can't be parsed.
-  String get _serverHost {
-    final host = Uri.tryParse(activeInstance.url)?.host ?? '';
-    return host.isNotEmpty ? host : activeInstance.url;
   }
 
   /// A switch whose state lives on the server.
@@ -461,10 +470,16 @@ class AccountPageState extends State<AccountPage> {
                         ),
                         ListTile(
                           leading: const Icon(Icons.dns_rounded),
-                          title: Text(context.l10n.server_label),
-                          subtitle: Text(_serverHost),
+                          title: Text(_serverCount > 1
+                              ? context.l10n.server_label_count(_serverCount)
+                              : context.l10n.server_label),
+                          subtitle: Text(
+                            _serverAddress,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                           trailing: const Icon(Icons.chevron_right_rounded),
-                          onTap: openChangeServerDialog,
+                          onTap: openServersPage,
                         ),
                         ListTile(
                           leading: Icon(
@@ -510,7 +525,7 @@ class AccountPageState extends State<AccountPage> {
                           subtitle: context
                               .l10n.group_comment_notifications_description,
                           value: receiveAllGroupComments,
-                          save: api.setGroupCommentNotificationSetting,
+                          save: _api.setGroupCommentNotificationSetting,
                           apply: (v) => receiveAllGroupComments = v,
                         ),
                         _serverSwitch(
@@ -518,7 +533,7 @@ class AccountPageState extends State<AccountPage> {
                           subtitle: context
                               .l10n.group_reaction_notifications_description,
                           value: receiveAllGroupReactions,
-                          save: api.setGroupReactionNotificationSetting,
+                          save: _api.setGroupReactionNotificationSetting,
                           apply: (v) => receiveAllGroupReactions = v,
                         ),
                         ListTile(

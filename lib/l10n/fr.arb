@@ -74,6 +74,14 @@
   "delete_photo_group_confirm": "Supprimer cette photo de ce groupe ? Cette action est irréversible.",
   "photo_deleted": "Photo supprimée",
   "photo_sent": "Photo envoyée !",
+  "photo_sent_partially": "Photo envoyée, mais {server} l'a refusée",
+  "@photo_sent_partially": {
+    "placeholders": {
+      "server": {
+        "type": "String"
+      }
+    }
+  },
   "photo_queued_offline": "En attente ; sera envoyée dès le retour de la connexion",
   "photo_removed": "Photo retirée",
   "failed_to_delete_photo": "Échec de la suppression de la photo",
@@ -319,9 +327,6 @@
   "push_distributor_description": "KRAB distribue les notifications via un distributeur UnifiedPush. Choisissez celui à utiliser.",
   "push_distributor_none": "Aucun distributeur n'est disponible sur cet appareil. Installez une application UnifiedPush pour recevoir les notifications.",
   "push_distributor_failed": "Impossible de s'abonner avec ce distributeur.",
-  "change_server_title": "Changer de serveur",
-  "change_server_description": "Cela vous déconnecte du serveur actuel et de votre compte. Vous choisirez ensuite un serveur auquel vous connecter.",
-  "change_server_confirm": "Se déconnecter",
   "instance_setup_token_subtitle": "Collez le jeton de connexion qu'on vous a communiqué pour rejoindre un serveur KRAB.",
   "instance_setup_token_hint": "Jeton de connexion",
   "instance_setup_paste": "Coller",
@@ -345,5 +350,26 @@
     }
   },
   "error_name_too_short": "Ce nom est trop court.",
-  "error_opening_link": "Impossible d'ouvrir ce lien."
+  "error_opening_link": "Impossible d'ouvrir ce lien.",
+  "servers_title": "Serveurs",
+  "servers_subtitle": "KRAB réunit les photos de tous les serveurs auxquels vous êtes connecté.",
+  "servers_add": "Ajouter un serveur",
+  "servers_signed_in_as": "Connecté en tant que {username}",
+  "servers_not_signed_in": "Non connecté",
+  "servers_sign_in": "Se connecter",
+  "servers_sign_out": "Se déconnecter",
+  "servers_disconnect": "Oublier",
+  "servers_disconnect_title": "Oublier {server} ?",
+  "servers_disconnect_description": "Cela vous déconnecte et oublie ce serveur. Votre compte et vos photos sur le serveur ne sont pas touchés.",
+  "servers_sign_out_title": "Se déconnecter de {server} ?",
+  "servers_unreachable": "Injoignable",
+  "groups_server_unavailable": "Les groupes de {servers} n'ont pas pu être chargés.",
+  "feed_server_unavailable": "Les photos de {servers} n'ont pas pu être chargées.",
+  "servers_account": "Compte",
+  "servers_pick_one": "Choisissez un serveur",
+  "servers_share": "Partager",
+  "servers_token_copied": "Jeton de connexion copié. Toute personne à qui vous l'envoyez pourra se connecter à ce serveur.",
+  "servers_subtitle_ordered": "Les photos de tous vos serveurs, réunies. Glissez pour les classer.",
+  "servers_share_subject": "Rejoignez-moi sur {server}",
+  "server_label_count": "Serveurs · {count}"
 }

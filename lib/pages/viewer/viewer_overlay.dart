@@ -21,19 +21,21 @@ import 'package:krab/widgets/dialogs/dialogs.dart';
 import 'package:krab/widgets/soft_button.dart';
 import 'package:krab/widgets/reactions_bar.dart';
 import 'package:krab/widgets/avatars/user_avatar.dart';
-import 'package:krab/services/instance/active_instance.dart';
+import 'package:krab/models/image_ref.dart';
+import 'package:krab/models/shared_image.dart';
+import 'package:krab/services/instance/instances.dart';
+import 'package:krab/services/instance/instance_registry.dart';
+import 'package:krab/services/shared_image_api.dart';
 
-/// The chrome layered over the current photo in the gallery.
+/// The chrome layered over the current image in the gallery.
 class ViewerOverlay extends StatefulWidget {
-  /// The instance holding this photo. Everything the overlay reads or changes
-  /// goes through it, so acting on a photo can never hit the wrong server.
-  final KrabInstance instance;
-
-  final String imageId;
+  /// The image, with every copy of it this device can reach. Everything the
+  /// overlay reads gathers from all of them; everything it writes goes to one.
+  final SharedImage image;
 
   /// The group the image was opened from, or null in the cross-group
-  /// "recent photos" gallery where comments span every shared group
-  final String? groupId;
+  /// "recent images" gallery where comments span every shared group
+  final Group? group;
   final ImageData imageData;
   final krab_user.User uploader;
   final int commentCount;
@@ -56,13 +58,15 @@ class ViewerOverlay extends StatefulWidget {
   final bool flingToCommentsEnabled;
 
   final void Function(int delta)? onCommentCountChanged;
-  final void Function(String imageId)? onImageDeleted;
+  final void Function(SharedImage image)? onImageDeleted;
+
+  /// Copies of this image that now exist on servers it was not on before.
+  final void Function(List<ImageRef> copies)? onCopiesAdded;
 
   const ViewerOverlay({
     super.key,
-    required this.instance,
-    required this.imageId,
-    required this.groupId,
+    required this.image,
+    required this.group,
     required this.imageData,
     required this.uploader,
     required this.commentCount,
@@ -72,6 +76,7 @@ class ViewerOverlay extends StatefulWidget {
     this.flingToCommentsEnabled = true,
     this.onCommentCountChanged,
     this.onImageDeleted,
+    this.onCopiesAdded,
   });
 
   @override
@@ -86,6 +91,11 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
 
   // Drives the reactions bar so it can be refreshed after the comments sheet
   // closes, keeping the tally correct.
+  /// Reads the union of the image's copies and writes to one of them.
+  SharedImageApi get _api => SharedImageApi(widget.image);
+
+  String? get _groupId => widget.group?.id;
+
   final GlobalKey<ReactionsBarState> _reactionsBarKey =
       GlobalKey<ReactionsBarState>();
 
@@ -105,11 +115,13 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
     _initModeration();
   }
 
-  /// Group owners and admins may delete anyone's photo from their group.
+  /// Group owners and admins may delete anyone's image from their group.
   void _initModeration() {
-    final groupId = widget.groupId;
-    if (groupId == null) return;
-    widget.instance.viewer.canModerateGroup(groupId).then((canModerate) {
+    final group = widget.group;
+    if (group == null) return;
+    final instance = InstanceRegistry.instance.byId(group.instanceId);
+    if (instance == null) return;
+    instance.viewer.canModerateGroup(group.id).then((canModerate) {
       if (mounted && canModerate != _canModerate) {
         setState(() => _canModerate = canModerate);
       }
@@ -121,7 +133,7 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
     super.didUpdateWidget(oldWidget);
     // The gallery reuses this widget across swipes; reload per-image state when
     // the underlying image changes.
-    if (oldWidget.imageId != widget.imageId) {
+    if (oldWidget.image.identity != widget.image.identity) {
       _commentCount = widget.commentCount;
       _initPostedInGroups();
     }
@@ -131,7 +143,7 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
   /// show them synchronously so the pill doesn't flash;
   /// otherwise fetch and fill them in when ready.
   void _initPostedInGroups() {
-    final cached = widget.instance.viewer.cachedPostedInGroups(widget.imageId);
+    final cached = _api.cachedPostedInGroups();
     if (cached != null) {
       _postedInGroups = _displayGroups(cached);
     } else {
@@ -141,9 +153,11 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
   }
 
   Future<void> _loadPostedInGroups() async {
-    final imageId = widget.imageId;
-    final groups = await widget.instance.viewer.fetchPostedInGroups(imageId);
-    if (!mounted || imageId != widget.imageId || groups == null) return;
+    final identity = widget.image.identity;
+    final groups = await _api.postedInGroups();
+    if (!mounted || identity != widget.image.identity || groups == null) {
+      return;
+    }
     setState(() => _postedInGroups = _displayGroups(groups));
   }
 
@@ -151,10 +165,10 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
   /// the pill unless the image spans multiple groups, and surface the
   /// currently-viewed group first so it leads the pill and can be highlighted.
   List<Group> _displayGroups(List<Group> all) {
-    if (all.length < 2 && widget.groupId != null) return const [];
+    if (all.length < 2 && _groupId != null) return const [];
     final groups = List<Group>.from(all);
-    if (widget.groupId != null) {
-      final idx = groups.indexWhere((g) => g.id == widget.groupId);
+    if (_groupId != null) {
+      final idx = groups.indexWhere((g) => g.id == _groupId);
       if (idx > 0) groups.insert(0, groups.removeAt(idx));
     }
     return groups;
@@ -172,10 +186,9 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (_) => CommentsBottomSheet(
-        instance: widget.instance,
+        image: widget.image,
         uploaderId: widget.imageData.uploadedBy,
-        imageId: widget.imageId,
-        primaryGroupId: widget.groupId,
+        primaryGroup: widget.group,
         initialCommentCount: _commentCount,
         onCommentCountChanged: (delta) {
           setState(() => _commentCount += delta);
@@ -198,7 +211,7 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
     final uploadedLabel = original != null ? fmt(original) : null;
     // Only a reshare to the viewed group earns a second line; a normal
     // post has its group share time equal to the upload time.
-    final sharedLabel = (widget.groupId != null &&
+    final sharedLabel = (_groupId != null &&
             shared != null &&
             original != null &&
             shared.difference(original).abs() > const Duration(minutes: 1))
@@ -303,27 +316,25 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
     }
   }
 
-  /// Share this already-uploaded photo to more of the user's groups.
+  /// Share this already-uploaded image to more of the user's groups.
   Future<void> _addToGroups() async {
-    final userGroups = await widget.instance.api.getUserGroups();
+    final userGroups = await _api.groupsItCouldJoin();
     if (!mounted) return;
-    if (!userGroups.success || userGroups.data == null) {
+    if (userGroups == null) {
       showSnackBar(
-        context.l10n
-            .error_adding_to_groups(context.errorText(userGroups.error)),
+        context.l10n.error_adding_to_groups(context.errorText(errorServer)),
         tone: SnackTone.failure,
       );
       return;
     }
 
-    // Offer only groups the photo isn't already in.
-    final current =
-        await widget.instance.viewer.fetchPostedInGroups(widget.imageId) ??
-            const [];
+    // Offer only groups the image isn't already in, on any server.
+    final current = await _api.postedInGroups() ?? const [];
     if (!mounted) return;
-    final currentIds = current.map((g) => g.id).toSet();
-    final eligible =
-        userGroups.data!.where((g) => !currentIds.contains(g.id)).toList();
+    final currentKeys = {for (final g in current) '${g.instanceId}/${g.id}'};
+    final eligible = userGroups
+        .where((g) => !currentKeys.contains('${g.instanceId}/${g.id}'))
+        .toList();
     if (eligible.isEmpty) {
       showSnackBar(context.l10n.already_in_all_groups);
       return;
@@ -332,22 +343,30 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
     final selected = await showAddToGroupsDialog(context, groups: eligible);
     if (selected == null || selected.isEmpty || !mounted) return;
 
-    final res = await widget.instance.api
-        .addImageToGroups(widget.imageId, selected.toList());
+    // A group on a server that has no copy yet needs one, so the image goes up
+    // there under the same share id and the two read as one image.
+    final res = await _api.addToGroups(
+      eligible.where((g) => selected.contains(g.id)).toList(),
+      loadBytes: widget.loadBestBytesForSave,
+      description: _description,
+    );
     if (!mounted) return;
-    if (!res.success) {
-      showSnackBar(
-        context.l10n.error_adding_to_groups(context.errorText(res.error)),
-        tone: SnackTone.failure,
-      );
-      return;
-    }
+
+    // Some servers can take their copy while another refuses
+    final created = res.data ?? const <ImageRef>[];
+    if (created.isNotEmpty) widget.onCopiesAdded?.call(created);
 
     // Reflect the new groups in the "posted in" pill.
-    widget.instance.viewer.invalidatePostedInGroups(widget.imageId);
+    _api.invalidatePostedInGroups();
     await _loadPostedInGroups();
     if (!mounted) return;
-    showSnackBar(context.l10n.photo_added_success, tone: SnackTone.success);
+
+    showSnackBar(
+      res.success
+          ? context.l10n.photo_added_success
+          : context.l10n.error_adding_to_groups(context.errorText(res.error)),
+      tone: res.success ? SnackTone.success : SnackTone.failure,
+    );
   }
 
   Future<void> _saveImage() async {
@@ -371,14 +390,14 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
   }
 
   bool get _isOwner =>
-      widget.imageData.uploadedBy == widget.instance.auth.currentUserId;
+      _api.isOwnedBy(widget.imageData.uploadedBy, widget.uploader.instanceId);
 
   Future<void> _deleteImage() async {
-    // A moderator can only remove someone else's photo from the group they
+    // A moderator can only remove someone else's image from the group they
     // moderate, never from the other groups it was shared to.
     if (!_isOwner) {
-      final groupId = widget.groupId;
-      if (groupId == null) return;
+      final group = widget.group;
+      if (group == null) return;
       final confirmed = await showConfirmDialog(
         context,
         title: context.l10n.delete_photo,
@@ -387,16 +406,13 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
         destructive: true,
       );
       if (!confirmed || !mounted) return;
-      final res = await widget.instance.api
-          .removeImageFromGroups(widget.imageId, [groupId]);
+      final res = await _api.removeFromGroups([group]);
       _afterDelete(res.success, res.error,
           fullyDeleted: res.data ?? false, removedCurrent: true);
       return;
     }
 
-    final groups =
-        await widget.instance.viewer.fetchPostedInGroups(widget.imageId) ??
-            const [];
+    final groups = await _api.postedInGroups() ?? const [];
     if (!mounted) return;
 
     if (groups.length <= 1) {
@@ -409,7 +425,7 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
         destructive: true,
       );
       if (!confirmed || !mounted) return;
-      final res = await widget.instance.api.deleteImage(widget.imageId);
+      final res = await _api.delete();
       _afterDelete(res.success, res.error,
           fullyDeleted: true, removedCurrent: true);
       return;
@@ -418,18 +434,17 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
     final selected = await showDeleteImageDialog(
       context,
       groups: groups,
-      currentGroupId: widget.groupId,
+      currentGroupId: _groupId,
     );
     if (selected == null || selected.isEmpty || !mounted) return;
 
-    final res = await widget.instance.api
-        .removeImageFromGroups(widget.imageId, selected.toList());
+    final chosen = groups.where((g) => selected.contains(g.id)).toList();
+    final res = await _api.removeFromGroups(chosen);
     _afterDelete(
       res.success,
       res.error,
       fullyDeleted: res.data ?? false,
-      removedCurrent:
-          widget.groupId != null && selected.contains(widget.groupId),
+      removedCurrent: _groupId != null && selected.contains(_groupId),
     );
   }
 
@@ -443,14 +458,14 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
       return;
     }
     // Refresh the cached pill data
-    widget.instance.viewer.invalidatePostedInGroups(widget.imageId);
+    _api.invalidatePostedInGroups();
 
     final message =
         fullyDeleted ? context.l10n.photo_deleted : context.l10n.photo_removed;
     if (fullyDeleted || removedCurrent) {
       // Close the viewer
       Navigator.pop(context);
-      widget.onImageDeleted?.call(widget.imageId);
+      widget.onImageDeleted?.call(widget.image);
     } else {
       // Still belongs here: stay open and refresh the posted-in pill.
       _loadPostedInGroups();
@@ -462,7 +477,7 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
   Widget build(BuildContext context) {
     final t = widget.progress;
     // Groups every frosted pill so they share one backdrop blur pass per frame
-    // instead of each sampling the photo behind them independently.
+    // instead of each sampling the image behind them independently.
     return BackdropGroup(
       child: Stack(
         children: [
@@ -512,12 +527,10 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
               right: 72,
               child: Center(
                 child: GestureDetector(
-                  onTap: () => showPostedInDialog(
-                      context, widget.instance, _postedInGroups),
+                  onTap: () => showPostedInDialog(context, _postedInGroups),
                   child: PostedInBadge(
-                    instance: widget.instance,
                     groups: _postedInGroups,
-                    currentGroupId: widget.groupId,
+                    currentGroupId: _groupId,
                     progress: t,
                   ),
                 ),
@@ -540,9 +553,8 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
                     child: Padding(
                       padding: const EdgeInsets.only(bottom: 18, left: 2),
                       child: ReactionsBar(
-                        instance: widget.instance,
                         key: _reactionsBarKey,
-                        imageId: widget.imageId,
+                        image: widget.image,
                       ),
                     ),
                   ),

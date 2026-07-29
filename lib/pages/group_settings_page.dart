@@ -7,6 +7,7 @@ import 'package:krab/widgets/delayed_loading.dart';
 
 import 'package:krab/services/home_widget_updater.dart';
 import 'package:krab/widgets/avatars/group_avatar.dart';
+import 'package:krab/widgets/server_label.dart';
 import 'package:krab/widgets/avatars/user_avatar.dart';
 import 'package:krab/widgets/dialogs/dialogs.dart';
 import 'package:krab/widgets/dialogs/member_roles_dialog.dart';
@@ -19,13 +20,17 @@ import 'package:krab/models/group_member.dart';
 import 'package:krab/pages/group_invites_page.dart';
 import 'package:krab/user_preferences.dart';
 import 'package:krab/l10n/l10n.dart';
-import 'package:krab/services/instance/active_instance.dart';
-import 'package:krab/services/instance/instance_registry.dart';
+import 'package:krab/services/instance/instances.dart';
 
 class GroupSettingsPage extends StatefulWidget {
   final Group group;
+  final KrabInstance instance;
 
-  const GroupSettingsPage({super.key, required this.group});
+  const GroupSettingsPage({
+    super.key,
+    required this.group,
+    required this.instance,
+  });
 
   @override
   GroupSettingsPageState createState() => GroupSettingsPageState();
@@ -40,10 +45,7 @@ const Duration _expandDuration = Duration(milliseconds: 200);
 class GroupSettingsPageState extends State<GroupSettingsPage> {
   late Group _group;
 
-  /// The instance this group lives on, so every change is made against the
-  /// server that owns it rather than whichever one is on screen.
-  late final KrabInstance _instance =
-      InstanceRegistry.instance.byId(_group.instanceId) ?? activeInstance;
+  KrabInstance get _instance => widget.instance;
   late Future<SupabaseResponse<List<GroupMember>>> _membersFuture;
   late String? _currentUserId;
   bool _muted = false;
@@ -351,6 +353,10 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
                       Text(_group.name,
                           style: const TextStyle(
                               fontSize: 24, fontWeight: FontWeight.bold)),
+                      if (ServerLabel.relevant) ...[
+                        const SizedBox(height: 6),
+                        ServerLabel(_instance, fontSize: 13),
+                      ],
                     ],
                   ),
                 ),

@@ -246,8 +246,7 @@ class UpdateService {
       final file = File(savePath);
       if (await file.exists()) await file.delete();
 
-      debugPrint(
-          'Downloading ${downloadUrl.split('/').last} to $savePath ...');
+      debugPrint('Downloading ${downloadUrl.split('/').last} to $savePath ...');
 
       await _dio.download(
         downloadUrl,

@@ -15,11 +15,11 @@ import 'package:krab/services/launch_router.dart';
 import 'package:krab/services/push_handler.dart';
 import 'package:krab/services/push_helper.dart';
 import 'package:krab/services/storage_cleanup.dart';
-import 'package:krab/services/instance/active_instance.dart';
+import 'package:krab/services/instance/instances.dart';
 import 'package:krab/services/instance/instance_bootstrap.dart';
 import 'package:krab/services/instance/instance_registry.dart';
 import 'package:krab/services/upload_outbox.dart';
-import 'package:krab/pages/login_page.dart';
+import 'package:krab/pages/servers_page.dart';
 import 'package:krab/user_preferences.dart';
 
 /// Entry point for both the app and a push delivery.
@@ -97,11 +97,9 @@ void _listenToAuthEvents() {
           await DebugNotifier.instance.notifyAuthSignedOut(unexpected: false);
         } else {
           await DebugNotifier.instance.notifyAuthSignedOut();
-          // Only the instance the user is looking at should take over the
-          // screen. Another one signing out is reported, not navigated to.
-          if (event.instance.id == activeInstance.id) {
+          if (!anySignedIn) {
             navigatorKey.currentState?.pushAndRemoveUntil(
-              MaterialPageRoute(builder: (_) => const LoginPage()),
+              MaterialPageRoute(builder: (_) => signInScreen()),
               (route) => false,
             );
           }

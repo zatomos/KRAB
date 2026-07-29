@@ -8,12 +8,14 @@ import 'package:krab/models/group.dart';
 import 'package:krab/models/user.dart' as krab_user;
 import 'package:krab/models/image_data.dart';
 import 'package:krab/models/image_ref.dart';
+import 'package:krab/models/shared_image.dart';
+import 'package:krab/services/shared_image_api.dart';
 import 'package:krab/pages/group_settings_page.dart';
 import 'package:krab/pages/groups_page.dart';
 import 'package:krab/pages/viewer/image_viewer_page.dart';
 import 'package:krab/services/cache/feed_image_cache.dart';
 import 'package:krab/widgets/avatars/user_avatar.dart';
-import 'package:krab/services/instance/active_instance.dart';
+import 'package:krab/services/instance/instances.dart';
 import 'package:krab/services/instance/instance_registry.dart';
 
 /// Number of images fetched per page in both the single-group and cross-group
@@ -29,7 +31,7 @@ const int _kDeepLinkMaxPages = 10;
 /// pagination, and opens the full-screen [ImageViewerPage] when an image
 /// is tapped.
 class ImageFeedPage extends StatefulWidget {
-  /// The group to show images for, or null for the cross-group "recent photos"
+  /// The group to show images for, or null for the cross-group "recent images"
   /// view that aggregates the latest images from every group the user is in.
   final Group? group;
   final String? imageId;
@@ -41,11 +43,36 @@ class ImageFeedPage extends StatefulWidget {
 }
 
 class ImageFeedPageState extends State<ImageFeedPage> {
-  /// The group being viewed, or null in cross-group recent photos mode.
+  /// The group being viewed, or null in cross-group recent images mode.
   String? get _groupId => widget.group?.id;
 
   /// Paginated image list, loaded incrementally as the user scrolls.
-  final List<ImageRef> _images = [];
+  /// The images on screen, one entry per image however many servers hold it.
+  final List<SharedImage> _images = [];
+
+  /// Every copy loaded so far, across every page.
+  ///
+  /// Merging runs over all of it rather than over one page, because two copies
+  /// of one image can land on different pages: they are uploaded seconds apart
+  /// and ordered by time, so a page boundary can fall between them. Merged per
+  /// page, the second copy would arrive as an image the list already holds and
+  /// be discarded, taking its comments with it.
+  final List<ImageRef> _refs = [];
+
+  /// `instanceId/id` of everything in _refs, so a copy that arrives twice
+  /// is only held once.
+  final Set<String> _refKeys = {};
+
+  /// Where each instance's paging got to, so the next page can be asked of
+  /// every server independently. They run at their own pace, and merging puts
+  /// the combined result back in order.
+  final Map<String, ImageRef> _cursors = {};
+
+  /// Signed-in instances whose last page failed.
+  List<KrabInstance> _unavailable = const [];
+
+  /// Instances that have run out of images.
+  final Set<String> _exhausted = {};
   final ScrollController _scrollController = ScrollController();
   bool _loadingInitial = true;
   bool _loadingMore = false;
@@ -58,15 +85,20 @@ class ImageFeedPageState extends State<ImageFeedPage> {
 
   /// The bytes, uploaders and tallies for the images on screen. Shared with the
   /// viewer this page opens.
-  /// The instance this feed shows. Taken from the group when there is one, so
-  /// a gallery is always read from the server that owns it.
-  late final KrabInstance _instance = widget.group == null
-      ? activeInstance
-      : InstanceRegistry.instance.byId(widget.group!.instanceId) ??
-          activeInstance;
+  /// The server a group gallery reads from. Null in the cross-group feed.
+  late final KrabInstance? _instance = widget.group == null
+      ? null
+      : InstanceRegistry.instance.byId(widget.group!.instanceId);
 
-  late final FeedImageCache _cache = FeedImageCache(
-      fetchers: InstanceImageFetchers(_instance.api), groupId: _groupId);
+  late final FeedImageCache _cache =
+      FeedImageCache(groupId: _groupId, instanceId: _instance?.id);
+
+  /// The instances this feed reads from.
+  List<KrabInstance> get _sources {
+    final instance = _instance;
+    if (widget.group == null) return InstanceRegistry.instance.all;
+    return instance == null ? const [] : [instance];
+  }
 
   @override
   void initState() {
@@ -76,14 +108,14 @@ class ImageFeedPageState extends State<ImageFeedPage> {
     _bootstrap();
   }
 
-  /// Surface the new photos pill when an incoming image belongs to this feed
+  /// Surface the new images pill when an incoming image belongs to this feed
   void _onNewImage(NewImageEvent event) {
     final relevant = _groupId == null || event.groupId == _groupId;
     if (!relevant || _hasNewPhotos || !mounted) return;
     setState(() => _hasNewPhotos = true);
   }
 
-  /// Refresh to the top in response to the new photos pill.
+  /// Refresh to the top in response to the new images pill.
   Future<void> _loadNewPhotos() async {
     await _refreshGroupImages();
     if (_scrollController.hasClients) {
@@ -95,21 +127,117 @@ class ImageFeedPageState extends State<ImageFeedPage> {
     }
   }
 
-  /// Fetch one page. With after set, fetches the page following that image;
-  /// otherwise fetches the first page.
-  Future<SupabaseResponse<List<ImageRef>>> _fetchPage({ImageRef? after}) =>
-      _groupId != null
-          ? api.getGroupImages(
+  /// Whether this feed reads from every server the device is connected to.
+  bool get _spansEveryInstance =>
+      _sources.length == InstanceRegistry.instance.all.length;
+
+  /// Take a freshly fetched page into _refs and rebuild the merged list.
+  Future<List<SharedImage>> _absorb(List<ImageRef> page) async {
+    final incoming = <ImageRef>[...page];
+    if (!_spansEveryInstance) {
+      incoming.addAll(await siblingCopiesOf(page));
+    }
+    _ingest(incoming);
+    return _rebuild();
+  }
+
+  /// Hold copies that are not already held.
+  void _ingest(Iterable<ImageRef> refs) {
+    for (final ref in refs) {
+      if (_refKeys.add('${ref.instanceId}/${ref.id}')) _refs.add(ref);
+    }
+  }
+
+  /// Collapse everything held into the list on screen.
+  List<SharedImage> _rebuild() {
+    final order = [for (final i in InstanceRegistry.instance.all) i.id];
+    final images = mergeImages(_refs, instanceOrder: order);
+
+    if (_sources.length > 1) sortImagesNewestFirst(images);
+    return images;
+  }
+
+  /// A copy of an image already on screen now exists somewhere it did not, so
+  /// the image gains it without waiting for a listing to turn it up.
+  void _onCopiesAdded(List<ImageRef> copies) {
+    _ingest(copies);
+    if (!mounted) return;
+    final images = _rebuild();
+    setState(() {
+      _images
+        ..clear()
+        ..addAll(images);
+    });
+  }
+
+  /// Forget everything loaded, so the next page starts from an empty list.
+  void _resetRefs() {
+    _refs.clear();
+    _refKeys.clear();
+  }
+
+  /// Fetch one page from every instance this feed reads from.
+  ///
+  /// reset starts again from the top rather than continuing from the cursors.
+  /// Returns null when nothing could be loaded at all.
+  Future<List<ImageRef>?> _fetchPage({bool reset = false}) async {
+    final sources = _sources;
+    if (reset) {
+      _cursors.clear();
+      _exhausted.clear();
+    }
+
+    final pages = await Future.wait(sources.map((instance) async {
+      if (_exhausted.contains(instance.id)) {
+        return const SupabaseResponse<List<ImageRef>>(success: true, data: []);
+      }
+      final after = _cursors[instance.id];
+      return _groupId != null
+          ? instance.api.getGroupImages(
               _groupId!,
               limit: _kPageSize,
               beforeCreatedAt: after?.uploadedAt,
               beforeId: after?.id,
             )
-          : api.getLatestImages(
+          : instance.api.getLatestImages(
               _kPageSize,
               beforeCreatedAt: after?.uploadedAt,
               beforeId: after?.id,
             );
+    }));
+
+    final refs = <ImageRef>[];
+    final failed = <KrabInstance>[];
+    var anySucceeded = false;
+
+    for (var i = 0; i < sources.length; i++) {
+      final response = pages[i];
+      if (!response.success || response.data == null) {
+        debugPrint('Feed: ${sources[i].id} page failed (${response.error})');
+        failed.add(sources[i]);
+        continue;
+      }
+      anySucceeded = true;
+      final page = response.data!;
+      refs.addAll(page);
+
+      // This instance has no more to give once it returns a short page.
+      if (page.length < _kPageSize) {
+        _exhausted.add(sources[i].id);
+      } else if (page.isNotEmpty) {
+        _cursors[sources[i].id] = page.last;
+      }
+    }
+
+    // Say which servers are missing rather than quietly showing a short feed:
+    // an image that isn't there looks the same as an image nobody posted.
+    _unavailable = failed;
+
+    if (!anySucceeded) return null;
+    return refs;
+  }
+
+  bool get _moreRemains => _sources.any((i) => !_exhausted.contains(i.id));
 
   /// Load the first page, then, if deep-linking to an image, open it.
   Future<void> _bootstrap() async {
@@ -119,16 +247,31 @@ class ImageFeedPageState extends State<ImageFeedPage> {
     try {
       // The target is usually recent, but page forward until it's found (or we
       // run out / hit the lookup cap) so the gallery can open on it.
-      int index = _images.indexWhere((img) => img.id == widget.imageId);
+      // A deep link names one copy, so match on any copy's id.
+      bool holdsTarget(SharedImage p) =>
+          p.copies.any((c) => c.id == widget.imageId);
+
+      int index = _images.indexWhere(holdsTarget);
       int pages = 0;
       while (index < 0 && _hasMore && pages < _kDeepLinkMaxPages) {
         await _loadMore();
         if (!mounted) return;
-        index = _images.indexWhere((img) => img.id == widget.imageId);
+        index = _images.indexWhere(holdsTarget);
         pages++;
       }
 
-      final initialData = await _cache.imageData(widget.imageId!);
+      // Not in the feed: show just that copy, still as an image in its own
+      // right so everything below treats it the same way.
+      // An image asked for by id but not in the feed can only be read from the
+      // gallery's own server; the cross-group feed has none to guess with.
+      final source = _instance;
+      if (index < 0 && source == null) return;
+      final target = index >= 0
+          ? _images[index]
+          : SharedImage(
+              [ImageRef(instanceId: source!.id, id: widget.imageId!)]);
+
+      final initialData = await _cache.imageData(target);
       if (!mounted) return;
 
       // The image is somewhere in the loaded feed: open the gallery on it, with
@@ -136,16 +279,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
       // than opening the gallery at index 0.
       final found = index >= 0;
       await _openViewer(
-        images: found
-            ? _images
-            : [
-                ImageRef(
-                  instanceId: _instance.id,
-                  id: widget.imageId!,
-                  uploadedBy: initialData.uploadedBy,
-                  uploadedAt: DateTime.tryParse(initialData.createdAt),
-                )
-              ],
+        images: found ? _images : [target],
         index: found ? index : 0,
         data: initialData,
         paginated: found,
@@ -157,7 +291,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
 
   /// Open the full-screen gallery on one image..
   Future<void> _openViewer({
-    required List<ImageRef> images,
+    required List<SharedImage> images,
     required int index,
     required ImageData data,
     bool paginated = true,
@@ -173,10 +307,11 @@ class ImageFeedPageState extends State<ImageFeedPage> {
         initialIndex: index,
         initialImageData: data,
         initialImageSize: initialSize,
-        groupId: _groupId,
+        group: widget.group,
         cache: _cache,
         onCommentCountChanged: _onCommentCountChanged,
         onImageDeleted: _onImageDeleted,
+        onCopiesAdded: _onCopiesAdded,
         onImageChanged: paginated ? _revealTile : null,
         loadMore: paginated ? _loadMore : null,
         hasMore: paginated ? () => _hasMore : null,
@@ -188,21 +323,23 @@ class ImageFeedPageState extends State<ImageFeedPage> {
   }
 
   Future<void> _loadInitial() async {
-    final response = await _fetchPage();
+    final page = await _fetchPage(reset: true);
     if (!mounted) return;
-    if (!response.success || response.data == null) {
+    if (page == null) {
       setState(() {
         _loadingInitial = false;
-        _error = response.error ?? context.l10n.unknown_error;
+        _error = context.l10n.unknown_error;
       });
       return;
     }
-    final page = response.data!;
+    _resetRefs();
+    final images = await _absorb(page);
+    if (!mounted) return;
     setState(() {
       _images
         ..clear()
-        ..addAll(page);
-      _hasMore = page.length == _kPageSize;
+        ..addAll(images);
+      _hasMore = _moreRemains;
       _loadingInitial = false;
       _error = null;
     });
@@ -210,26 +347,24 @@ class ImageFeedPageState extends State<ImageFeedPage> {
 
   Future<void> _loadMore() async {
     if (_loadingMore || !_hasMore || _images.isEmpty) return;
-    final last = _images.last;
-    // No cursor available means we can't page reliably; stop here.
-    if (last.uploadedAt == null) {
-      setState(() => _hasMore = false);
-      return;
-    }
     setState(() => _loadingMore = true);
 
-    final response = await _fetchPage(after: last);
+    final page = await _fetchPage();
     if (!mounted) return;
-    if (!response.success || response.data == null) {
+    if (page == null) {
       // Leave _hasMore set so a later scroll can retry.
       setState(() => _loadingMore = false);
       return;
     }
-    final page = response.data!;
-    final existing = _images.map((e) => e.id).toSet();
+    // Merged against everything already loaded, so a copy of an image further
+    // up the list joins it instead of being dropped as an image already shown.
+    final images = await _absorb(page);
+    if (!mounted) return;
     setState(() {
-      _images.addAll(page.where((e) => !existing.contains(e.id)));
-      _hasMore = page.length == _kPageSize;
+      _images
+        ..clear()
+        ..addAll(images);
+      _hasMore = _moreRemains;
       _loadingMore = false;
     });
   }
@@ -281,27 +416,35 @@ class ImageFeedPageState extends State<ImageFeedPage> {
 
   /// Drop a deleted image from the list and every cache so it disappears from
   /// the grid.
-  void _onImageDeleted(String imageId) {
-    _cache.evict(imageId);
+  void _onImageDeleted(SharedImage image) {
+    _cache.evict(image);
+    // Also out of the copies the merge runs over
+    for (final copy in image.copies) {
+      _refKeys.remove('${copy.instanceId}/${copy.id}');
+    }
+    _refs.removeWhere(
+        (r) => image.copies.any((c) => c.instanceId == r.instanceId && c.id == r.id));
     if (!mounted) return;
-    setState(() => _images.removeWhere((img) => img.id == imageId));
+    setState(() => _images.removeWhere((p) => p.identity == image.identity));
   }
 
-  void _onCommentCountChanged(String imageId, int delta) {
-    setState(() => _cache.addToCommentCount(imageId, delta));
+  void _onCommentCountChanged(SharedImage image, int delta) {
+    setState(() => _cache.addToCommentCount(image, delta));
   }
 
   /// Pull-to-refresh
   Future<void> _refreshGroupImages() async {
-    final response = await _fetchPage();
-    if (!mounted || !response.success || response.data == null) return;
-    final page = response.data!;
+    final page = await _fetchPage(reset: true);
+    if (!mounted || page == null) return;
+    _resetRefs();
+    final images = await _absorb(page);
+    if (!mounted) return;
     setState(() {
       _cache.clear();
       _images
         ..clear()
-        ..addAll(page);
-      _hasMore = page.length == _kPageSize;
+        ..addAll(images);
+      _hasMore = _moreRemains;
       _error = null;
       _hasNewPhotos = false;
     });
@@ -358,7 +501,8 @@ class ImageFeedPageState extends State<ImageFeedPage> {
               onPressed: () => Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => GroupSettingsPage(group: widget.group!),
+                  builder: (_) => GroupSettingsPage(
+                      group: widget.group!, instance: _instance!),
                 ),
               ),
             ),
@@ -438,6 +582,8 @@ class ImageFeedPageState extends State<ImageFeedPage> {
               : context.l10n.no_recent_photos));
     }
 
+    final unavailable = _unavailable;
+
     return RefreshIndicator(
       onRefresh: _refreshGroupImages,
       child: CustomScrollView(
@@ -460,6 +606,29 @@ class ImageFeedPageState extends State<ImageFeedPage> {
               ),
             ),
           ),
+          if (unavailable.isNotEmpty)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                child: Row(
+                  children: [
+                    Icon(Symbols.cloud_off_rounded,
+                        size: 18, color: Theme.of(context).colorScheme.error),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        context.l10n.feed_server_unavailable(
+                            unavailable.map((i) => i.label).join(', ')),
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           if (_loadingMore)
             const SliverToBoxAdapter(
               child: Padding(
@@ -473,10 +642,10 @@ class ImageFeedPageState extends State<ImageFeedPage> {
   }
 
   Widget _buildTile(BuildContext context, int index) {
-    final imageId = _images[index].id;
+    final image = _images[index];
 
     return FutureBuilder<ImageData>(
-      future: _cache.imageData(imageId),
+      future: _cache.imageData(image),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return Container(
@@ -495,18 +664,18 @@ class ImageFeedPageState extends State<ImageFeedPage> {
         }
 
         final imageData = snapshot.data!;
-        final uploader = _cache.user(imageData.uploadedBy) ??
+        final uploader = _cache.user(image) ??
             krab_user.User(
-                instanceId: _instance.id,
+                instanceId: image.primary.instanceId,
                 id: imageData.uploadedBy,
                 username: "");
         final hasDescription = imageData.description?.isNotEmpty ?? false;
-        final reactions = _reactionCountFor(imageId);
-        final comments = _cache.commentCount(imageId);
+        final reactions = _reactionCountFor(image);
+        final comments = _cache.commentCount(image);
 
         return GestureDetector(
           onTap: () {
-            _cache.fullResBytes(imageId);
+            _cache.fullResBytes(image);
             _openViewer(images: _images, index: index, data: imageData);
           },
           child: ClipRRect(
@@ -515,7 +684,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
               fit: StackFit.expand,
               children: [
                 Hero(
-                  tag: "image_$imageId",
+                  tag: "image_${image.identity}",
                   child: Image.memory(
                     imageData.imageBytes,
                     fit: BoxFit.cover,
@@ -578,9 +747,13 @@ class ImageFeedPageState extends State<ImageFeedPage> {
     );
   }
 
-  /// Total reactions for an image's badge
-  int _reactionCountFor(String imageId) =>
-      _instance.reactions.cachedTotal(imageId) ?? _cache.reactionCount(imageId);
+  /// Total reactions for an image's badge, across every copy of it.
+  int _reactionCountFor(SharedImage image) =>
+      InstanceRegistry.instance
+          .byId(image.primary.instanceId)
+          ?.reactions
+          .cachedTotal(image.primary.id) ??
+      _cache.reactionCount(image);
 
   /// A small frosted count badge for the grid tile corner.
   Widget _countBadge(IconData icon, int count, {Color? borderColor}) {

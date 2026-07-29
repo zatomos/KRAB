@@ -74,8 +74,8 @@ void main() {
   test('does not touch the caches that evict for themselves', () async {
     final cached =
         await write('image_cache/abc.full', age: const Duration(days: 400));
-    final networkCache = await write('libCachedImageData/x.db',
-        age: const Duration(days: 400));
+    final networkCache =
+        await write('libCachedImageData/x.db', age: const Duration(days: 400));
 
     await StorageCleanup.sweep();
 
@@ -84,7 +84,8 @@ void main() {
   });
 
   test('leaves notification images to their own pruner', () async {
-    final notif = await write('notif_img_abc.jpg', age: const Duration(days: 30));
+    final notif =
+        await write('notif_img_abc.jpg', age: const Duration(days: 30));
 
     await StorageCleanup.sweep();
 

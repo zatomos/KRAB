@@ -96,6 +96,17 @@ function getAccessToken(sa: ServiceAccount): Promise<string> {
  * Deliver to every token as a high-priority data message, and clear any token FCM reports
  as permanently gone.
  */
+function instanceUrl(): string {
+  return (
+    Deno.env.get('SUPABASE_PUBLIC_URL') ??
+    Deno.env.get('API_EXTERNAL_URL') ??
+    Deno.env.get('SUPABASE_URL') ??
+    ''
+  )
+    .trim()
+    .replace(/\/+$/, '');
+}
+
 export async function sendPush(
   supabase: SupabaseClient,
   rows: Array<PushSubscriptionRow | null | undefined>,
@@ -107,9 +118,19 @@ export async function sendPush(
     ];
     if (tokens.length === 0) return;
 
+    // Never let a caller's field win over the routing one.
+    const payload: Record<string, string> = { ...data };
+    const url = instanceUrl();
+    if (url) payload.instance_url = url;
+    else {
+      console.warn(
+        'SUPABASE_PUBLIC_URL unset: message will not name its instance',
+      );
+    }
+
     const sa = await getServiceAccount();
     const accessToken = await getAccessToken(sa);
-    const results = await sendToTokens(sa.projectId, accessToken, tokens, data);
+    const results = await sendToTokens(sa.projectId, accessToken, tokens, payload);
     await pruneDeadTokens(supabase, results);
   } catch (e) {
     console.error('Push delivery failed:', e);

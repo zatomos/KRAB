@@ -78,7 +78,8 @@ void main() {
       expect(r.changelog, isEmpty);
     });
 
-    test('a tag that is not a version number is not a release we can offer', () {
+    test('a tag that is not a version number is not a release we can offer',
+        () {
       expect(Release.fromGitHub(release(tag: 'nightly')), isNull);
       expect(Release.fromGitHub(release(tag: 'latest')), isNull);
       expect(Release.fromGitHub(release(tag: 'v')), isNull);
@@ -111,7 +112,6 @@ void main() {
     });
 
     test('a 64-bit device is not handed the 32-bit APK', () {
-
       final r = Release.fromGitHub(release(assets: splitAssets()))!;
       expect(r.apkUrlFor(const ['arm64-v8a', 'armeabi-v7a']),
           isNot(contains('armeabi')));
@@ -122,7 +122,8 @@ void main() {
       // read at all, still gets something installable.
       final r = Release.fromGitHub(release(assets: splitAssets()))!;
 
-      expect(r.apkUrlFor(const ['riscv64']), endsWith('krab-1.2.3-universal.apk'));
+      expect(
+          r.apkUrlFor(const ['riscv64']), endsWith('krab-1.2.3-universal.apk'));
       expect(r.apkUrlFor(const []), endsWith('krab-1.2.3-universal.apk'));
     });
 

@@ -12,7 +12,7 @@ class SoftButton extends StatelessWidget {
   final bool blurBackground;
   final double? width;
   final double? height;
-  final double progress;  // entrance progress
+  final double progress; // entrance progress
   final double minLabelWidth;
 
   const SoftButton({

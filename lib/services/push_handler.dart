@@ -24,7 +24,7 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   try {
     // Bring Firebase up as whichever instance this message came from, so the
     // isolate is talking to the project that sent it.
-    final instance = instanceForPayload(data);
+    final instance = instanceForPayload(data, senderId: message.senderId);
     if (instance != null && instance.config.hasFcm && Firebase.apps.isEmpty) {
       await Firebase.initializeApp(
         options: FirebaseOptions(
@@ -39,7 +39,7 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     debugPrint('Background Firebase init failed: $e');
   }
 
-  await handlePushPayload(data, background: true);
+  await handlePushPayload(data, background: true, senderId: message.senderId);
 }
 
 @pragma('vm:entry-point')
@@ -55,17 +55,22 @@ void workmanagerCallbackDispatcher() {
         await UpdateService.maybeCheckAndNotifyUpdate();
       }
 
-      final instance = InstanceRegistry.instance.active;
-      if (instance == null) {
+      final instances = InstanceRegistry.instance.all;
+      if (instances.isEmpty) {
         debugPrint('WorkManager: no instance configured, nothing to do');
         return Future.value(false);
       }
-      if (await instance.auth.getValidToken() == null) {
+
+      var anyUsable = false;
+      for (final instance in instances) {
+        if (await instance.auth.getValidToken() != null) anyUsable = true;
+      }
+      if (!anyUsable) {
         await refreshWidgetAuthState();
 
         // Queued photos keep until the user reopens the app and
         // re-authenticates.
-        debugPrint('WorkManager: no valid session, skipping');
+        debugPrint('WorkManager: no valid session anywhere, skipping');
         return Future.value(true);
       }
 
@@ -90,6 +95,7 @@ void workmanagerCallbackDispatcher() {
 Future<void> handlePushPayload(
   Map<String, String> data, {
   required bool background,
+  String? senderId,
 }) async {
   final type = data['type'];
   debugPrint('Push: handling type="$type" (background=$background)');
@@ -113,7 +119,7 @@ Future<void> handlePushPayload(
 
     // Which server sent this. Everything below reads and writes through it, so
     // a message can never be answered against the wrong instance.
-    final instance = instanceForPayload(data);
+    final instance = instanceForPayload(data, senderId: senderId);
     if (instance == null) {
       debugPrint('Push: no instance for this message, dropping');
       if (background) {

@@ -853,13 +853,15 @@ BEGIN
   SELECT jsonb_agg(
     jsonb_build_object(
       'id', sub.id,
+      'share_id', sub.share_id,
       'uploaded_by', sub.uploaded_by,
       'uploaded_at', sub.uploaded_at
     ) ORDER BY sub.uploaded_at DESC, sub.id DESC
   )
   INTO images_data
   FROM (
-    SELECT i.id, i.uploaded_by, COALESCE(ig.uploaded_at, i.created_at) AS uploaded_at
+    SELECT i.id, i.share_id, i.uploaded_by,
+           COALESCE(ig.uploaded_at, i.created_at) AS uploaded_at
     FROM "Images" i
     JOIN "ImageGroups" ig ON i.id = ig.image_id
     WHERE ig.group_id = p_group_id
@@ -1070,12 +1072,12 @@ END;$$;
 -- Name: get_image_details(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.get_image_details(image_id uuid) RETURNS TABLE(created_at timestamp with time zone, uploaded_by uuid, description text)
+CREATE FUNCTION public.get_image_details(image_id uuid) RETURNS TABLE(created_at timestamp with time zone, uploaded_by uuid, description text, share_id uuid)
     LANGUAGE plpgsql
     SET search_path TO 'public'
     AS $$BEGIN
   RETURN QUERY
-  SELECT i.created_at, i.uploaded_by, i.description
+  SELECT i.created_at, i.uploaded_by, i.description, i.share_id
   FROM "Images" i
   WHERE i.id = image_id
   AND EXISTS (
@@ -1146,6 +1148,7 @@ DECLARE
   v_sender_id UUID;
   v_sender_username TEXT;
   v_description TEXT;
+  v_share_id UUID;
   v_groups JSONB;
 BEGIN
   uid := auth.uid();
@@ -1153,8 +1156,8 @@ BEGIN
     RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
   END IF;
 
-  SELECT i.uploaded_by, u.username, i.description
-  INTO v_sender_id, v_sender_username, v_description
+  SELECT i.uploaded_by, u.username, i.description, i.share_id
+  INTO v_sender_id, v_sender_username, v_description, v_share_id
   FROM "Images" i
   LEFT JOIN "Users" u ON u.id = i.uploaded_by
   WHERE i.id = p_image_id;
@@ -1182,7 +1185,8 @@ BEGIN
     'groups', v_groups,
     'sender_id', v_sender_id,
     'sender_username', COALESCE(v_sender_username, ''),
-    'description', COALESCE(v_description, '')
+    'description', COALESCE(v_description, ''),
+    'share_id', v_share_id
   );
 EXCEPTION
   WHEN OTHERS THEN
@@ -1270,6 +1274,53 @@ END;$$;
 
 
 --
+-- Name: get_images_by_share_id(uuid[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.get_images_by_share_id(p_share_ids uuid[]) RETURNS jsonb
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$DECLARE
+  current_user_id uuid;
+  images_data jsonb;
+BEGIN
+  current_user_id := auth.uid();
+  IF current_user_id IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
+  END IF;
+
+  IF p_share_ids IS NULL OR cardinality(p_share_ids) = 0 THEN
+    RETURN jsonb_build_object('success', true, 'images', '[]'::jsonb);
+  END IF;
+
+  SELECT jsonb_agg(
+    jsonb_build_object(
+      'id', sub.id,
+      'share_id', sub.share_id,
+      'uploaded_by', sub.uploaded_by,
+      'uploaded_at', sub.uploaded_at
+    ) ORDER BY sub.uploaded_at DESC, sub.id DESC
+  )
+  INTO images_data
+  FROM (
+    SELECT i.id, i.share_id, i.uploaded_by,
+           MIN(COALESCE(ig.uploaded_at, i.created_at)) AS uploaded_at
+    FROM "Images" i
+    JOIN "ImageGroups" ig ON i.id = ig.image_id
+    JOIN "Members" m ON ig.group_id = m.group_id
+    WHERE m.user_id = current_user_id
+      AND m.role != 'banned'
+      AND i.share_id = ANY(p_share_ids)
+    GROUP BY i.id, i.share_id, i.uploaded_by
+  ) sub;
+
+  RETURN jsonb_build_object('success', true, 'images', COALESCE(images_data, '[]'::jsonb));
+EXCEPTION WHEN OTHERS THEN
+  RETURN jsonb_build_object('success', false, 'error', SQLERRM);
+END;$$;
+
+
+--
 -- Name: get_latest_images(integer, text[], timestamp with time zone, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -1288,13 +1339,14 @@ BEGIN
   SELECT jsonb_agg(
     jsonb_build_object(
       'id', sub.id,
+      'share_id', sub.share_id,
       'uploaded_by', sub.uploaded_by,
       'uploaded_at', sub.uploaded_at
     ) ORDER BY sub.uploaded_at DESC, sub.id DESC
   )
   INTO images_data
   FROM (
-    SELECT i.id, i.uploaded_by,
+    SELECT i.id, i.share_id, i.uploaded_by,
            MIN(COALESCE(ig.uploaded_at, i.created_at)) AS uploaded_at
     FROM "Images" i
     JOIN "ImageGroups" ig ON i.id = ig.image_id
@@ -1302,7 +1354,7 @@ BEGIN
     WHERE m.user_id = current_user_id
       AND m.role != 'banned'
       AND (p_group_ids IS NULL OR ig.group_id = ANY(p_group_ids::uuid[]))
-    GROUP BY i.id, i.uploaded_by
+    GROUP BY i.id, i.share_id, i.uploaded_by
     HAVING (p_before_created_at IS NULL
             OR (MIN(COALESCE(ig.uploaded_at, i.created_at)), i.id) < (p_before_created_at, p_before_id))
     ORDER BY MIN(COALESCE(ig.uploaded_at, i.created_at)) DESC, i.id DESC
@@ -2073,15 +2125,16 @@ END;$$;
 
 
 --
--- Name: request_image_upload(text[], text); Type: FUNCTION; Schema: public; Owner: -
+-- Name: request_image_upload(text[], text, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.request_image_upload(p_group_ids text[], p_description text DEFAULT NULL::text) RETURNS jsonb
+CREATE FUNCTION public.request_image_upload(p_group_ids text[], p_description text DEFAULT NULL::text, p_share_id uuid DEFAULT NULL::uuid) RETURNS jsonb
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public'
     AS $$DECLARE
   uid uuid := auth.uid();
   new_id uuid;
+  existing_id uuid;
   limit_error text;
   authorized uuid[];
 BEGIN
@@ -2089,9 +2142,6 @@ BEGIN
     RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
   END IF;
 
-  -- Clear the caller's own abandoned sends first, so a photo they gave up on
-  -- doesn't count against their quota forever. A staged row still being there
-  -- proves the bytes never landed, so there is no blob to strand.
   DELETE FROM "Images" i
    WHERE i.uploaded_by = uid
      AND i.created_at < now() - interval '1 hour'
@@ -2114,14 +2164,38 @@ BEGIN
     RETURN jsonb_build_object('success', false, 'error', 'No group you can post to');
   END IF;
 
+  IF p_share_id IS NOT NULL THEN
+    SELECT i.id INTO existing_id
+      FROM "Images" i
+     WHERE i.share_id = p_share_id
+       AND i.uploaded_by = uid
+       AND NOT EXISTS (SELECT 1 FROM "ImageGroups" g WHERE g.image_id = i.id)
+     LIMIT 1;
+
+    IF existing_id IS NOT NULL THEN
+      RETURN jsonb_build_object(
+        'success', true,
+        'image_id', existing_id,
+        'share_id', p_share_id,
+        'authorized_groups', cardinality(authorized)
+      );
+    END IF;
+
+    IF EXISTS (SELECT 1 FROM "Images" i WHERE i.share_id = p_share_id) THEN
+      RETURN jsonb_build_object('success', false, 'error', 'Share id already in use');
+    END IF;
+  END IF;
+
   new_id := gen_random_uuid();
-  INSERT INTO "Images" (id, uploaded_by, description) VALUES (new_id, uid, p_description);
+  INSERT INTO "Images" (id, uploaded_by, description, share_id)
+  VALUES (new_id, uid, p_description, p_share_id);
   INSERT INTO "PendingImageGroups" (image_id, group_id)
   SELECT new_id, g FROM unnest(authorized) AS g;
 
   RETURN jsonb_build_object(
     'success', true,
     'image_id', new_id,
+    'share_id', p_share_id,
     'authorized_groups', cardinality(authorized)
   );
 EXCEPTION WHEN others THEN
@@ -3436,7 +3510,7 @@ CREATE FUNCTION storage.update_updated_at_column() RETURNS trigger
     AS $$
 BEGIN
     NEW.updated_at = now();
-    RETURN NEW; 
+    RETURN NEW;
 END;
 $$;
 
@@ -3528,6 +3602,7 @@ CREATE TABLE public."Images" (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     uploaded_by uuid NOT NULL,
     description text,
+    share_id uuid,
     CONSTRAINT "Images_description_check" CHECK ((length(description) < 200))
 );
 
@@ -3834,6 +3909,14 @@ ALTER TABLE ONLY public."ImageGroups"
 
 ALTER TABLE ONLY public."Images"
     ADD CONSTRAINT "Images_pkey" PRIMARY KEY (id);
+
+
+--
+-- Name: Images Images_share_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public."Images"
+    ADD CONSTRAINT "Images_share_id_key" UNIQUE (share_id);
 
 
 --
@@ -4776,7 +4859,10 @@ GRANT USAGE ON SCHEMA storage TO service_role;
 GRANT ALL ON SCHEMA storage TO supabase_storage_admin WITH GRANT OPTION;
 GRANT ALL ON SCHEMA storage TO dashboard_user;
 SET SESSION AUTHORIZATION postgres;
-GRANT USAGE ON SCHEMA storage TO postgres;
+GRANT USAGE ON SCHEMA storage TO postgres WITH GRANT OPTION;
+RESET SESSION AUTHORIZATION;
+SET SESSION AUTHORIZATION postgres;
+GRANT USAGE ON SCHEMA storage TO anon;
 RESET SESSION AUTHORIZATION;
 SET SESSION AUTHORIZATION postgres;
 GRANT USAGE ON SCHEMA storage TO authenticated;
@@ -4784,14 +4870,14 @@ RESET SESSION AUTHORIZATION;
 SET SESSION AUTHORIZATION postgres;
 GRANT USAGE ON SCHEMA storage TO service_role;
 RESET SESSION AUTHORIZATION;
+SET SESSION AUTHORIZATION supabase_storage_admin;
+GRANT ALL ON SCHEMA storage TO dashboard_user;
+RESET SESSION AUTHORIZATION;
 SET SESSION AUTHORIZATION postgres;
 GRANT USAGE ON SCHEMA storage TO supabase_storage_admin;
 RESET SESSION AUTHORIZATION;
 SET SESSION AUTHORIZATION postgres;
 GRANT USAGE ON SCHEMA storage TO dashboard_user;
-RESET SESSION AUTHORIZATION;
-SET SESSION AUTHORIZATION postgres;
-GRANT USAGE ON SCHEMA storage TO anon;
 RESET SESSION AUTHORIZATION;
 
 
@@ -5028,6 +5114,15 @@ GRANT ALL ON FUNCTION public.get_image_reactors(p_image_id uuid) TO service_role
 
 
 --
+-- Name: FUNCTION get_images_by_share_id(p_share_ids uuid[]); Type: ACL; Schema: public; Owner: -
+--
+
+GRANT ALL ON FUNCTION public.get_images_by_share_id(p_share_ids uuid[]) TO anon;
+GRANT ALL ON FUNCTION public.get_images_by_share_id(p_share_ids uuid[]) TO authenticated;
+GRANT ALL ON FUNCTION public.get_images_by_share_id(p_share_ids uuid[]) TO service_role;
+
+
+--
 -- Name: FUNCTION get_latest_images(p_count integer, p_group_ids text[], p_before_created_at timestamp with time zone, p_before_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
@@ -5086,6 +5181,7 @@ GRANT ALL ON FUNCTION public.get_username(user_id text) TO service_role;
 --
 
 REVOKE ALL ON FUNCTION public.handle_new_user() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.handle_new_user() TO authenticated;
 GRANT ALL ON FUNCTION public.handle_new_user() TO service_role;
 
 
@@ -5149,6 +5245,7 @@ GRANT ALL ON FUNCTION public.manage_member_role(group_id uuid, target_user_id uu
 --
 
 REVOKE ALL ON FUNCTION public.promote_pending_image() FROM PUBLIC;
+GRANT ALL ON FUNCTION public.promote_pending_image() TO authenticated;
 GRANT ALL ON FUNCTION public.promote_pending_image() TO service_role;
 
 
@@ -5157,7 +5254,6 @@ GRANT ALL ON FUNCTION public.promote_pending_image() TO service_role;
 --
 
 REVOKE ALL ON FUNCTION public.register_fcm_token(p_token text, p_username text) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.register_fcm_token(p_token text, p_username text) TO anon;
 GRANT ALL ON FUNCTION public.register_fcm_token(p_token text, p_username text) TO authenticated;
 GRANT ALL ON FUNCTION public.register_fcm_token(p_token text, p_username text) TO service_role;
 
@@ -5189,12 +5285,12 @@ GRANT ALL ON FUNCTION public.remove_image_from_groups(p_image_id uuid, p_group_i
 
 
 --
--- Name: FUNCTION request_image_upload(p_group_ids text[], p_description text); Type: ACL; Schema: public; Owner: -
+-- Name: FUNCTION request_image_upload(p_group_ids text[], p_description text, p_share_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
-REVOKE ALL ON FUNCTION public.request_image_upload(p_group_ids text[], p_description text) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.request_image_upload(p_group_ids text[], p_description text) TO authenticated;
-GRANT ALL ON FUNCTION public.request_image_upload(p_group_ids text[], p_description text) TO service_role;
+REVOKE ALL ON FUNCTION public.request_image_upload(p_group_ids text[], p_description text, p_share_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.request_image_upload(p_group_ids text[], p_description text, p_share_id uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.request_image_upload(p_group_ids text[], p_description text, p_share_id uuid) TO service_role;
 
 
 --
@@ -5211,6 +5307,7 @@ GRANT ALL ON FUNCTION public.request_image_uuid() TO service_role;
 --
 
 REVOKE ALL ON FUNCTION public.revoke_group_invite(p_token text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.revoke_group_invite(p_token text) TO anon;
 GRANT ALL ON FUNCTION public.revoke_group_invite(p_token text) TO authenticated;
 GRANT ALL ON FUNCTION public.revoke_group_invite(p_token text) TO service_role;
 
@@ -5379,10 +5476,13 @@ GRANT ALL ON TABLE storage.buckets TO service_role;
 GRANT ALL ON TABLE storage.buckets TO authenticated;
 GRANT ALL ON TABLE storage.buckets TO anon;
 SET SESSION AUTHORIZATION postgres;
-GRANT ALL ON TABLE storage.buckets TO authenticated;
+GRANT ALL ON TABLE storage.buckets TO postgres WITH GRANT OPTION;
 RESET SESSION AUTHORIZATION;
 SET SESSION AUTHORIZATION postgres;
 GRANT ALL ON TABLE storage.buckets TO service_role;
+RESET SESSION AUTHORIZATION;
+SET SESSION AUTHORIZATION postgres;
+GRANT ALL ON TABLE storage.buckets TO authenticated;
 RESET SESSION AUTHORIZATION;
 SET SESSION AUTHORIZATION postgres;
 GRANT ALL ON TABLE storage.buckets TO anon;
@@ -5434,10 +5534,13 @@ GRANT ALL ON TABLE storage.objects TO service_role;
 GRANT ALL ON TABLE storage.objects TO authenticated;
 GRANT ALL ON TABLE storage.objects TO anon;
 SET SESSION AUTHORIZATION postgres;
-GRANT ALL ON TABLE storage.objects TO authenticated;
+GRANT ALL ON TABLE storage.objects TO postgres WITH GRANT OPTION;
 RESET SESSION AUTHORIZATION;
 SET SESSION AUTHORIZATION postgres;
 GRANT ALL ON TABLE storage.objects TO service_role;
+RESET SESSION AUTHORIZATION;
+SET SESSION AUTHORIZATION postgres;
+GRANT ALL ON TABLE storage.objects TO authenticated;
 RESET SESSION AUTHORIZATION;
 SET SESSION AUTHORIZATION postgres;
 GRANT ALL ON TABLE storage.objects TO anon;
