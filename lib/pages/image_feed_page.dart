@@ -142,9 +142,20 @@ class ImageFeedPageState extends State<ImageFeedPage> {
   }
 
   /// Hold copies that are not already held.
+  ///
+  /// A copy already held is replaced when the new one carries a share id it
+  /// lacks.
   void _ingest(Iterable<ImageRef> refs) {
     for (final ref in refs) {
-      if (_refKeys.add('${ref.instanceId}/${ref.id}')) _refs.add(ref);
+      final key = '${ref.instanceId}/${ref.id}';
+      if (_refKeys.add(key)) {
+        _refs.add(ref);
+        continue;
+      }
+      if (ref.shareId == null) continue;
+      final held = _refs.indexWhere(
+          (r) => r.instanceId == ref.instanceId && r.id == ref.id);
+      if (held >= 0 && _refs[held].shareId == null) _refs[held] = ref;
     }
   }
 

@@ -111,11 +111,19 @@ object InstanceFirebase {
         isDefault: Boolean,
     ): FirebaseApp {
         val name = if (isDefault) FirebaseApp.DEFAULT_APP_NAME else config.id
-        return try {
+        val existing = try {
             FirebaseApp.getInstance(name)
         } catch (_: IllegalStateException) {
-            FirebaseApp.initializeApp(context, options(config), name)
+            null
         }
+
+        if (existing != null) {
+            if (existing.options.applicationId == config.appId) return existing
+            Log.i(TAG, "Rebuilding $name: it holds ${existing.options.applicationId}, wanted ${config.appId}")
+            existing.delete()
+        }
+
+        return FirebaseApp.initializeApp(context, options(config), name)
     }
 
     /**

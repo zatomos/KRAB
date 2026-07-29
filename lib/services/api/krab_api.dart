@@ -11,7 +11,6 @@ import 'package:krab/services/debug_notifier.dart';
 import 'package:krab/services/instance/instance_config.dart';
 import 'package:krab/services/instance/krab_instance.dart';
 import 'package:krab/services/push_helper.dart';
-import 'package:krab/services/share_ledger.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:krab/models/group.dart';

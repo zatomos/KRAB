@@ -22,10 +22,11 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   final data = message.data.map((k, v) => MapEntry(k, '$v'));
 
   try {
-    // Bring Firebase up as whichever instance this message came from, so the
-    // isolate is talking to the project that sent it.
-    final instance = instanceForPayload(data, senderId: message.senderId);
-    if (instance != null && instance.config.hasFcm && Firebase.apps.isEmpty) {
+    // Bring up the default FirebaseApp for the first instance holding an FCM
+    // config rather than for whichever instance this message names.
+    final instance =
+        InstanceRegistry.instance.all.where((i) => i.config.hasFcm).firstOrNull;
+    if (instance != null && Firebase.apps.isEmpty) {
       await Firebase.initializeApp(
         options: FirebaseOptions(
           apiKey: instance.config.fcmApiKey,

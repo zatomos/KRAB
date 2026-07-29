@@ -180,6 +180,51 @@ END;$$;
 
 
 --
+-- Name: assign_share_id(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.assign_share_id(p_image_id uuid, p_share_id uuid) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$DECLARE
+  uid uuid := auth.uid();
+  current_share uuid;
+BEGIN
+  IF uid IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
+  END IF;
+
+  IF p_share_id IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'No share id given');
+  END IF;
+
+  SELECT i.share_id INTO current_share
+    FROM "Images" i
+   WHERE i.id = p_image_id
+     AND i.uploaded_by = uid;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Image not found or permission denied');
+  END IF;
+
+  -- Already has one, so the caller gets that rather than a refusal
+  IF current_share IS NOT NULL THEN
+    RETURN jsonb_build_object('success', true, 'share_id', current_share);
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM "Images" i WHERE i.share_id = p_share_id) THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Share id already in use');
+  END IF;
+
+  UPDATE "Images" SET share_id = p_share_id WHERE id = p_image_id;
+
+  RETURN jsonb_build_object('success', true, 'share_id', p_share_id);
+EXCEPTION WHEN others THEN
+  RETURN jsonb_build_object('success', false, 'error', sqlerrm);
+END;$$;
+
+
+--
 -- Name: ban_user(uuid, uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4896,6 +4941,15 @@ GRANT ALL ON FUNCTION public.add_comment(image_id uuid, group_id uuid, text text
 
 GRANT ALL ON FUNCTION public.add_image_to_groups(p_image_id uuid, p_group_ids uuid[]) TO authenticated;
 GRANT ALL ON FUNCTION public.add_image_to_groups(p_image_id uuid, p_group_ids uuid[]) TO service_role;
+
+
+--
+-- Name: FUNCTION assign_share_id(p_image_id uuid, p_share_id uuid); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.assign_share_id(p_image_id uuid, p_share_id uuid) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.assign_share_id(p_image_id uuid, p_share_id uuid) TO authenticated;
+GRANT ALL ON FUNCTION public.assign_share_id(p_image_id uuid, p_share_id uuid) TO service_role;
 
 
 --

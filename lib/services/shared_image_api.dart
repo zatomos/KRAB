@@ -10,7 +10,7 @@ import 'package:krab/models/shared_image.dart';
 import 'package:krab/services/api/krab_api.dart';
 import 'package:krab/services/instance/instance_registry.dart';
 import 'package:krab/services/instance/krab_instance.dart';
-import 'package:krab/services/share_ledger.dart';
+import 'package:krab/services/share_id.dart';
 import 'package:krab/services/upload_outbox.dart';
 
 /// Reads and writes one image as a single thing, across every server holding a
@@ -21,7 +21,7 @@ class SharedImageApi {
   final SharedImage image;
 
   /// The instances still connected that hold a copy, paired with that copy.
-  List<({KrabInstance instance, ImageRef copy})> get _reachable {
+  List<({KrabInstance instance, ImageRef copy})> get _present {
     final registry = InstanceRegistry.instance;
     final pairs = <({KrabInstance instance, ImageRef copy})>[];
     for (final copy in image.copies) {
@@ -31,11 +31,13 @@ class SharedImageApi {
     return pairs;
   }
 
-  /// Where a write goes. Null when the primary's instance is gone, in which
-  /// case the caller has nothing to write to and should say so.
+  /// Where a write goes: always the primary copy.
+
+  /// Null when the primary's instance is gone from the registry entirely, in
+  /// which case the caller has nothing to write to and should say so.
   ({KrabInstance instance, ImageRef copy})? get writeTarget {
-    final reachable = _reachable;
-    return reachable.isEmpty ? null : reachable.first;
+    final present = _present;
+    return present.isEmpty ? null : present.first;
   }
 
   // ---------------------------------------------------------------------------
@@ -44,7 +46,7 @@ class SharedImageApi {
 
   /// Every copy's tally, added up.
   Future<List<ReactionSummary>?> reactions() async {
-    final results = await Future.wait(_reachable
+    final results = await Future.wait(_present
         .map((pair) => pair.instance.api.getImageReactions(pair.copy.id)));
 
     final totals = <String, ReactionSummary>{};
@@ -92,14 +94,14 @@ class SharedImageApi {
 
   /// Total comments on the image, across every copy.
   Future<int> commentCount() async {
-    final reachable = _reachable;
+    final present = _present;
     final results = await Future.wait(
-        reachable.map((pair) => pair.instance.api.getImageCommentCount(pair.copy.id)));
+        present.map((pair) => pair.instance.api.getImageCommentCount(pair.copy.id)));
     var total = 0;
     for (var i = 0; i < results.length; i++) {
       final response = results[i];
       if (!response.success) {
-        debugPrint('SharedImage: comment count from ${reachable[i].instance.id} '
+        debugPrint('SharedImage: comment count from ${present[i].instance.id} '
             'unavailable (${response.error}); total will be short');
         continue;
       }
@@ -111,8 +113,8 @@ class SharedImageApi {
   /// Each copy's comments, grouped by the group they were left in.
   Future<List<({KrabInstance instance, Map<String, dynamic> section})>>
       commentsGrouped({String? primaryGroupId}) async {
-    final reachable = _reachable;
-    final results = await Future.wait(reachable.map((pair) => pair.instance.api
+    final present = _present;
+    final results = await Future.wait(present.map((pair) => pair.instance.api
         .getImageCommentsGrouped(pair.copy.id,
             primaryGroupId: primaryGroupId)));
 
@@ -121,13 +123,13 @@ class SharedImageApi {
     for (var i = 0; i < results.length; i++) {
       final response = results[i];
       if (!response.success || response.data == null) {
-        debugPrint('SharedImage: comments from ${reachable[i].instance.id} '
+        debugPrint('SharedImage: comments from ${present[i].instance.id} '
             'unavailable (${response.error})');
         continue;
       }
       for (final raw in response.data!) {
         sections.add((
-          instance: reachable[i].instance,
+          instance: present[i].instance,
           section: raw as Map<String, dynamic>,
         ));
       }
@@ -142,9 +144,9 @@ class SharedImageApi {
   /// Every group the image was posted to that the viewer can see, on any
   /// server. Groups from different instances are different groups.
   Future<List<Group>?> postedInGroups() async {
-    final reachable = _reachable;
+    final present = _present;
     final results = await Future.wait(
-        reachable.map((pair) => pair.instance.viewer.fetchPostedInGroups(
+        present.map((pair) => pair.instance.viewer.fetchPostedInGroups(
               pair.copy.id,
             )));
 
@@ -163,7 +165,7 @@ class SharedImageApi {
   List<Group>? cachedPostedInGroups() {
     final groups = <Group>[];
     var anyCached = false;
-    for (final pair in _reachable) {
+    for (final pair in _present) {
       final cached = pair.instance.viewer.cachedPostedInGroups(pair.copy.id);
       if (cached == null) continue;
       anyCached = true;
@@ -179,7 +181,7 @@ class SharedImageApi {
   /// second copy, tied to the first by the share id.
   Future<List<Group>?> groupsItCouldJoin() async {
     final instances = image.primary.shareId == null
-        ? [for (final pair in _reachable) pair.instance]
+        ? [for (final pair in _present) pair.instance]
         : InstanceRegistry.instance.all;
     final results = await Future.wait(
         instances.map((instance) => instance.api.getUserGroups()));
@@ -209,14 +211,30 @@ class SharedImageApi {
       (byInstance[group.instanceId] ??= []).add(group.id);
     }
 
+    // Only worth asking for when a copy has to be made somewhere new; linking
+    // groups on servers that already hold one needs no id at all.
+    final needsCopy = byInstance.keys
+        .any((id) => !_present.any((p) => p.instance.id == id));
+    final had = image.primary.shareId;
+    String? shareId = had;
+    if (needsCopy && shareId == null) shareId = await _ensureShareId();
+
     String? error;
     final created = <ImageRef>[];
+
+    // The copy we are about to make carries the new id, but the one already on
+    // screen still has none, and the two would read as different images until
+    // the next listing. Hand back the copy it should now be.
+    if (had == null && shareId != null) {
+      final origin = writeTarget;
+      if (origin != null) created.add(origin.copy.copyWith(shareId: shareId));
+    }
     for (final entry in byInstance.entries) {
       final ids = entry.value;
       if (ids.isEmpty) continue;
 
       final held =
-          _reachable.where((p) => p.instance.id == entry.key).firstOrNull;
+          _present.where((p) => p.instance.id == entry.key).firstOrNull;
       if (held != null) {
         final response =
             await held.instance.api.addImageToGroups(held.copy.id, ids);
@@ -227,7 +245,7 @@ class SharedImageApi {
       final instance = InstanceRegistry.instance.byId(entry.key);
       if (instance == null) continue;
       final response =
-          await _uploadCopyTo(instance, ids, loadBytes, description);
+          await _uploadCopyTo(instance, ids, loadBytes, description, shareId);
       if (!response.success) {
         error ??= response.error;
       } else if (response.data != null) {
@@ -239,14 +257,33 @@ class SharedImageApi {
         : SupabaseResponse(success: false, error: error, data: created);
   }
 
+  /// Give this image a share id when it has none, by asking the server holding
+  /// the copy we would copy from.
+  ///
+  /// Returns null when there is nowhere to stamp it, which the caller reports as
+  /// a failure to copy.
+  Future<String?> _ensureShareId() async {
+    final target = writeTarget;
+    if (target == null) return null;
+
+    final response =
+        await target.instance.api.assignShareId(target.copy.id, newShareId());
+    if (!response.success) {
+      debugPrint('SharedImage: could not mint a share id on '
+          '${target.instance.id}: ${response.error}');
+      return null;
+    }
+    return response.data;
+  }
+
   /// Put a copy of this image on an instance, in groupIds.
   Future<SupabaseResponse<ImageRef>> _uploadCopyTo(
     KrabInstance instance,
     List<String> groupIds,
     Future<Uint8List?> Function()? loadBytes,
     String description,
+    String? shareId,
   ) async {
-    final shareId = image.primary.shareId;
     if (loadBytes == null || shareId == null) {
       debugPrint('SharedImage: cannot copy to ${instance.id} '
           '(bytes: ${loadBytes != null}, share id: ${shareId != null})');
@@ -266,7 +303,6 @@ class SharedImageApi {
       scratch = File('${dir.path}/reshare_${shareId}_${instance.id}.jpg');
       await scratch.writeAsBytes(bytes);
 
-      var needsLedger = false;
       // The outbox has to retry under any id this reserved, or it would send
       // the image a second time.
       String? reserved;
@@ -277,7 +313,6 @@ class SharedImageApi {
         shareId: shareId,
         preparedBytes: bytes,
         onReserved: (imageId) async => reserved = imageId,
-        onShareIdNotStored: () async => needsLedger = true,
       );
 
       if (!response.success || response.data == null) {
@@ -301,13 +336,6 @@ class SharedImageApi {
       }
 
       final imageId = response.data!;
-      if (needsLedger) {
-        await ShareLedger.instance.record(
-          instanceId: instance.id,
-          imageId: imageId,
-          shareId: shareId,
-        );
-      }
 
       // No uploadedAt: this copy is new here, but the image is as old as its
       // oldest copy, and dating it now would move the image in a feed ordered
@@ -340,7 +368,7 @@ class SharedImageApi {
 
   /// Forget the cached group lists for every copy, after one of them changed.
   void invalidatePostedInGroups() {
-    for (final pair in _reachable) {
+    for (final pair in _present) {
       pair.instance.viewer.invalidatePostedInGroups(pair.copy.id);
     }
   }
@@ -354,7 +382,7 @@ class SharedImageApi {
   /// Fails if any copy survives.
   Future<SupabaseResponse<void>> delete() async {
     final results = await Future.wait(
-        _reachable.map((pair) => pair.instance.api.deleteImage(pair.copy.id)));
+        _present.map((pair) => pair.instance.api.deleteImage(pair.copy.id)));
 
     final failed = results.where((r) => !r.success).toList();
     if (failed.isEmpty) return const SupabaseResponse(success: true);
@@ -380,7 +408,7 @@ class SharedImageApi {
     var fullyDeletedEverywhere = true;
     String? error;
 
-    for (final pair in _reachable) {
+    for (final pair in _present) {
       final ids = byInstance[pair.instance.id];
       if (ids == null || ids.isEmpty) {
         fullyDeletedEverywhere = false;

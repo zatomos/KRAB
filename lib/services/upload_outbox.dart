@@ -8,7 +8,6 @@ import 'package:workmanager/workmanager.dart';
 
 import 'package:krab/services/api/krab_api.dart';
 import 'package:krab/services/instance/instance_registry.dart';
-import 'package:krab/services/share_ledger.dart';
 import 'package:krab/services/home_widget_updater.dart';
 
 /// WorkManager task name for a flush, and the unique name that keeps at most
@@ -139,31 +138,14 @@ Future<SupabaseResponse<String>> _sendToInstance(
     debugPrint('Outbox: instance $instanceId is gone, dropping the photo');
     return const SupabaseResponse(success: false, error: errorServer);
   }
-  // Set only when this instance could not store the share id
-  var needsLedger = false;
-
-  final response = await instance.api.sendImageToGroups(
+  return instance.api.sendImageToGroups(
     imageFile,
     groupIds,
     description,
     resumeImageId: resumeImageId,
     shareId: shareId,
     onReserved: onReserved,
-    onShareIdNotStored: () async => needsLedger = true,
   );
-
-  final unknown = resumeImageId != null;
-  if ((needsLedger || unknown) &&
-      response.success &&
-      response.data != null &&
-      shareId != null) {
-    await ShareLedger.instance.record(
-      instanceId: instanceId,
-      imageId: response.data!,
-      shareId: shareId,
-    );
-  }
-  return response;
 }
 
 /// Photos that couldn't be sent because the device was offline, held until it
