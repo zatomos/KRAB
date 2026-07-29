@@ -45,7 +45,6 @@ extension KrabApiImages on KrabApi {
     String? shareId,
     Uint8List? preparedBytes,
     Future<void> Function(String imageId)? onReserved,
-    Future<void> Function()? onShareIdNotStored,
   }) async {
     try {
       // Sending one photo to several instances prepares the bytes once and
@@ -62,9 +61,8 @@ extension KrabApiImages on KrabApi {
 
       if (imageId == null) {
         // Open the upload: checks the groups, and reserves the id to store under
-        final result = await _withRetry(
+        final opened = await _withRetry(
             () => _requestUpload(selectedGroups, description, shareId));
-        final opened = result.opened;
 
         if (opened['success'] == false) {
           return SupabaseResponse(
@@ -74,7 +72,6 @@ extension KrabApiImages on KrabApi {
         }
 
         imageId = opened['image_id'] as String;
-        if (!result.storedShareId) await onShareIdNotStored?.call();
         await onReserved?.call(imageId);
       }
 
@@ -99,7 +96,7 @@ extension KrabApiImages on KrabApi {
   }
 
   /// Opens the upload, carrying the share id when there is one.
-  Future<({dynamic opened, bool storedShareId})> _requestUpload(
+  Future<dynamic> _requestUpload(
       List<String> groupIds, String description, String? shareId) async {
     Future<dynamic> call({required bool withShareId}) =>
         _client.rpc("request_image_upload", params: {
@@ -108,17 +105,15 @@ extension KrabApiImages on KrabApi {
           if (withShareId) "p_share_id": shareId,
         });
 
-    if (shareId == null) {
-      return (opened: await call(withShareId: false), storedShareId: false);
-    }
+    if (shareId == null) return call(withShareId: false);
 
     try {
-      return (opened: await call(withShareId: true), storedShareId: true);
+      return await call(withShareId: true);
     } catch (error) {
       if (!_isUnknownShareIdArgument(error)) rethrow;
       debugPrint('Instance $instanceId does not know share_id; '
           'sending without it');
-      return (opened: await call(withShareId: false), storedShareId: false);
+      return call(withShareId: false);
     }
   }
 
@@ -203,14 +198,18 @@ extension KrabApiImages on KrabApi {
               .map((e) => _imageRef(e as Map<String, dynamic>))
               .toList());
 
-  /// Decode one listed image, taking its share id from the server and
-  /// from this device's own ledger otherwise.
-  ImageRef _imageRef(Map<String, dynamic> json) {
-    final ref = ImageRef.fromJson(json, instanceId: instanceId);
-    if (ref.shareId != null) return ref;
-    final recorded = ShareLedger.instance.cachedShareIdFor(instanceId, ref.id);
-    return recorded == null ? ref : ref.copyWith(shareId: recorded);
-  }
+  /// Decode one listed image.
+  ImageRef _imageRef(Map<String, dynamic> json) =>
+      ImageRef.fromJson(json, instanceId: instanceId);
+
+  /// Give an image that has none a share id, so it can be posted to a group on
+  /// another server and still read as the same image.
+  Future<SupabaseResponse<String>> assignShareId(
+          String imageId, String shareId) =>
+      _rpc<String>("assign_share_id",
+          params: {"p_image_id": imageId, "p_share_id": shareId},
+          errorContext: "assigning a share id",
+          parse: (r) => (r['share_id'] ?? shareId).toString());
 
   /// The copies this instance holds of any of shareIds.
   Future<SupabaseResponse<List<ImageRef>>> findImagesByShareId(

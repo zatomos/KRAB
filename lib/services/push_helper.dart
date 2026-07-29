@@ -35,6 +35,7 @@ class PushHelper {
   static KrabInstance? _firebaseInstance;
 
   static StreamSubscription<InstanceAuthEvent>? _authSubscription;
+  static StreamSubscription<String>? _removalSubscription;
   static StreamSubscription<String>? _tokenRefreshSubscription;
   static StreamSubscription<RemoteMessage>? _onMessageSubscription;
 
@@ -58,6 +59,14 @@ class PushHelper {
           await ensureRegistered(event.instance);
         }
       });
+
+      // Disconnecting a server can move the default FirebaseApp to another one,
+      // and a token minted under the old owner is a token its new server cannot
+      // be reached with. Mint them all again.
+      _removalSubscription =
+          InstanceRegistry.instance.removals.listen((_) async {
+        await _reregisterEverything();
+      });
     }
 
     // Match FirebaseApp
@@ -74,6 +83,8 @@ class PushHelper {
   static Future<void> dispose() async {
     await _authSubscription?.cancel();
     _authSubscription = null;
+    await _removalSubscription?.cancel();
+    _removalSubscription = null;
     await _tokenRefreshSubscription?.cancel();
     _tokenRefreshSubscription = null;
     await _onMessageSubscription?.cancel();
@@ -227,18 +238,23 @@ class PushHelper {
     // silently stops until the next launch. FCM rotates per sender, and this
     // stream only speaks for the default app, so re-ask for all of them rather
     // than writing this one token everywhere.
-    _tokenRefreshSubscription =
-        FirebaseMessaging.instance.onTokenRefresh.listen((_) async {
-      _savedForUser.clear();
-      _savedToken.clear();
-      _forgetTokens();
-      final tokens = await _instanceTokens();
-      for (final instance in InstanceRegistry.instance.all) {
-        if (!instance.auth.isLoggedIn) continue;
-        final token = tokens[instance.id];
-        if (token != null) await _saveToken(instance, token);
-      }
-    });
+    _tokenRefreshSubscription = FirebaseMessaging.instance.onTokenRefresh
+        .listen((_) async => _reregisterEverything());
+  }
+
+  /// Throw away every token this device holds and ask for them again, then store
+  /// each with the server it belongs to.
+  static Future<void> _reregisterEverything() async {
+    _savedForUser.clear();
+    _savedToken.clear();
+    _forgetTokens();
+    _firebaseInstance = null;
+    final tokens = await _instanceTokens();
+    for (final instance in InstanceRegistry.instance.all) {
+      if (!instance.auth.isLoggedIn) continue;
+      final token = tokens[instance.id];
+      if (token != null) await _saveToken(instance, token);
+    }
   }
 
   static Future<bool> _saveToken(KrabInstance instance, String token) async {

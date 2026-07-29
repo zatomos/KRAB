@@ -40,6 +40,15 @@ class InstanceRegistry {
   /// Auth events from every instance, tagged with the one they came from.
   Stream<InstanceAuthEvent> get authEvents => _authEvents.stream;
 
+  final StreamController<String> _removals = StreamController<String>.broadcast();
+
+  /// Ids of instances that have been disconnected.
+  ///
+  /// Push registration listens: which instance owns the default FirebaseApp is
+  /// decided by position in this list, so disconnecting one can hand that app to
+  /// a different server, and every token has to be minted again.
+  Stream<String> get removals => _removals.stream;
+
   List<KrabInstance> get all => List.unmodifiable(_instances);
 
   bool get isEmpty => _instances.isEmpty;
@@ -202,6 +211,10 @@ class InstanceRegistry {
 
     final prefs = await SharedPreferences.getInstance();
     await _persist(prefs);
+
+    // Announced after the list is settled, so a listener that re-reads it sees
+    // the instance gone.
+    if (!_removals.isClosed) _removals.add(id);
   }
 
   /// Ids look like `inst_3`, handed out from a counter that only ever goes up.

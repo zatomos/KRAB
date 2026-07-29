@@ -9,7 +9,6 @@ import 'package:krab/models/image_ref.dart';
 import 'package:krab/models/shared_image.dart';
 import 'package:krab/services/instance/instance_registry.dart';
 import 'package:krab/services/share_id.dart';
-import 'package:krab/services/share_ledger.dart';
 import 'package:krab/services/upload_outbox.dart';
 import 'package:krab/user_preferences.dart';
 import 'package:krab/themes/global_theme_data.dart';
@@ -159,9 +158,6 @@ class _SendImageDialogState extends State<SendImageDialog> {
       // The outbox has to retry under any id this send reserved, or it would
       // send the image a second time.
       String? reserved;
-      // Set only when this instance could not store the share id, which is the
-      // only case the ledger is there for.
-      var needsLedger = false;
 
       final response = await instance.api.sendImageToGroups(
         widget.imageFile,
@@ -170,18 +166,10 @@ class _SendImageDialogState extends State<SendImageDialog> {
         shareId: shareId,
         preparedBytes: prepared,
         onReserved: (imageId) async => reserved = imageId,
-        onShareIdNotStored: () async => needsLedger = true,
       );
 
       if (response.success && response.data != null) {
         final imageId = response.data!;
-        if (needsLedger) {
-          await ShareLedger.instance.record(
-            instanceId: instance.id,
-            imageId: imageId,
-            shareId: shareId,
-          );
-        }
         sent.add(ImageRef(
           instanceId: instance.id,
           id: imageId,

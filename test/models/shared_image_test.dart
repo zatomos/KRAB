@@ -109,6 +109,33 @@ void main() {
     });
   });
 
+  group('a copy that gains a share id', () {
+    test('merges with a copy made under that id', () {
+      final images = mergeImages(
+        [
+          ref('a', 'legacy', shareId: 'minted-1'),
+          ref('b', 'copy', shareId: 'minted-1'),
+        ],
+        instanceOrder: ['a', 'b'],
+      );
+
+      expect(images, hasLength(1));
+      expect(images.single.copies.map((c) => c.instanceId), ['a', 'b']);
+    });
+
+    test('reads as a different image while it still has none', () {
+      final images = mergeImages(
+        [
+          ref('a', 'legacy'),
+          ref('b', 'copy', shareId: 'minted-1'),
+        ],
+        instanceOrder: ['a', 'b'],
+      );
+
+      expect(images, hasLength(2));
+    });
+  });
+
   group('SharedImage', () {
     test('uploadedAt is the earliest any copy claims', () {
       final image = SharedImage([
