@@ -11,6 +11,7 @@ Future<bool> showConfirmDialog(
   required String title,
   String? message,
   required String confirmLabel,
+  IconData? confirmIcon,
   String? cancelLabel,
   bool destructive = false,
 }) async {
@@ -30,6 +31,7 @@ Future<bool> showConfirmDialog(
         SoftButton(
           onPressed: () => Navigator.of(context).pop(true),
           label: confirmLabel,
+          icon: confirmIcon,
           color: destructive
               ? Theme.of(context).colorScheme.error
               : Theme.of(context).colorScheme.primary,

@@ -368,9 +368,24 @@
   "servers_sign_in": "Se connecter",
   "servers_sign_out": "Se déconnecter",
   "servers_disconnect": "Oublier",
-  "servers_disconnect_title": "Oublier {server} ?",
-  "servers_disconnect_description": "Cela vous déconnecte et oublie ce serveur. Votre compte et vos photos sur le serveur ne sont pas touchés.",
-  "servers_sign_out_title": "Se déconnecter de {server} ?",
+  "servers_disconnect_title": "Oublier ce serveur ?",
+  "servers_disconnect_description": "Voulez-vous vraiment oublier {server} ? Cela vous déconnecte et le supprime de votre liste de serveurs. Votre compte et vos photos sur le serveur ne sont pas touchés.",
+  "@servers_disconnect_description": {
+    "placeholders": {
+      "server": {
+        "type": "String"
+      }
+    }
+  },
+  "servers_sign_out_description": "Voulez-vous vraiment vous déconnecter de {server} ?",
+  "@servers_sign_out_description": {
+    "placeholders": {
+      "server": {
+        "type": "String"
+      }
+    }
+  },
+  "servers_sign_out_title": "Se déconnecter de ce serveur ?",
   "servers_unreachable": "Connexion impossible",
   "servers_loading": "Chargement...",
   "servers_still_loading": "Chargement depuis {servers}...",

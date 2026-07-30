@@ -86,6 +86,7 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       title: Text(context.l10n.change_password),
       content: SizedBox(
         width: MediaQuery.sizeOf(context).width,

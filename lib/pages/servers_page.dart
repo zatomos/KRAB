@@ -130,8 +130,10 @@ class _ServersPageState extends State<ServersPage> {
   Future<void> _signOut(KrabInstance instance) async {
     final confirmed = await showConfirmDialog(
       context,
-      title: context.l10n.servers_sign_out_title(instance.label),
+      title: context.l10n.servers_sign_out_title,
+      message: context.l10n.servers_sign_out_description(instance.label),
       confirmLabel: context.l10n.servers_sign_out,
+      confirmIcon: Symbols.logout_rounded,
       destructive: true,
     );
     if (!confirmed || !mounted) return;
@@ -145,9 +147,10 @@ class _ServersPageState extends State<ServersPage> {
   Future<void> _disconnect(KrabInstance instance) async {
     final confirmed = await showConfirmDialog(
       context,
-      title: context.l10n.servers_disconnect_title(instance.label),
-      message: context.l10n.servers_disconnect_description,
+      title: context.l10n.servers_disconnect_title,
+      message: context.l10n.servers_disconnect_description(instance.label),
       confirmLabel: context.l10n.servers_disconnect,
+      confirmIcon: Symbols.link_off_rounded,
       destructive: true,
     );
     if (!confirmed) return;
