@@ -40,7 +40,8 @@ class InstanceRegistry {
   /// Auth events from every instance, tagged with the one they came from.
   Stream<InstanceAuthEvent> get authEvents => _authEvents.stream;
 
-  final StreamController<String> _removals = StreamController<String>.broadcast();
+  final StreamController<String> _removals =
+      StreamController<String>.broadcast();
 
   /// Ids of instances that have been disconnected.
   ///
@@ -184,6 +185,12 @@ class InstanceRegistry {
   }
 
   /// Move an instance to a new position in the list.
+  ///
+  /// The move is applied to the in-memory list before the first suspension, so
+  /// a caller may rebuild on the same frame it calls this and see the new order.
+  /// A reorderable list needs that: its drop animation redraws immediately, and
+  /// waiting for the returned future would animate the old order into place and
+  /// then snap. The future completes once the new order is on disk.
   Future<void> reorder(int oldIndex, int newIndex) async {
     if (oldIndex < 0 || oldIndex >= _instances.length) return;
 

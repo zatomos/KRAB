@@ -385,6 +385,7 @@
     }
   },
   "servers_unreachable": "Couldn't connect",
+  "servers_loading": "Loading...",
   "servers_still_loading": "Still loading from {servers}...",
   "@servers_still_loading": {
     "placeholders": {
@@ -413,7 +414,7 @@
   "servers_pick_one": "Choose a server",
   "servers_share": "Share",
   "servers_token_copied": "Connection token copied. Anyone you send it to can connect to this server.",
-  "servers_subtitle_ordered": "Photos from every server you are signed into, together. Drag to reorder them.",
+  "servers_subtitle_ordered": "KRAB brings together photos from every server you are signed into.\n The first available server is used by default everywhere else in the app.",
   "servers_share_subject": "Join me on {server}",
   "@servers_share_subject": {
     "placeholders": {
