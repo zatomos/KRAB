@@ -72,6 +72,9 @@ class CameraPageState extends State<CameraPage> {
   // Briefly whitens the preview when a frame is taken.
   bool _captureFlash = false;
 
+  /// Whether the preview has been faded in.
+  bool _previewVisible = false;
+
   // User
   krab_user.User? currentUser;
 
@@ -108,6 +111,7 @@ class CameraPageState extends State<CameraPage> {
     final controller = _controller;
     _controller = null;
     _initializeControllerFuture = null;
+    _previewVisible = false;
     if (mounted) setState(() {});
     await controller?.dispose();
   }
@@ -242,6 +246,7 @@ class CameraPageState extends State<CameraPage> {
     // Tear the old preview out of the tree before disposing its controller
     final previous = _controller;
     _controller = null;
+    _previewVisible = false;
     if (mounted) setState(() {});
     await previous?.dispose();
 
@@ -260,6 +265,16 @@ class CameraPageState extends State<CameraPage> {
     _zoomNotifier.value = 1.0;
 
     debugPrint("Zoom caps: min=$_minZoom max=$_maxZoom");
+
+    _revealPreview();
+  }
+
+  /// Start the fade once the preview is in the tree
+  void _revealPreview() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _controller == null) return;
+      setState(() => _previewVisible = true);
+    });
   }
 
   // ===== Flash, camera switching, zoom, focus/AE ===============================
@@ -586,13 +601,17 @@ class CameraPageState extends State<CameraPage> {
       onScaleEnd: (_) => _onZoomChanged(_zoomNotifier.value),
       child: Stack(
         children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(20),
-            child: Container(
-              width: size.width,
-              height: size.height,
-              color: Colors.white12,
-              child: CameraPreview(_controller!),
+          AnimatedOpacity(
+            opacity: _previewVisible ? 1 : 0,
+            duration: _previewFade,
+            curve: Curves.easeOut,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: SizedBox(
+                width: size.width,
+                height: size.height,
+                child: CameraPreview(_controller!),
+              ),
             ),
           ),
           Positioned.fill(
@@ -629,6 +648,9 @@ class CameraPageState extends State<CameraPage> {
   }
 
   static const double _focusRingRadius = 40;
+
+  /// How long the preview takes to come up.
+  static const Duration _previewFade = Duration(milliseconds: 100);
 
   /// Focus where the user tapped.
   void _onPreviewTap(TapDownDetails details, Size preview) {
@@ -805,7 +827,8 @@ class CameraPageState extends State<CameraPage> {
                   style: const TextStyle(color: Colors.white)),
             );
           } else {
-            return const Center(child: CircularProgressIndicator());
+            // Nothing while the camera comes up
+            return const SizedBox.shrink();
           }
         },
       ),
