@@ -51,6 +51,11 @@ Photos shared to a group appear directly on every member's home screen.</h4>
   - Comment on photos and reply to comments.
   - React to photos with emojis.
 
+- ️🏘 Multi-instance:
+  - Connect to as many KRAB instances as you like, each with its own account.
+  - Send photos to groups on several instances at once.
+  - Feeds, notifications and the widget merge every instance's photos into one timeline.
+
 - 🛡️ Privacy:
   - Fully self-hostable backend.
   - Even though the app uses FCM to send push notifications, their content is hidden from Google.
@@ -65,6 +70,8 @@ posted.
   sees content from the groups they belong to.
 - When a photo or comment is posted, the database automatically triggers a function that pushes a
   notification to the other group members, whose apps then refresh their widget.
+- The app can hold several instances at once. Each has its own session, caches and push
+  registration, and instances never talk to each other.
 
 ---
 
