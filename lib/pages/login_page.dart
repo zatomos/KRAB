@@ -76,9 +76,11 @@ class LoginPageState extends State<LoginPage> {
     if (email.isEmpty) return;
     final res = await _api.resendConfirmationEmail(email);
     if (!mounted) return;
-    showSnackBar(res.success
-        ? context.l10n.confirmation_email_resent
-        : _localizeAuthError(res.error));
+    if (res.success) {
+      showSnackBar(context.l10n.confirmation_email_resent);
+    } else {
+      showSnackBar(_localizeAuthError(res.error), tone: SnackTone.failure);
+    }
   }
 
   bool _isSigningUp = false;
@@ -138,12 +140,13 @@ class LoginPageState extends State<LoginPage> {
         _passwordController.clear();
         _passwordConfirmController.clear();
       });
-      showSnackBar(context.l10n.verification_email_sent(email));
+      showSnackBar(context.l10n.verification_email_sent(email),
+          tone: SnackTone.success);
       return;
     }
 
     // Auto-confirm path: already logged in.
-    showSnackBar(context.l10n.register_user_success);
+    showSnackBar(context.l10n.register_user_success, tone: SnackTone.success);
     await _enterApp();
   }
 
@@ -251,7 +254,8 @@ class LoginPageState extends State<LoginPage> {
                       if (!context.mounted) return;
                       if (response.success) {
                         Navigator.pop(context);
-                        showSnackBar(context.l10n.password_email_sent);
+                        showSnackBar(context.l10n.password_email_sent,
+                            tone: SnackTone.success);
                       } else {
                         setDialogState(() {
                           sending = false;
