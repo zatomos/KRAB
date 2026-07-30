@@ -242,10 +242,10 @@ extension KrabApiGroups on KrabApi {
               .map((e) => GroupInvite.fromJson(e as Map<String, dynamic>))
               .toList());
 
-  /// Revoke an invite token.
-  Future<SupabaseResponse<void>> revokeGroupInvite(String token) =>
-      _rpc("revoke_group_invite",
-          params: {"p_token": token}, errorContext: "revoking invite");
+  /// Remove an invite from the group's list for good.
+  Future<SupabaseResponse<void>> deleteGroupInvite(String token) =>
+      _rpc("delete_group_invite",
+          params: {"p_token": token}, errorContext: "deleting invite");
 
   /// Set who may create invites for a group (owner only).
   /// [permission] is one of 'owner', 'admin', 'everyone'.

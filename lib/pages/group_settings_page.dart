@@ -42,6 +42,11 @@ const _collapsedMemberCount = 10;
 /// How long the member list takes to expand or collapse.
 const Duration _expandDuration = Duration(milliseconds: 200);
 
+/// The page's spacing scale.
+const double _gapS = 8;
+const double _gapM = 16;
+const double _gapL = 24;
+
 class GroupSettingsPageState extends State<GroupSettingsPage> {
   late Group _group;
 
@@ -314,238 +319,362 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
         return Scaffold(
           appBar: AppBar(
             title: Text(context.l10n.group_settings_page_title),
-            actions: [
-              if (isManager)
-                PopupMenuButton<VoidCallback>(
-                  icon: const Icon(Symbols.edit_square),
-                  color: Theme.of(context).colorScheme.surfaceBright,
-                  position: PopupMenuPosition.under,
-                  onSelected: (action) => action(),
-                  itemBuilder: (context) => [
-                    PopupMenuItem(
-                      value: _updateGroupName,
-                      child: ListTile(
-                        leading: const Icon(Icons.text_fields_rounded),
-                        title: Text(context.l10n.edit_group_name),
-                      ),
-                    ),
-                    PopupMenuItem(
-                      value: openEditIconDialog,
-                      child: ListTile(
-                        leading: const Icon(Icons.image_rounded),
-                        title: Text(context.l10n.edit_icon_title),
-                      ),
-                    ),
-                  ],
-                ),
-            ],
           ),
           body: SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 24),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                /// Group Header
-                Center(
-                  child: Column(
-                    children: [
-                      GroupAvatar(_group, radius: 60),
-                      const SizedBox(height: 16),
-                      Text(_group.name,
-                          style: const TextStyle(
-                              fontSize: 24, fontWeight: FontWeight.bold)),
-                      if (ServerLabel.relevant) ...[
-                        const SizedBox(height: 6),
-                        ServerLabel(_instance, fontSize: 13),
-                      ],
-                    ],
-                  ),
-                ),
-
-                Divider(
-                  height: 32,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-
-                /// Members List
-                Row(
-                  children: [
-                    Text(
-                      context.l10n.members,
-                      style: const TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                    IconButton(
-                      icon: Icon(
-                        Symbols.info_rounded,
-                        size: 20,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                      tooltip: context.l10n.member_roles_title,
-                      onPressed: () => showMemberRolesDialog(context),
-                      visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.only(left: 6),
-                      constraints: const BoxConstraints(),
-                      style: const ButtonStyle(
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-                    ),
-                    const Spacer(),
-                    if (members.length > _collapsedMemberCount)
-                      TextButton.icon(
-                        onPressed: () =>
-                            setState(() => _showAllMembers = !_showAllMembers),
-                        icon: AnimatedRotation(
-                          turns: _showAllMembers ? 0.5 : 0,
-                          duration: _expandDuration,
-                          curve: Curves.easeInOut,
-                          child: const Icon(
-                            Symbols.expand_more_rounded,
-                            size: 20,
-                          ),
-                        ),
-                        iconAlignment: IconAlignment.end,
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          visualDensity: VisualDensity.compact,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        label: Text(
-                          _showAllMembers
-                              ? context.l10n.show_fewer_members
-                              : context.l10n.show_all_members(members.length),
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-
-                DelayedLoading(
-                  loading: !hasData,
-                  placeholder: const _MembersSkeleton(),
-                  child: members.isEmpty
-                      ? Center(child: Text(context.l10n.no_members))
-                      : AnimatedSize(
-                          duration: _expandDuration,
-                          curve: Curves.easeInOut,
-                          alignment: Alignment.topCenter,
-                          child: Column(
-                            children: visibleMembers.map((member) {
-                              final targetRole = member.role;
-                              final canManage =
-                                  member.user.id != _currentUserId &&
-                                      (currentRole == 'owner' ||
-                                          (currentRole == 'admin' &&
-                                              targetRole != 'admin' &&
-                                              targetRole != 'owner'));
-
-                              return _MemberTile(
-                                member: member,
-                                currentRole: currentRole,
-                                canManage: canManage,
-                                onRoleAction: (action) => _manageUserRoleDialog(
-                                    member.user.id, action),
-                                onBan: () =>
-                                    _manageUserBanDialog(member.user.id),
-                                onUnban: () =>
-                                    _manageUserUnbanDialog(member.user.id),
-                              );
-                            }).toList(),
-                          ),
-                        ),
-                ),
-
-                /// Group invites
+                _header(context, isManager),
+                const _SectionDivider(),
+                _membersSection(
+                    context, hasData, members, visibleMembers, currentRole),
                 if (canCreateInvite || isManager) ...[
-                  Divider(
-                    height: 64,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      context.l10n.group_invites,
-                      style: const TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  if (canCreateInvite)
-                    RectangleButton(
-                      onPressed: _createInvite,
-                      label: context.l10n.create_invite,
-                      icon: Symbols.add_link_rounded,
-                    ),
-                  if (isManager) ...[
-                    const SizedBox(height: 8),
-                    RectangleButton(
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => GroupInvitesPage(
-                              instance: _instance, groupId: _group.id),
-                        ),
-                      ),
-                      label: context.l10n.manage_invites,
-                      icon: Symbols.link_rounded,
-                      backgroundColor:
-                          Theme.of(context).colorScheme.surfaceBright,
-                    ),
-                  ],
-                  if (currentRole == 'owner') ...[
-                    const SizedBox(height: 8),
-                    ListTile(
-                      leading: const Icon(Symbols.lock_person_rounded),
-                      title: Text(context.l10n.who_can_invite),
-                      subtitle:
-                          Text(_invitePermissionLabel(context, permission)),
-                      trailing: const Icon(Symbols.chevron_right_rounded),
-                      onTap: _changeInvitePermission,
-                    ),
-                  ],
+                  const _SectionDivider(),
+                  _invitesSection(context, canCreateInvite, isManager,
+                      currentRole, permission),
                 ],
-
-                const SizedBox(height: 8),
-                SwitchListTile(
-                  value: _muted,
-                  onChanged: _toggleMuted,
-                  secondary: Icon(_muted
-                      ? Symbols.notifications_off_rounded
-                      : Symbols.notifications_rounded),
-                  title: Text(context.l10n.mute_notifications),
-                  subtitle: Text(context.l10n.mute_notifications_subtitle),
-                  contentPadding: EdgeInsets.zero,
-                ),
-
-                Divider(
-                  height: 64,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-
-                /// Leave/delete group buttons
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    RectangleButton(
-                      onPressed: _leaveGroup,
-                      label: context.l10n.leave_group,
-                      icon: Symbols.logout_rounded,
-                      backgroundColor: Colors.red,
-                    ),
-                  ],
-                ),
-
-                if (currentRole == 'owner') ...[
-                  const SizedBox(height: 16),
-                  RectangleButton(
-                    onPressed: _deleteGroup,
-                    label: context.l10n.delete_group,
-                    icon: Symbols.delete_rounded,
-                    backgroundColor: Colors.red,
-                  ),
-                ],
+                const _SectionDivider(),
+                _notificationsSection(context),
+                // No rule before the last block: leaving and deleting are not
+                // another section of settings, and the gap says so.
+                const SizedBox(height: _gapL),
+                _dangerSection(context, currentRole),
               ],
             ),
           ),
         );
       },
+    );
+  }
+
+  /// The group itself: picture, name, and which server it is on.
+  Widget _header(BuildContext context, bool isManager) {
+    final avatar = GroupAvatar(_group, radius: 60);
+    return Column(
+      children: [
+        // Tapping the picture is the first thing anyone tries, so managers get
+        // it as well as the app bar menu.
+        if (isManager)
+          Stack(
+            alignment: Alignment.bottomRight,
+            children: [
+              // No ink: an InkResponse here splashes across whatever surface it
+              // finds, and the camera badge is affordance enough.
+              GestureDetector(
+                onTap: openEditIconDialog,
+                child: avatar,
+              ),
+              IgnorePointer(
+                child: CircleAvatar(
+                  radius: 16,
+                  backgroundColor: Theme.of(context).colorScheme.surfaceBright,
+                  child: Icon(Symbols.photo_camera_rounded,
+                      size: 18,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant),
+                ),
+              ),
+            ],
+          )
+        else
+          avatar,
+        const SizedBox(height: _gapM),
+        _name(context, isManager),
+        if (ServerLabel.relevant) ...[
+          const SizedBox(height: _gapS),
+          ServerLabel(_instance, fontSize: 13),
+        ],
+      ],
+    );
+  }
+
+  /// The group's name, renamed by tapping it when you are allowed to.
+  ///
+  /// Laid out the way the account page shows a username: the name stays centred
+  /// and the arrow hangs off its end, rather than the pair being centred and the
+  /// name drifting left.
+  Widget _name(BuildContext context, bool isManager) {
+    const style = TextStyle(fontSize: 24, fontWeight: FontWeight.bold);
+    final name = Text(_group.name, textAlign: TextAlign.center, style: style);
+    if (!isManager) return name;
+
+    return GestureDetector(
+      onTap: _updateGroupName,
+      child: Stack(
+        children: [
+          Center(child: name),
+          Center(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Opacity(
+                  opacity: 0,
+                  child: Text(_group.name, style: style),
+                ),
+                Transform.translate(
+                  offset: const Offset(20, -2),
+                  child: Icon(
+                    Icons.keyboard_arrow_right_rounded,
+                    size: 40,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _membersSection(
+    BuildContext context,
+    bool hasData,
+    List<GroupMember> members,
+    List<GroupMember> visibleMembers,
+    String currentRole,
+  ) {
+    return _Section(
+      title: context.l10n.members,
+      info: IconButton(
+        icon: Icon(
+          Symbols.info_rounded,
+          size: 20,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+        tooltip: context.l10n.member_roles_title,
+        onPressed: () => showMemberRolesDialog(context),
+        visualDensity: VisualDensity.compact,
+        padding: const EdgeInsets.only(left: 6),
+        constraints: const BoxConstraints(),
+        style:
+            const ButtonStyle(tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+      ),
+      action: members.length > _collapsedMemberCount
+          ? TextButton.icon(
+              onPressed: () =>
+                  setState(() => _showAllMembers = !_showAllMembers),
+              icon: AnimatedRotation(
+                turns: _showAllMembers ? 0.5 : 0,
+                duration: _expandDuration,
+                curve: Curves.easeInOut,
+                child: const Icon(Symbols.expand_more_rounded, size: 20),
+              ),
+              iconAlignment: IconAlignment.end,
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                visualDensity: VisualDensity.compact,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              label: Text(_showAllMembers
+                  ? context.l10n.show_fewer_members
+                  : context.l10n.show_all_members(members.length)),
+            )
+          : null,
+      child: DelayedLoading(
+        loading: !hasData,
+        placeholder: const _MembersSkeleton(),
+        child: members.isEmpty
+            ? Center(child: Text(context.l10n.no_members))
+            : AnimatedSize(
+                duration: _expandDuration,
+                curve: Curves.easeInOut,
+                alignment: Alignment.topCenter,
+                child: Column(
+                  children: visibleMembers.map((member) {
+                    final targetRole = member.role;
+                    final canManage = member.user.id != _currentUserId &&
+                        (currentRole == 'owner' ||
+                            (currentRole == 'admin' &&
+                                targetRole != 'admin' &&
+                                targetRole != 'owner'));
+
+                    return _MemberTile(
+                      member: member,
+                      currentRole: currentRole,
+                      canManage: canManage,
+                      onRoleAction: (action) =>
+                          _manageUserRoleDialog(member.user.id, action),
+                      onBan: () => _manageUserBanDialog(member.user.id),
+                      onUnban: () => _manageUserUnbanDialog(member.user.id),
+                    );
+                  }).toList(),
+                ),
+              ),
+      ),
+    );
+  }
+
+  Widget _invitesSection(
+    BuildContext context,
+    bool canCreateInvite,
+    bool isManager,
+    String currentRole,
+    String permission,
+  ) {
+    return _Section(
+      title: context.l10n.group_invites,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // The only one that acts rather than opening something, so the only
+          // one that is a button. A button needs air on both sides; the tiles
+          // under it carry their own.
+          if (canCreateInvite) ...[
+            const SizedBox(height: _gapS),
+            RectangleButton(
+              onPressed: _createInvite,
+              label: context.l10n.create_invite,
+              icon: Symbols.add_link_rounded,
+            ),
+            const SizedBox(height: _gapS),
+          ],
+          if (isManager)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Symbols.link_rounded),
+              title: Text(context.l10n.manage_invites),
+              trailing: const Icon(Symbols.chevron_right_rounded),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) =>
+                      GroupInvitesPage(instance: _instance, groupId: _group.id),
+                ),
+              ),
+            ),
+          if (currentRole == 'owner')
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Symbols.lock_person_rounded),
+              title: Text(context.l10n.who_can_invite),
+              subtitle: Text(_invitePermissionLabel(context, permission)),
+              trailing: const Icon(Symbols.chevron_right_rounded),
+              onTap: _changeInvitePermission,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _notificationsSection(BuildContext context) {
+    return _Section(
+      title: context.l10n.group_notifications,
+      child: SwitchListTile(
+        value: _muted,
+        onChanged: _toggleMuted,
+        secondary: Icon(_muted
+            ? Symbols.notifications_off_rounded
+            : Symbols.notifications_rounded),
+        title: Text(context.l10n.mute_notifications),
+        subtitle: Text(context.l10n.mute_notifications_subtitle),
+        contentPadding: EdgeInsets.zero,
+      ),
+    );
+  }
+
+  /// Leaving is reversible and deleting is not, so only one of them is filled.
+  Widget _dangerSection(BuildContext context, String currentRole) {
+    final error = Theme.of(context).colorScheme.error;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        RectangleButton(
+          onPressed: _leaveGroup,
+          label: context.l10n.leave_group,
+          icon: Symbols.logout_rounded,
+          style: RectangleButtonStyle.outlined,
+          backgroundColor: error,
+        ),
+        if (currentRole == 'owner') ...[
+          const SizedBox(height: _gapS),
+          RectangleButton(
+            onPressed: _deleteGroup,
+            label: context.l10n.delete_group,
+            icon: Symbols.delete_rounded,
+            backgroundColor: error,
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// Separates two sections. Quiet on purpose: the cards already say where one
+/// ends, so this only has to reinforce it.
+class _SectionDivider extends StatelessWidget {
+  const _SectionDivider();
+
+  @override
+  Widget build(BuildContext context) => Divider(
+        height: _gapL + _gapS,
+        thickness: 1,
+        color: Theme.of(context)
+            .colorScheme
+            .onSurfaceVariant
+            .withValues(alpha: 0.2),
+      );
+}
+
+/// One block of settings, on a surface of its own.
+///
+/// The page is a run of unrelated concerns; giving each a shape says where one
+/// ends better than a rule across the page does.
+class _Section extends StatelessWidget {
+  const _Section({
+    required this.title,
+    this.info,
+    this.action,
+    required this.child,
+  });
+
+  final String title;
+
+  /// Sits with the heading, for something that explains the section.
+  final Widget? info;
+
+  /// Right-aligned, for something that acts on it.
+  final Widget? action;
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(_gapS + 4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                // Expanded, not Flexible beside a Spacer: a Spacer would take an
+                // equal share of the free space and crop titles that fit.
+                Expanded(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          title,
+                          style: const TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.bold),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (info != null) info!,
+                    ],
+                  ),
+                ),
+                if (action != null) action!,
+              ],
+            ),
+            const SizedBox(height: _gapS),
+            child,
+          ],
+        ),
+      ),
     );
   }
 }
@@ -564,6 +693,7 @@ class _MembersSkeleton extends StatelessWidget {
         children: List.generate(
           _rowCount,
           (_) => const ListTile(
+            contentPadding: EdgeInsets.zero,
             leading: Bone.circle(size: 50),
             title: Bone.text(width: 140),
           ),
@@ -683,9 +813,30 @@ class _MemberTileState extends State<_MemberTile> {
           borderRadius: BorderRadius.circular(12),
         ),
         child: ListTile(
+          contentPadding: EdgeInsets.zero,
           leading: UserAvatar(widget.member.user, radius: 25),
-          title: Text(widget.member.user.username),
-          trailing: Icon(badge.icon, color: badge.color, fill: 1),
+          // The badge moves in beside the name so that trailing can say whether
+          // there is anything to be done with this member: a long press is not
+          // something anyone finds on their own.
+          title: Row(
+            children: [
+              Flexible(
+                child: Text(widget.member.user.username,
+                    overflow: TextOverflow.ellipsis),
+              ),
+              if (badge.icon != null) ...[
+                const SizedBox(width: 6),
+                Icon(badge.icon, color: badge.color, fill: 1, size: 18),
+              ],
+            ],
+          ),
+          trailing: widget.canManage
+              ? IconButton(
+                  icon: const Icon(Icons.more_vert_rounded),
+                  onPressed: _showMenu,
+                  visualDensity: VisualDensity.compact,
+                )
+              : null,
         ),
       ),
     );

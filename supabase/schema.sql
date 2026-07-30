@@ -532,6 +532,43 @@ END;$$;
 
 
 --
+-- Name: delete_group_invite(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.delete_group_invite(p_token text) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$DECLARE
+  uid uuid := auth.uid();
+  v_group_id uuid;
+  v_created_by uuid;
+  v_role text;
+BEGIN
+  IF uid IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
+  END IF;
+
+  SELECT group_id, created_by INTO v_group_id, v_created_by
+  FROM "GroupInvites" WHERE token = btrim(p_token);
+
+  IF v_group_id IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Invalid invite');
+  END IF;
+
+  SELECT role INTO v_role
+  FROM "Members" WHERE group_id = v_group_id AND user_id = uid;
+
+  IF NOT (v_created_by = uid OR v_role IN ('owner', 'admin')) THEN
+    RETURN jsonb_build_object('success', false, 'error', 'You do not have permission to delete this invite');
+  END IF;
+
+  DELETE FROM "GroupInvites" WHERE token = btrim(p_token);
+
+  RETURN jsonb_build_object('success', true);
+END;$$;
+
+
+--
 -- Name: delete_image(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -2276,43 +2313,6 @@ exception
   when others then
     return jsonb_build_object('success', false, 'error', sqlerrm);
 end;$$;
-
-
---
--- Name: revoke_group_invite(text); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.revoke_group_invite(p_token text) RETURNS jsonb
-    LANGUAGE plpgsql SECURITY DEFINER
-    SET search_path TO 'public'
-    AS $$DECLARE
-  uid uuid := auth.uid();
-  v_group_id uuid;
-  v_created_by uuid;
-  v_role text;
-BEGIN
-  IF uid IS NULL THEN
-    RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
-  END IF;
-
-  SELECT group_id, created_by INTO v_group_id, v_created_by
-  FROM "GroupInvites" WHERE token = btrim(p_token);
-
-  IF v_group_id IS NULL THEN
-    RETURN jsonb_build_object('success', false, 'error', 'Invalid invite');
-  END IF;
-
-  SELECT role INTO v_role
-  FROM "Members" WHERE group_id = v_group_id AND user_id = uid;
-
-  IF NOT (v_created_by = uid OR v_role IN ('owner', 'admin')) THEN
-    RETURN jsonb_build_object('success', false, 'error', 'You do not have permission to revoke this invite');
-  END IF;
-
-  UPDATE "GroupInvites" SET revoked = true WHERE token = btrim(p_token);
-
-  RETURN jsonb_build_object('success', true);
-END;$$;
 
 
 --
@@ -5016,6 +5016,15 @@ GRANT ALL ON FUNCTION public.delete_comment(comment_id uuid, image_id uuid, grou
 
 
 --
+-- Name: FUNCTION delete_group_invite(p_token text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.delete_group_invite(p_token text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.delete_group_invite(p_token text) TO authenticated;
+GRANT ALL ON FUNCTION public.delete_group_invite(p_token text) TO service_role;
+
+
+--
 -- Name: FUNCTION delete_image(image_id uuid); Type: ACL; Schema: public; Owner: -
 --
 
@@ -5354,16 +5363,6 @@ GRANT ALL ON FUNCTION public.request_image_upload(p_group_ids text[], p_descript
 GRANT ALL ON FUNCTION public.request_image_uuid() TO anon;
 GRANT ALL ON FUNCTION public.request_image_uuid() TO authenticated;
 GRANT ALL ON FUNCTION public.request_image_uuid() TO service_role;
-
-
---
--- Name: FUNCTION revoke_group_invite(p_token text); Type: ACL; Schema: public; Owner: -
---
-
-REVOKE ALL ON FUNCTION public.revoke_group_invite(p_token text) FROM PUBLIC;
-GRANT ALL ON FUNCTION public.revoke_group_invite(p_token text) TO anon;
-GRANT ALL ON FUNCTION public.revoke_group_invite(p_token text) TO authenticated;
-GRANT ALL ON FUNCTION public.revoke_group_invite(p_token text) TO service_role;
 
 
 --

@@ -10,7 +10,7 @@ import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/services/instance/instances.dart';
 
-/// Management view to create, share, and revoke group invites.
+/// Management view to create, share, and delete group invites.
 class GroupInvitesPage extends StatefulWidget {
   /// The instance the group and its invites live on.
   final KrabInstance instance;
@@ -28,17 +28,29 @@ class GroupInvitesPage extends StatefulWidget {
 }
 
 class _GroupInvitesPageState extends State<GroupInvitesPage> {
-  late Future<SupabaseResponse<List<GroupInvite>>> _invitesFuture;
+  List<GroupInvite> _invites = const [];
+
+  bool _loading = true;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
-    _invitesFuture = widget.instance.api.listGroupInvites(widget.groupId);
+    _load();
   }
 
-  void _refresh() {
-    setState(() =>
-        _invitesFuture = widget.instance.api.listGroupInvites(widget.groupId));
+  Future<void> _load() async {
+    final res = await widget.instance.api.listGroupInvites(widget.groupId);
+    if (!mounted) return;
+    setState(() {
+      _loading = false;
+      if (res.success) {
+        _invites = res.data ?? const [];
+        _error = null;
+      } else {
+        _error = context.errorText(res.error);
+      }
+    });
   }
 
   Future<void> _createInvite() async {
@@ -49,26 +61,30 @@ class _GroupInvitesPageState extends State<GroupInvitesPage> {
     );
     if (token == null || !mounted) return;
     await showInviteTokenDialog(context, token);
-    _refresh();
+    if (!mounted) return;
+    await _load();
   }
 
-  Future<void> _revokeInvite(String token) async {
+  /// Delete an invite, whether or not it still works.
+  Future<void> _deleteInvite(String token) async {
     final confirm = await showConfirmDialog(context,
-        title: context.l10n.revoke_invite,
-        message: context.l10n.revoke_invite_confirmation,
-        confirmLabel: context.l10n.revoke,
+        title: context.l10n.delete_invite,
+        message: context.l10n.delete_invite_confirmation,
+        confirmLabel: context.l10n.delete,
+        confirmIcon: Symbols.delete_rounded,
         destructive: true);
-    if (!confirm) return;
+    if (!confirm || !mounted) return;
 
-    final res = await widget.instance.api.revokeGroupInvite(token);
+    final res = await widget.instance.api.deleteGroupInvite(token);
     if (!mounted) return;
-    if (res.success) {
-      showSnackBar(context.l10n.invite_revoked_success,
-          tone: SnackTone.success);
-      _refresh();
-    } else {
+    if (!res.success) {
       showSnackBar(context.errorText(res.error), tone: SnackTone.failure);
+      return;
     }
+
+    setState(() => _invites = _invites.where((i) => i.token != token).toList());
+    showSnackBar(context.l10n.invite_deleted_success, tone: SnackTone.success);
+    await _load();
   }
 
   void _copyToken(String token) {
@@ -99,56 +115,63 @@ class _GroupInvitesPageState extends State<GroupInvitesPage> {
           icon: Symbols.add_link_rounded,
           label: context.l10n.create_invite,
           color: Theme.of(context).colorScheme.primary),
-      body: FutureBuilder<SupabaseResponse<List<GroupInvite>>>(
-        future: _invitesFuture,
-        builder: (context, snapshot) {
-          if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (!snapshot.data!.success) {
-            return Center(child: Text(context.errorText(snapshot.data!.error)));
-          }
-          final invites = snapshot.data!.data ?? [];
-          if (invites.isEmpty) {
-            return Center(child: Text(context.l10n.no_invites));
-          }
-          return ListView.builder(
-            padding: const EdgeInsets.only(bottom: 88),
-            itemCount: invites.length,
-            itemBuilder: (context, index) {
-              final invite = invites[index];
-              return ListTile(
-                leading: Icon(
-                  invite.isActive
-                      ? Symbols.link_rounded
-                      : Symbols.link_off_rounded,
-                  color: invite.isActive
-                      ? Theme.of(context).colorScheme.primary
-                      : Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-                title: Text(
-                  invite.token,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontFamily: 'monospace'),
-                ),
-                subtitle: Text(_subtitleFor(context, invite)),
-                onTap: () => _copyToken(invite.token),
-                trailing: invite.isActive
-                    ? IconButton(
-                        icon: const Icon(Symbols.delete_rounded,
-                            color: Colors.red),
-                        tooltip: context.l10n.revoke,
-                        onPressed: () => _revokeInvite(invite.token),
-                      )
-                    : null,
-              );
-            },
-          );
-        },
+      body: RefreshIndicator(
+        onRefresh: _load,
+        child: _body(context),
       ),
     );
   }
+
+  Widget _body(BuildContext context) {
+    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_error != null && _invites.isEmpty) {
+      return _centeredMessage(_error!);
+    }
+    if (_invites.isEmpty) return _centeredMessage(context.l10n.no_invites);
+
+    return ListView.builder(
+      padding: const EdgeInsets.only(bottom: 88),
+      itemCount: _invites.length,
+      itemBuilder: (context, index) {
+        final invite = _invites[index];
+        return ListTile(
+          leading: Icon(
+            invite.isActive ? Symbols.link_rounded : Symbols.link_off_rounded,
+            color: invite.isActive
+                ? Theme.of(context).colorScheme.primary
+                : Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+          title: Text(
+            invite.token,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontFamily: 'monospace'),
+          ),
+          subtitle: Text(_subtitleFor(context, invite)),
+          onTap: () => _copyToken(invite.token),
+          trailing: IconButton(
+            icon: Icon(
+              Symbols.delete_rounded,
+              color: Theme.of(context).colorScheme.error,
+            ),
+            tooltip: context.l10n.delete,
+            onPressed: () => _deleteInvite(invite.token),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Scrollable, so pulling down still refreshes when there is nothing to show.
+  Widget _centeredMessage(String message) => LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Center(child: Text(message)),
+          ),
+        ),
+      );
 }
 
 /// Dialog to create a new invite with an expiry and max-uses selection
