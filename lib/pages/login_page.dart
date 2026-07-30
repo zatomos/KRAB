@@ -2,13 +2,17 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/services/home_widget_updater.dart';
 import 'package:krab/themes/global_theme_data.dart';
-import 'package:krab/widgets/auth_card.dart';
+import 'package:krab/widgets/auth/auth_error_box.dart';
+import 'package:krab/widgets/auth/auth_scaffold.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
+import 'package:krab/widgets/rectangle_button.dart';
 import 'package:krab/widgets/rounded_input_field.dart';
+import 'package:krab/widgets/server_label.dart';
 import 'package:krab/widgets/soft_button.dart';
 import 'package:krab/pages/camera_page.dart';
 import 'package:krab/services/instance/instances.dart';
@@ -31,6 +35,9 @@ class LoginPage extends StatefulWidget {
   @override
   LoginPageState createState() => LoginPageState();
 }
+
+/// How long the green ring is held before the screen moves on.
+const Duration _successHold = Duration(seconds: 1);
 
 class LoginPageState extends State<LoginPage> {
   KrabApi get _api => widget.instance.api;
@@ -76,6 +83,7 @@ class LoginPageState extends State<LoginPage> {
 
   bool _isSigningUp = false;
   bool _isLoading = false;
+  bool _success = false;
   bool _showPassword = false;
   bool _showConfirmPassword = false;
   String? _errorMessage;
@@ -135,15 +143,20 @@ class LoginPageState extends State<LoginPage> {
     }
 
     // Auto-confirm path: already logged in.
-    _enterApp();
     showSnackBar(context.l10n.register_user_success);
+    await _enterApp();
   }
 
   /// Leave the login screen, now that there's a session: into the app when this
   /// is the way in, or back to wherever asked for the sign-in.
-  void _enterApp() {
+  Future<void> _enterApp() async {
     unawaited(cacheUserGroupsForWidget());
     TextInput.finishAutofillContext(shouldSave: true);
+
+    setState(() => _success = true);
+    await Future.delayed(_successHold);
+    if (!mounted) return;
+
     if (!widget.enterAppOnSuccess) {
       Navigator.of(context).pop(true);
       return;
@@ -171,7 +184,7 @@ class LoginPageState extends State<LoginPage> {
     final response = await _api.loginUser(email, password);
     if (!mounted) return;
     if (response.success) {
-      _enterApp();
+      await _enterApp();
     } else {
       setState(() {
         _isLoading = false;
@@ -259,131 +272,110 @@ class LoginPageState extends State<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 12.0, vertical: 16.0),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: AuthCard.maxWidth),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _buildLogo(),
-                  const SizedBox(height: 20),
-                  AuthCard(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Text(
-                          _isSigningUp
-                              ? context.l10n.sign_up
-                              : context.l10n.log_in,
-                          style: const TextStyle(
-                              fontSize: 28, fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 20),
-                        AutofillGroup(
-                          child: AnimatedSize(
-                            duration: const Duration(milliseconds: 200),
-                            curve: Curves.easeInOut,
-                            child: Column(
-                              children: [
-                                if (_isSigningUp)
-                                  RoundedInputField(
-                                    controller: _usernameController,
-                                    hintText: context.l10n.username,
-                                    icon: const Icon(Icons.person_rounded),
-                                    autofillHints: const [
-                                      AutofillHints.username
-                                    ],
-                                    maxLength: 19,
-                                  ),
-                                RoundedInputField(
-                                  controller: _emailController,
-                                  hintText: context.l10n.email,
-                                  icon: const Icon(Icons.email_rounded),
-                                  keyboardType: TextInputType.emailAddress,
-                                  autofillHints: const [AutofillHints.email],
-                                ),
-                                _passwordField(
-                                  controller: _passwordController,
-                                  hintText: context.l10n.password,
-                                  icon: Icons.lock_rounded,
-                                  visible: _showPassword,
-                                  onToggle: () => setState(
-                                      () => _showPassword = !_showPassword),
-                                  autofillHint: _isSigningUp
-                                      ? AutofillHints.newPassword
-                                      : AutofillHints.password,
-                                ),
-                                if (_isSigningUp)
-                                  _passwordField(
-                                    controller: _passwordConfirmController,
-                                    hintText: context.l10n.confirm_password,
-                                    icon: Icons.check_rounded,
-                                    visible: _showConfirmPassword,
-                                    onToggle: () => setState(() =>
-                                        _showConfirmPassword =
-                                            !_showConfirmPassword),
-                                    autofillHint: AutofillHints.newPassword,
-                                  ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        if (_errorMessage != null) _buildError(),
-                        if (_showResendConfirmation)
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: TextButton(
-                              onPressed: _resendConfirmation,
-                              child: Text(context.l10n.resend_confirmation),
-                            ),
-                          ),
-                        const SizedBox(height: 12),
-                        _buildButton(),
-                        if (!_isSigningUp && _api.isPasswordResetEnabled)
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: TextButton(
-                              onPressed: _forgotPasswordDialog,
-                              child:
-                                  Text(context.l10n.forgot_password_question),
-                            ),
-                          ),
-                      ],
-                    ),
+    return AuthScaffold(
+      title: _isSigningUp ? context.l10n.sign_up : context.l10n.log_in,
+      success: _success,
+      footer: TextButton(
+        onPressed: () {
+          setState(() {
+            _isSigningUp = !_isSigningUp;
+            _errorMessage = null;
+            _passwordController.clear();
+            if (!_isSigningUp) _usernameController.clear();
+          });
+        },
+        child: Text(
+          _isSigningUp
+              ? context.l10n.already_have_account
+              : context.l10n.dont_have_account,
+        ),
+      ),
+      children: [
+        ServerLabel(widget.instance, fontSize: 13),
+        const SizedBox(height: authGapS),
+        AutofillGroup(
+          child: AnimatedSize(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeInOut,
+            child: Column(
+              children: [
+                if (_isSigningUp)
+                  RoundedInputField(
+                    controller: _usernameController,
+                    hintText: context.l10n.username,
+                    icon: const Icon(Icons.person_rounded),
+                    autofillHints: const [AutofillHints.username],
+                    maxLength: 19,
+                    textInputAction: TextInputAction.next,
                   ),
-                  // Outside the card: switching between logging in and signing
-                  // up is a move to a different form, not a field within one.
-                  const SizedBox(height: 8),
-                  Center(
-                    child: TextButton(
-                      onPressed: () {
-                        setState(() {
-                          _isSigningUp = !_isSigningUp;
-                          _errorMessage = null;
-                          _passwordController.clear();
-                          if (!_isSigningUp) _usernameController.clear();
-                        });
-                      },
-                      child: Text(
-                        _isSigningUp
-                            ? context.l10n.already_have_account
-                            : context.l10n.dont_have_account,
-                      ),
-                    ),
+                RoundedInputField(
+                  controller: _emailController,
+                  hintText: context.l10n.email,
+                  icon: const Icon(Icons.email_rounded),
+                  keyboardType: TextInputType.emailAddress,
+                  autofillHints: const [AutofillHints.email],
+                  textInputAction: TextInputAction.next,
+                ),
+                _passwordField(
+                  controller: _passwordController,
+                  hintText: context.l10n.password,
+                  icon: Icons.lock_rounded,
+                  visible: _showPassword,
+                  onToggle: () =>
+                      setState(() => _showPassword = !_showPassword),
+                  autofillHint: _isSigningUp
+                      ? AutofillHints.newPassword
+                      : AutofillHints.password,
+                  textInputAction: _isSigningUp
+                      ? TextInputAction.next
+                      : TextInputAction.done,
+                  onSubmitted: _isSigningUp ? null : (_) => _logIn(),
+                ),
+                if (_isSigningUp)
+                  _passwordField(
+                    controller: _passwordConfirmController,
+                    hintText: context.l10n.confirm_password,
+                    icon: Icons.check_rounded,
+                    visible: _showConfirmPassword,
+                    onToggle: () => setState(
+                        () => _showConfirmPassword = !_showConfirmPassword),
+                    autofillHint: AutofillHints.newPassword,
+                    textInputAction: TextInputAction.done,
+                    onSubmitted: (_) => _signUp(),
                   ),
-                ],
-              ),
+              ],
             ),
           ),
         ),
-      ),
+        const SizedBox(height: authGapM),
+        AuthErrorBox(
+          _errorMessage,
+          action: _showResendConfirmation
+              ? Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton(
+                    onPressed: _resendConfirmation,
+                    child: Text(context.l10n.resend_confirmation),
+                  ),
+                )
+              : null,
+        ),
+        RectangleButton(
+          label: _isSigningUp ? context.l10n.sign_up : context.l10n.log_in,
+          icon:
+              _isSigningUp ? Symbols.person_add_rounded : Symbols.login_rounded,
+          loading: _isLoading,
+          onPressed: _isSigningUp ? _signUp : _logIn,
+        ),
+        if (!_isSigningUp && _api.isPasswordResetEnabled)
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: _forgotPasswordDialog,
+              child: Text(context.l10n.forgot_password_question),
+            ),
+          ),
+      ],
     );
   }
 
@@ -395,6 +387,8 @@ class LoginPageState extends State<LoginPage> {
     required bool visible,
     required VoidCallback onToggle,
     required String autofillHint,
+    TextInputAction? textInputAction,
+    ValueChanged<String>? onSubmitted,
   }) {
     return RoundedInputField(
       controller: controller,
@@ -402,79 +396,12 @@ class LoginPageState extends State<LoginPage> {
       obscureText: !visible,
       icon: Icon(icon),
       autofillHints: [autofillHint],
+      textInputAction: textInputAction,
+      onSubmitted: onSubmitted,
       suffixIcon: IconButton(
         icon: Icon(
             visible ? Icons.visibility_off_rounded : Icons.visibility_rounded),
         onPressed: onToggle,
-      ),
-    );
-  }
-
-  Widget _buildLogo() {
-    return Column(
-      children: [
-        Image.asset('logo/krab_logo.png', width: 96, height: 96),
-        const Text(
-          'KRAB',
-          style: TextStyle(
-              fontSize: 34, fontWeight: FontWeight.w900, letterSpacing: 2),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildError() {
-    return Container(
-      margin: const EdgeInsets.only(top: 4, bottom: 4),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.red.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.red.withValues(alpha: 0.3)),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.error_outline_rounded,
-              color: Colors.redAccent, size: 18),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              _errorMessage!,
-              style: const TextStyle(color: Colors.redAccent, fontSize: 13),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildButton() {
-    return SizedBox(
-      height: 52,
-      child: ElevatedButton(
-        onPressed: _isLoading ? null : (_isSigningUp ? _signUp : _logIn),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Theme.of(context).colorScheme.primary,
-          disabledBackgroundColor:
-              Theme.of(context).colorScheme.primary.withValues(alpha: 0.6),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ),
-        child: _isLoading
-            ? const SizedBox(
-                width: 22,
-                height: 22,
-                child: CircularProgressIndicator(
-                    strokeWidth: 2.5, color: Colors.white),
-              )
-            : Text(
-                _isSigningUp ? context.l10n.sign_up : context.l10n.log_in,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
       ),
     );
   }

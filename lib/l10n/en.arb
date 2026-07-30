@@ -332,6 +332,14 @@
   "instance_setup_token_hint": "Connection token",
   "instance_setup_paste": "Paste",
   "instance_setup_bad_token": "That doesn't look like a valid connection token.",
+  "instance_setup_already_connected": "You are already connected to {server}.",
+  "@instance_setup_already_connected": {
+    "placeholders": {
+      "server": {
+        "type": "String"
+      }
+    }
+  },
   "instance_setup_use_manual": "Enter server details manually",
   "instance_setup_use_token": "Use a connection token instead",
   "instance_setup_test": "Test connection",

@@ -306,4 +306,36 @@ void main() {
       expect(seen.single.status, AppAuthStatus.signedOut);
     });
   });
+
+  group('byUrl', () {
+    // The connect screen refuses a server that is already in the list
+    test('matches a stored server whatever the trailing slashes', () async {
+      SharedPreferences.setMockInitialValues({
+        InstanceRegistry.prefsKey: jsonEncode([
+          {'id': 'inst_1', 'url': 'https://one.example', 'anon_key': 'k'},
+        ]),
+      });
+      await InstanceRegistry.instance.load();
+
+      final registry = InstanceRegistry.instance;
+      expect(registry.byUrl('https://one.example')?.id, 'inst_1');
+      expect(registry.byUrl('https://one.example/')?.id, 'inst_1');
+      expect(registry.byUrl('  https://one.example///  ')?.id, 'inst_1');
+    });
+
+    test('does not confuse a different server for a stored one', () async {
+      SharedPreferences.setMockInitialValues({
+        InstanceRegistry.prefsKey: jsonEncode([
+          {'id': 'inst_1', 'url': 'https://one.example', 'anon_key': 'k'},
+        ]),
+      });
+      await InstanceRegistry.instance.load();
+
+      final registry = InstanceRegistry.instance;
+      expect(registry.byUrl('https://two.example'), isNull);
+      expect(registry.byUrl('http://one.example'), isNull,
+          reason: 'a different scheme is a different endpoint');
+      expect(registry.byUrl('https://one.example.net'), isNull);
+    });
+  });
 }

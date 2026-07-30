@@ -8,7 +8,7 @@ import 'package:krab/services/instance/instances.dart';
 
 /// A line pinned under a list saying which servers it is not speaking for.
 ///
-/// Held back for _settleDelay so a load that resolves quickly never shows it.
+/// Held back for [settleDelay] so a load that resolves quickly never shows it.
 class InstanceStatusFooter extends StatefulWidget {
   const InstanceStatusFooter({
     super.key,
@@ -16,6 +16,9 @@ class InstanceStatusFooter extends StatefulWidget {
     required this.unavailable,
     required this.failure,
   });
+
+  /// How long there has to be something to say before it is said.
+  static const Duration settleDelay = Duration(milliseconds: 500);
 
   /// Servers that have not answered yet.
   final List<KrabInstance> pending;
@@ -32,8 +35,6 @@ class InstanceStatusFooter extends StatefulWidget {
 }
 
 class _InstanceStatusFooterState extends State<InstanceStatusFooter> {
-  static const Duration _settleDelay = Duration(milliseconds: 500);
-
   Timer? _timer;
   bool _visible = false;
 
@@ -60,7 +61,7 @@ class _InstanceStatusFooterState extends State<InstanceStatusFooter> {
     }
     // Already counting down, or already up
     if (_visible || _timer != null) return;
-    _timer = Timer(_settleDelay, () {
+    _timer = Timer(InstanceStatusFooter.settleDelay, () {
       if (mounted) setState(() => _visible = true);
     });
   }

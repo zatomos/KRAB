@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'package:krab/app_globals.dart';
+import 'package:krab/themes/global_theme_data.dart';
 
 enum SnackTone {
   neutral,
@@ -24,7 +25,7 @@ void showSnackBar(
     final background = switch (tone) {
       SnackTone.neutral =>
         Theme.of(scaffoldMessenger.context).colorScheme.secondary,
-      SnackTone.success => Colors.green,
+      SnackTone.success => GlobalThemeData.success,
       SnackTone.failure => Colors.red,
       SnackTone.warning => Colors.orangeAccent,
     };
