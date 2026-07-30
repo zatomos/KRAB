@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import 'package:skeletonizer/skeletonizer.dart';
 
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/services/feed_events.dart';
@@ -638,20 +639,32 @@ class ImageFeedPageState extends State<ImageFeedPage> {
     return FutureBuilder<ImageData>(
       future: _cache.imageData(image),
       builder: (context, snapshot) {
+        Widget stage(Widget child) => AnimatedSwitcher(
+              duration: const Duration(milliseconds: 220),
+              child: child,
+            );
+
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(10),
-              color: Colors.grey[350],
+          return stage(const Skeletonizer.zone(
+            key: ValueKey('loading'),
+            child: Bone(
+              width: double.infinity,
+              height: double.infinity,
+              borderRadius: BorderRadius.all(Radius.circular(10)),
             ),
-            child: const Center(child: CircularProgressIndicator()),
-          );
+          ));
         }
         if (!snapshot.hasData) {
-          return Container(
-            color: Colors.grey,
-            child: const Icon(Symbols.error_rounded, size: 50),
-          );
+          return stage(Container(
+            key: const ValueKey('failed'),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              color: Theme.of(context).colorScheme.surfaceBright,
+            ),
+            child: Icon(Symbols.error_rounded,
+                size: 50,
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
+          ));
         }
 
         final imageData = snapshot.data!;
@@ -664,7 +677,8 @@ class ImageFeedPageState extends State<ImageFeedPage> {
         final reactions = _reactionCountFor(image);
         final comments = _cache.commentCount(image);
 
-        return GestureDetector(
+        return stage(GestureDetector(
+          key: const ValueKey('loaded'),
           onTap: () {
             _cache.fullResBytes(image);
             _openViewer(images: _images, index: index, data: imageData);
@@ -733,7 +747,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
               ],
             ),
           ),
-        );
+        ));
       },
     );
   }

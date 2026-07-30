@@ -180,21 +180,27 @@ class ReactionsBarState extends State<ReactionsBar> {
         final visible = _reactions.take(maxVisible);
 
         // Right-aligned, grow upward.
-        return Wrap(
-          alignment: WrapAlignment.end,
-          spacing: _kChipSpacing,
-          runSpacing: _kChipSpacing,
-          children: [
-            for (final r in visible)
-              _ReactionChip(
-                reaction: r,
-                onTap: () => _toggle(r.emoji),
-                onLongPress: _openReactors,
-              ),
-            // Tapping the overflow chip opens the full reactors list.
-            if (hidden > 0) _OverflowChip(count: hidden, onTap: _openReactors),
-            _AddReactionChip(onTap: _openPicker),
-          ],
+        return AnimatedSize(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+          alignment: Alignment.bottomRight,
+          child: Wrap(
+            alignment: WrapAlignment.end,
+            spacing: _kChipSpacing,
+            runSpacing: _kChipSpacing,
+            children: [
+              for (final r in visible)
+                _ReactionChip(
+                  reaction: r,
+                  onTap: () => _toggle(r.emoji),
+                  onLongPress: _openReactors,
+                ),
+              // Tapping the overflow chip opens the full reactors list.
+              if (hidden > 0)
+                _OverflowChip(count: hidden, onTap: _openReactors),
+              _AddReactionChip(onTap: _openPicker),
+            ],
+          ),
         );
       },
     );
@@ -256,7 +262,7 @@ class _Chip extends StatelessWidget {
   }
 }
 
-class _ReactionChip extends StatelessWidget {
+class _ReactionChip extends StatefulWidget {
   final ReactionSummary reaction;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
@@ -268,30 +274,55 @@ class _ReactionChip extends StatelessWidget {
   });
 
   @override
+  State<_ReactionChip> createState() => _ReactionChipState();
+}
+
+class _ReactionChipState extends State<_ReactionChip> {
+  static const Duration _popDuration = Duration(milliseconds: 110);
+
+  double _scale = 1;
+
+  /// Swell and settle.
+  Future<void> _pop() async {
+    setState(() => _scale = 1.18);
+    await Future.delayed(_popDuration);
+    if (mounted) setState(() => _scale = 1);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final reaction = widget.reaction;
     final mine = reaction.reactedByMe;
     final accent = Theme.of(context).colorScheme.primary;
-    return _Chip(
-      color: mine
-          ? accent.withValues(alpha: 0.35)
-          : Colors.black.withValues(alpha: 0.4),
-      borderColor: mine ? accent : Colors.white.withValues(alpha: 0.2),
-      onTap: onTap,
-      onLongPress: onLongPress,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(reaction.emoji, style: const TextStyle(fontSize: 15)),
-          const SizedBox(width: 6),
-          Text(
-            '${reaction.count}',
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
+    return AnimatedScale(
+      scale: _scale,
+      duration: _popDuration,
+      curve: Curves.easeOut,
+      child: _Chip(
+        color: mine
+            ? accent.withValues(alpha: 0.35)
+            : Colors.black.withValues(alpha: 0.4),
+        borderColor: mine ? accent : Colors.white.withValues(alpha: 0.2),
+        onTap: () {
+          _pop();
+          widget.onTap();
+        },
+        onLongPress: widget.onLongPress,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(reaction.emoji, style: const TextStyle(fontSize: 15)),
+            const SizedBox(width: 6),
+            Text(
+              '${reaction.count}',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

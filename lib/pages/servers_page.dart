@@ -341,6 +341,7 @@ class _ServerCard extends StatelessWidget {
     final Widget statusIcon;
     if (pending) {
       statusIcon = SizedBox(
+        key: const ValueKey('pending'),
         width: 12,
         height: 12,
         child: CircularProgressIndicator(strokeWidth: 2, color: statusColor),
@@ -358,7 +359,8 @@ class _ServerCard extends StatelessWidget {
         icon = Symbols.check_circle_rounded;
         color = GlobalThemeData.success;
       }
-      statusIcon = Icon(icon, size: 14, fill: 1, color: color);
+      statusIcon = Icon(icon,
+          key: ValueKey(icon.codePoint), size: 14, fill: 1, color: color);
     }
 
     return Card(
@@ -414,7 +416,16 @@ class _ServerCard extends StatelessWidget {
                       children: [
                         Padding(
                           padding: const EdgeInsets.only(top: 2),
-                          child: statusIcon,
+                          child: AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 250),
+                            transitionBuilder: (child, animation) =>
+                                ScaleTransition(
+                              scale: animation,
+                              child: FadeTransition(
+                                  opacity: animation, child: child),
+                            ),
+                            child: statusIcon,
+                          ),
                         ),
                         const SizedBox(width: 4),
                         Expanded(
