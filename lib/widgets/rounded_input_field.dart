@@ -17,6 +17,9 @@ class RoundedInputField extends StatelessWidget {
   final Iterable<String>? autofillHints;
   final TextInputType? keyboardType;
   final bool enabled;
+  final TextInputAction? textInputAction;
+  final ValueChanged<String>? onSubmitted;
+  final bool autofocus;
 
   const RoundedInputField({
     super.key,
@@ -37,6 +40,9 @@ class RoundedInputField extends StatelessWidget {
     this.autofillHints,
     this.keyboardType,
     this.enabled = true,
+    this.textInputAction,
+    this.onSubmitted,
+    this.autofocus = false,
   });
 
   @override
@@ -50,6 +56,9 @@ class RoundedInputField extends StatelessWidget {
         obscureText: obscureText,
         autofillHints: autofillHints,
         keyboardType: keyboardType,
+        textInputAction: textInputAction,
+        onSubmitted: onSubmitted,
+        autofocus: autofocus,
         textCapitalization: capitalizeSentences
             ? TextCapitalization.sentences
             : TextCapitalization.none,
@@ -63,7 +72,9 @@ class RoundedInputField extends StatelessWidget {
                 int? maxLength}) =>
             null,
         decoration: InputDecoration(
-          icon: icon,
+          prefixIcon: icon,
+          prefixIconConstraints:
+              const BoxConstraints(minWidth: 46, minHeight: 24),
           labelText: hintText,
           errorText: errorText,
           suffixIcon: suffixIcon,

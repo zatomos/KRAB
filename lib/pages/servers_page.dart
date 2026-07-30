@@ -10,6 +10,7 @@ import 'package:krab/pages/account_page.dart';
 import 'package:krab/pages/instance_setup_page.dart';
 import 'package:krab/pages/login_page.dart';
 import 'package:krab/services/home_widget_updater.dart';
+import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/services/instance/instances.dart';
 import 'package:krab/services/connection_token.dart';
 import 'package:krab/services/instance/instance_registry.dart';
@@ -351,7 +352,7 @@ class _ServerCard extends StatelessWidget {
         icon = Symbols.warning_rounded;
       } else {
         icon = Symbols.check_circle_rounded;
-        color = Colors.green;
+        color = GlobalThemeData.success;
       }
       statusIcon = Icon(icon, size: 14, fill: 1, color: color);
     }

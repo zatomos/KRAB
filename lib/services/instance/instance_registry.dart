@@ -64,6 +64,12 @@ class InstanceRegistry {
   /// The one instance, when there is exactly one.
   KrabInstance? get sole => _instances.length == 1 ? _instances.first : null;
 
+  /// The instance already connected to this URL, if there is one.
+  KrabInstance? byUrl(String url) {
+    final normalized = _normalizeUrl(url);
+    return _instances.where((i) => i.url == normalized).firstOrNull;
+  }
+
   KrabInstance? byId(String? id) {
     if (id == null) return null;
     for (final instance in _instances) {

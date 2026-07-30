@@ -332,6 +332,14 @@
   "instance_setup_token_hint": "Jeton de connexion",
   "instance_setup_paste": "Coller",
   "instance_setup_bad_token": "Ce jeton de connexion ne semble pas valide.",
+  "instance_setup_already_connected": "Vous êtes déjà connecté à {server}.",
+  "@instance_setup_already_connected": {
+    "placeholders": {
+      "server": {
+        "type": "String"
+      }
+    }
+  },
   "instance_setup_use_manual": "Saisir les détails du serveur manuellement",
   "instance_setup_use_token": "Utiliser un jeton de connexion",
   "instance_setup_test": "Tester la connexion",
