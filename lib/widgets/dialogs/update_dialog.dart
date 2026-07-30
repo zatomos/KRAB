@@ -165,10 +165,7 @@ Future<void> showUpdateDialog({
                       if (success) {
                         if (context.mounted) {
                           Navigator.pop(context);
-                          showSnackBar(
-                            context.l10n.installing_update,
-                            tone: SnackTone.warning,
-                          );
+                          showSnackBar(context.l10n.installing_update);
                         }
                       } else {
                         setDialogState(() => isDownloading = false);

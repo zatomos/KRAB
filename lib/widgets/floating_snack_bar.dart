@@ -35,7 +35,7 @@ void showSnackBar(
     scaffoldMessenger.hideCurrentSnackBar();
     final controller = scaffoldMessenger.showSnackBar(
       SnackBar(
-        content: Text(message),
+        content: Text(message, style: const TextStyle(color: Colors.white)),
         elevation: 4,
         behavior: SnackBarBehavior.floating,
         margin: const EdgeInsets.all(16),

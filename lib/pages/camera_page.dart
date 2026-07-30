@@ -436,8 +436,7 @@ class CameraPageState extends State<CameraPage> {
                 : () => _undoSend(image, removedMsg, failedMsg),
           );
         case SendOutcome.queued:
-          // The image is safe in the outbox, so this reads as a success.
-          showSnackBar(l10n.photo_queued_offline, tone: SnackTone.success);
+          showSnackBar(l10n.photo_queued_offline, tone: SnackTone.warning);
         case SendOutcome.failed:
           await showDialog(
             context: context,
