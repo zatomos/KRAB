@@ -6,6 +6,7 @@ import 'package:krab/pages/image_feed_page.dart';
 import 'package:krab/models/group.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/widgets/avatars/group_avatar.dart';
+import 'package:krab/widgets/member_count_label.dart';
 import 'package:krab/widgets/server_label.dart';
 import 'package:krab/user_preferences.dart';
 import 'package:krab/services/time_formatting.dart';
@@ -92,14 +93,11 @@ class _GroupCardState extends State<GroupCard> {
     return response.data!;
   }
 
-  Widget _memberCountLabel(BuildContext context, int count) {
-    final noun =
-        count == 1 ? context.l10n.member_singular : context.l10n.members_plural;
-    return Text(
-      "$count $noun",
-      style: const TextStyle(fontSize: 14, color: Colors.grey),
-    );
-  }
+  /// The members line.
+  Widget _memberCountLabel(BuildContext context, int count) => MemberCountLabel(
+        count,
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -168,7 +166,8 @@ class _GroupCardState extends State<GroupCard> {
                           }
                         },
                       ),
-                if (widget.showOrigin) ServerLabel(_instance),
+                if (widget.showOrigin)
+                  ServerLabel(_instance, color: Colors.grey),
               ],
             ),
 
