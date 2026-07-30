@@ -364,6 +364,7 @@
   "servers_disconnect_description": "Cela vous déconnecte et oublie ce serveur. Votre compte et vos photos sur le serveur ne sont pas touchés.",
   "servers_sign_out_title": "Se déconnecter de {server} ?",
   "servers_unreachable": "Connexion impossible",
+  "servers_loading": "Chargement...",
   "servers_still_loading": "Chargement depuis {servers}...",
   "@servers_still_loading": {
     "placeholders": {
@@ -378,7 +379,7 @@
   "servers_pick_one": "Choisissez un serveur",
   "servers_share": "Partager",
   "servers_token_copied": "Jeton de connexion copié. Toute personne à qui vous l'envoyez pourra se connecter à ce serveur.",
-  "servers_subtitle_ordered": "Les photos de tous vos serveurs, réunies. Glissez pour les classer.",
+  "servers_subtitle_ordered": "KRAB réunit les photos de tous les serveurs auxquels vous êtes connecté.\n Le premier serveur disponible est utilisé par défaut dans le reste de l'application.",
   "servers_share_subject": "Rejoignez-moi sur {server}",
   "server_label_count": "Serveurs · {count}"
 }

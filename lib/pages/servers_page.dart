@@ -90,13 +90,20 @@ class _ServersPageState extends State<ServersPage> {
     }));
   }
 
-  Future<void> _reorder(int oldIndex, int newIndex) async {
-    await InstanceRegistry.instance.reorder(oldIndex, newIndex);
-    if (!mounted) return;
+  /// The server that currently speaks for the user; the highest ranked one that
+  /// is signed in and answering.
+  String? get _primaryId {
+    for (final instance in InstanceRegistry.instance.all) {
+      if (_pending.contains(instance.id)) return null;
+      if (_users.containsKey(instance.id)) return instance.id;
+    }
+    return null;
+  }
+
+  void _reorder(int oldIndex, int newIndex) {
+    final persisted = InstanceRegistry.instance.reorder(oldIndex, newIndex);
     setState(() {});
-    // The ranking decides which account the camera shows and which server a
-    // picker offers first, so the widget's cached groups follow it.
-    unawaited(cacheUserGroupsForWidget());
+    unawaited(persisted.then((_) => cacheUserGroupsForWidget()));
   }
 
   Future<void> _addServer() async {
@@ -106,7 +113,6 @@ class _ServersPageState extends State<ServersPage> {
     if (!mounted) return;
     setState(() {});
     await _loadUsers();
-    // A new server means new groups the widget's filter should know about.
     unawaited(cacheUserGroupsForWidget());
   }
 
@@ -192,13 +198,14 @@ class _ServersPageState extends State<ServersPage> {
   @override
   Widget build(BuildContext context) {
     final instances = InstanceRegistry.instance.all;
+    final primaryId = instances.length > 1 ? _primaryId : null;
 
     return Scaffold(
       appBar: AppBar(title: Text(context.l10n.servers_title)),
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
             child: Text(
               instances.length > 1
                   ? context.l10n.servers_subtitle_ordered
@@ -226,6 +233,7 @@ class _ServersPageState extends State<ServersPage> {
                   key: ValueKey(instance.id),
                   index: index,
                   reorderable: instances.length > 1,
+                  primary: instance.id == primaryId,
                   instance: instance,
                   user: _users[instance.id],
                   unreachable: _unreachable.contains(instance.id),
@@ -266,6 +274,7 @@ class _ServerCard extends StatelessWidget {
     super.key,
     required this.index,
     required this.reorderable,
+    required this.primary,
     required this.instance,
     required this.user,
     required this.unreachable,
@@ -279,6 +288,9 @@ class _ServerCard extends StatelessWidget {
 
   final int index;
   final bool reorderable;
+
+  /// The server being used as primary right now.
+  final bool primary;
   final KrabInstance instance;
   final krab_user.User? user;
   final bool unreachable;
@@ -296,10 +308,11 @@ class _ServerCard extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     final signedIn = instance.auth.isLoggedIn;
     final account = user;
+    final offerSignIn = !unreachable && !pending;
 
     final String status;
     if (pending) {
-      status = '...';
+      status = context.l10n.servers_loading;
     } else if (unreachable) {
       status = context.l10n.servers_unreachable;
     } else if (!signedIn) {
@@ -310,22 +323,37 @@ class _ServerCard extends StatelessWidget {
       status = '…';
     }
 
-    // Signed out and unreachable are both worth noticing.
-    final statusColor = unreachable && !pending
-        ? colors.error
-        : (signedIn ? colors.onSurfaceVariant : colors.tertiary);
-
-    final IconData statusIcon;
+    final Color statusColor;
     if (pending) {
-      statusIcon = Symbols.more_horiz_rounded;
+      statusColor = colors.onSurfaceVariant;
     } else if (unreachable) {
-      statusIcon = Symbols.warning_rounded;
-    } else if (!signedIn) {
-      statusIcon = Symbols.error_rounded;
-    } else if (account == null) {
-      statusIcon = Symbols.warning_rounded;
+      statusColor = colors.error;
     } else {
-      statusIcon = Symbols.check_circle_rounded;
+      statusColor = signedIn ? colors.onSurfaceVariant : colors.tertiary;
+    }
+
+    // Still asking: a spinner, since no verdict is honest yet.
+    final Widget statusIcon;
+    if (pending) {
+      statusIcon = SizedBox(
+        width: 12,
+        height: 12,
+        child: CircularProgressIndicator(strokeWidth: 2, color: statusColor),
+      );
+    } else {
+      final IconData icon;
+      Color color = statusColor;
+      if (unreachable) {
+        icon = Symbols.warning_rounded;
+      } else if (!signedIn) {
+        icon = Symbols.error_rounded;
+      } else if (account == null) {
+        icon = Symbols.warning_rounded;
+      } else {
+        icon = Symbols.check_circle_rounded;
+        color = Colors.green;
+      }
+      statusIcon = Icon(icon, size: 14, fill: 1, color: color);
     }
 
     return Card(
@@ -333,10 +361,23 @@ class _ServerCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 12),
       elevation: 0,
       clipBehavior: Clip.antiAlias,
+      shape: primary
+          ? RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(
+                  color: colors.primary.withValues(alpha: 0.6), width: 1.5),
+            )
+          : null,
       child: InkWell(
-        // Signing in is what a signed-out server needs; there is no account to
-        // open yet.
-        onTap: signedIn ? onOpenAccount : onSignIn,
+        onTap: signedIn
+            ? onOpenAccount
+            : offerSignIn
+                ? onSignIn
+                : null,
+        onLongPress: () => showSnackBar(
+          instance.label,
+          duration: const Duration(seconds: 3),
+        ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
           child: Row(
@@ -368,12 +409,7 @@ class _ServerCard extends StatelessWidget {
                       children: [
                         Padding(
                           padding: const EdgeInsets.only(top: 2),
-                          child: Icon(
-                            statusIcon,
-                            size: 14,
-                            fill: 1,
-                            color: statusColor,
-                          ),
+                          child: statusIcon,
                         ),
                         const SizedBox(width: 4),
                         Expanded(
@@ -389,7 +425,7 @@ class _ServerCard extends StatelessWidget {
                   ],
                 ),
               ),
-              _menu(context, signedIn, colors),
+              _menu(context, signedIn, offerSignIn, colors),
             ],
           ),
         ),
@@ -416,7 +452,8 @@ class _ServerCard extends StatelessWidget {
     );
   }
 
-  Widget _menu(BuildContext context, bool signedIn, ColorScheme colors) {
+  Widget _menu(BuildContext context, bool signedIn, bool offerSignIn,
+      ColorScheme colors) {
     return PopupMenuButton<_ServerAction>(
       icon: Icon(Icons.more_vert_rounded, color: colors.onSurface),
       color: colors.surfaceBright,
@@ -435,12 +472,11 @@ class _ServerCard extends StatelessWidget {
       },
       itemBuilder: (context) => [
         _item(_ServerAction.share, Symbols.share_rounded,
-            context.l10n.servers_share,
-            color: Colors.white),
+            context.l10n.servers_share),
         if (signedIn)
           _item(_ServerAction.signOut, Symbols.logout_rounded,
               context.l10n.servers_sign_out)
-        else
+        else if (offerSignIn)
           _item(_ServerAction.signIn, Symbols.login_rounded,
               context.l10n.servers_sign_in),
         _item(_ServerAction.disconnect, Symbols.link_off_rounded,
