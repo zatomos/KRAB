@@ -41,10 +41,8 @@ class RectangleButton extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     final enabled = onPressed != null && !loading;
     final outlined = style == RectangleButtonStyle.outlined;
-
-    // Outlined buttons draw their label in the theme's text colour; filled ones
-    // sit on a colour of their own and keep the given one.
-    final baseForeground = outlined ? colors.onSurface : textColor;
+    final baseForeground =
+        outlined ? (backgroundColor ?? colors.onSurface) : textColor;
     final foreground =
         enabled ? baseForeground : baseForeground.withValues(alpha: 0.45);
 
@@ -86,7 +84,7 @@ class RectangleButton extends StatelessWidget {
           minimumSize: minimumSize,
           shape: shape,
           side: BorderSide(
-            color: colors.onSurface.withValues(alpha: enabled ? 0.5 : 0.2),
+            color: baseForeground.withValues(alpha: enabled ? 0.5 : 0.2),
             width: 1.5,
           ),
         ),
