@@ -101,4 +101,114 @@ void main() {
     };
     expect(ids, hasLength(3));
   });
+
+  group('image copies on several servers', () {
+    const shared = '99999999-9999-9999-9999-999999999999';
+
+    test('every server\'s copy lands on one notification', () {
+      final fromOne = imageNotificationId(image,
+          batchKey: imageBatchKey(['a', 'b']), shareId: shared);
+      final fromTwo = imageNotificationId(other,
+          batchKey: imageBatchKey(['c']), shareId: shared);
+
+      expect(fromOne, fromTwo);
+    });
+
+    test('an empty share id counts as none, not as one everything shares', () {
+      expect(
+        imageNotificationId(image, batchKey: imageBatchKey(['a']), shareId: ''),
+        imageNotificationId(image, batchKey: imageBatchKey(['a'])),
+      );
+      expect(
+        imageNotificationId(image, shareId: ''),
+        isNot(imageNotificationId(other, shareId: '')),
+      );
+    });
+
+    test('two different photos keep their own notifications', () {
+      expect(imageNotificationId(image, shareId: shared),
+          isNot(imageNotificationId(other, shareId: 'other-share')));
+    });
+  });
+
+  group('mergeGroupsDisplay', () {
+    test('keeps the groups the notification on screen already named', () {
+      expect(mergeGroupsDisplay('Family', 'Work'), 'Family, Work');
+    });
+
+    test('does not repeat a group both servers know about', () {
+      expect(mergeGroupsDisplay('Family, Work', 'Work'), 'Family, Work');
+    });
+
+    test('survives an empty side', () {
+      expect(mergeGroupsDisplay('', 'Work'), 'Work');
+      expect(mergeGroupsDisplay('Family', ''), 'Family');
+    });
+  });
+
+  group('notificationCoversImage', () {
+    const shared = '99999999-9999-9999-9999-999999999999';
+
+    Map<String, dynamic> merged() => {
+          'type': 'new_image',
+          'image_id': other,
+          'image_ids': '$image,$other',
+          'share_id': shared,
+        };
+
+    test('dismisses on the copy the notification names', () {
+      expect(notificationCoversImage(merged(), other), isTrue);
+    });
+
+    test('dismisses on a copy from the other server it merged', () {
+      expect(notificationCoversImage(merged(), image), isTrue);
+    });
+
+    test('dismisses on the share id when the image is gone everywhere', () {
+      expect(
+        notificationCoversImage(merged(), 'unknown-copy', shareId: shared),
+        isTrue,
+      );
+    });
+
+    test('leaves another photo alone', () {
+      expect(
+        notificationCoversImage(
+            merged(), '00000000-0000-0000-0000-000000000000',
+            shareId: 'another-share'),
+        isFalse,
+      );
+    });
+
+    test('an empty share id matches nothing on its own', () {
+      expect(
+        notificationCoversImage(
+            {'image_id': other, 'share_id': ''}, 'unrelated',
+            shareId: ''),
+        isFalse,
+      );
+    });
+
+    test('still matches a notification from a build without the copy list', () {
+      expect(
+        notificationCoversImage(
+            {'type': 'new_image', 'image_id': image}, image),
+        isTrue,
+      );
+    });
+  });
+
+  group('mergeCoveredImageIds', () {
+    test('keeps the copy already recorded', () {
+      expect(mergeCoveredImageIds(image, other), '$image,$other');
+    });
+
+    test('does not record a copy twice', () {
+      expect(mergeCoveredImageIds('$image,$other', image), '$image,$other');
+    });
+
+    test('survives an empty side', () {
+      expect(mergeCoveredImageIds('', image), image);
+    });
+  });
 }

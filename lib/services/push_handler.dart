@@ -149,7 +149,13 @@ Future<void> handlePushPayload(
     } else if (type == 'image_deleted') {
       // The image is gone, clear any standing notification for it and refresh
       // the widget so it drops out
-      await cancelImageNotification(data['image_id'] ?? '');
+      // The share id names the photo's other copies, whose notification may be
+      // the one on screen. Absent when the image is gone from the server
+      // entirely, which is what the copies recorded on the notification cover.
+      await cancelImageNotification(
+        data['image_id'] ?? '',
+        shareId: data['share_id'],
+      );
       await updateHomeWidget();
     } else if (type == 'new_reaction' || type == 'group_reaction') {
       // Non-null: the guard above returned for every other value of type.
