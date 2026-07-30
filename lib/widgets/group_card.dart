@@ -46,6 +46,16 @@ class _GroupCardState extends State<GroupCard> {
   Future<int>? _memberCountFuture;
   bool isFavorite = false;
 
+  /// Star animation
+  static const Duration _popDuration = Duration(milliseconds: 120);
+  double _starScale = 1;
+
+  Future<void> _popStar() async {
+    setState(() => _starScale = 1.35);
+    await Future.delayed(_popDuration);
+    if (mounted) setState(() => _starScale = 1);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -177,17 +187,28 @@ class _GroupCardState extends State<GroupCard> {
               child: IconButton(
                 constraints: const BoxConstraints(),
                 padding: EdgeInsets.zero,
-                icon: Icon(
-                  Symbols.star_rounded,
-                  color: isFavorite ? Colors.amber : Colors.grey,
-                  fill: isFavorite ? 1 : 0,
-                  size: 28,
+                icon: AnimatedScale(
+                  scale: _starScale,
+                  duration: _popDuration,
+                  curve: Curves.easeOut,
+                  child: TweenAnimationBuilder<double>(
+                    tween: Tween(end: isFavorite ? 1 : 0),
+                    duration: _popDuration * 2,
+                    curve: Curves.easeOut,
+                    builder: (context, fill, _) => Icon(
+                      Symbols.star_rounded,
+                      color: Color.lerp(Colors.grey, Colors.amber, fill),
+                      fill: fill,
+                      size: 28,
+                    ),
+                  ),
                 ),
                 onLongPress: () {
                   showSnackBar(context.l10n.starred_groups_long_press);
                 },
                 onPressed: () async {
                   final l10n = context.l10n;
+                  _popStar();
                   if (isFavorite) {
                     await UserPreferences.removeFavoriteGroup(
                         _group.instanceId, _group.id);

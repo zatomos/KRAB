@@ -65,6 +65,12 @@ class CameraPageState extends State<CameraPage> {
   // Tap focus UI
   Offset? _focusPoint;
 
+  // User presses the shutter button
+  bool _shutterHeld = false;
+
+  // Briefly whitens the preview when a frame is taken.
+  bool _captureFlash = false;
+
   // User
   krab_user.User? currentUser;
 
@@ -347,7 +353,15 @@ class CameraPageState extends State<CameraPage> {
     final errorMessage = context.l10n.error_capturing_image;
     try {
       if (_captureInProgress) return;
-      if (mounted) setState(() => _captureInProgress = true);
+      if (mounted) {
+        setState(() {
+          _captureInProgress = true;
+          _captureFlash = true;
+        });
+        Future.delayed(const Duration(milliseconds: 90), () {
+          if (mounted) setState(() => _captureFlash = false);
+        });
+      }
 
       final image = await _controller!.takePicture();
       await _showSendImageDialog(File(image.path));
@@ -482,22 +496,43 @@ class CameraPageState extends State<CameraPage> {
           );
   }
 
-  Widget _shutterButton() => IconButton(
-        onPressed: _takePicture,
-        icon: Icon(
-          Icons.circle_outlined,
-          color: _captureInProgress
-              ? Theme.of(context).colorScheme.primary
-              : Colors.white,
-          size: 70,
+  Widget _shutterButton() => GestureDetector(
+        onTapDown: (_) => setState(() => _shutterHeld = true),
+        onTapCancel: () => setState(() => _shutterHeld = false),
+        onTapUp: (_) {
+          setState(() => _shutterHeld = false);
+          _takePicture();
+        },
+        child: AnimatedScale(
+          scale: _shutterHeld ? 0.88 : 1,
+          duration: const Duration(milliseconds: 90),
+          curve: Curves.easeOut,
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: Icon(
+              Icons.circle_outlined,
+              color: _captureInProgress
+                  ? Theme.of(context).colorScheme.primary
+                  : Colors.white,
+              size: 70,
+            ),
+          ),
         ),
       );
 
   Widget _flashButton() => IconButton(
         onPressed: _switchFlashLight,
-        icon: Icon(
-          _isFlashOn ? Symbols.flash_on_rounded : Symbols.flash_off_rounded,
-          color: Colors.white,
+        icon: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 200),
+          transitionBuilder: (child, animation) => ScaleTransition(
+            scale: animation,
+            child: FadeTransition(opacity: animation, child: child),
+          ),
+          child: Icon(
+            _isFlashOn ? Symbols.flash_on_rounded : Symbols.flash_off_rounded,
+            key: ValueKey(_isFlashOn),
+            color: Colors.white,
+          ),
         ),
       );
 
@@ -542,6 +577,21 @@ class CameraPageState extends State<CameraPage> {
               height: size.height,
               color: Colors.white12,
               child: CameraPreview(_controller!),
+            ),
+          ),
+          Positioned.fill(
+            child: IgnorePointer(
+              child: AnimatedOpacity(
+                opacity: _captureFlash ? 0.75 : 0,
+                duration: Duration(milliseconds: _captureFlash ? 40 : 220),
+                curve: Curves.easeOut,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                ),
+              ),
             ),
           ),
           if (_focusPoint != null)

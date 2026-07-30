@@ -105,21 +105,31 @@ class _InstanceStatusFooterState extends State<InstanceStatusFooter> {
       return const SizedBox.shrink();
     }
 
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-        child: Row(
-          children: [
-            leading,
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                message,
-                style: TextStyle(color: color, fontSize: 13),
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOut,
+      builder: (context, t, child) => Opacity(
+        opacity: t,
+        child:
+            Transform.translate(offset: Offset(0, (1 - t) * 8), child: child),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+          child: Row(
+            children: [
+              leading,
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  message,
+                  style: TextStyle(color: color, fontSize: 13),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
