@@ -375,23 +375,24 @@
   "servers_sign_in": "Sign in",
   "servers_sign_out": "Sign out",
   "servers_disconnect": "Disconnect",
-  "servers_disconnect_title": "Disconnect from {server}?",
-  "@servers_disconnect_title": {
+  "servers_disconnect_title": "Disconnect from this server?",
+  "servers_disconnect_description": "Are you sure you want to disconnect from {server}? This signs you out and removes it from your servers list. Your account and photos on the server itself are untouched.",
+  "@servers_disconnect_description": {
     "placeholders": {
       "server": {
         "type": "String"
       }
     }
   },
-  "servers_disconnect_description": "This signs you out and forgets this server. Your account and photos on the server itself are untouched.",
-  "servers_sign_out_title": "Sign out of {server}?",
-  "@servers_sign_out_title": {
+  "servers_sign_out_description": "Are you sure you want to sign out of {server}?",
+  "@servers_sign_out_description": {
     "placeholders": {
       "server": {
         "type": "String"
       }
     }
   },
+  "servers_sign_out_title": "Sign out of this server?",
   "servers_unreachable": "Couldn't connect",
   "servers_loading": "Loading...",
   "servers_still_loading": "Still loading from {servers}...",
