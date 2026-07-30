@@ -43,6 +43,12 @@ class InstanceRegistry {
   final StreamController<String> _removals =
       StreamController<String>.broadcast();
 
+  final StreamController<void> _orderChanges =
+      StreamController<void>.broadcast();
+
+  /// Announced when the ranking changes.
+  Stream<void> get orderChanged => _orderChanges.stream;
+
   /// Ids of instances that have been disconnected.
   ///
   /// Push registration listens: which instance owns the default FirebaseApp is
@@ -205,6 +211,8 @@ class InstanceRegistry {
 
     final moved = _instances.removeAt(oldIndex);
     _instances.insert(target, moved);
+
+    if (!_orderChanges.isClosed) _orderChanges.add(null);
 
     final prefs = await SharedPreferences.getInstance();
     await _persist(prefs);
