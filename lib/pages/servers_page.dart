@@ -177,10 +177,11 @@ class _ServersPageState extends State<ServersPage> {
   /// screen understands.
   Future<void> _shareServer(KrabInstance instance) async {
     final token = ConnectionToken.encode(instance.url, instance.anonKey);
+    final l10n = context.l10n;
     try {
       await SharePlus.instance.share(ShareParams(
-        text: token,
-        subject: context.l10n.servers_share_subject(instance.label),
+        text: '${l10n.servers_share_subject}\n\n$token',
+        subject: l10n.servers_share_subject,
       ));
     } catch (e) {
       debugPrint('Servers: share sheet failed: $e');
@@ -475,8 +476,7 @@ class _ServerCard extends StatelessWidget {
         }
       },
       itemBuilder: (context) => [
-        _item(_ServerAction.share, Symbols.share_rounded,
-            context.l10n.servers_share),
+        _item(_ServerAction.share, Symbols.share_rounded, context.l10n.share),
         if (signedIn)
           _item(_ServerAction.signOut, Symbols.logout_rounded,
               context.l10n.servers_sign_out)

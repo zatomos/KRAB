@@ -15,6 +15,7 @@ import 'package:krab/widgets/dialogs/edit_avatar_dialog.dart';
 import 'package:krab/widgets/dialogs/rename_dialog.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/widgets/rectangle_button.dart';
+import 'package:krab/widgets/settings_section.dart';
 import 'package:krab/models/group.dart';
 import 'package:krab/models/group_member.dart';
 import 'package:krab/pages/group_invites_page.dart';
@@ -41,11 +42,6 @@ const _collapsedMemberCount = 10;
 
 /// How long the member list takes to expand or collapse.
 const Duration _expandDuration = Duration(milliseconds: 200);
-
-/// The page's spacing scale.
-const double _gapS = 8;
-const double _gapM = 16;
-const double _gapL = 24;
 
 class GroupSettingsPageState extends State<GroupSettingsPage> {
   late Group _group;
@@ -241,6 +237,22 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
     return false;
   }
 
+  /// The role each option names
+  ({IconData icon, Color color}) _invitePermissionBadge(String permission) {
+    switch (permission) {
+      case 'owner':
+        return (icon: Symbols.crown_rounded, color: Colors.amber);
+      case 'everyone':
+        return (
+          icon: Symbols.group_rounded,
+          color: Theme.of(context).colorScheme.onSurfaceVariant
+        );
+      case 'admin':
+      default:
+        return (icon: Symbols.shield_person_rounded, color: Colors.blue);
+    }
+  }
+
   String _invitePermissionLabel(BuildContext context, String permission) {
     switch (permission) {
       case 'owner':
@@ -272,7 +284,9 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
           title: Text(context.l10n.who_can_invite),
           children: ['owner', 'admin', 'everyone'].map((value) {
             final isSelected = value == current;
+            final badge = _invitePermissionBadge(value);
             return ListTile(
+              leading: Icon(badge.icon, color: badge.color, fill: 1),
               title: Text(_invitePermissionLabel(context, value)),
               trailing: isSelected
                   ? Icon(Symbols.check_rounded,
@@ -326,19 +340,17 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 _header(context, isManager),
-                const _SectionDivider(),
+                const SectionDivider(),
                 _membersSection(
                     context, hasData, members, visibleMembers, currentRole),
                 if (canCreateInvite || isManager) ...[
-                  const _SectionDivider(),
+                  const SectionDivider(),
                   _invitesSection(context, canCreateInvite, isManager,
                       currentRole, permission),
                 ],
-                const _SectionDivider(),
+                const SectionDivider(),
                 _notificationsSection(context),
-                // No rule before the last block: leaving and deleting are not
-                // another section of settings, and the gap says so.
-                const SizedBox(height: _gapL),
+                const SizedBox(height: settingsGapL),
                 _dangerSection(context, currentRole),
               ],
             ),
@@ -353,14 +365,10 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
     final avatar = GroupAvatar(_group, radius: 60);
     return Column(
       children: [
-        // Tapping the picture is the first thing anyone tries, so managers get
-        // it as well as the app bar menu.
         if (isManager)
           Stack(
             alignment: Alignment.bottomRight,
             children: [
-              // No ink: an InkResponse here splashes across whatever surface it
-              // finds, and the camera badge is affordance enough.
               GestureDetector(
                 onTap: openEditIconDialog,
                 child: avatar,
@@ -378,21 +386,17 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
           )
         else
           avatar,
-        const SizedBox(height: _gapM),
+        const SizedBox(height: settingsGapM),
         _name(context, isManager),
         if (ServerLabel.relevant) ...[
-          const SizedBox(height: _gapS),
+          const SizedBox(height: settingsGapS),
           ServerLabel(_instance, fontSize: 13),
         ],
       ],
     );
   }
 
-  /// The group's name, renamed by tapping it when you are allowed to.
-  ///
-  /// Laid out the way the account page shows a username: the name stays centred
-  /// and the arrow hangs off its end, rather than the pair being centred and the
-  /// name drifting left.
+  /// The group's name
   Widget _name(BuildContext context, bool isManager) {
     const style = TextStyle(fontSize: 24, fontWeight: FontWeight.bold);
     final name = Text(_group.name, textAlign: TextAlign.center, style: style);
@@ -434,7 +438,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
     List<GroupMember> visibleMembers,
     String currentRole,
   ) {
-    return _Section(
+    return SettingsSection(
       title: context.l10n.members,
       info: IconButton(
         icon: Icon(
@@ -512,22 +516,20 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
     String currentRole,
     String permission,
   ) {
-    return _Section(
+    return SettingsSection(
       title: context.l10n.group_invites,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // The only one that acts rather than opening something, so the only
-          // one that is a button. A button needs air on both sides; the tiles
-          // under it carry their own.
           if (canCreateInvite) ...[
-            const SizedBox(height: _gapS),
+            const SizedBox(height: settingsGapS),
             RectangleButton(
               onPressed: _createInvite,
               label: context.l10n.create_invite,
               icon: Symbols.add_link_rounded,
+              style: RectangleButtonStyle.outlined,
             ),
-            const SizedBox(height: _gapS),
+            const SizedBox(height: settingsGapS),
           ],
           if (isManager)
             ListTile(
@@ -557,7 +559,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
   }
 
   Widget _notificationsSection(BuildContext context) {
-    return _Section(
+    return SettingsSection(
       title: context.l10n.group_notifications,
       child: SwitchListTile(
         value: _muted,
@@ -572,7 +574,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
     );
   }
 
-  /// Leaving is reversible and deleting is not, so only one of them is filled.
+  /// Leave / Delete buttons
   Widget _dangerSection(BuildContext context, String currentRole) {
     final error = Theme.of(context).colorScheme.error;
     return Column(
@@ -586,7 +588,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
           backgroundColor: error,
         ),
         if (currentRole == 'owner') ...[
-          const SizedBox(height: _gapS),
+          const SizedBox(height: settingsGapS),
           RectangleButton(
             onPressed: _deleteGroup,
             label: context.l10n.delete_group,
@@ -595,86 +597,6 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
           ),
         ],
       ],
-    );
-  }
-}
-
-/// Separates two sections. Quiet on purpose: the cards already say where one
-/// ends, so this only has to reinforce it.
-class _SectionDivider extends StatelessWidget {
-  const _SectionDivider();
-
-  @override
-  Widget build(BuildContext context) => Divider(
-        height: _gapL + _gapS,
-        thickness: 1,
-        color: Theme.of(context)
-            .colorScheme
-            .onSurfaceVariant
-            .withValues(alpha: 0.2),
-      );
-}
-
-/// One block of settings, on a surface of its own.
-///
-/// The page is a run of unrelated concerns; giving each a shape says where one
-/// ends better than a rule across the page does.
-class _Section extends StatelessWidget {
-  const _Section({
-    required this.title,
-    this.info,
-    this.action,
-    required this.child,
-  });
-
-  final String title;
-
-  /// Sits with the heading, for something that explains the section.
-  final Widget? info;
-
-  /// Right-aligned, for something that acts on it.
-  final Widget? action;
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      elevation: 0,
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.all(_gapS + 4),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                // Expanded, not Flexible beside a Spacer: a Spacer would take an
-                // equal share of the free space and crop titles that fit.
-                Expanded(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Flexible(
-                        child: Text(
-                          title,
-                          style: const TextStyle(
-                              fontSize: 18, fontWeight: FontWeight.bold),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      if (info != null) info!,
-                    ],
-                  ),
-                ),
-                if (action != null) action!,
-              ],
-            ),
-            const SizedBox(height: _gapS),
-            child,
-          ],
-        ),
-      ),
     );
   }
 }

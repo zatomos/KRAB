@@ -28,6 +28,7 @@
   "dont_have_account": "Don't have an account? Sign Up",
   "fill_in_all_fields": "Please fill in all fields.",
   "account_page_title": "My Account",
+  "profile_section": "Profile",
   "settings": "Settings",
   "auto_save_imgs": "Automatically save images",
   "auto_save_imgs_description": "Images will be saved to your gallery when received.",
@@ -262,6 +263,8 @@
   "invite_permission_updated": "Invite permission updated.",
   "invite_created": "Invite created",
   "invite_share_hint": "Share this invite so others can join the group.",
+  "invite_share_subject": "Join my group on KRAB!",
+  "share": "Share",
   "invite_copied": "Invite copied to clipboard.",
   "delete_invite": "Delete Invite",
   "delete_invite_confirmation": "Delete this invite? Anyone still holding it will no longer be able to join with it.",
@@ -271,7 +274,6 @@
   "invite_uses_limited": "{uses}/{max} uses",
   "invite_expires": "Expires {date}",
   "invite_inactive": "Inactive",
-  "copy": "Copy",
   "close": "Close",
   "expires_after": "Expires after",
   "max_uses_label": "Max uses",
@@ -421,17 +423,9 @@
   },
   "servers_account": "Account",
   "servers_pick_one": "Choose a server",
-  "servers_share": "Share",
   "servers_token_copied": "Connection token copied. Anyone you send it to can connect to this server.",
   "servers_subtitle_ordered": "KRAB brings together photos from every server you are signed into.\n The first available server is used by default everywhere else in the app.",
-  "servers_share_subject": "Join me on {server}",
-  "@servers_share_subject": {
-    "placeholders": {
-      "server": {
-        "type": "String"
-      }
-    }
-  },
+  "servers_share_subject": "Join me on this KRAB server:",
   "server_label_count": "Servers · {count}",
   "@server_label_count": {
     "placeholders": {
