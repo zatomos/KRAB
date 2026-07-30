@@ -6,6 +6,7 @@ import 'package:krab/models/group.dart';
 import 'package:krab/pages/image_feed_page.dart';
 import 'package:krab/pages/viewer/frosted.dart';
 import 'package:krab/widgets/avatars/group_avatar.dart';
+import 'package:krab/widgets/member_count_label.dart';
 import 'package:krab/widgets/server_label.dart';
 import 'package:krab/services/instance/instances.dart';
 import 'package:krab/services/instance/instance_registry.dart';
@@ -213,16 +214,13 @@ class _GroupTile extends StatelessWidget {
             future: _instance?.api.getGroupMemberCount(group.id),
             builder: (context, snapshot) {
               final count = snapshot.data?.data;
-              return Text(
-                count == null
-                    ? " "
-                    : "$count ${count == 1 ? context.l10n.member_singular : context.l10n.members_plural}",
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
-              );
+              if (count == null) return const Text(" ");
+              return MemberCountLabel(count,
+                  color: Colors.white.withValues(alpha: 0.85));
             },
           ),
           if (ServerLabel.relevant)
-            ServerLabel(_instance, color: Colors.white.withValues(alpha: 0.6)),
+            ServerLabel(_instance, color: Colors.white.withValues(alpha: 0.55)),
         ],
       ),
       trailing: Icon(Symbols.chevron_right_rounded,
