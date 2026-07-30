@@ -409,9 +409,10 @@ class _GroupFormDialogState extends State<_GroupFormDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       title: Text(widget.title),
       content: SizedBox(
-        width: double.maxFinite,
+        width: MediaQuery.sizeOf(context).width,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
