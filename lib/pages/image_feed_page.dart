@@ -9,6 +9,7 @@ import 'package:krab/models/group.dart';
 import 'package:krab/models/user.dart' as krab_user;
 import 'package:krab/models/image_data.dart';
 import 'package:krab/models/image_ref.dart';
+import 'package:krab/models/reaction.dart';
 import 'package:krab/models/shared_image.dart';
 import 'package:krab/services/shared_image_api.dart';
 import 'package:krab/pages/group_settings_page.dart';
@@ -753,12 +754,22 @@ class ImageFeedPageState extends State<ImageFeedPage> {
   }
 
   /// Total reactions for an image's badge, across every copy of it.
-  int _reactionCountFor(SharedImage image) =>
-      InstanceRegistry.instance
-          .byId(image.primary.instanceId)
-          ?.reactions
-          .cachedTotal(image.primary.id) ??
-      _cache.reactionCount(image);
+  int _reactionCountFor(SharedImage image) {
+    final perCopy = <List<ReactionSummary>>[];
+    var anyCached = false;
+
+    for (final copy in image.copies) {
+      final cache = InstanceRegistry.instance.byId(copy.instanceId)?.reactions;
+
+      if (cache == null || cache.cachedTotal(copy.id) == null) continue;
+      anyCached = true;
+      perCopy.add(cache.cached(copy.id));
+    }
+
+    final merged = SharedImageApi.mergeTallies(perCopy, anyAnswered: anyCached);
+    if (merged == null) return _cache.reactionCount(image);
+    return merged.fold<int>(0, (sum, r) => sum + r.count);
+  }
 
   /// A small frosted count badge for the grid tile corner.
   Widget _countBadge(IconData icon, int count, {Color? borderColor}) {
