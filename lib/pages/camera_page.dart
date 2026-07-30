@@ -76,13 +76,17 @@ class CameraPageState extends State<CameraPage> {
     _loadCurrentUser();
     _authSubscription =
         InstanceRegistry.instance.authEvents.listen((_) => _loadCurrentUser());
+    _orderSubscription =
+        InstanceRegistry.instance.orderChanged.listen((_) => _onOrderChanged());
   }
 
   StreamSubscription<InstanceAuthEvent>? _authSubscription;
+  StreamSubscription<void>? _orderSubscription;
 
   @override
   void dispose() {
     _authSubscription?.cancel();
+    _orderSubscription?.cancel();
     _lockPortrait();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     _zoomNotifier.dispose();
@@ -136,6 +140,18 @@ class CameraPageState extends State<CameraPage> {
 
   /// The servers to try, best first, being the order the user chose.
   List<KrabInstance> get _rankedSignedIn => InstanceRegistry.instance.signedIn;
+
+  /// Follow a new ranking straight away.
+  void _onOrderChanged() {
+    final preferred = _rankedSignedIn.firstOrNull;
+    if (preferred != null && preferred != _accountInstance) {
+      setState(() {
+        _accountInstance = preferred;
+        currentUser = null;
+      });
+    }
+    _loadCurrentUser();
+  }
 
   /// Find the account to show, taking the next server when one cannot answer.
   Future<void> _loadCurrentUser() async {

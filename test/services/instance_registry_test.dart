@@ -338,4 +338,50 @@ void main() {
       expect(registry.byUrl('https://one.example.net'), isNull);
     });
   });
+
+  group('orderChanged', () {
+    test('announces a reorder, with the new order already in place', () async {
+      SharedPreferences.setMockInitialValues({
+        InstanceRegistry.prefsKey: jsonEncode([
+          {'id': 'inst_1', 'url': 'https://one.example', 'anon_key': 'k'},
+          {'id': 'inst_2', 'url': 'https://two.example', 'anon_key': 'k'},
+        ]),
+      });
+      await InstanceRegistry.instance.load();
+
+      final registry = InstanceRegistry.instance;
+      final seenFirst = <String>[];
+      final subscription = registry.orderChanged
+          .listen((_) => seenFirst.add(registry.all.first.id));
+
+      await registry.reorder(1, 0);
+      await Future<void>.delayed(Duration.zero);
+      await subscription.cancel();
+
+      expect(seenFirst, ['inst_2'],
+          reason: 'a listener that redraws on this event must not see the old '
+              'ranking');
+    });
+
+    test('says nothing when the move changes nothing', () async {
+      SharedPreferences.setMockInitialValues({
+        InstanceRegistry.prefsKey: jsonEncode([
+          {'id': 'inst_1', 'url': 'https://one.example', 'anon_key': 'k'},
+          {'id': 'inst_2', 'url': 'https://two.example', 'anon_key': 'k'},
+        ]),
+      });
+      await InstanceRegistry.instance.load();
+
+      final registry = InstanceRegistry.instance;
+      final seen = <void>[];
+      final subscription = registry.orderChanged.listen(seen.add);
+
+      await registry.reorder(0, 0);
+      await registry.reorder(5, 1);
+      await Future<void>.delayed(Duration.zero);
+      await subscription.cancel();
+
+      expect(seen, isEmpty);
+    });
+  });
 }
