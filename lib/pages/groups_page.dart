@@ -33,7 +33,8 @@ class GroupsPageState extends State<GroupsPage> {
   /// Every server's groups, added to as each server answers.
   final List<Group> _groups = [];
 
-  /// Member counts, filled in behind the list rather than held up for.
+  /// Member counts, fetched before a server's cards are shown so they arrive
+  /// complete.
   final Map<String, int> _counts = {};
 
   /// Servers that could not be asked, named under the list.
@@ -51,6 +52,10 @@ class GroupsPageState extends State<GroupsPage> {
 
   /// Guards against a reload's results landing on top of a newer one.
   int _load = 0;
+
+  /// How long a server's groups wait on their member counts before being shown
+  /// without them.
+  static const Duration _countGrace = Duration(seconds: 3);
 
   @override
   void initState() {
@@ -87,10 +92,10 @@ class GroupsPageState extends State<GroupsPage> {
     await Future.wait(sources.map((instance) async {
       final response = await instance.api.getUserGroups().orGiveUp();
       if (!mounted || load != _load) return;
-      waiting.remove(instance);
 
       if (!response.success || response.data == null) {
         debugPrint('Groups: ${instance.id} failed (${response.error})');
+        waiting.remove(instance);
         failed.add(instance);
         setState(() {
           _unavailable = List.of(failed);
@@ -101,16 +106,17 @@ class GroupsPageState extends State<GroupsPage> {
         return;
       }
 
+      final counting = _loadCounts(instance, response.data!, load);
+      await counting.timeout(_countGrace, onTimeout: () {});
+      if (!mounted || load != _load) return;
+
+      waiting.remove(instance);
       setState(() {
         _groups.addAll(response.data!);
         _sortGroups();
         _pending = List.of(waiting);
         _loading = false;
       });
-
-      // Behind the list: a count is a detail on a card that is already useful
-      // without it.
-      unawaited(_loadCounts(instance, response.data!, load));
     }));
   }
 
