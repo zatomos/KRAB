@@ -14,7 +14,9 @@ import 'package:krab/widgets/rectangle_button.dart';
 import 'package:krab/widgets/rounded_input_field.dart';
 import 'package:krab/widgets/server_label.dart';
 import 'package:krab/widgets/soft_button.dart';
+import 'package:krab/config.dart';
 import 'package:krab/pages/camera_page.dart';
+import 'package:krab/pages/instance_setup_page.dart';
 import 'package:krab/services/instance/instances.dart';
 
 class LoginPage extends StatefulWidget {
@@ -274,11 +276,24 @@ class LoginPageState extends State<LoginPage> {
     );
   }
 
+  /// Whether this screen offers a way back at all.
+  bool get _showBack => !widget.enterAppOnSuccess || !hasBakedInstance;
+
+  /// Where back goes.
+  VoidCallback? get _onBack {
+    if (!widget.enterAppOnSuccess) return null;
+    return () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const InstanceSetupPage()),
+        );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AuthScaffold(
       title: _isSigningUp ? context.l10n.sign_up : context.l10n.log_in,
       success: _success,
+      onBack: _onBack,
+      showBack: _showBack,
       footer: TextButton(
         onPressed: () {
           setState(() {
