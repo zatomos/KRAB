@@ -46,7 +46,7 @@ Deno.serve(async (req) => {
         // any group. A per-group removal must keep the file for the remaining groups.
         const { data: stillExists } = await supabase
             .from('Images')
-            .select('id')
+            .select('id, share_id')
             .eq('id', imageId)
             .maybeSingle()
 
@@ -92,6 +92,7 @@ Deno.serve(async (req) => {
             type: 'image_deleted',
             image_id: imageId,
             group_id: groupId,
+            share_id: stillExists?.share_id ?? '',
         })
 
         return new Response(JSON.stringify({ message: 'Deletion notifications sent' }), {

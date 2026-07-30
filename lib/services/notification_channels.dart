@@ -59,8 +59,9 @@ int _notificationId(String source) {
 /// Stable notification id for one delivery of an image.
 int imageNotificationId(String imageId,
         {String batchKey = '', String? shareId}) =>
-    _notificationId(
-        shareId ?? (batchKey.isEmpty ? imageId : '$imageId|$batchKey'));
+    _notificationId(shareId != null && shareId.isNotEmpty
+        ? shareId
+        : (batchKey.isEmpty ? imageId : '$imageId|$batchKey'));
 
 /// Stable notification id for one comment.
 int commentNotificationId(String commentId) =>
@@ -79,13 +80,51 @@ int _unidentifiedNotificationId() =>
 String imageBatchKey(Iterable<String> groupIds) =>
     (groupIds.toList()..sort()).join(',');
 
+/// Add a copy to the ones a merged notification already stands for.
+String mergeCoveredImageIds(String existing, String arriving) {
+  final ids = <String>[];
+  for (final id in [...existing.split(','), arriving]) {
+    final trimmed = id.trim();
+    if (trimmed.isNotEmpty && !ids.contains(trimmed)) ids.add(trimmed);
+  }
+  return ids.join(',');
+}
+
+/// Fold a newly delivered set of group names into the ones already named by a
+/// notification on screen.
+String mergeGroupsDisplay(String existing, String arriving) {
+  final names = <String>[];
+  for (final name in [...existing.split(', '), ...arriving.split(', ')]) {
+    final trimmed = name.trim();
+    if (trimmed.isNotEmpty && !names.contains(trimmed)) names.add(trimmed);
+  }
+  return names.join(', ');
+}
+
+/// Whether a notification's payload is speaking for the image being deleted.
+bool notificationCoversImage(
+  Map<String, dynamic> payload,
+  String imageId, {
+  String? shareId,
+}) {
+  if (imageId.isNotEmpty) {
+    if (payload['image_id'] == imageId) return true;
+    final covered = ((payload['image_ids'] as String?) ?? '').split(',');
+    if (covered.contains(imageId)) return true;
+  }
+  if (shareId != null && shareId.isNotEmpty) {
+    if (payload['share_id'] == shareId) return true;
+  }
+  return false;
+}
+
 /// Dismiss a deleted image's notifications and drop its cached big-picture file.
 Future<void> cancelImageNotification(String imageId, {String? shareId}) async {
   await _ensureFlnpInitialized();
 
   // A notification shown by an older build carries the bare-image-id form.
   await _flnp.cancel(id: imageNotificationId(imageId));
-  if (shareId != null) {
+  if (shareId != null && shareId.isNotEmpty) {
     await _flnp.cancel(id: imageNotificationId(imageId, shareId: shareId));
   }
 
@@ -96,7 +135,7 @@ Future<void> cancelImageNotification(String imageId, {String? shareId}) async {
       if (id == null || payload == null || payload.isEmpty) continue;
       try {
         final data = jsonDecode(payload) as Map<String, dynamic>;
-        if (data['image_id'] == imageId) {
+        if (notificationCoversImage(data, imageId, shareId: shareId)) {
           await _flnp.cancel(id: id);
         }
       } catch (_) {
@@ -391,6 +430,7 @@ Future<void> dispatchImageNotification(
     groupName: channel.name,
     groupsDisplay: groupsDisplay,
     batchKey: imageBatchKey(delivered.map((g) => g.id)),
+    shareId: (ctx.data!['share_id'] as String?) ?? '',
     // For a photo delivered to several groups at once, the tap goes to
     // the cross-group feed
     tapGroupId: unmuted.length == 1 ? channel.id : null,
@@ -414,16 +454,32 @@ Future<void> showImageNotification({
   /// more than one group, in which case the tap opens the cross-group feed.
   String? tapGroupId,
   String batchKey = '',
+  String? shareId,
   String imageDescription = '',
   Uint8List? senderAvatarBytes,
   Uint8List? imageBytes,
 }) async {
   await _createFlnpChannel(groupId, groupName);
 
+  final id = imageNotificationId(imageId, batchKey: batchKey, shareId: shareId);
+
   // Shown on the notification itself; lists every group the image was sent to.
-  final subText = (groupsDisplay != null && groupsDisplay.isNotEmpty)
+  var subText = (groupsDisplay != null && groupsDisplay.isNotEmpty)
       ? groupsDisplay
       : groupName;
+
+  // Every copy this notification now stands for.
+  var covered = imageId;
+
+  // A copy from another server may already be showing under this id.
+  if (shareId != null && shareId.isNotEmpty) {
+    final earlier = await _shownImageNotification(id);
+    if (earlier != null && earlier.instanceUrl != instance.url) {
+      subText = mergeGroupsDisplay(earlier.groupsDisplay, subText);
+      covered = mergeCoveredImageIds(earlier.imageIds, imageId);
+      tapGroupId = null;
+    }
+  }
 
   final compositeBytes = _buildImageLargeIcon(imageBytes, senderAvatarBytes);
 
@@ -457,7 +513,7 @@ Future<void> showImageNotification({
       : null;
 
   await _flnp.show(
-    id: imageNotificationId(imageId, batchKey: batchKey),
+    id: id,
     title: senderUsername,
     body: _l10n().new_image_notification,
     notificationDetails: NotificationDetails(
@@ -479,8 +535,33 @@ Future<void> showImageNotification({
       'instance_url': instance.url,
       'image_id': imageId,
       'group_id': tapGroupId ?? '',
+      'share_id': shareId ?? '',
+      'groups_display': subText,
+      'image_ids': covered,
     }),
   );
+}
+
+/// What an image notification already on screen is saying, if any.
+Future<({String instanceUrl, String groupsDisplay, String imageIds})?>
+    _shownImageNotification(int id) async {
+  try {
+    for (final notification in await _flnp.getActiveNotifications()) {
+      if (notification.id != id) continue;
+      final payload = notification.payload;
+      if (payload == null || payload.isEmpty) return null;
+      final data = jsonDecode(payload) as Map<String, dynamic>;
+      return (
+        instanceUrl: (data['instance_url'] as String?) ?? '',
+        groupsDisplay: (data['groups_display'] as String?) ?? '',
+        imageIds: (data['image_ids'] as String?) ??
+            ((data['image_id'] as String?) ?? ''),
+      );
+    }
+  } catch (e) {
+    debugPrint('notif: could not read the notification already shown: $e');
+  }
+  return null;
 }
 
 Future<void> showCommentNotification({
