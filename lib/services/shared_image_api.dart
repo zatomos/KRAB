@@ -185,7 +185,6 @@ class SharedImageApi {
   }
 
   /// Add up one tally per copy, counting the viewer once.
-  @visibleForTesting
   static List<ReactionSummary>? mergeTallies(
     Iterable<List<ReactionSummary>> perCopy, {
     required bool anyAnswered,
