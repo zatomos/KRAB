@@ -46,6 +46,22 @@ AUTH_PAGE_FILES="reset_password.ts confirmed.ts recovery_email.ts confirmation_e
 require_tty
 [[ $EUID -eq 0 ]] && warn "Running as root, so the default install location is under /root. The optional setup scripts expect the same user, so stay consistent."
 
+# Host part of a URL, without scheme, port or path.
+url_host() {
+  local h="${1#*://}"; h="${h%%/*}"; printf '%s' "${h%%:*}"
+}
+
+is_ipv4() { [[ "$1" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; }
+
+# Address the gateway should bind to, guessed from how clients reach it
+suggest_bind_addr() {
+  local cur host
+  cur="$(env_get KONG_HTTP_PORT)"
+  if [[ "$cur" == *:* ]]; then printf '%s' "${cur%:*}"; return 0; fi
+  host="$(url_host "$API_URL")"
+  if is_ipv4 "$host"; then printf '%s' "$host"; else printf '127.0.0.1'; fi
+}
+
 # --- 0. Install Supabase if missing -------------------------------------
 RECREATE=0
 
@@ -87,8 +103,19 @@ ip="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
 API_URL="$(ask 'API URL clients use' "http://${ip:-localhost}:8000")"
 API_URL="${API_URL%/}"
 DASH_USER="$(ask 'Studio dashboard username' "$(env_get DASHBOARD_USERNAME)")"
-DASH_PASS="$(ask_secret_confirmed 'Studio dashboard password (empty = keep auto-generated)')"
+DASH_PASS="$(ask_kong_password 'Studio dashboard password (empty = keep auto-generated)')"
 log "Using API_URL=$API_URL"
+
+# The gateway serves the Studio dashboard on the same port as the API, so
+# binding it everywhere publishes the dashboard on every address this host has,
+# including any public one, whatever proxy is in front of it.
+echo
+echo "  The API gateway also serves the Studio dashboard. Listen only where clients"
+echo "  actually reach it:"
+echo "    127.0.0.1   this machine only, for a reverse proxy or tunnel running here"
+echo "    <local IP>  this machine and the local network"
+echo "    0.0.0.0     every interface, including any public address"
+BIND_ADDR="$(ask_required 'Address the API gateway listens on' "$(suggest_bind_addr)")"
 
 prompt_data_dirs
 
@@ -110,6 +137,21 @@ fi
 set_env FUNCTIONS_VERIFY_JWT false
 set_env SUPABASE_PUBLIC_URL "$API_URL"
 set_env API_EXTERNAL_URL "$API_URL"
+# Docker reads these as [address:]port, so an address here narrows the bind.
+kong_http="$(env_get KONG_HTTP_PORT)"; kong_http="${kong_http##*:}"
+kong_https="$(env_get KONG_HTTPS_PORT)"; kong_https="${kong_https##*:}"
+if [[ "$BIND_ADDR" == "0.0.0.0" ]]; then
+  set_env KONG_HTTP_PORT "${kong_http:-8000}"
+  set_env KONG_HTTPS_PORT "${kong_https:-8443}"
+  warn "The gateway listens on every interface, so the Studio dashboard answers on any address of this host. Firewall port ${kong_http:-8000} if this host is publicly reachable. Docker publishes ports ahead of ufw and firewalld, so filter it in the DOCKER-USER iptables chain instead."
+else
+  set_env KONG_HTTP_PORT "${BIND_ADDR}:${kong_http:-8000}"
+  set_env KONG_HTTPS_PORT "${BIND_ADDR}:${kong_https:-8443}"
+  api_host="$(url_host "$API_URL")"
+  if is_ipv4 "$api_host" && [[ "$api_host" != "$BIND_ADDR" ]]; then
+    warn "Clients use $API_URL but the gateway only listens on $BIND_ADDR, so they will not reach it unless something on $api_host forwards to $BIND_ADDR."
+  fi
+fi
 if [[ -n "$DASH_USER" ]]; then set_env DASHBOARD_USERNAME "$DASH_USER"; fi
 if [[ -n "$DASH_PASS" ]]; then set_env DASHBOARD_PASSWORD "$DASH_PASS"; fi
 # Remember any relocated directories so the next run offers the same layout.

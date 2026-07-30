@@ -73,6 +73,38 @@ confirm() {
   [[ "$reply" =~ ^[Yy] ]]
 }
 
+# Kong renders its config, the dashboard password included, into unquoted YAML.
+# Anything YAML reads as other than a plain string silently changes the password
+# or stops Kong from loading at all, so refuse those.
+kong_password_problem() {
+  local v="$1"
+  [[ "$v" =~ ^[A-Za-z0-9] ]] || {
+    printf 'it has to start with a letter or a digit'; return 0; }
+  [[ "$v" =~ [A-Za-z] ]] || {
+    printf 'it needs at least one letter'; return 0; }
+  case "${v,,}" in
+    yes|no|true|false|on|off|null)
+      printf 'invalid password'; return 0 ;;
+  esac
+  [[ "$v" == *": "* ]] && { printf 'it cannot contain a colon followed by a space'; return 0; }
+  [[ "$v" == *" #"* ]] && { printf 'it cannot contain a space followed by #'; return 0; }
+  [[ "$v" == *$'\t'* ]] && { printf 'it cannot contain a tab'; return 0; }
+  [[ "$v" != "${v%[[:space:]]}" ]] && { printf 'it cannot end with a space'; return 0; }
+  return 0
+}
+
+# Ask for a dashboard password until it is one Kong can actually store.
+ask_kong_password() {
+  local prompt="$1" value problem
+  while true; do
+    value="$(ask_secret_confirmed "$prompt")"
+    [[ -z "$value" ]] && return 0
+    problem="$(kong_password_problem "$value")"
+    [[ -z "$problem" ]] && { printf '%s' "$value"; return 0; }
+    printf '  That would break the dashboard login: %s.\n' "$problem" >&2
+  done
+}
+
 # Ask until the answer is an absolute path.
 ask_abs_dir() {
   local prompt="$1" default="${2:-}" value

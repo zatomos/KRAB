@@ -97,12 +97,11 @@ The project includes scripts to automatically set up a self-hosted Supabase inst
 **Prerequisites:** a Linux server with [Docker](https://docs.docker.com/engine/install/) and the
 Docker Compose plugin.
 
-
 #### Running the script
 
 Copy the `google-services.json` and the service-account JSON to your server.
 
-Run the backend setup script `setup_backend.sh` on the server. It installs self-hosted Supabase
+Run the backend setup script `setup_backend.sh` on the server. It installs a self-hosted Supabase
 instance (if missing), configures it for KRAB, loads the database schema, creates the storage
 buckets,  stores your Firebase config, and deploys the edge functions.
 
@@ -113,6 +112,7 @@ curl -fsSL https://raw.githubusercontent.com/zatomos/KRAB/main/scripts/setup_bac
 It will ask you for:
 - **Supabase project** location (defaults to `~/supabase-project`).
 - **API URL** clients use.
+- The **address the API gateway listens on** (see the warning below).
 - **Studio dashboard** username / password.
 - Whether to keep the **database and photos** in the project directory, or put them somewhere else.
 - The **path to `google-services.json`** and the **path to the service-account JSON**.
@@ -121,7 +121,23 @@ When it finishes, it prints a **connection token**, a single string that packs t
 anon key. That is all a user needs to point the app at your instance; share it with the people you're
 inviting.
 
+You should be able to access the **Supabase Studio dashboard**, by default on port `8000`.
+Log in with the Studio username / password you set during setup.
+
 You'll also want to put your API URL behind HTTPS for production use.
+
+> [!WARNING]
+> **The dashboard lives at the same address as the API.** Both are served by the same gateway on
+> port `8000`, so whatever you do to make the API reachable publishes Studio too, behind nothing
+> but the username and password above.
+>
+> When you expose your instance, either:
+> - **restrict the dashboard**: let `/auth/v1`, `/rest/v1`, `/storage/v1`, `/realtime/v1` and
+>   `/functions/v1` through publicly and require your own authentication on every other path, or
+> - **don't publish it at all**: expose only those five paths, and reach Studio through an SSH
+>   tunnel when you need it.
+>
+> Either way, set a secure Studio password, and mind the address the setup script asks for.
 
 #### Outgoing email (optional)
 
@@ -155,7 +171,7 @@ To turn it back off, re-run the script with `--off`.
 
 ---
 
-### 2. Building the app (optional)
+### 3. Building the app (optional)
 
 **Prerequisites:** [Flutter](https://flutter.dev/docs/get-started/install).
 
