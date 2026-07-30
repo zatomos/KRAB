@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import 'package:krab/services/auth/app_auth.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:skeletonizer/skeletonizer.dart';
 
@@ -8,6 +7,7 @@ import 'package:krab/widgets/delayed_loading.dart';
 
 import 'package:krab/services/home_widget_updater.dart';
 import 'package:krab/widgets/avatars/group_avatar.dart';
+import 'package:krab/widgets/server_label.dart';
 import 'package:krab/widgets/avatars/user_avatar.dart';
 import 'package:krab/widgets/dialogs/dialogs.dart';
 import 'package:krab/widgets/dialogs/member_roles_dialog.dart';
@@ -15,17 +15,23 @@ import 'package:krab/widgets/dialogs/edit_avatar_dialog.dart';
 import 'package:krab/widgets/dialogs/rename_dialog.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/widgets/rectangle_button.dart';
+import 'package:krab/widgets/settings_section.dart';
 import 'package:krab/models/group.dart';
 import 'package:krab/models/group_member.dart';
 import 'package:krab/pages/group_invites_page.dart';
-import 'package:krab/services/api/supabase.dart';
 import 'package:krab/user_preferences.dart';
 import 'package:krab/l10n/l10n.dart';
+import 'package:krab/services/instance/instances.dart';
 
 class GroupSettingsPage extends StatefulWidget {
   final Group group;
+  final KrabInstance instance;
 
-  const GroupSettingsPage({super.key, required this.group});
+  const GroupSettingsPage({
+    super.key,
+    required this.group,
+    required this.instance,
+  });
 
   @override
   GroupSettingsPageState createState() => GroupSettingsPageState();
@@ -39,6 +45,8 @@ const Duration _expandDuration = Duration(milliseconds: 200);
 
 class GroupSettingsPageState extends State<GroupSettingsPage> {
   late Group _group;
+
+  KrabInstance get _instance => widget.instance;
   late Future<SupabaseResponse<List<GroupMember>>> _membersFuture;
   late String? _currentUserId;
   bool _muted = false;
@@ -48,16 +56,16 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
   void initState() {
     super.initState();
     _group = widget.group;
-    _membersFuture = getGroupMembers(_group.id);
-    _currentUserId = AppAuth.instance.currentUserId;
-    UserPreferences.isGroupMuted(_group.id).then((muted) {
+    _membersFuture = _instance.api.getGroupMembers(_group.id);
+    _currentUserId = _instance.auth.currentUserId;
+    UserPreferences.isGroupMuted(_group.instanceId, _group.id).then((muted) {
       if (mounted) setState(() => _muted = muted);
     });
   }
 
   Future<void> _toggleMuted(bool muted) async {
     setState(() => _muted = muted);
-    await UserPreferences.setGroupMuted(_group.id, muted);
+    await UserPreferences.setGroupMuted(_group.instanceId, _group.id, muted);
   }
 
   String _getCurrentUserRole(List<GroupMember> members) {
@@ -72,11 +80,12 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
   }
 
   Future<void> _leaveGroup() async {
-    final response = await leaveGroup(widget.group.id);
+    final response = await _instance.api.leaveGroup(widget.group.id);
     if (!mounted) return;
     if (response.success) {
       // Only once the server agrees we've left.
-      await UserPreferences.removeFavoriteGroup(widget.group.id);
+      await UserPreferences.removeFavoriteGroup(
+          widget.group.instanceId, widget.group.id);
       if (!mounted) return;
       cacheUserGroupsForWidget();
       showSnackBar(context.l10n.left_group_success, tone: SnackTone.success);
@@ -99,7 +108,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
         emptyError: l10n.group_name_empty,
         maxLength: 19,
         onSubmit: (value) async {
-          final res = await updateGroupName(_group.id, value);
+          final res = await _instance.api.updateGroupName(_group.id, value);
           return res.success ? null : describeError(l10n, res.error);
         },
       ),
@@ -117,9 +126,9 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
       AvatarTarget(
         hasImage: _group.iconUrl?.isNotEmpty ?? false,
         dialogTitle: l10n.edit_icon_title,
-        upload: (image) => editGroupIcon(image, _group.id),
-        remove: () => deleteGroupIcon(_group.id),
-        freshUrl: () => getGroupIconUrl(_group.id),
+        upload: (image) => _instance.api.editGroupIcon(image, _group.id),
+        remove: () => _instance.api.deleteGroupIcon(_group.id),
+        freshUrl: () => _instance.api.getGroupIconUrl(_group.id),
         uploadFailed: l10n.error_updating_icon,
         removeFailed: l10n.error_deleting_icon,
         uploadSucceeded: l10n.icon_updated_success,
@@ -148,7 +157,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
     if (!mounted) return;
     if (res.success) {
       showSnackBar(success, tone: SnackTone.success);
-      setState(() => _membersFuture = getGroupMembers(_group.id));
+      setState(() => _membersFuture = _instance.api.getGroupMembers(_group.id));
     } else {
       showSnackBar(failure(context.errorText(res.error)),
           tone: SnackTone.failure);
@@ -171,7 +180,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
     return _confirmMemberAction(
       title: title,
       message: message,
-      apply: () => changeMemberRole(_group.id, userId, action),
+      apply: () => _instance.api.changeMemberRole(_group.id, userId, action),
       success: l10n.user_role_updated_success,
       failure: l10n.error_updating_user_role,
     );
@@ -180,7 +189,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
   Future<void> _manageUserBanDialog(String userId) => _confirmMemberAction(
         title: context.l10n.ban_user,
         message: context.l10n.ban_user_confirmation,
-        apply: () => banUser(_group.id, userId),
+        apply: () => _instance.api.banUser(_group.id, userId),
         success: context.l10n.user_banned_success,
         failure: context.l10n.error_banning_user,
       );
@@ -188,7 +197,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
   Future<void> _manageUserUnbanDialog(String userId) => _confirmMemberAction(
         title: context.l10n.unban_user,
         message: context.l10n.unban_user_confirmation,
-        apply: () => unbanUser(_group.id, userId),
+        apply: () => _instance.api.unbanUser(_group.id, userId),
         success: context.l10n.user_unbanned_success,
         failure: context.l10n.error_unbanning_user,
       );
@@ -201,7 +210,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
         destructive: true);
     if (!confirm || !mounted) return;
 
-    final res = await deleteGroup(_group.id);
+    final res = await _instance.api.deleteGroup(_group.id);
     if (!mounted) return;
     if (!res.success) {
       showSnackBar(
@@ -211,7 +220,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
     }
 
     // Only once the group is actually gone.
-    await UserPreferences.removeFavoriteGroup(_group.id);
+    await UserPreferences.removeFavoriteGroup(_group.instanceId, _group.id);
     if (!mounted) return;
 
     cacheUserGroupsForWidget();
@@ -226,6 +235,22 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
     }
     if (role == 'member') return permission == 'everyone';
     return false;
+  }
+
+  /// The role each option names
+  ({IconData icon, Color color}) _invitePermissionBadge(String permission) {
+    switch (permission) {
+      case 'owner':
+        return (icon: Symbols.crown_rounded, color: Colors.amber);
+      case 'everyone':
+        return (
+          icon: Symbols.group_rounded,
+          color: Theme.of(context).colorScheme.onSurfaceVariant
+        );
+      case 'admin':
+      default:
+        return (icon: Symbols.shield_person_rounded, color: Colors.blue);
+    }
   }
 
   String _invitePermissionLabel(BuildContext context, String permission) {
@@ -243,7 +268,8 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
   Future<void> _createInvite() async {
     final token = await showDialog<String>(
       context: context,
-      builder: (_) => CreateInviteDialog(groupId: _group.id),
+      builder: (_) =>
+          CreateInviteDialog(instance: _instance, groupId: _group.id),
     );
     if (token == null || !mounted) return;
     await showInviteTokenDialog(context, token);
@@ -258,7 +284,9 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
           title: Text(context.l10n.who_can_invite),
           children: ['owner', 'admin', 'everyone'].map((value) {
             final isSelected = value == current;
+            final badge = _invitePermissionBadge(value);
             return ListTile(
+              leading: Icon(badge.icon, color: badge.color, fill: 1),
               title: Text(_invitePermissionLabel(context, value)),
               trailing: isSelected
                   ? Icon(Symbols.check_rounded,
@@ -272,7 +300,8 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
     );
     if (selected == null || selected == current || !mounted) return;
 
-    final res = await setGroupInvitePermission(_group.id, selected);
+    final res =
+        await _instance.api.setGroupInvitePermission(_group.id, selected);
     if (!mounted) return;
     if (res.success) {
       showSnackBar(context.l10n.invite_permission_updated,
@@ -304,233 +333,270 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
         return Scaffold(
           appBar: AppBar(
             title: Text(context.l10n.group_settings_page_title),
-            actions: [
-              if (isManager)
-                PopupMenuButton<VoidCallback>(
-                  icon: const Icon(Symbols.edit_square),
-                  color: Theme.of(context).colorScheme.surfaceBright,
-                  position: PopupMenuPosition.under,
-                  onSelected: (action) => action(),
-                  itemBuilder: (context) => [
-                    PopupMenuItem(
-                      value: _updateGroupName,
-                      child: ListTile(
-                        leading: const Icon(Icons.text_fields_rounded),
-                        title: Text(context.l10n.edit_group_name),
-                      ),
-                    ),
-                    PopupMenuItem(
-                      value: openEditIconDialog,
-                      child: ListTile(
-                        leading: const Icon(Icons.image_rounded),
-                        title: Text(context.l10n.edit_icon_title),
-                      ),
-                    ),
-                  ],
-                ),
-            ],
           ),
           body: SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 24),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                /// Group Header
-                Center(
-                  child: Column(
-                    children: [
-                      GroupAvatar(_group, radius: 60),
-                      const SizedBox(height: 16),
-                      Text(_group.name,
-                          style: const TextStyle(
-                              fontSize: 24, fontWeight: FontWeight.bold)),
-                    ],
-                  ),
-                ),
-
-                Divider(
-                  height: 32,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-
-                /// Members List
-                Row(
-                  children: [
-                    Text(
-                      context.l10n.members,
-                      style: const TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                    IconButton(
-                      icon: Icon(
-                        Symbols.info_rounded,
-                        size: 20,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                      tooltip: context.l10n.member_roles_title,
-                      onPressed: () => showMemberRolesDialog(context),
-                      visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.only(left: 6),
-                      constraints: const BoxConstraints(),
-                      style: const ButtonStyle(
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-                    ),
-                    const Spacer(),
-                    if (members.length > _collapsedMemberCount)
-                      TextButton.icon(
-                        onPressed: () =>
-                            setState(() => _showAllMembers = !_showAllMembers),
-                        icon: AnimatedRotation(
-                          turns: _showAllMembers ? 0.5 : 0,
-                          duration: _expandDuration,
-                          curve: Curves.easeInOut,
-                          child: const Icon(
-                            Symbols.expand_more_rounded,
-                            size: 20,
-                          ),
-                        ),
-                        iconAlignment: IconAlignment.end,
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          visualDensity: VisualDensity.compact,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        label: Text(
-                          _showAllMembers
-                              ? context.l10n.show_fewer_members
-                              : context.l10n.show_all_members(members.length),
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-
-                DelayedLoading(
-                  loading: !hasData,
-                  placeholder: const _MembersSkeleton(),
-                  child: members.isEmpty
-                      ? Center(child: Text(context.l10n.no_members))
-                      : AnimatedSize(
-                          duration: _expandDuration,
-                          curve: Curves.easeInOut,
-                          alignment: Alignment.topCenter,
-                          child: Column(
-                            children: visibleMembers.map((member) {
-                              final targetRole = member.role;
-                              final canManage =
-                                  member.user.id != _currentUserId &&
-                                      (currentRole == 'owner' ||
-                                          (currentRole == 'admin' &&
-                                              targetRole != 'admin' &&
-                                              targetRole != 'owner'));
-
-                              return _MemberTile(
-                                member: member,
-                                currentRole: currentRole,
-                                canManage: canManage,
-                                onRoleAction: (action) => _manageUserRoleDialog(
-                                    member.user.id, action),
-                                onBan: () =>
-                                    _manageUserBanDialog(member.user.id),
-                                onUnban: () =>
-                                    _manageUserUnbanDialog(member.user.id),
-                              );
-                            }).toList(),
-                          ),
-                        ),
-                ),
-
-                /// Group invites
+                _header(context, isManager),
+                const SectionDivider(),
+                _membersSection(
+                    context, hasData, members, visibleMembers, currentRole),
                 if (canCreateInvite || isManager) ...[
-                  Divider(
-                    height: 64,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      context.l10n.group_invites,
-                      style: const TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  if (canCreateInvite)
-                    RectangleButton(
-                      onPressed: _createInvite,
-                      label: context.l10n.create_invite,
-                      icon: Symbols.add_link_rounded,
-                    ),
-                  if (isManager) ...[
-                    const SizedBox(height: 8),
-                    RectangleButton(
-                      onPressed: () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => GroupInvitesPage(groupId: _group.id),
-                        ),
-                      ),
-                      label: context.l10n.manage_invites,
-                      icon: Symbols.link_rounded,
-                      backgroundColor:
-                          Theme.of(context).colorScheme.surfaceBright,
-                    ),
-                  ],
-                  if (currentRole == 'owner') ...[
-                    const SizedBox(height: 8),
-                    ListTile(
-                      leading: const Icon(Symbols.lock_person_rounded),
-                      title: Text(context.l10n.who_can_invite),
-                      subtitle:
-                          Text(_invitePermissionLabel(context, permission)),
-                      trailing: const Icon(Symbols.chevron_right_rounded),
-                      onTap: _changeInvitePermission,
-                    ),
-                  ],
+                  const SectionDivider(),
+                  _invitesSection(context, canCreateInvite, isManager,
+                      currentRole, permission),
                 ],
-
-                const SizedBox(height: 8),
-                SwitchListTile(
-                  value: _muted,
-                  onChanged: _toggleMuted,
-                  secondary: Icon(_muted
-                      ? Symbols.notifications_off_rounded
-                      : Symbols.notifications_rounded),
-                  title: Text(context.l10n.mute_notifications),
-                  subtitle: Text(context.l10n.mute_notifications_subtitle),
-                  contentPadding: EdgeInsets.zero,
-                ),
-
-                Divider(
-                  height: 64,
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-
-                /// Leave/delete group buttons
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    RectangleButton(
-                      onPressed: _leaveGroup,
-                      label: context.l10n.leave_group,
-                      icon: Symbols.logout_rounded,
-                      backgroundColor: Colors.red,
-                    ),
-                  ],
-                ),
-
-                if (currentRole == 'owner') ...[
-                  const SizedBox(height: 16),
-                  RectangleButton(
-                    onPressed: _deleteGroup,
-                    label: context.l10n.delete_group,
-                    icon: Symbols.delete_rounded,
-                    backgroundColor: Colors.red,
-                  ),
-                ],
+                const SectionDivider(),
+                _notificationsSection(context),
+                const SizedBox(height: settingsGapL),
+                _dangerSection(context, currentRole),
               ],
             ),
           ),
         );
       },
+    );
+  }
+
+  /// The group itself: picture, name, and which server it is on.
+  Widget _header(BuildContext context, bool isManager) {
+    final avatar = GroupAvatar(_group, radius: 60);
+    return Column(
+      children: [
+        if (isManager)
+          Stack(
+            alignment: Alignment.bottomRight,
+            children: [
+              GestureDetector(
+                onTap: openEditIconDialog,
+                child: avatar,
+              ),
+              IgnorePointer(
+                child: CircleAvatar(
+                  radius: 16,
+                  backgroundColor: Theme.of(context).colorScheme.surfaceBright,
+                  child: Icon(Symbols.photo_camera_rounded,
+                      size: 18,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant),
+                ),
+              ),
+            ],
+          )
+        else
+          avatar,
+        const SizedBox(height: settingsGapM),
+        _name(context, isManager),
+        if (ServerLabel.relevant) ...[
+          const SizedBox(height: settingsGapS),
+          ServerLabel(_instance, fontSize: 13),
+        ],
+      ],
+    );
+  }
+
+  /// The group's name
+  Widget _name(BuildContext context, bool isManager) {
+    const style = TextStyle(fontSize: 24, fontWeight: FontWeight.bold);
+    final name = Text(_group.name, textAlign: TextAlign.center, style: style);
+    if (!isManager) return name;
+
+    return GestureDetector(
+      onTap: _updateGroupName,
+      child: Stack(
+        children: [
+          Center(child: name),
+          Center(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Opacity(
+                  opacity: 0,
+                  child: Text(_group.name, style: style),
+                ),
+                Transform.translate(
+                  offset: const Offset(20, -2),
+                  child: Icon(
+                    Icons.keyboard_arrow_right_rounded,
+                    size: 40,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _membersSection(
+    BuildContext context,
+    bool hasData,
+    List<GroupMember> members,
+    List<GroupMember> visibleMembers,
+    String currentRole,
+  ) {
+    return SettingsSection(
+      title: context.l10n.members,
+      info: IconButton(
+        icon: Icon(
+          Symbols.info_rounded,
+          size: 20,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+        tooltip: context.l10n.member_roles_title,
+        onPressed: () => showMemberRolesDialog(context),
+        visualDensity: VisualDensity.compact,
+        padding: const EdgeInsets.only(left: 6),
+        constraints: const BoxConstraints(),
+        style:
+            const ButtonStyle(tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+      ),
+      action: members.length > _collapsedMemberCount
+          ? TextButton.icon(
+              onPressed: () =>
+                  setState(() => _showAllMembers = !_showAllMembers),
+              icon: AnimatedRotation(
+                turns: _showAllMembers ? 0.5 : 0,
+                duration: _expandDuration,
+                curve: Curves.easeInOut,
+                child: const Icon(Symbols.expand_more_rounded, size: 20),
+              ),
+              iconAlignment: IconAlignment.end,
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                visualDensity: VisualDensity.compact,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              label: Text(_showAllMembers
+                  ? context.l10n.show_fewer_members
+                  : context.l10n.show_all_members(members.length)),
+            )
+          : null,
+      child: DelayedLoading(
+        loading: !hasData,
+        placeholder: const _MembersSkeleton(),
+        child: members.isEmpty
+            ? Center(child: Text(context.l10n.no_members))
+            : AnimatedSize(
+                duration: _expandDuration,
+                curve: Curves.easeInOut,
+                alignment: Alignment.topCenter,
+                child: Column(
+                  children: visibleMembers.map((member) {
+                    final targetRole = member.role;
+                    final canManage = member.user.id != _currentUserId &&
+                        (currentRole == 'owner' ||
+                            (currentRole == 'admin' &&
+                                targetRole != 'admin' &&
+                                targetRole != 'owner'));
+
+                    return _MemberTile(
+                      member: member,
+                      currentRole: currentRole,
+                      canManage: canManage,
+                      onRoleAction: (action) =>
+                          _manageUserRoleDialog(member.user.id, action),
+                      onBan: () => _manageUserBanDialog(member.user.id),
+                      onUnban: () => _manageUserUnbanDialog(member.user.id),
+                    );
+                  }).toList(),
+                ),
+              ),
+      ),
+    );
+  }
+
+  Widget _invitesSection(
+    BuildContext context,
+    bool canCreateInvite,
+    bool isManager,
+    String currentRole,
+    String permission,
+  ) {
+    return SettingsSection(
+      title: context.l10n.group_invites,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (canCreateInvite) ...[
+            const SizedBox(height: settingsGapS),
+            RectangleButton(
+              onPressed: _createInvite,
+              label: context.l10n.create_invite,
+              icon: Symbols.add_link_rounded,
+              style: RectangleButtonStyle.outlined,
+            ),
+            const SizedBox(height: settingsGapS),
+          ],
+          if (isManager)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Symbols.link_rounded),
+              title: Text(context.l10n.manage_invites),
+              trailing: const Icon(Symbols.chevron_right_rounded),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) =>
+                      GroupInvitesPage(instance: _instance, groupId: _group.id),
+                ),
+              ),
+            ),
+          if (currentRole == 'owner')
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Symbols.lock_person_rounded),
+              title: Text(context.l10n.who_can_invite),
+              subtitle: Text(_invitePermissionLabel(context, permission)),
+              trailing: const Icon(Symbols.chevron_right_rounded),
+              onTap: _changeInvitePermission,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _notificationsSection(BuildContext context) {
+    return SettingsSection(
+      title: context.l10n.group_notifications,
+      child: SwitchListTile(
+        value: _muted,
+        onChanged: _toggleMuted,
+        secondary: Icon(_muted
+            ? Symbols.notifications_off_rounded
+            : Symbols.notifications_rounded),
+        title: Text(context.l10n.mute_notifications),
+        subtitle: Text(context.l10n.mute_notifications_subtitle),
+        contentPadding: EdgeInsets.zero,
+      ),
+    );
+  }
+
+  /// Leave / Delete buttons
+  Widget _dangerSection(BuildContext context, String currentRole) {
+    final error = Theme.of(context).colorScheme.error;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        RectangleButton(
+          onPressed: _leaveGroup,
+          label: context.l10n.leave_group,
+          icon: Symbols.logout_rounded,
+          style: RectangleButtonStyle.outlined,
+          backgroundColor: error,
+        ),
+        if (currentRole == 'owner') ...[
+          const SizedBox(height: settingsGapS),
+          RectangleButton(
+            onPressed: _deleteGroup,
+            label: context.l10n.delete_group,
+            icon: Symbols.delete_rounded,
+            backgroundColor: error,
+          ),
+        ],
+      ],
     );
   }
 }
@@ -549,6 +615,7 @@ class _MembersSkeleton extends StatelessWidget {
         children: List.generate(
           _rowCount,
           (_) => const ListTile(
+            contentPadding: EdgeInsets.zero,
             leading: Bone.circle(size: 50),
             title: Bone.text(width: 140),
           ),
@@ -668,9 +735,30 @@ class _MemberTileState extends State<_MemberTile> {
           borderRadius: BorderRadius.circular(12),
         ),
         child: ListTile(
+          contentPadding: EdgeInsets.zero,
           leading: UserAvatar(widget.member.user, radius: 25),
-          title: Text(widget.member.user.username),
-          trailing: Icon(badge.icon, color: badge.color, fill: 1),
+          // The badge moves in beside the name so that trailing can say whether
+          // there is anything to be done with this member: a long press is not
+          // something anyone finds on their own.
+          title: Row(
+            children: [
+              Flexible(
+                child: Text(widget.member.user.username,
+                    overflow: TextOverflow.ellipsis),
+              ),
+              if (badge.icon != null) ...[
+                const SizedBox(width: 6),
+                Icon(badge.icon, color: badge.color, fill: 1, size: 18),
+              ],
+            ],
+          ),
+          trailing: widget.canManage
+              ? IconButton(
+                  icon: const Icon(Icons.more_vert_rounded),
+                  onPressed: _showMenu,
+                  visualDensity: VisualDensity.compact,
+                )
+              : null,
         ),
       ),
     );

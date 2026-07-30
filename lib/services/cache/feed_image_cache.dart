@@ -2,53 +2,127 @@ import 'package:flutter/foundation.dart';
 
 import 'package:krab/models/image_data.dart';
 import 'package:krab/models/image_details.dart';
+import 'package:krab/models/image_ref.dart';
+import 'package:krab/models/shared_image.dart';
 import 'package:krab/models/user.dart' as krab_user;
-import 'package:krab/services/api/supabase.dart';
+import 'package:krab/services/api/krab_api.dart';
+import 'package:krab/services/instance/instance_registry.dart';
+import 'package:krab/services/shared_image_api.dart';
 
-/// The calls [FeedImageCache] makes to fill itself. Subclass to fetch something
-/// other than the live backend; the default is the backend.
-class ImageFetchers {
-  const ImageFetchers();
+/// An image's metadata together with the copy it was read from.
+typedef DetailsFromCopy = ({ImageDetails details, ImageRef copy});
 
-  Future<SupabaseResponse<Uint8List>> image(String imageId,
-          {bool lowRes = false}) =>
-      getImage(imageId, lowRes: lowRes);
+/// The calls FeedImageCache makes to fill itself.
+abstract class ImageFetchers {
+  Future<Uint8List?> bytes(SharedImage image, {required bool lowRes});
 
-  Future<SupabaseResponse<ImageDetails>> details(String imageId) =>
-      getImageDetails(imageId);
+  /// Metadata, and which copy provided it.
+  Future<DetailsFromCopy?> details(SharedImage image, {String? preferInstanceId});
 
-  Future<SupabaseResponse<krab_user.User>> user(String userId) =>
-      getUserDetails(userId);
+  /// The uploader, as named by the instance the copy lives on.
+  Future<krab_user.User?> uploader(ImageRef copy, String userId);
 
-  /// An image's comment count: within one group, or across every group the user
-  /// shares it with when groupId is null.
-  Future<SupabaseResponse<int>> commentCount(String imageId, String? groupId) =>
-      groupId != null
-          ? getCommentCount(imageId, groupId)
-          : getImageCommentCount(imageId);
+  /// Comments across every copy: within one group, or across every group the
+  /// user shares the image with when groupId is null.
+  Future<int> commentCount(SharedImage image, String? groupId);
 
-  Future<SupabaseResponse<List<dynamic>>> reactions(String imageId) =>
-      getImageReactions(imageId);
+  /// Reactions across every copy.
+  Future<int> reactionCount(SharedImage image);
+}
+
+/// Reads an image from whichever of its copies answers.
+/// An image that lives on two servers is still viewable when one of them is
+/// down.
+class RegistryImageFetchers implements ImageFetchers {
+  const RegistryImageFetchers();
+
+  @override
+  Future<Uint8List?> bytes(SharedImage image, {required bool lowRes}) async {
+    for (final copy in image.copies) {
+      final instance = InstanceRegistry.instance.byId(copy.instanceId);
+      if (instance == null) continue;
+      final response = await instance.api.getImage(copy.id, lowRes: lowRes);
+      if (response.success && response.data != null) return response.data;
+      debugPrint('Feed: ${copy.instanceId} could not serve ${copy.id} '
+          '(${response.error})');
+    }
+    return null;
+  }
+
+  @override
+  Future<DetailsFromCopy?> details(SharedImage image,
+      {String? preferInstanceId}) async {
+    // The preferred copy first, then the rest in registration order.
+    final ordered = <ImageRef>[
+      ...image.copies.where((c) => c.instanceId == preferInstanceId),
+      ...image.copies.where((c) => c.instanceId != preferInstanceId),
+    ];
+
+    for (final copy in ordered) {
+      final instance = InstanceRegistry.instance.byId(copy.instanceId);
+      if (instance == null) continue;
+      final response = await instance.api.getImageDetails(copy.id);
+      if (response.success && response.data != null) {
+        return (details: response.data!, copy: copy);
+      }
+    }
+    return null;
+  }
+
+  @override
+  Future<krab_user.User?> uploader(ImageRef copy, String userId) async {
+    final instance = InstanceRegistry.instance.byId(copy.instanceId);
+    if (instance == null) return null;
+    final response = await instance.api.getUserDetails(userId);
+    return response.data;
+  }
+
+  @override
+  Future<int> commentCount(SharedImage image, String? groupId) async {
+    if (groupId == null) return SharedImageApi(image).commentCount();
+
+    for (final copy in image.copies) {
+      final instance = InstanceRegistry.instance.byId(copy.instanceId);
+      if (instance == null) continue;
+      final response = await instance.api.getCommentCount(copy.id, groupId);
+      if (response.success) return response.data ?? 0;
+    }
+    return 0;
+  }
+
+  @override
+  Future<int> reactionCount(SharedImage image) async {
+    final reactions = await SharedImageApi(image).reactions();
+    if (reactions == null) return 0;
+    return reactions.tally.fold<int>(0, (sum, r) => sum + r.count);
+  }
 }
 
 /// Everything one gallery holds in memory for the images it is showing: the
 /// bytes, the uploader, and the comment and reaction tallies.
 ///
 /// Owned by the feed and shared with the viewer it opens, so swiping between
-/// photos and closing back to the grid never re-downloads what is already here.
+/// images and closing back to the grid never re-downloads what is already here.
 ///
-/// Full-resolution photos get a much smaller window than thumbnails: KRAB
+/// Keyed by SharedImage.identity, so an image sent to several instances is one
+/// entry here exactly as it is one tile on screen.
+///
+/// Full-resolution images get a much smaller window than thumbnails: KRAB
 /// uploads them uncompressed, so a handful of them is already tens of megabytes,
 /// while a thumbnail is a rounding error.
 class FeedImageCache {
+  FeedImageCache({
+    this.groupId,
+    this.instanceId,
+    ImageFetchers fetchers = const RegistryImageFetchers(),
+  }) : _fetch = fetchers;
+
   /// The group whose gallery this is, or null in the cross-group feed, which
   /// decides whether a comment count is per-group or across every shared group.
   final String? groupId;
 
+  final String? instanceId;
   final ImageFetchers _fetch;
-
-  FeedImageCache({this.groupId, ImageFetchers fetchers = const ImageFetchers()})
-      : _fetch = fetchers;
 
   static const int maxImages = 60;
   static const int maxFullResImages = 5;
@@ -64,118 +138,117 @@ class FeedImageCache {
   final List<String> _lru = [];
   final List<String> _fullResLru = [];
 
-  /// The uploader of an image, once its details have loaded.
-  krab_user.User? user(String userId) => _users[userId];
+  /// The uploader of an image, once its details have loaded. Keyed by the
+  /// image's identity rather than the user id as the same person has
+  /// a different account on each server.
+  krab_user.User? user(SharedImage image) => _users[image.identity];
 
-  int commentCount(String imageId) => _commentCounts[imageId] ?? 0;
+  int commentCount(SharedImage image) => _commentCounts[image.identity] ?? 0;
 
-  int reactionCount(String imageId) => _reactionCounts[imageId] ?? 0;
+  int reactionCount(SharedImage image) => _reactionCounts[image.identity] ?? 0;
 
-  void addToCommentCount(String imageId, int delta) {
-    _commentCounts[imageId] = commentCount(imageId) + delta;
+  void addToCommentCount(SharedImage image, int delta) {
+    _commentCounts[image.identity] = commentCount(image) + delta;
   }
 
   /// An image's thumbnail, details and tallies, fetched once and memoized so
   /// every rebuild hands the same future to its FutureBuilder.
-  Future<ImageData> imageData(String imageId) {
+  Future<ImageData> imageData(SharedImage image) {
     // Touch before reading, so a just-requested image is never the one evicted.
-    _touch(imageId);
-    final cached = _imageDataFutures[imageId];
+    _touch(image.identity);
+    final cached = _imageDataFutures[image.identity];
     if (cached != null) return cached;
-    final future = _fetchImageData(imageId);
-    _imageDataFutures[imageId] = future;
+    final future = _fetchImageData(image);
+    _imageDataFutures[image.identity] = future;
     return future;
   }
 
   /// Start (or join) the full-resolution download for an image.
-  Future<Uint8List?> fullResBytes(String imageId) {
-    _touchFullRes(imageId);
-    final cached = _fullResFutures[imageId];
+  Future<Uint8List?> fullResBytes(SharedImage image) {
+    _touchFullRes(image.identity);
+    final cached = _fullResFutures[image.identity];
     if (cached != null) return cached;
-    final future = bytes(imageId, lowRes: false);
-    _fullResFutures[imageId] = future;
+    final future = bytes(image, lowRes: false);
+    _fullResFutures[image.identity] = future;
     return future;
   }
 
   /// An image's bytes at one resolution, from memory when they're already here.
-  Future<Uint8List?> bytes(String imageId, {bool lowRes = true}) async {
+  Future<Uint8List?> bytes(SharedImage image, {bool lowRes = true}) async {
     final cache = lowRes ? _lowRes : _fullRes;
-    final held = cache[imageId];
+    final held = cache[image.identity];
     if (held != null) return held;
 
-    final response = await _fetch.image(imageId, lowRes: lowRes);
-    final data = response.data;
-    if (!response.success || data == null) return null;
+    final data = await _fetch.bytes(image, lowRes: lowRes);
+    if (data == null) return null;
 
-    cache[imageId] = data;
-    if (!lowRes) _touchFullRes(imageId);
+    cache[image.identity] = data;
+    if (!lowRes) _touchFullRes(image.identity);
     return data;
   }
 
   /// The best bytes already loaded for an image, falling back to the thumbnail.
-  Future<Uint8List?> bestBytes(String imageId) async =>
-      await bytes(imageId, lowRes: false) ?? await bytes(imageId);
+  Future<Uint8List?> bestBytes(SharedImage image) async =>
+      await bytes(image, lowRes: false) ?? await bytes(image);
 
-  Future<ImageData> _fetchImageData(String imageId) async {
-    final bytesFuture = bytes(imageId, lowRes: true);
-    final detailsFuture = _fetch.details(imageId);
-    final countFuture = _commentCounts.containsKey(imageId)
+  Future<ImageData> _fetchImageData(SharedImage image) async {
+    final identity = image.identity;
+    final bytesFuture = bytes(image, lowRes: true);
+    final detailsFuture = _fetch.details(image, preferInstanceId: instanceId);
+    final countFuture = _commentCounts.containsKey(identity)
         ? null
-        : _fetch.commentCount(imageId, groupId);
-    final reactionsFuture =
-        _reactionCounts.containsKey(imageId) ? null : _fetch.reactions(imageId);
+        : _fetch.commentCount(image, groupId);
+    final reactionsFuture = _reactionCounts.containsKey(identity)
+        ? null
+        : _fetch.reactionCount(image);
 
     final imageBytes = await bytesFuture;
     if (imageBytes == null) throw Exception("Error downloading low-res image");
 
-    final detailsResponse = await detailsFuture;
-    final details = detailsResponse.data;
-    if (!detailsResponse.success || details == null) {
-      throw Exception("Error fetching image details: ${detailsResponse.error}");
-    }
+    final resolved = await detailsFuture;
+    if (resolved == null) throw Exception("Error fetching image details");
+    final details = resolved.details;
 
     final uploaderId = details.uploadedBy;
-    if (!_users.containsKey(uploaderId)) {
-      final response = await _fetch.user(uploaderId);
-      _users[uploaderId] =
-          response.data ?? krab_user.User(id: uploaderId, username: "");
+    if (!_users.containsKey(identity)) {
+      final user = await _fetch.uploader(resolved.copy, uploaderId);
+      _users[identity] = user ??
+          krab_user.User(
+            instanceId: resolved.copy.instanceId,
+            id: uploaderId,
+            username: "",
+          );
     }
 
-    if (countFuture != null) {
-      final response = await countFuture;
-      _commentCounts[imageId] = response.data ?? 0;
-    }
-
+    if (countFuture != null) _commentCounts[identity] = await countFuture;
     if (reactionsFuture != null) {
-      final response = await reactionsFuture;
-      _reactionCounts[imageId] = response.data?.fold<int>(
-              0, (sum, e) => sum + ((e['count'] as num?)?.toInt() ?? 0)) ??
-          0;
+      _reactionCounts[identity] = await reactionsFuture;
     }
 
     return ImageData(
       imageBytes: imageBytes,
       uploadedBy: uploaderId,
+      uploaderInstanceId: resolved.copy.instanceId,
       createdAt: details.createdAt,
       description: details.description,
     );
   }
 
   /// Mark an image most-recently used, evicting whatever falls out the far end.
-  void _touch(String imageId) {
+  void _touch(String identity) {
     _lru
-      ..remove(imageId)
-      ..add(imageId);
+      ..remove(identity)
+      ..add(identity);
     while (_lru.length > maxImages) {
-      drop(_lru.removeAt(0));
+      _drop(_lru.removeAt(0));
     }
   }
 
   /// The same, over the much smaller full-resolution window.
-  void _touchFullRes(String imageId) {
+  void _touchFullRes(String identity) {
     _fullResLru
-      ..remove(imageId)
-      ..add(imageId);
+      ..remove(identity)
+      ..add(identity);
     while (_fullResLru.length > maxFullResImages) {
       final evicted = _fullResLru.removeAt(0);
       _fullRes.remove(evicted);
@@ -185,20 +258,23 @@ class FeedImageCache {
 
   /// Forget the bytes held for one image. The tallies are kept: they are a few
   /// bytes each, and re-fetching them would cost a round trip.
-  void drop(String imageId) {
-    _lowRes.remove(imageId);
-    _fullRes.remove(imageId);
-    _fullResFutures.remove(imageId);
-    _imageDataFutures.remove(imageId);
-    _lru.remove(imageId);
-    _fullResLru.remove(imageId);
+  void drop(SharedImage image) => _drop(image.identity);
+
+  void _drop(String identity) {
+    _lowRes.remove(identity);
+    _fullRes.remove(identity);
+    _fullResFutures.remove(identity);
+    _imageDataFutures.remove(identity);
+    _lru.remove(identity);
+    _fullResLru.remove(identity);
   }
 
   /// Forget an image entirely, once it has been deleted.
-  void evict(String imageId) {
-    drop(imageId);
-    _commentCounts.remove(imageId);
-    _reactionCounts.remove(imageId);
+  void evict(SharedImage image) {
+    _drop(image.identity);
+    _commentCounts.remove(image.identity);
+    _reactionCounts.remove(image.identity);
+    _users.remove(image.identity);
   }
 
   void clear() {

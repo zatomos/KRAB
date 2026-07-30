@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 import 'package:krab/l10n/l10n.dart';
-import 'package:krab/services/api/supabase.dart';
+import 'package:krab/services/api/krab_api.dart';
 import 'package:krab/services/image_crop_helper.dart';
 import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
@@ -54,11 +54,11 @@ Future<AvatarChange?> editAvatar(
   AvatarTarget target,
 ) async {
   final l10n = context.l10n;
-  final action = await showEditAvatarDialog(
-    context,
-    title: target.dialogTitle,
-    hasImage: target.hasImage,
-  );
+
+  // Nothing to replace and nothing to delete
+  final action = target.hasImage
+      ? await showEditAvatarDialog(context, title: target.dialogTitle)
+      : AvatarAction.edit;
   if (action == null) return null;
 
   if (action == AvatarAction.delete) {
@@ -89,15 +89,13 @@ Future<AvatarChange?> editAvatar(
   return AvatarChange(url.success ? url.data : null);
 }
 
-/// Shows an add/edit/delete chooser for an avatar-style image and resolves
-/// to the chosen AvatarAction, or `null` if the user cancelled.
+/// Asks whether to replace or delete an avatar, resolving to the chosen
+/// AvatarAction or null if the user cancelled.
 ///
-/// When hasImage is false the primary button is an "add" action and the
-/// delete button is hidden.
+/// Only for an avatar that exists.
 Future<AvatarAction?> showEditAvatarDialog(
   BuildContext context, {
   required String title,
-  required bool hasImage,
 }) {
   return showDialog<AvatarAction>(
     context: context,
@@ -113,18 +111,16 @@ Future<AvatarAction?> showEditAvatarDialog(
         ),
         SoftButton(
           onPressed: () => Navigator.of(dialogContext).pop(AvatarAction.edit),
-          label: hasImage ? dialogContext.l10n.edit : dialogContext.l10n.add,
-          icon: hasImage ? Icons.edit : Icons.add,
+          label: dialogContext.l10n.edit,
+          icon: Icons.edit,
           color: Theme.of(context).colorScheme.primary,
         ),
-        if (hasImage)
-          SoftButton(
-            onPressed: () =>
-                Navigator.of(dialogContext).pop(AvatarAction.delete),
-            label: dialogContext.l10n.delete,
-            icon: Icons.delete_forever,
-            color: Theme.of(context).colorScheme.error,
-          ),
+        SoftButton(
+          onPressed: () => Navigator.of(dialogContext).pop(AvatarAction.delete),
+          label: dialogContext.l10n.delete,
+          icon: Icons.delete_forever,
+          color: Theme.of(context).colorScheme.error,
+        ),
       ],
     ),
   );

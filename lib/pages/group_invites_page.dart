@@ -1,70 +1,91 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:krab/models/group_invite.dart';
-import 'package:krab/services/api/supabase.dart';
 import 'package:krab/widgets/dialogs/dialogs.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/widgets/soft_button.dart';
 import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/l10n/l10n.dart';
+import 'package:krab/services/instance/instances.dart';
 
-/// Management view to create, share, and revoke group invites.
+/// Management view to create, share, and delete group invites.
 class GroupInvitesPage extends StatefulWidget {
+  /// The instance the group and its invites live on.
+  final KrabInstance instance;
+
   final String groupId;
 
-  const GroupInvitesPage({super.key, required this.groupId});
+  const GroupInvitesPage({
+    super.key,
+    required this.instance,
+    required this.groupId,
+  });
 
   @override
   State<GroupInvitesPage> createState() => _GroupInvitesPageState();
 }
 
 class _GroupInvitesPageState extends State<GroupInvitesPage> {
-  late Future<SupabaseResponse<List<GroupInvite>>> _invitesFuture;
+  List<GroupInvite> _invites = const [];
+
+  bool _loading = true;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
-    _invitesFuture = listGroupInvites(widget.groupId);
+    _load();
   }
 
-  void _refresh() {
-    setState(() => _invitesFuture = listGroupInvites(widget.groupId));
+  Future<void> _load() async {
+    final res = await widget.instance.api.listGroupInvites(widget.groupId);
+    if (!mounted) return;
+    setState(() {
+      _loading = false;
+      if (res.success) {
+        _invites = res.data ?? const [];
+        _error = null;
+      } else {
+        _error = context.errorText(res.error);
+      }
+    });
   }
 
   Future<void> _createInvite() async {
     final token = await showDialog<String>(
       context: context,
-      builder: (_) => CreateInviteDialog(groupId: widget.groupId),
+      builder: (_) => CreateInviteDialog(
+          instance: widget.instance, groupId: widget.groupId),
     );
     if (token == null || !mounted) return;
     await showInviteTokenDialog(context, token);
-    _refresh();
-  }
-
-  Future<void> _revokeInvite(String token) async {
-    final confirm = await showConfirmDialog(context,
-        title: context.l10n.revoke_invite,
-        message: context.l10n.revoke_invite_confirmation,
-        confirmLabel: context.l10n.revoke,
-        destructive: true);
-    if (!confirm) return;
-
-    final res = await revokeGroupInvite(token);
     if (!mounted) return;
-    if (res.success) {
-      showSnackBar(context.l10n.invite_revoked_success,
-          tone: SnackTone.success);
-      _refresh();
-    } else {
-      showSnackBar(context.errorText(res.error), tone: SnackTone.failure);
-    }
+    await _load();
   }
 
-  void _copyToken(String token) {
-    Clipboard.setData(ClipboardData(text: token));
-    showSnackBar(context.l10n.invite_copied, tone: SnackTone.success);
+  /// Delete an invite, whether or not it still works.
+  Future<void> _deleteInvite(String token) async {
+    final confirm = await showConfirmDialog(context,
+        title: context.l10n.delete_invite,
+        message: context.l10n.delete_invite_confirmation,
+        confirmLabel: context.l10n.delete,
+        confirmIcon: Symbols.delete_rounded,
+        destructive: true);
+    if (!confirm || !mounted) return;
+
+    final res = await widget.instance.api.deleteGroupInvite(token);
+    if (!mounted) return;
+    if (!res.success) {
+      showSnackBar(context.errorText(res.error), tone: SnackTone.failure);
+      return;
+    }
+
+    setState(() => _invites = _invites.where((i) => i.token != token).toList());
+    showSnackBar(context.l10n.invite_deleted_success, tone: SnackTone.success);
+    await _load();
   }
 
   String _subtitleFor(BuildContext context, GroupInvite invite) {
@@ -90,63 +111,91 @@ class _GroupInvitesPageState extends State<GroupInvitesPage> {
           icon: Symbols.add_link_rounded,
           label: context.l10n.create_invite,
           color: Theme.of(context).colorScheme.primary),
-      body: FutureBuilder<SupabaseResponse<List<GroupInvite>>>(
-        future: _invitesFuture,
-        builder: (context, snapshot) {
-          if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (!snapshot.data!.success) {
-            return Center(child: Text(context.errorText(snapshot.data!.error)));
-          }
-          final invites = snapshot.data!.data ?? [];
-          if (invites.isEmpty) {
-            return Center(child: Text(context.l10n.no_invites));
-          }
-          return ListView.builder(
-            padding: const EdgeInsets.only(bottom: 88),
-            itemCount: invites.length,
-            itemBuilder: (context, index) {
-              final invite = invites[index];
-              return ListTile(
-                leading: Icon(
-                  invite.isActive
-                      ? Symbols.link_rounded
-                      : Symbols.link_off_rounded,
-                  color: invite.isActive
-                      ? Theme.of(context).colorScheme.primary
-                      : Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
-                title: Text(
-                  invite.token,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontFamily: 'monospace'),
-                ),
-                subtitle: Text(_subtitleFor(context, invite)),
-                onTap: () => _copyToken(invite.token),
-                trailing: invite.isActive
-                    ? IconButton(
-                        icon: const Icon(Symbols.delete_rounded,
-                            color: Colors.red),
-                        tooltip: context.l10n.revoke,
-                        onPressed: () => _revokeInvite(invite.token),
-                      )
-                    : null,
-              );
-            },
-          );
-        },
+      body: RefreshIndicator(
+        onRefresh: _load,
+        child: _body(context),
       ),
     );
+  }
+
+  Widget _body(BuildContext context) {
+    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_error != null && _invites.isEmpty) {
+      return _centeredMessage(_error!);
+    }
+    if (_invites.isEmpty) return _centeredMessage(context.l10n.no_invites);
+
+    return ListView.builder(
+      padding: const EdgeInsets.only(bottom: 88),
+      itemCount: _invites.length,
+      itemBuilder: (context, index) {
+        final invite = _invites[index];
+        return ListTile(
+          leading: Icon(
+            invite.isActive ? Symbols.link_rounded : Symbols.link_off_rounded,
+            color: invite.isActive
+                ? Theme.of(context).colorScheme.primary
+                : Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+          title: Text(
+            invite.token,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontFamily: 'monospace'),
+          ),
+          subtitle: Text(_subtitleFor(context, invite)),
+          onTap: () => shareInviteToken(context, invite.token),
+          trailing: IconButton(
+            icon: Icon(
+              Symbols.delete_rounded,
+              color: Theme.of(context).colorScheme.error,
+            ),
+            tooltip: context.l10n.delete,
+            onPressed: () => _deleteInvite(invite.token),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Scrollable, so pulling down still refreshes when there is nothing to show.
+  Widget _centeredMessage(String message) => LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Center(child: Text(message)),
+          ),
+        ),
+      );
+}
+
+/// Hand an invite to somebody through the system share sheet.
+/// Falls back to the clipboard when nothing answers.
+Future<void> shareInviteToken(BuildContext context, String token) async {
+  final l10n = context.l10n;
+  try {
+    await SharePlus.instance.share(ShareParams(
+      text: '${l10n.invite_share_subject}\n\n$token',
+      subject: l10n.invite_share_subject,
+    ));
+  } catch (e) {
+    debugPrint('Invites: share sheet failed: $e');
+    await Clipboard.setData(ClipboardData(text: token));
+    showSnackBar(l10n.invite_copied, tone: SnackTone.success);
   }
 }
 
 /// Dialog to create a new invite with an expiry and max-uses selection
 class CreateInviteDialog extends StatefulWidget {
+  final KrabInstance instance;
   final String groupId;
 
-  const CreateInviteDialog({super.key, required this.groupId});
+  const CreateInviteDialog({
+    super.key,
+    required this.instance,
+    required this.groupId,
+  });
 
   @override
   State<CreateInviteDialog> createState() => _CreateInviteDialogState();
@@ -168,7 +217,7 @@ class _CreateInviteDialogState extends State<CreateInviteDialog> {
     });
 
     final expiresAt = _expiry == null ? null : DateTime.now().add(_expiry!);
-    final res = await createGroupInvite(widget.groupId,
+    final res = await widget.instance.api.createGroupInvite(widget.groupId,
         expiresAt: expiresAt, maxUses: _maxUses);
     if (!mounted) return;
     if (!res.success) {
@@ -291,11 +340,11 @@ Future<void> showInviteTokenDialog(BuildContext context, String token) {
         ),
         SoftButton(
           onPressed: () {
-            Clipboard.setData(ClipboardData(text: token));
-            showSnackBar(context.l10n.invite_copied, tone: SnackTone.success);
             Navigator.of(context).pop();
+            shareInviteToken(context, token);
           },
-          label: context.l10n.copy,
+          label: context.l10n.share,
+          icon: Symbols.share_rounded,
           color: Theme.of(context).colorScheme.primary,
         ),
       ],

@@ -3,13 +3,15 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'package:krab/services/cache/image_disk_cache.dart';
+
 /// Reclaims space in the temporary directory that nothing else owns.
 class StorageCleanup {
   static const _downloadedApk = 'app_update.apk';
 
   /// Directories under the temporary directory that manage their own contents.
   static const _managed = {
-    'image_cache', // ImageDiskCache
+    imageCacheDirName, // ImageDiskCache
     'libCachedImageData', // cached_network_image's own cache manager
     'data',
   };
@@ -55,7 +57,8 @@ class StorageCleanup {
       }
 
       if (freed > 0) {
-        debugPrint('[cleanup] freed ${(freed / 1024 / 1024).toStringAsFixed(1)} MB');
+        debugPrint(
+            '[cleanup] freed ${(freed / 1024 / 1024).toStringAsFixed(1)} MB');
       }
     } catch (e) {
       debugPrint('[cleanup] sweep failed: $e');

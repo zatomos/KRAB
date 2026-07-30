@@ -28,6 +28,7 @@
   "dont_have_account": "Vous n'avez pas de compte ? S'inscrire",
   "fill_in_all_fields": "Veuillez remplir tous les champs.",
   "account_page_title": "Mon compte",
+  "profile_section": "Profil",
   "settings": "Paramètres",
   "auto_save_imgs": "Enregistrement automatique des images",
   "auto_save_imgs_description": "Les images seront enregistrées dans votre galerie lorsqu'elles seront reçues.",
@@ -74,6 +75,22 @@
   "delete_photo_group_confirm": "Supprimer cette photo de ce groupe ? Cette action est irréversible.",
   "photo_deleted": "Photo supprimée",
   "photo_sent": "Photo envoyée !",
+  "photo_sent_partially": "Photo envoyée, mais {server} l'a refusée",
+  "@photo_sent_partially": {
+    "placeholders": {
+      "server": {
+        "type": "String"
+      }
+    }
+  },
+  "photo_sent_some_queued": "Photo envoyée ; {server} en attente du retour de la connexion",
+  "@photo_sent_some_queued": {
+    "placeholders": {
+      "server": {
+        "type": "String"
+      }
+    }
+  },
   "photo_queued_offline": "En attente ; sera envoyée dès le retour de la connexion",
   "photo_removed": "Photo retirée",
   "failed_to_delete_photo": "Échec de la suppression de la photo",
@@ -245,6 +262,7 @@
   "create_invite": "Créer une invitation",
   "manage_invites": "Gérer les invitations",
   "who_can_invite": "Qui peut inviter",
+  "group_notifications": "Notifications",
   "mute_notifications": "Mettre en sourdine",
   "mute_notifications_subtitle": "Ne plus me notifier des photos ou commentaires de ce groupe. Le widget se mettra toujours à jour.",
   "invite_permission_owner": "Propriétaire uniquement",
@@ -253,17 +271,17 @@
   "invite_permission_updated": "Permission d'invitation mise à jour.",
   "invite_created": "Invitation créée",
   "invite_share_hint": "Partagez cette invitation pour que d'autres rejoignent le groupe.",
+  "invite_share_subject": "Rejoignez mon groupe sur KRAB !",
+  "share": "Partager",
   "invite_copied": "Invitation copiée dans le presse-papiers.",
-  "revoke_invite": "Révoquer l'invitation",
-  "revoke_invite_confirmation": "Voulez-vous vraiment révoquer cette invitation ? Elle ne pourra plus être utilisée.",
-  "revoke": "Révoquer",
-  "invite_revoked_success": "Invitation révoquée.",
+  "delete_invite": "Supprimer l'invitation",
+  "delete_invite_confirmation": "Supprimer cette invitation ? Elle ne pourra plus être utilisée pour rejoindre le groupe.",
+  "invite_deleted_success": "Invitation supprimée.",
   "no_invites": "Aucune invitation pour le moment.",
   "invite_uses_unlimited": "{count} utilisations",
   "invite_uses_limited": "{uses}/{max} utilisations",
   "invite_expires": "Expire le {date}",
   "invite_inactive": "Inactive",
-  "copy": "Copier",
   "close": "Fermer",
   "expires_after": "Expire après",
   "max_uses_label": "Utilisations max",
@@ -296,6 +314,7 @@
   "error_reacting": "Erreur lors de l'ajout de la réaction : {errorMsg}",
   "reactions_title": "Réactions",
   "reactions_all": "Toutes",
+  "reactor_you": "(vous)",
   "no_reactions": "Aucune réaction pour l'instant.",
   "quick_access_emoji": "Accès rapide",
   "no_recents": "Aucun emoji récent",
@@ -319,13 +338,18 @@
   "push_distributor_description": "KRAB distribue les notifications via un distributeur UnifiedPush. Choisissez celui à utiliser.",
   "push_distributor_none": "Aucun distributeur n'est disponible sur cet appareil. Installez une application UnifiedPush pour recevoir les notifications.",
   "push_distributor_failed": "Impossible de s'abonner avec ce distributeur.",
-  "change_server_title": "Changer de serveur",
-  "change_server_description": "Cela vous déconnecte du serveur actuel et de votre compte. Vous choisirez un serveur au redémarrage de l'application.",
-  "change_server_confirm": "Se déconnecter",
   "instance_setup_token_subtitle": "Collez le jeton de connexion qu'on vous a communiqué pour rejoindre un serveur KRAB.",
   "instance_setup_token_hint": "Jeton de connexion",
   "instance_setup_paste": "Coller",
   "instance_setup_bad_token": "Ce jeton de connexion ne semble pas valide.",
+  "instance_setup_already_connected": "Vous êtes déjà connecté à {server}.",
+  "@instance_setup_already_connected": {
+    "placeholders": {
+      "server": {
+        "type": "String"
+      }
+    }
+  },
   "instance_setup_use_manual": "Saisir les détails du serveur manuellement",
   "instance_setup_use_token": "Utiliser un jeton de connexion",
   "instance_setup_test": "Tester la connexion",
@@ -345,5 +369,49 @@
     }
   },
   "error_name_too_short": "Ce nom est trop court.",
-  "error_opening_link": "Impossible d'ouvrir ce lien."
+  "error_opening_link": "Impossible d'ouvrir ce lien.",
+  "servers_title": "Serveurs",
+  "servers_subtitle": "KRAB réunit les photos de tous les serveurs auxquels vous êtes connecté.",
+  "servers_add": "Ajouter un serveur",
+  "servers_signed_in_as": "Connecté en tant que {username}",
+  "servers_not_signed_in": "Non connecté",
+  "servers_sign_in": "Se connecter",
+  "servers_sign_out": "Se déconnecter",
+  "servers_disconnect": "Oublier",
+  "servers_disconnect_title": "Oublier ce serveur ?",
+  "servers_disconnect_description": "Voulez-vous vraiment oublier {server} ? Cela vous déconnecte et le supprime de votre liste de serveurs. Votre compte et vos photos sur le serveur ne sont pas touchés.",
+  "@servers_disconnect_description": {
+    "placeholders": {
+      "server": {
+        "type": "String"
+      }
+    }
+  },
+  "servers_sign_out_description": "Voulez-vous vraiment vous déconnecter de {server} ?",
+  "@servers_sign_out_description": {
+    "placeholders": {
+      "server": {
+        "type": "String"
+      }
+    }
+  },
+  "servers_sign_out_title": "Se déconnecter de ce serveur ?",
+  "servers_unreachable": "Connexion impossible",
+  "servers_loading": "Chargement...",
+  "servers_still_loading": "Chargement depuis {servers}...",
+  "@servers_still_loading": {
+    "placeholders": {
+      "servers": {
+        "type": "String"
+      }
+    }
+  },
+  "groups_server_unavailable": "Les groupes de {servers} n'ont pas pu être chargés.",
+  "feed_server_unavailable": "Les photos de {servers} n'ont pas pu être chargées.",
+  "servers_account": "Compte",
+  "servers_pick_one": "Choisissez un serveur",
+  "servers_token_copied": "Jeton de connexion copié. Toute personne à qui vous l'envoyez pourra se connecter à ce serveur.",
+  "servers_subtitle_ordered": "KRAB réunit les photos de tous les serveurs auxquels vous êtes connecté.\n Le premier serveur disponible est utilisé par défaut dans le reste de l'application.",
+  "servers_share_subject": "Rejoignez-moi sur ce serveur KRAB :",
+  "server_label_count": "Serveurs · {count}"
 }

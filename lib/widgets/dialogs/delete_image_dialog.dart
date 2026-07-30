@@ -94,7 +94,9 @@ class _DeleteImageDialogState extends State<_DeleteImageDialog> {
           label: context.l10n.remove,
           icon: Icons.delete_forever,
           color: _selected.isEmpty
-              ? Theme.of(context).colorScheme.onSurfaceVariant
+              ? Theme.of(context)
+                  .colorScheme
+                  .onSurfaceVariant
                   .withValues(alpha: 0.4)
               : Theme.of(context).colorScheme.error,
         ),

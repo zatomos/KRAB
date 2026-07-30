@@ -6,7 +6,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:workmanager/workmanager.dart';
 
-import 'package:krab/services/api/supabase.dart';
+import 'package:krab/services/api/krab_api.dart';
+import 'package:krab/services/instance/instance_registry.dart';
 import 'package:krab/services/home_widget_updater.dart';
 
 /// WorkManager task name for a flush, and the unique name that keeps at most
@@ -28,9 +29,15 @@ const Duration _claimTimeout = Duration(minutes: 5);
 /// A photo waiting to go out, and its copy of the image bytes.
 class _OutboxEntry {
   final String id;
+
+  /// The instance this photo is going to. A queued photo belongs to the server
+  /// it was composed for, not to whichever one is active when the queue drains.
+  final String instanceId;
+
   final String path;
   final List<String> groupIds;
   final String description;
+  final String? shareId;
   final DateTime createdAt;
   final int attempts;
   final DateTime? claimedAt;
@@ -40,10 +47,12 @@ class _OutboxEntry {
 
   const _OutboxEntry({
     required this.id,
+    required this.instanceId,
     required this.path,
     required this.groupIds,
     required this.description,
     required this.createdAt,
+    this.shareId,
     this.attempts = 0,
     this.claimedAt,
     this.reservedImageId,
@@ -58,10 +67,12 @@ class _OutboxEntry {
   }) =>
       _OutboxEntry(
         id: id,
+        instanceId: instanceId,
         path: path,
         groupIds: groupIds,
         description: description,
         createdAt: createdAt,
+        shareId: shareId,
         attempts: attempts ?? this.attempts,
         claimedAt: clearClaim ? null : (claimedAt ?? this.claimedAt),
         reservedImageId:
@@ -70,9 +81,11 @@ class _OutboxEntry {
 
   Map<String, dynamic> toJson() => {
         'id': id,
+        'instanceId': instanceId,
         'path': path,
         'groupIds': groupIds,
         'description': description,
+        'shareId': shareId,
         'createdAt': createdAt.toIso8601String(),
         'attempts': attempts,
         'claimedAt': claimedAt?.toIso8601String(),
@@ -83,9 +96,13 @@ class _OutboxEntry {
     final claimedAt = json['claimedAt'] as String?;
     return _OutboxEntry(
       id: json['id'] as String,
+      // Entries queued before instances existed belong to the only one there
+      // was, which migration named inst_1.
+      instanceId: json['instanceId'] as String? ?? 'inst_1',
       path: json['path'] as String,
       groupIds: (json['groupIds'] as List).cast<String>(),
       description: json['description'] as String? ?? '',
+      shareId: json['shareId'] as String?,
       createdAt: DateTime.parse(json['createdAt'] as String),
       attempts: json['attempts'] as int? ?? 0,
       claimedAt: claimedAt == null ? null : DateTime.parse(claimedAt),
@@ -94,14 +111,42 @@ class _OutboxEntry {
   }
 }
 
-/// Sends one queued photo.
+/// Sends one queued photo to one instance.
 typedef ImageSender = Future<SupabaseResponse<String>> Function(
+  String instanceId,
   File imageFile,
   List<String> groupIds,
   String description, {
   String? resumeImageId,
+  String? shareId,
   Future<void> Function(String imageId)? onReserved,
 });
+
+/// Sends through the instance the photo was queued for, refusing rather than
+/// sending it to the wrong server if that instance is gone.
+Future<SupabaseResponse<String>> _sendToInstance(
+  String instanceId,
+  File imageFile,
+  List<String> groupIds,
+  String description, {
+  String? resumeImageId,
+  String? shareId,
+  Future<void> Function(String imageId)? onReserved,
+}) async {
+  final instance = InstanceRegistry.instance.byId(instanceId);
+  if (instance == null) {
+    debugPrint('Outbox: instance $instanceId is gone, dropping the photo');
+    return const SupabaseResponse(success: false, error: errorServer);
+  }
+  return instance.api.sendImageToGroups(
+    imageFile,
+    groupIds,
+    description,
+    resumeImageId: resumeImageId,
+    shareId: shareId,
+    onReserved: onReserved,
+  );
+}
 
 /// Photos that couldn't be sent because the device was offline, held until it
 /// can.
@@ -112,7 +157,7 @@ class UploadOutbox {
   bool _flushing = false;
   int _nextId = 0;
 
-  ImageSender _sender = sendImageToGroups;
+  ImageSender _sender = _sendToInstance;
 
   Future<Directory> Function() _storageDir = () async =>
       Directory("${(await getApplicationSupportDirectory()).path}/outbox");
@@ -148,10 +193,12 @@ class UploadOutbox {
   /// Pass reservedImageId when the failed send already got an id out of the
   /// server: the bytes may have landed and only the reply been lost.
   Future<void> enqueue(
+    String instanceId,
     File imageFile,
     List<String> groupIds,
     String description, {
     String? reservedImageId,
+    String? shareId,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     final entries = await _read(prefs);
@@ -164,10 +211,12 @@ class UploadOutbox {
 
     entries.add(_OutboxEntry(
       id: id,
+      instanceId: instanceId,
       path: stored.path,
       groupIds: groupIds,
       description: description,
       reservedImageId: reservedImageId,
+      shareId: shareId,
       createdAt: DateTime.now(),
     ));
 
@@ -175,6 +224,37 @@ class UploadOutbox {
     debugPrint("Outbox: queued $id (${entries.length} pending)");
 
     await _scheduleRetry();
+  }
+
+  /// Drop every queued copy of one send.
+  Future<int> cancelShare(String shareId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final entries = await _read(prefs);
+
+    final now = DateTime.now();
+    final dropped = entries
+        .where((e) =>
+            e.shareId == shareId &&
+            !(e.claimedAt != null &&
+                now.difference(e.claimedAt!) < _claimTimeout))
+        .toList();
+    if (dropped.isEmpty) return 0;
+
+    entries.removeWhere((e) => dropped.any((d) => d.id == e.id));
+    await _write(prefs, entries);
+
+    for (final entry in dropped) {
+      try {
+        final file = File(entry.path);
+        if (await file.exists()) await file.delete();
+      } catch (error) {
+        debugPrint("Outbox: could not delete ${entry.path}: $error");
+      }
+    }
+
+    debugPrint("Outbox: cancelled ${dropped.length} queued copy/copies "
+        "of $shareId");
+    return dropped.length;
   }
 
   Future<int> pendingCount() async {
@@ -224,10 +304,12 @@ class UploadOutbox {
         var reserved = entry.reservedImageId;
 
         final response = await _sender(
+          entry.instanceId,
           File(entry.path),
           entry.groupIds,
           entry.description,
           resumeImageId: reserved,
+          shareId: entry.shareId,
           onReserved: (imageId) async {
             reserved = imageId;
             await _update(prefs, entry.copyWith(reservedImageId: imageId));

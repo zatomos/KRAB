@@ -95,7 +95,8 @@ void main() {
       for (var n = 1; n <= 20; n++) {
         if (fit(width, n) == n) allFit = n;
       }
-      expect(allFit, greaterThan(1), reason: 'need room for the test to mean something');
+      expect(allFit, greaterThan(1),
+          reason: 'need room for the test to mean something');
 
       // One more reaction than that, and the "+N" chip has to be paid for out of
       // the same width, so fewer reactions get shown than the bar could hold.
@@ -109,9 +110,9 @@ void main() {
 
   group('groupReactors', () {
     const reactors = [
-      Reactor(emoji: '👍', userId: 'u1', username: 'ana'),
-      Reactor(emoji: '🔥', userId: 'u2', username: 'bo'),
-      Reactor(emoji: '🔥', userId: 'u1', username: 'ana'),
+      Reactor(instanceId: 'inst_1', emoji: '👍', userId: 'u1', username: 'ana'),
+      Reactor(instanceId: 'inst_1', emoji: '🔥', userId: 'u2', username: 'bo'),
+      Reactor(instanceId: 'inst_1', emoji: '🔥', userId: 'u1', username: 'ana'),
     ];
 
     test('gives each person one row carrying all their emojis', () {
@@ -144,9 +145,9 @@ void main() {
   group('emojisByUse', () {
     test('orders the tabs by how many people used each emoji', () {
       final emojis = emojisByUse(const [
-        Reactor(emoji: '👍', userId: 'u1', username: 'a'),
-        Reactor(emoji: '🔥', userId: 'u2', username: 'b'),
-        Reactor(emoji: '🔥', userId: 'u3', username: 'c'),
+        Reactor(instanceId: 'inst_1', emoji: '👍', userId: 'u1', username: 'a'),
+        Reactor(instanceId: 'inst_1', emoji: '🔥', userId: 'u2', username: 'b'),
+        Reactor(instanceId: 'inst_1', emoji: '🔥', userId: 'u3', username: 'c'),
       ]);
 
       expect(emojis, ['🔥', '👍']);
@@ -154,8 +155,8 @@ void main() {
 
     test('breaks ties alphabetically, so the tabs do not shuffle', () {
       final once = emojisByUse(const [
-        Reactor(emoji: 'b', userId: 'u1', username: 'x'),
-        Reactor(emoji: 'a', userId: 'u2', username: 'y'),
+        Reactor(instanceId: 'inst_1', emoji: 'b', userId: 'u1', username: 'x'),
+        Reactor(instanceId: 'inst_1', emoji: 'a', userId: 'u2', username: 'y'),
       ]);
 
       expect(once, ['a', 'b']);

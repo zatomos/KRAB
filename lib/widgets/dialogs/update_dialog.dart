@@ -124,8 +124,7 @@ Future<void> showUpdateDialog({
                 const SizedBox(height: 16),
                 LinearProgressIndicator(
                   value: progress,
-                  backgroundColor:
-                      Theme.of(context).colorScheme.surfaceBright,
+                  backgroundColor: Theme.of(context).colorScheme.surfaceBright,
                   color: Theme.of(context).colorScheme.primary,
                 ),
                 const SizedBox(height: 8),
@@ -166,10 +165,7 @@ Future<void> showUpdateDialog({
                       if (success) {
                         if (context.mounted) {
                           Navigator.pop(context);
-                          showSnackBar(
-                            context.l10n.installing_update,
-                            tone: SnackTone.warning,
-                          );
+                          showSnackBar(context.l10n.installing_update);
                         }
                       } else {
                         setDialogState(() => isDownloading = false);

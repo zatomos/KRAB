@@ -7,8 +7,9 @@ import 'package:workmanager/workmanager.dart';
 
 import 'package:krab/user_preferences.dart';
 import 'package:krab/models/image_ref.dart';
-import 'package:krab/services/api/supabase.dart';
-import 'package:krab/services/auth/app_auth.dart';
+import 'package:krab/models/shared_image.dart';
+import 'package:krab/services/instance/instances.dart';
+import 'package:krab/services/instance/instance_registry.dart';
 import 'package:krab/services/debug_notifier.dart';
 import 'file_saver.dart';
 
@@ -22,7 +23,15 @@ const _signedOutKey = 'widgetSignedOut';
 
 /// Settle whether the widgets show the signed-out state. True when signed in.
 Future<bool> refreshWidgetAuthState() async {
-  final signedIn = await AppAuth.instance.hasStoredSession();
+  // Signed in anywhere is signed in: the widget draws its signed-out state only
+  // when there is nothing at all to show.
+  var signedIn = false;
+  for (final instance in InstanceRegistry.instance.all) {
+    if (await instance.auth.hasStoredSession()) {
+      signedIn = true;
+      break;
+    }
+  }
   await _setWidgetSignedOut(!signedIn);
   return signedIn;
 }
@@ -49,13 +58,46 @@ class _WidgetEntry {
       groupIds.isEmpty ? '*' : (List.of(groupIds)..sort()).join(',');
 }
 
+/// How a group is named in the widget's filter.
+String widgetGroupKey(String instanceId, String groupId) =>
+    '$instanceId/$groupId';
+
+/// Split a filter entry back into the instance it names and the group on it.
+({String? instanceId, String groupId}) parseWidgetGroupKey(String key) {
+  final slash = key.indexOf('/');
+  if (slash < 0) return (instanceId: null, groupId: key);
+  return (
+    instanceId: key.substring(0, slash),
+    groupId: key.substring(slash + 1),
+  );
+}
+
 /// Cache the user's groups so the native widget configure activity can populate
 /// its group filter without a network call.
 Future<void> cacheUserGroupsForWidget() async {
   try {
-    final result = await getUserGroups();
-    if (!result.success || result.data == null) return;
-    final list = result.data!.map((g) => {'id': g.id, 'name': g.name}).toList();
+    final sources =
+        InstanceRegistry.instance.all.where((i) => i.auth.isLoggedIn).toList();
+    if (sources.isEmpty) return;
+
+    final responses =
+        await Future.wait(sources.map((i) => i.api.getUserGroups().orGiveUp()));
+
+    final list = <Map<String, String>>[];
+    for (var i = 0; i < sources.length; i++) {
+      final result = responses[i];
+      if (!result.success || result.data == null) continue;
+      for (final group in result.data!) {
+        list.add({
+          'id': widgetGroupKey(sources[i].id, group.id),
+          'name': sources.length > 1
+              ? '${group.name} · ${sources[i].label}'
+              : group.name,
+        });
+      }
+    }
+    if (list.isEmpty) return;
+
     await HomeWidget.saveWidgetData('cachedGroups', jsonEncode(list));
     debugPrint("Widget: cached ${list.length} groups");
   } catch (e) {
@@ -156,14 +198,12 @@ Future<void> updateHomeWidget() async {
 
       List<ImageRef>? images = fetchCache[cacheKey];
       if (images == null) {
-        final result = await getLatestImages(needed, groupIds: entry.groupIds);
-        if (!result.success || result.data == null) {
-          debugPrint("Widget ${entry.id}: fetch failed: ${result.error}");
-          await DebugNotifier.instance
-              .notifyWidgetUpdateFailed("Fetch failed: ${result.error}");
+        images = await _latestAcross(needed, entry.groupIds);
+        if (images == null) {
+          debugPrint("Widget ${entry.id}: fetch failed");
+          await DebugNotifier.instance.notifyWidgetUpdateFailed("Fetch failed");
           continue;
         }
-        images = result.data!;
         fetchCache[cacheKey] = images;
       }
 
@@ -218,22 +258,78 @@ String _pfpPath(Directory dir, int id) =>
 String _prevPfpPath(Directory dir, int id, int i) =>
     "${dir.path}/krab_widget_${id}_prev${i}_pfp.jpg";
 
+/// The newest photos across every signed-in server.
+/// Returns null only when nothing could be reached at all.
+Future<List<ImageRef>?> _latestAcross(int needed, List<String> groupIds) async {
+  final registry = InstanceRegistry.instance;
+
+  // An empty filter means every group on every server.
+  final wanted = <String, List<String>>{};
+  for (final key in groupIds) {
+    final parsed = parseWidgetGroupKey(key);
+    final instanceId = parsed.instanceId ?? registry.all.firstOrNull?.id;
+    if (instanceId == null) continue;
+    (wanted[instanceId] ??= []).add(parsed.groupId);
+  }
+
+  final sources = registry.all
+      .where((i) =>
+          i.auth.isLoggedIn && (groupIds.isEmpty || wanted.containsKey(i.id)))
+      .toList();
+  if (sources.isEmpty) return null;
+
+  final results = await Future.wait(sources.map((instance) => instance.api
+      .getLatestImages(needed, groupIds: wanted[instance.id])
+      .orGiveUp()));
+
+  final refs = <ImageRef>[];
+  var anySucceeded = false;
+  for (var i = 0; i < results.length; i++) {
+    final result = results[i];
+    if (!result.success || result.data == null) {
+      debugPrint('Widget: ${sources[i].id} fetch failed (${result.error})');
+      continue;
+    }
+    anySucceeded = true;
+    refs.addAll(result.data!);
+  }
+  if (!anySucceeded) return null;
+
+  // One photo sent to several servers should fill one slot
+  final merged =
+      mergeImages(refs, instanceOrder: [for (final i in sources) i.id]);
+  sortImagesNewestFirst(merged);
+  return [for (final photo in merged.take(needed)) photo.primary];
+}
+
+/// The API of the server holding a photo, or null once that server is gone.
+KrabApi? _apiFor(ImageRef ref) =>
+    InstanceRegistry.instance.byId(ref.instanceId)?.api;
+
+/// How a shown photo is recorded
+String _photoKey(ImageRef ref) => '${ref.instanceId}/${ref.id}';
+
 /// Sync a single widget instance.
 Future<({bool changed, bool newImage})> _syncWidget(
     _WidgetEntry entry, List<ImageRef> images, Directory dir) async {
   if (images.isEmpty) return (changed: false, newImage: false);
 
   final id = entry.id;
-  final latestId = images[0].id;
+  final latest = images[0];
+  final latestId = _photoKey(latest);
+  final api = _apiFor(latest);
+  if (api == null) return (changed: false, newImage: false);
 
   final lastId = await HomeWidget.getWidgetData<String>('lastImageId_$id');
+  // TODO: remove later, along with the rest of the single-instance migration.
+  final showing = lastId == latestId || lastId == latest.id;
   bool changed = false;
   bool newImage = false;
 
-  if (latestId != lastId) {
+  if (!showing) {
     // New main image for this widget. Previous-image slots are reconciled by
     // id in _ensurePrevImages below, so there is no fragile file rotation here.
-    final imgResult = await getImage(latestId);
+    final imgResult = await api.getImage(latest.id);
     final bytes = imgResult.data;
     if (bytes == null) {
       debugPrint("Widget $id: main image download failed");
@@ -243,12 +339,12 @@ Future<({bool changed, bool newImage})> _syncWidget(
     await File(mainPath).writeAsBytes(bytes, flush: true);
     await HomeWidget.saveWidgetData('recentImageUrl_$id', mainPath);
 
-    final details = await getImageDetails(latestId);
+    final details = await api.getImageDetails(latest.id);
     final description = details.data?.description ?? "";
     final uploaderId = details.data?.uploadedBy;
     final uploaderName = uploaderId == null
         ? "Unknown"
-        : (await getUserDetails(uploaderId)).data?.username ?? "Unknown";
+        : (await api.getUserDetails(uploaderId)).data?.username ?? "Unknown";
     await HomeWidget.saveWidgetData('recentImageDescription_$id', description);
     await HomeWidget.saveWidgetData('recentImageSender_$id', uploaderName);
     await HomeWidget.saveWidgetData('recentSenderUserId_$id', uploaderId);
@@ -256,10 +352,11 @@ Future<({bool changed, bool newImage})> _syncWidget(
     try {
       if (uploaderId != null) {
         final pfpFile = File(_pfpPath(dir, id));
-        final pfp = await getProfilePictureBytes(uploaderId);
+        final pfp = await api.getProfilePictureBytes(uploaderId);
         if (pfp.success && pfp.data != null) {
           await pfpFile.writeAsBytes(pfp.data!, flush: true);
-          await HomeWidget.saveWidgetData('recentSenderPfpUrl_$id', pfpFile.path);
+          await HomeWidget.saveWidgetData(
+              'recentSenderPfpUrl_$id', pfpFile.path);
         } else {
           // No pfp: clear the path
           if (await pfpFile.exists()) await pfpFile.delete();
@@ -318,27 +415,33 @@ Future<bool> _ensurePrevImages(
       continue;
     }
 
-    final prevId = images[i].id;
+    final prev = images[i];
+    final prevId = _photoKey(prev);
+    final prevApi = _apiFor(prev);
+    if (prevApi == null) continue;
     final storedId = await HomeWidget.getWidgetData<String>(idKey);
 
     if (storedId != prevId || !await imgFile.exists()) {
-      final result = await getImage(prevId, lowRes: true);
+      final result = await prevApi.getImage(prev.id, lowRes: true);
       if (result.success && result.data != null) {
         await imgFile.writeAsBytes(result.data!, flush: true);
         await HomeWidget.saveWidgetData(urlKey, imgFile.path);
         await HomeWidget.saveWidgetData(idKey, prevId);
         changed = true;
         // The uploader may have changed, so refresh their name and pfp too.
-        if (await _savePrevSender(prevId, pfpFile, pfpKey, nameKey)) changed = true;
+        if (await _savePrevSender(prev, pfpFile, pfpKey, nameKey)) {
+          changed = true;
+        }
       }
     } else {
       // Image already correct. Repair the sender name if it was never stored,
       // and the pfp if its file went missing.
       final storedName = await HomeWidget.getWidgetData<String>(nameKey);
       final storedPfp = await HomeWidget.getWidgetData<String>(pfpKey);
-      final pfpLost = (storedPfp?.isNotEmpty ?? false) && !await pfpFile.exists();
+      final pfpLost =
+          (storedPfp?.isNotEmpty ?? false) && !await pfpFile.exists();
       if (storedName == null || pfpLost) {
-        await _savePrevSender(prevId, pfpFile, pfpKey, nameKey);
+        await _savePrevSender(prev, pfpFile, pfpKey, nameKey);
         changed = true;
       }
     }
@@ -350,14 +453,18 @@ Future<bool> _ensurePrevImages(
 /// Fetch and store the uploader's name and pfp for a previous image.
 /// Returns true if a pfp file was written.
 Future<bool> _savePrevSender(
-    String prevId, File pfpFile, String pfpKey, String nameKey) async {
+    ImageRef prev, File pfpFile, String pfpKey, String nameKey) async {
+  final api = _apiFor(prev);
+  if (api == null) return false;
+  final prevId = prev.id;
   try {
-    final details = await getImageDetails(prevId);
+    final details = await api.getImageDetails(prevId);
     final uploaderId = details.data?.uploadedBy;
     if (uploaderId == null) return false;
-    final name = (await getUserDetails(uploaderId)).data?.username ?? "Unknown";
+    final name =
+        (await api.getUserDetails(uploaderId)).data?.username ?? "Unknown";
     await HomeWidget.saveWidgetData(nameKey, name);
-    final result = await getProfilePictureBytes(uploaderId);
+    final result = await api.getProfilePictureBytes(uploaderId);
     if (result.success && result.data != null) {
       await pfpFile.writeAsBytes(result.data!, flush: true);
       await HomeWidget.saveWidgetData(pfpKey, pfpFile.path);

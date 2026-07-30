@@ -5,8 +5,11 @@ import 'package:krab/l10n/l10n.dart';
 import 'package:krab/models/group.dart';
 import 'package:krab/pages/image_feed_page.dart';
 import 'package:krab/pages/viewer/frosted.dart';
-import 'package:krab/services/api/supabase.dart';
 import 'package:krab/widgets/avatars/group_avatar.dart';
+import 'package:krab/widgets/member_count_label.dart';
+import 'package:krab/widgets/server_label.dart';
+import 'package:krab/services/instance/instances.dart';
+import 'package:krab/services/instance/instance_registry.dart';
 
 /// How far the current-group highlight ring extends past an avatar's radius.
 const double _highlightExtra = 1.5;
@@ -190,6 +193,9 @@ class _GroupTile extends StatelessWidget {
 
   const _GroupTile({required this.group});
 
+  KrabInstance? get _instance =>
+      InstanceRegistry.instance.byId(group.instanceId);
+
   @override
   Widget build(BuildContext context) {
     return ListTile(
@@ -200,17 +206,22 @@ class _GroupTile extends StatelessWidget {
         style:
             const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
       ),
-      subtitle: FutureBuilder<SupabaseResponse<int>>(
-        future: getGroupMemberCount(group.id),
-        builder: (context, snapshot) {
-          final count = snapshot.data?.data;
-          return Text(
-            count == null
-                ? " "
-                : "$count ${count == 1 ? context.l10n.member_singular : context.l10n.members_plural}",
-            style: TextStyle(color: Colors.white.withValues(alpha: 0.6)),
-          );
-        },
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FutureBuilder<SupabaseResponse<int>>(
+            future: _instance?.api.getGroupMemberCount(group.id),
+            builder: (context, snapshot) {
+              final count = snapshot.data?.data;
+              if (count == null) return const Text(" ");
+              return MemberCountLabel(count,
+                  color: Colors.white.withValues(alpha: 0.85));
+            },
+          ),
+          if (ServerLabel.relevant)
+            ServerLabel(_instance, color: Colors.white.withValues(alpha: 0.55)),
+        ],
       ),
       trailing: Icon(Symbols.chevron_right_rounded,
           color: Colors.white.withValues(alpha: 0.7)),

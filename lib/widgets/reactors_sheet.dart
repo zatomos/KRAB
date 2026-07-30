@@ -4,23 +4,29 @@ import 'package:flutter/material.dart';
 
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/models/user.dart' as krab_user;
-import 'package:krab/services/api/supabase.dart';
-import 'package:krab/services/cache/profile_picture_cache.dart';
 import 'package:krab/widgets/avatars/user_avatar.dart';
+import 'package:krab/models/shared_image.dart';
+import 'package:krab/services/instance/instances.dart';
+import 'package:krab/services/instance/instance_registry.dart';
 
 /// One person's reaction with a given emoji.
 class Reactor {
+  final String instanceId;
   final String emoji;
   final String userId;
   final String username;
 
   const Reactor({
+    required this.instanceId,
     required this.emoji,
     required this.userId,
     required this.username,
   });
 
-  static Reactor fromJson(Map<String, dynamic> json) => Reactor(
+  static Reactor fromJson(Map<String, dynamic> json,
+          {required String instanceId}) =>
+      Reactor(
+        instanceId: instanceId,
         emoji: json['emoji']?.toString() ?? '',
         userId: json['user_id']?.toString() ?? '',
         username: json['username']?.toString() ?? '',
@@ -29,11 +35,13 @@ class Reactor {
 
 /// A user and every emoji they reacted with, as shown in one row.
 class ReactorRow {
+  final String instanceId;
   final String userId;
   final String username;
   final List<String> emojis;
 
   const ReactorRow({
+    required this.instanceId,
     required this.userId,
     required this.username,
     required this.emojis,
@@ -50,16 +58,21 @@ List<ReactorRow> groupReactors(List<Reactor> reactors, {String? emoji}) {
   final byUser = <String, ReactorRow>{};
   final order = <String>[];
   for (final r in source) {
-    final existing = byUser[r.userId];
+    final key = '${r.instanceId}/${r.userId}';
+    final existing = byUser[key];
     if (existing == null) {
-      byUser[r.userId] =
-          ReactorRow(userId: r.userId, username: r.username, emojis: [r.emoji]);
-      order.add(r.userId);
+      byUser[key] = ReactorRow(
+        instanceId: r.instanceId,
+        userId: r.userId,
+        username: r.username,
+        emojis: [r.emoji],
+      );
+      order.add(key);
     } else {
       existing.emojis.add(r.emoji);
     }
   }
-  return [for (final id in order) byUser[id]!];
+  return [for (final key in order) byUser[key]!];
 }
 
 /// The distinct emojis used, most-used first, then alphabetically.
@@ -76,7 +89,11 @@ List<String> emojisByUse(List<Reactor> reactors) {
 }
 
 /// Open the reactors sheet for an image
-Future<void> showReactorsSheet(BuildContext context, String imageId) {
+Future<void> showReactorsSheet(
+  BuildContext context,
+  SharedImage image, {
+  String? preferInstanceId,
+}) {
   final screenHeight = MediaQuery.sizeOf(context).height;
   return showModalBottomSheet<void>(
     context: context,
@@ -87,14 +104,19 @@ Future<void> showReactorsSheet(BuildContext context, String imageId) {
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
     ),
-    builder: (_) => _ReactorsSheet(imageId: imageId),
+    builder: (_) =>
+        _ReactorsSheet(image: image, preferInstanceId: preferInstanceId),
   );
 }
 
 class _ReactorsSheet extends StatefulWidget {
-  final String imageId;
+  final SharedImage image;
 
-  const _ReactorsSheet({required this.imageId});
+  /// The server whose group the image was opened from, or null in the
+  /// cross-group feed. Given one, only that server's reactors are listed.
+  final String? preferInstanceId;
+
+  const _ReactorsSheet({required this.image, this.preferInstanceId});
 
   @override
   State<_ReactorsSheet> createState() => _ReactorsSheetState();
@@ -110,8 +132,12 @@ class _ReactorsSheetState extends State<_ReactorsSheet> {
   /// Distinct emojis ordered by how many used them
   List<String> _emojis = const [];
 
-  /// Resolved profile-picture URL per user id
+  /// Resolved profile-picture URL per `instanceId/userId`.
   final Map<String, String> _pfpUrls = {};
+
+  /// `instanceId/userId` of the viewer's own accounts among the copies read, so
+  /// their row can say so. Built for the dedupe below and kept for that.
+  Set<String> _mine = const {};
   bool _loading = true;
 
   @override
@@ -120,31 +146,83 @@ class _ReactorsSheetState extends State<_ReactorsSheet> {
     _load();
   }
 
+  /// Every copy's reactors, gathered into one list.
   Future<void> _load() async {
-    final response = await getImageReactors(widget.imageId);
+    final held = [
+      for (final copy in widget.image.copies)
+        if (InstanceRegistry.instance.byId(copy.instanceId) != null)
+          (
+            instance: InstanceRegistry.instance.byId(copy.instanceId)!,
+            copy: copy,
+          )
+    ];
+
+    // Scoped to the copy this view is about, or every copy in the cross-group
+    // feed.
+    final reachable = widget.preferInstanceId == null
+        ? held
+        : held.where((p) => p.instance.id == widget.preferInstanceId).toList();
+
+    final responses = await Future.wait(reachable
+        .map((pair) => pair.instance.api.getImageReactors(pair.copy.id)));
     if (!mounted) return;
-    if (!response.success || response.data == null) {
+
+    final reactors = <Reactor>[];
+    var anySucceeded = false;
+
+    // A tap writes the reaction to every copy, so the viewer comes back from
+    // each of them under a different account. Listed once.
+    final mine = <String>{
+      for (final pair in reachable)
+        if (pair.instance.auth.currentUserId != null)
+          '${pair.instance.id}/${pair.instance.auth.currentUserId}'
+    };
+    final myEmojisSeen = <String>{};
+
+    for (var i = 0; i < responses.length; i++) {
+      final response = responses[i];
+      if (!response.success || response.data == null) continue;
+      anySucceeded = true;
+      final instanceId = reachable[i].instance.id;
+      for (final raw in response.data!) {
+        final reactor = Reactor.fromJson(raw as Map<String, dynamic>,
+            instanceId: instanceId);
+        if (mine.contains('$instanceId/${reactor.userId}')) {
+          if (!myEmojisSeen.add(reactor.emoji)) continue;
+        }
+        reactors.add(reactor);
+      }
+    }
+
+    if (!anySucceeded) {
       setState(() => _loading = false);
       return;
     }
 
-    final reactors = response.data!
-        .map((e) => Reactor.fromJson(e as Map<String, dynamic>))
-        .toList();
-
     setState(() {
+      _mine = mine;
       _reactors = reactors;
       _emojis = emojisByUse(reactors);
       _loading = false;
     });
 
-    // Resolve avatars for each distinct user
-    final cache = ProfilePictureCache.of(supabase);
-    for (final userId in reactors.map((r) => r.userId).toSet()) {
-      cache.getUrl(userId, ttl: const Duration(hours: 1)).then((url) {
-        if (!mounted || url == null || url.isEmpty) return;
-        setState(() => _pfpUrls[userId] = url);
-      });
+    // Resolve avatars against the instance each reactor is on
+    for (var i = 0; i < responses.length; i++) {
+      final response = responses[i];
+      if (!response.success || response.data == null) continue;
+      final instance = reachable[i].instance;
+      final ids = response.data!
+          .map((e) => (e as Map<String, dynamic>)['user_id']?.toString())
+          .nonNulls
+          .toSet();
+      for (final userId in ids) {
+        instance.pictures
+            .getUrl(userId, ttl: const Duration(hours: 1))
+            .then((url) {
+          if (!mounted || url == null || url.isEmpty) return;
+          setState(() => _pfpUrls['${instance.id}/$userId'] = url);
+        });
+      }
     }
   }
 
@@ -225,9 +303,10 @@ class _ReactorsSheetState extends State<_ReactorsSheet> {
       itemBuilder: (context, i) {
         final row = rows[i];
         final user = krab_user.User(
+          instanceId: row.instanceId,
           id: row.userId,
           username: row.username,
-          pfpUrl: _pfpUrls[row.userId] ?? '',
+          pfpUrl: _pfpUrls['${row.instanceId}/${row.userId}'] ?? '',
         );
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: _rowVerticalPadding),
@@ -236,11 +315,27 @@ class _ReactorsSheetState extends State<_ReactorsSheet> {
               UserAvatar(user, radius: _avatarRadius),
               const SizedBox(width: 12),
               Expanded(
-                child: Text(
-                  row.username.isEmpty ? '...' : row.username,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        row.username.isEmpty ? '...' : row.username,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    if (_mine.contains('${row.instanceId}/${row.userId}')) ...[
+                      const SizedBox(width: 6),
+                      Text(
+                        context.l10n.reactor_you,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
               const SizedBox(width: 8),

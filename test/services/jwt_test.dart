@@ -13,7 +13,8 @@ String _makeJwt(Map<String, dynamic> claims) {
 void main() {
   group('decodeJwtPayload', () {
     test('decodes standard claims', () {
-      final token = _makeJwt({'sub': 'user-123', 'email': 'a@b.com', 'exp': 42});
+      final token =
+          _makeJwt({'sub': 'user-123', 'email': 'a@b.com', 'exp': 42});
       final claims = decodeJwtPayload(token);
 
       expect(claims, isNotNull);

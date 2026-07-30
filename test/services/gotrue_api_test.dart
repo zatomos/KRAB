@@ -39,9 +39,21 @@ ResponseBody _json(Object body, {int status = 200}) => ResponseBody.fromString(
       },
     );
 
+/// What a reverse proxy returns when the backend behind it is not answering:
+/// an HTML error page, not GoTrue's JSON.
+ResponseBody _html(String body, {required int status}) =>
+    ResponseBody.fromString(
+      body,
+      status,
+      headers: {
+        Headers.contentTypeHeader: ['text/html'],
+      },
+    );
+
 /// Wires a GotrueApi to a fake adapter.
 /// Returns both so tests can inspect the recorded request afterwards.
-(GotrueApi, _FakeAdapter) _apiReturning(ResponseBody Function(RequestOptions) r) {
+(GotrueApi, _FakeAdapter) _apiReturning(
+    ResponseBody Function(RequestOptions) r) {
   final adapter = _FakeAdapter(r);
   final dio = Dio()..httpClientAdapter = adapter;
   final api = GotrueApi('https://auth.example', 'anon-key-123', dio: dio);
@@ -50,9 +62,10 @@ ResponseBody _json(Object body, {int status = 200}) => ResponseBody.fromString(
 
 void main() {
   group('request building', () {
-    test('passwordGrant posts email/password with the password grant', () async {
-      final (api, adapter) =
-          _apiReturning((_) => _json({'access_token': 'a', 'refresh_token': 'r'}));
+    test('passwordGrant posts email/password with the password grant',
+        () async {
+      final (api, adapter) = _apiReturning(
+          (_) => _json({'access_token': 'a', 'refresh_token': 'r'}));
 
       final session = await api.passwordGrant('me@x.com', 'pw');
 
@@ -68,8 +81,8 @@ void main() {
     });
 
     test('refreshGrant uses the refresh_token grant', () async {
-      final (api, adapter) =
-          _apiReturning((_) => _json({'access_token': 'a', 'refresh_token': 'r2'}));
+      final (api, adapter) = _apiReturning(
+          (_) => _json({'access_token': 'a', 'refresh_token': 'r2'}));
 
       await api.refreshGrant('old-refresh');
 
@@ -137,7 +150,8 @@ void main() {
 
       await api.recover('me@x.com');
 
-      expect(adapter.lastRequest!.uri.queryParameters.containsKey('redirect_to'),
+      expect(
+          adapter.lastRequest!.uri.queryParameters.containsKey('redirect_to'),
           isFalse);
     });
 
@@ -180,7 +194,8 @@ void main() {
 
       expect(
         () => api.passwordGrant('a', 'b'),
-        throwsA(isA<GotrueAuthException>().having((e) => e.code, 'code', 'first')),
+        throwsA(
+            isA<GotrueAuthException>().having((e) => e.code, 'code', 'first')),
       );
     });
 
@@ -203,6 +218,66 @@ void main() {
         () => api.passwordGrant('a', 'b'),
         throwsA(isA<GotrueAuthException>()
             .having((e) => e.code, 'code', 'auth_error')),
+      );
+    });
+
+    test('a 502 from a proxy is transient, not the session being rejected',
+        () async {
+      // The bug this guards: every non-2xx used to become a rejection, and three
+      // rejections running throw the session away. A server down for a few
+      // minutes signed the user out of it.
+      final (api, _) = _apiReturning(
+          (_) => _html('<html>502 Bad Gateway</html>', status: 502));
+
+      expect(
+        () => api.refreshGrant('r'),
+        throwsA(isA<GotrueNetworkException>()),
+      );
+    });
+
+    test('503 and 504 are transient too', () async {
+      for (final status in [503, 504]) {
+        final (api, _) =
+            _apiReturning((_) => _html('<html>down</html>', status: status));
+        await expectLater(
+          api.refreshGrant('r'),
+          throwsA(isA<GotrueNetworkException>()),
+          reason: 'status $status is the server failing to answer',
+        );
+      }
+    });
+
+    test('429 is transient: a rate limiter has not judged the session',
+        () async {
+      final (api, _) = _apiReturning(
+          (_) => _json({'error_code': 'over_limit'}, status: 429));
+
+      expect(
+        () => api.refreshGrant('r'),
+        throwsA(isA<GotrueNetworkException>()),
+      );
+    });
+
+    test('a non-JSON body is transient whatever the status', () async {
+      // GoTrue states its refusals in JSON, so HTML came from something in front
+      // of it and says nothing about the session.
+      final (api, _) =
+          _apiReturning((_) => _html('<html>nope</html>', status: 400));
+
+      expect(
+        () => api.refreshGrant('r'),
+        throwsA(isA<GotrueNetworkException>()),
+      );
+    });
+
+    test('a real GoTrue refusal is still a rejection', () async {
+      final (api, _) = _apiReturning(
+          (_) => _json({'error_code': 'refresh_token_revoked'}, status: 400));
+
+      expect(
+        () => api.refreshGrant('r'),
+        throwsA(isA<GotrueAuthException>()
+            .having((e) => e.code, 'code', 'refresh_token_revoked')),
       );
     });
 

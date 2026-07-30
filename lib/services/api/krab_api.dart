@@ -2,16 +2,15 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:krab/config.dart';
-import 'package:krab/services/cache/profile_picture_cache.dart';
 import 'package:krab/services/cache/avatar_cache.dart';
 import 'package:krab/services/cache/image_disk_cache.dart';
+import 'package:krab/services/cache/profile_picture_cache.dart';
 import 'package:krab/services/exif_stripper.dart';
 import 'package:krab/services/auth/app_auth.dart';
 import 'package:krab/services/debug_notifier.dart';
+import 'package:krab/services/instance/instance_config.dart';
+import 'package:krab/services/instance/krab_instance.dart';
 import 'package:krab/services/push_helper.dart';
-import 'package:krab/services/cache/reaction_cache.dart';
-import 'package:krab/services/cache/viewer_cache.dart';
-import 'package:krab/user_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:krab/models/group.dart';
@@ -21,13 +20,11 @@ import 'package:krab/models/image_ref.dart';
 import 'package:krab/models/image_details.dart';
 import 'package:krab/models/user.dart' as krab_user;
 
-part 'supabase_groups.dart';
-part 'supabase_images.dart';
-part 'supabase_comments.dart';
-part 'supabase_reactions.dart';
-part 'supabase_account.dart';
-
-final supabase = Supabase.instance.client;
+part 'krab_api_groups.dart';
+part 'krab_api_images.dart';
+part 'krab_api_comments.dart';
+part 'krab_api_reactions.dart';
+part 'krab_api_account.dart';
 
 /// Response Wrapper
 class SupabaseResponse<T> {
@@ -51,6 +48,23 @@ class SupabaseResponse<T> {
 /// The device could not reach the server.
 const String errorNetwork = 'network_error';
 
+/// How long a screen that reads several servers at once waits on any one of
+/// them before going on without it.
+const Duration instanceReadTimeout = Duration(seconds: 8);
+
+extension FanOutRead<T> on Future<SupabaseResponse<T>> {
+  /// Give up on one server so the others can be shown.
+  Future<SupabaseResponse<T>> orGiveUp() => timeout(
+        instanceReadTimeout,
+        onTimeout: () => SupabaseResponse<T>(
+          success: false,
+          offline: true,
+          error: errorNetwork,
+        ),
+      );
+}
+
+
 /// The server was reached, but the call failed.
 const String errorServer = 'server_error';
 
@@ -61,7 +75,7 @@ const String errorPhotoTooLarge = 'photo_too_large';
 
 const String errorNameTooShort = 'name_too_short';
 
-/// Failure codes KRAB produces, which the UI translates.
+/// Failure codes we produces
 const Set<String> errorCodes = {
   errorNetwork,
   errorServer,
@@ -70,15 +84,54 @@ const Set<String> errorCodes = {
   errorNameTooShort,
 };
 
-/// Turn a thrown exception into a failure the UI can show.
-SupabaseResponse<T> _failure<T>(Object error, String what) {
-  final offline = _isTransientError(error);
-  debugPrint('Supabase: $what failed: $error');
-  return SupabaseResponse(
-    success: false,
-    offline: offline,
-    error: offline ? errorNetwork : errorServer,
-  );
+/// Everything the app asks of one KRAB backend.
+class KrabApi {
+  KrabApi(this.instance);
+
+  /// The instance every call here is made against.
+  final KrabInstance instance;
+
+  String get instanceId => instance.id;
+
+  SupabaseClient get _client => instance.client;
+
+  AppAuth get _auth => instance.auth;
+
+  ProfilePictureCache get _pictures => instance.pictures;
+
+  ImageDiskCache get _imageCache => instance.imageCache;
+
+  /// Turn a thrown exception into a failure the UI can show.
+  SupabaseResponse<T> _failure<T>(Object error, String what) {
+    final offline = _isTransientError(error);
+    debugPrint('Supabase[$instanceId]: $what failed: $error');
+    return SupabaseResponse(
+      success: false,
+      offline: offline,
+      error: offline ? errorNetwork : errorServer,
+    );
+  }
+
+  /// Calls a Supabase RPC that returns a `{success, error, ...}` JSON object and
+  /// wraps the common success/error/try-catch handling.
+  Future<SupabaseResponse<T>> _rpc<T>(
+    String fn, {
+    Map<String, dynamic>? params,
+    required String errorContext,
+    T Function(dynamic response)? parse,
+  }) async {
+    try {
+      final response = await _client.rpc(fn, params: params);
+      if (response is Map && response['success'] == false) {
+        return SupabaseResponse(
+            success: false,
+            error: response['error']?.toString() ?? errorServer);
+      }
+      return SupabaseResponse(success: true, data: parse?.call(response));
+    } catch (error) {
+      return _failure(error, errorContext);
+    }
+  }
 }
 
 /// Whether error looks like a transient network failure worth retrying.
@@ -97,8 +150,6 @@ bool _isTransientError(Object error) {
     return true;
   }
 
-  // The HTTP clients underneath postgrest/storage wrap a dead connection in
-  // their own exception types, which aren't exported for us to catch by name.
   final message = error.toString().toLowerCase();
   return message.contains('socketexception') ||
       message.contains('clientexception') ||
@@ -127,26 +178,5 @@ Future<T> _withRetry<T>(
       if (attempt >= maxAttempts || !_isTransientError(error)) rethrow;
       await Future.delayed(Duration(milliseconds: 300 * attempt * attempt));
     }
-  }
-}
-
-/// Calls a Supabase RPC that returns a `{success, error, ...}` JSON object and
-/// wraps the common success/error/try-catch handling.
-Future<SupabaseResponse<T>> _rpc<T>(
-  String fn, {
-  Map<String, dynamic>? params,
-  required String errorContext,
-  T Function(dynamic response)? parse,
-}) async {
-  try {
-    final response = await supabase.rpc(fn, params: params);
-    if (response is Map && response['success'] == false) {
-      // The server explains its own refusals; pass its message through.
-      return SupabaseResponse(
-          success: false, error: response['error']?.toString() ?? errorServer);
-    }
-    return SupabaseResponse(success: true, data: parse?.call(response));
-  } catch (error) {
-    return _failure(error, errorContext);
   }
 }

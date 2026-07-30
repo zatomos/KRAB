@@ -28,6 +28,7 @@
   "dont_have_account": "Don't have an account? Sign Up",
   "fill_in_all_fields": "Please fill in all fields.",
   "account_page_title": "My Account",
+  "profile_section": "Profile",
   "settings": "Settings",
   "auto_save_imgs": "Automatically save images",
   "auto_save_imgs_description": "Images will be saved to your gallery when received.",
@@ -74,6 +75,22 @@
   "delete_photo_group_confirm": "Delete this photo from this group? This can't be undone.",
   "photo_deleted": "Photo deleted",
   "photo_sent": "Photo sent",
+  "photo_sent_partially": "Photo sent, but {server} refused it",
+  "@photo_sent_partially": {
+    "placeholders": {
+      "server": {
+        "type": "String"
+      }
+    }
+  },
+  "photo_sent_some_queued": "Photo sent; {server} is queued until you're back online",
+  "@photo_sent_some_queued": {
+    "placeholders": {
+      "server": {
+        "type": "String"
+      }
+    }
+  },
   "photo_queued_offline": "Queued; will send when you're back online",
   "photo_removed": "Photo removed",
   "failed_to_delete_photo": "Failed to delete photo",
@@ -245,6 +262,7 @@
   "create_invite": "Create Invite",
   "manage_invites": "Manage Invites",
   "who_can_invite": "Who can invite",
+  "group_notifications": "Notifications",
   "mute_notifications": "Mute notifications",
   "mute_notifications_subtitle": "Don't notify me about photos or comments in this group. The widget will keep being updated.",
   "invite_permission_owner": "Owner only",
@@ -253,17 +271,17 @@
   "invite_permission_updated": "Invite permission updated.",
   "invite_created": "Invite created",
   "invite_share_hint": "Share this invite so others can join the group.",
+  "invite_share_subject": "Join my group on KRAB!",
+  "share": "Share",
   "invite_copied": "Invite copied to clipboard.",
-  "revoke_invite": "Revoke Invite",
-  "revoke_invite_confirmation": "Are you sure you want to revoke this invite? It can no longer be used to join.",
-  "revoke": "Revoke",
-  "invite_revoked_success": "Invite revoked.",
+  "delete_invite": "Delete Invite",
+  "delete_invite_confirmation": "Delete this invite? Anyone still holding it will no longer be able to join with it.",
+  "invite_deleted_success": "Invite deleted.",
   "no_invites": "No invites yet.",
   "invite_uses_unlimited": "{count} uses",
   "invite_uses_limited": "{uses}/{max} uses",
   "invite_expires": "Expires {date}",
   "invite_inactive": "Inactive",
-  "copy": "Copy",
   "close": "Close",
   "expires_after": "Expires after",
   "max_uses_label": "Max uses",
@@ -296,6 +314,7 @@
   "error_reacting": "Error adding reaction: {errorMsg}",
   "reactions_title": "Reactions",
   "reactions_all": "All",
+  "reactor_you": "(you)",
   "no_reactions": "No reactions yet.",
   "quick_access_emoji": "Quick access",
   "no_recents": "No recent emojis",
@@ -319,13 +338,18 @@
   "push_distributor_description": "KRAB delivers notifications through a UnifiedPush distributor. Choose which one to use.",
   "push_distributor_none": "No distributor is available on this device. Install a UnifiedPush app to receive notifications.",
   "push_distributor_failed": "Could not subscribe with that distributor.",
-  "change_server_title": "Change server",
-  "change_server_description": "This disconnects you from the current server and signs you out. You'll choose a server when the app reopens.",
-  "change_server_confirm": "Disconnect",
   "instance_setup_token_subtitle": "Paste the connection token you were given to join a KRAB server.",
   "instance_setup_token_hint": "Connection token",
   "instance_setup_paste": "Paste",
   "instance_setup_bad_token": "That doesn't look like a valid connection token.",
+  "instance_setup_already_connected": "You are already connected to {server}.",
+  "@instance_setup_already_connected": {
+    "placeholders": {
+      "server": {
+        "type": "String"
+      }
+    }
+  },
   "instance_setup_use_manual": "Enter server details manually",
   "instance_setup_use_token": "Use a connection token instead",
   "instance_setup_test": "Test connection",
@@ -345,5 +369,77 @@
     }
   },
   "error_name_too_short": "That name is too short.",
-  "error_opening_link": "Couldn't open that link."
+  "error_opening_link": "Couldn't open that link.",
+  "servers_title": "Servers",
+  "servers_subtitle": "KRAB shows photos from every server you are signed into, together.",
+  "servers_add": "Add a server",
+  "servers_signed_in_as": "Signed in as {username}",
+  "@servers_signed_in_as": {
+    "placeholders": {
+      "username": {
+        "type": "String"
+      }
+    }
+  },
+  "servers_not_signed_in": "Not signed in",
+  "servers_sign_in": "Sign in",
+  "servers_sign_out": "Sign out",
+  "servers_disconnect": "Disconnect",
+  "servers_disconnect_title": "Disconnect from this server?",
+  "servers_disconnect_description": "Are you sure you want to disconnect from {server}? This signs you out and removes it from your servers list. Your account and photos on the server itself are untouched.",
+  "@servers_disconnect_description": {
+    "placeholders": {
+      "server": {
+        "type": "String"
+      }
+    }
+  },
+  "servers_sign_out_description": "Are you sure you want to sign out of {server}?",
+  "@servers_sign_out_description": {
+    "placeholders": {
+      "server": {
+        "type": "String"
+      }
+    }
+  },
+  "servers_sign_out_title": "Sign out of this server?",
+  "servers_unreachable": "Couldn't connect",
+  "servers_loading": "Loading...",
+  "servers_still_loading": "Still loading from {servers}...",
+  "@servers_still_loading": {
+    "placeholders": {
+      "servers": {
+        "type": "String"
+      }
+    }
+  },
+  "groups_server_unavailable": "Groups from {servers} could not be loaded.",
+  "@groups_server_unavailable": {
+    "placeholders": {
+      "servers": {
+        "type": "String"
+      }
+    }
+  },
+  "feed_server_unavailable": "Photos from {servers} could not be loaded.",
+  "@feed_server_unavailable": {
+    "placeholders": {
+      "servers": {
+        "type": "String"
+      }
+    }
+  },
+  "servers_account": "Account",
+  "servers_pick_one": "Choose a server",
+  "servers_token_copied": "Connection token copied. Anyone you send it to can connect to this server.",
+  "servers_subtitle_ordered": "KRAB brings together photos from every server you are signed into.\n The first available server is used by default everywhere else in the app.",
+  "servers_share_subject": "Join me on this KRAB server:",
+  "server_label_count": "Servers · {count}",
+  "@server_label_count": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  }
 }

@@ -2,15 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:krab/l10n/l10n.dart';
-import 'package:krab/services/api/supabase.dart';
 import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/widgets/rounded_input_field.dart';
 import 'package:krab/widgets/soft_button.dart';
+import 'package:krab/services/instance/instances.dart';
 
 /// Change-password dialog. Pops with true on success so the caller
 /// can show a confirmation.
 class ChangePasswordDialog extends StatefulWidget {
-  const ChangePasswordDialog({super.key});
+  /// The server whose password is being changed.
+  final KrabInstance instance;
+
+  const ChangePasswordDialog({super.key, required this.instance});
 
   @override
   State<ChangePasswordDialog> createState() => _ChangePasswordDialogState();
@@ -66,7 +69,7 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
       _saving = true;
       _error = null;
     });
-    final response = await changePassword(current, next);
+    final response = await widget.instance.api.changePassword(current, next);
     if (!mounted) return;
 
     if (response.success) {
@@ -83,6 +86,7 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       title: Text(context.l10n.change_password),
       content: SizedBox(
         width: MediaQuery.sizeOf(context).width,

@@ -7,11 +7,12 @@ import 'package:image/image.dart' as img;
 
 import 'package:krab/models/user.dart' as krab_user;
 import 'package:krab/models/image_data.dart';
+import 'package:krab/models/group.dart';
 import 'package:krab/models/image_ref.dart';
+import 'package:krab/models/shared_image.dart';
+import 'package:krab/services/shared_image_api.dart';
 import 'package:krab/pages/viewer/viewer_overlay.dart';
 import 'package:krab/services/cache/feed_image_cache.dart';
-import 'package:krab/services/cache/reaction_cache.dart';
-import 'package:krab/services/cache/viewer_cache.dart';
 
 /// Resolves the pixel dimensions of an encoded image.
 /// Used to give the viewer a stable child size before the hero flight starts,
@@ -70,21 +71,26 @@ Uint8List? createBlurredBackgroundBytes(Uint8List sourceBytes) {
 /// Full-screen, swipeable viewer for a feed of images with a blurred backdrop.
 /// Opened from ImageFeedPage, which owns the image list and caches.
 class ImageViewerPage extends StatefulWidget {
-  final List<ImageRef> images;
+  /// The gallery being viewed, one entry per image.
+  final List<SharedImage> images;
   final int initialIndex;
   final ImageData initialImageData;
 
   /// Natural pixel size of the entry image
   final Size? initialImageSize;
 
-  /// The group being viewed, or null for the cross-group recent photos gallery.
-  final String? groupId;
+  /// The group being viewed, or null for the cross-group recent images gallery.
+  final Group? group;
 
   /// The gallery's cache, shared with the feed underneath so swiping between
-  /// photos and closing back to the grid never re-downloads what is loaded.
+  /// images and closing back to the grid never re-downloads what is loaded.
   final FeedImageCache cache;
-  final void Function(String imageId, int delta)? onCommentCountChanged;
-  final void Function(String imageId)? onImageDeleted;
+  final void Function(SharedImage image, int delta)? onCommentCountChanged;
+  final void Function(SharedImage image)? onImageDeleted;
+
+  /// Copies that appeared on servers this image was not on before, so the list
+  /// behind the viewer can fold them into it.
+  final void Function(List<ImageRef> copies)? onCopiesAdded;
 
   /// Reports the index the viewer settles on as the user swipes, so the gallery
   /// underneath can keep that image's thumbnail on-screen for the hero return.
@@ -102,10 +108,11 @@ class ImageViewerPage extends StatefulWidget {
     required this.initialIndex,
     required this.initialImageData,
     this.initialImageSize,
-    required this.groupId,
+    required this.group,
     required this.cache,
     this.onCommentCountChanged,
     this.onImageDeleted,
+    this.onCopiesAdded,
     this.onImageChanged,
     this.loadMore,
     this.hasMore,
@@ -118,6 +125,7 @@ class ImageViewerPage extends StatefulWidget {
 class _ImageViewerPageState extends State<ImageViewerPage>
     with SingleTickerProviderStateMixin {
   late final ExtendedPageController _pageController;
+
   late int _currentIndex;
   // The page nearest screen-center, so popping mid-swipe flies a single image.
   late int _heroIndex;
@@ -242,8 +250,9 @@ class _ImageViewerPageState extends State<ImageViewerPage>
   void _prefetchNeighbors(int index) {
     for (final i in [index - 1, index + 1]) {
       if (i < 0 || i >= widget.images.length) continue;
-      fetchPostedInGroups(widget.images[i].id);
-      fetchImageReactions(widget.images[i].id);
+      final neighbour = widget.images[i];
+      SharedImageApi(neighbour).postedInGroups();
+      SharedImageApi(neighbour).reactions();
       if (_pageBytes.containsKey(i)) continue;
       _imageDataFor(i).then((data) {
         if (mounted) _cachePageBytes(i, data.imageBytes);
@@ -357,7 +366,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
     return Size(natural.width * s, natural.height * s);
   }
 
-  String get _currentImageId => widget.images[_currentIndex].id;
+  SharedImage get _currentImage => widget.images[_currentIndex];
 
   /// The live page position, or the settled index before the controller
   /// is attached/measured.
@@ -411,12 +420,12 @@ class _ImageViewerPageState extends State<ImageViewerPage>
       if (index == widget.initialIndex) {
         return Future.value(widget.initialImageData);
       }
-      return widget.cache.imageData(widget.images[index].id);
+      return widget.cache.imageData(widget.images[index]);
     });
   }
 
   Widget _buildOverlay() {
-    final imageId = _currentImageId;
+    final image = _currentImage;
     return AnimatedBuilder(
       animation: _controlsAnim,
       builder: (context, _) {
@@ -428,22 +437,28 @@ class _ImageViewerPageState extends State<ImageViewerPage>
             builder: (context, snapshot) {
               final data = snapshot.data;
               if (data == null) return const SizedBox.shrink();
-              final uploader = widget.cache.user(data.uploadedBy) ??
-                  krab_user.User(id: data.uploadedBy, username: '');
+              // The instance has to be the one the id came from, not the
+              // primary: the details are read from whichever copy answered
+              final uploader = widget.cache.user(image) ??
+                  krab_user.User(
+                      instanceId: data.uploaderInstanceId,
+                      id: data.uploadedBy,
+                      username: '');
               return ViewerOverlay(
-                key: ValueKey(imageId),
-                imageId: imageId,
-                groupId: widget.groupId,
+                key: ValueKey(image.identity),
+                image: image,
+                group: widget.group,
                 imageData: data,
                 uploader: uploader,
-                commentCount: widget.cache.commentCount(imageId),
+                commentCount: widget.cache.commentCount(image),
                 progress: t,
                 uploadedAt: widget.images[_currentIndex].uploadedAt,
                 flingToCommentsEnabled: !_isZoomed,
-                loadBestBytesForSave: () => widget.cache.bestBytes(imageId),
+                loadBestBytesForSave: () => widget.cache.bestBytes(image),
                 onCommentCountChanged: (delta) =>
-                    widget.onCommentCountChanged?.call(imageId, delta),
+                    widget.onCommentCountChanged?.call(image, delta),
                 onImageDeleted: widget.onImageDeleted,
+                onCopiesAdded: widget.onCopiesAdded,
               );
             },
           ),
@@ -474,18 +489,20 @@ class _ImageViewerPageState extends State<ImageViewerPage>
                 physics: const _SnappyPageScrollPhysics(),
                 itemBuilder: (context, index) {
                   _touch(index);
-                  final imageId = widget.images[index].id;
+                  final pagePhoto = widget.images[index];
                   return RepaintBoundary(
                     child: _ViewerPhoto(
-                      key: ValueKey(imageId),
+                      key: ValueKey(pagePhoto.identity),
                       displaySize: _displaySizeFor(index, viewport),
                       // Only the page nearest center gets a Hero
-                      heroTag: index == _heroIndex ? "image_$imageId" : null,
+                      heroTag: index == _heroIndex
+                          ? "image_${pagePhoto.identity}"
+                          : null,
                       // Seed from the prefetch cache so a known page paints its
                       // low-res image on the first frame instead of flashing
                       initialBytes: _pageBytes[index],
                       imageDataFuture: _imageDataFor(index),
-                      fullFuture: widget.cache.fullResBytes(imageId),
+                      fullFuture: widget.cache.fullResBytes(pagePhoto),
                       onLowBytes: (bytes) => _cachePageBytes(index, bytes),
                       onNaturalSize: (size) => _setChildSize(index, size),
                       onZoomChanged: _onPageZoomChanged,

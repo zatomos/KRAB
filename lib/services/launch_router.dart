@@ -4,8 +4,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 
 import 'package:krab/app_globals.dart';
-import 'package:krab/services/api/supabase.dart';
-import 'package:krab/services/auth/app_auth.dart';
+import 'package:krab/services/instance/instances.dart';
+import 'package:krab/services/instance/instance_bootstrap.dart';
 import 'package:krab/models/group.dart';
 import 'package:krab/pages/groups_page.dart';
 import 'package:krab/pages/image_feed_page.dart';
@@ -47,7 +47,7 @@ Future<void> handleWidgetLaunch(Uri? uri) async {
     if (nav == null) return;
 
     // Only act on an authenticated session; otherwise the app just opens
-    if (!isSupabaseInitialized || !AppAuth.instance.isLoggedIn) {
+    if (!hasInstance || !anySignedIn) {
       return;
     }
 
@@ -86,7 +86,13 @@ Future<void> handleLocalNotificationTap(String payload) async {
     }
 
     if (groupId.isEmpty) return;
-    final groupResponse = await getGroupDetails(groupId);
+
+    // The notification says which instance it came from; open the group on that
+    // server, not on whichever one happens to be active.
+    final instance =
+        instanceForPayload(data.map((k, v) => MapEntry(k, '${v ?? ''}')));
+    if (instance == null) return;
+    final groupResponse = await instance.api.getGroupDetails(groupId);
     if (!groupResponse.success || groupResponse.data == null) return;
 
     _openGalleryOnGroupList(

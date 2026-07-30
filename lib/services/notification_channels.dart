@@ -7,7 +7,9 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:image/image.dart' as img;
 import 'package:krab/l10n/app_localizations.dart';
-import 'package:krab/services/api/supabase.dart';
+import 'package:krab/services/api/krab_api.dart';
+import 'package:krab/services/instance/krab_instance.dart';
+import 'package:krab/services/shown_image_notifications.dart';
 import 'package:krab/user_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -56,8 +58,11 @@ int _notificationId(String source) {
 }
 
 /// Stable notification id for one delivery of an image.
-int imageNotificationId(String imageId, {String batchKey = ''}) =>
-    _notificationId(batchKey.isEmpty ? imageId : '$imageId|$batchKey');
+int imageNotificationId(String imageId,
+        {String batchKey = '', String? shareId}) =>
+    _notificationId(shareId != null && shareId.isNotEmpty
+        ? shareId
+        : (batchKey.isEmpty ? imageId : '$imageId|$batchKey'));
 
 /// Stable notification id for one comment.
 int commentNotificationId(String commentId) =>
@@ -76,30 +81,78 @@ int _unidentifiedNotificationId() =>
 String imageBatchKey(Iterable<String> groupIds) =>
     (groupIds.toList()..sort()).join(',');
 
+/// Add a copy to the ones a merged notification already stands for.
+String mergeCoveredImageIds(String existing, String arriving) {
+  final ids = <String>[];
+  for (final id in [...existing.split(','), arriving]) {
+    final trimmed = id.trim();
+    if (trimmed.isNotEmpty && !ids.contains(trimmed)) ids.add(trimmed);
+  }
+  return ids.join(',');
+}
+
+/// Fold a newly delivered set of group names into the ones already named by a
+/// notification on screen.
+String mergeGroupsDisplay(String existing, String arriving) {
+  final names = <String>[];
+  for (final name in [...existing.split(', '), ...arriving.split(', ')]) {
+    final trimmed = name.trim();
+    if (trimmed.isNotEmpty && !names.contains(trimmed)) names.add(trimmed);
+  }
+  return names.join(', ');
+}
+
+/// What an image notification should say once an arriving delivery is folded
+/// into the one already on screen.
+///
+/// earlier is null when nothing is showing under this id, which leaves the
+/// arriving delivery to speak for itself.
+({String groupsDisplay, String imageIds, String? tapGroupId})
+    mergeImageNotification({
+  required ShownImageNotification? earlier,
+  required String arrivingGroups,
+  required String arrivingImageId,
+  required String? tapGroupId,
+}) {
+  if (earlier == null) {
+    return (
+      groupsDisplay: arrivingGroups,
+      imageIds: arrivingImageId,
+      tapGroupId: tapGroupId,
+    );
+  }
+
+  final groups = mergeGroupsDisplay(earlier.groupsDisplay, arrivingGroups);
+  final ids = mergeCoveredImageIds(earlier.imageIds, arrivingImageId);
+
+  // Merging is idempotent, so the same delivery arriving twice keeps its tap
+  // target; anything that widens what the notification covers loses it.
+  final widened = groups != arrivingGroups ||
+      ids != arrivingImageId ||
+      earlier.tapGroupId != (tapGroupId ?? '');
+
+  return (
+    groupsDisplay: groups,
+    imageIds: ids,
+    tapGroupId: widened ? null : tapGroupId,
+  );
+}
+
 /// Dismiss a deleted image's notifications and drop its cached big-picture file.
-Future<void> cancelImageNotification(String imageId) async {
+Future<void> cancelImageNotification(String imageId, {String? shareId}) async {
   await _ensureFlnpInitialized();
 
-  // A notification shown by an older build carries the bare-image-id form.
-  await _flnp.cancel(id: imageNotificationId(imageId));
+  final ids = <int>{
+    imageNotificationId(imageId),
+    if (shareId != null && shareId.isNotEmpty)
+      imageNotificationId(imageId, shareId: shareId),
+    ...await ShownImageNotifications.instance.idsCovering(imageId),
+  };
 
-  try {
-    for (final notification in await _flnp.getActiveNotifications()) {
-      final id = notification.id;
-      final payload = notification.payload;
-      if (id == null || payload == null || payload.isEmpty) continue;
-      try {
-        final data = jsonDecode(payload) as Map<String, dynamic>;
-        if (data['image_id'] == imageId) {
-          await _flnp.cancel(id: id);
-        }
-      } catch (_) {
-        // Not a payload we wrote; leave it alone.
-      }
-    }
-  } catch (e) {
-    debugPrint('notif: could not scan active notifications: $e');
+  for (final id in ids) {
+    await _flnp.cancel(id: id);
   }
+  await ShownImageNotifications.instance.forget(ids);
 
   try {
     final dir = await getTemporaryDirectory();
@@ -140,12 +193,14 @@ Future<void> _createFlnpChannel(String channelId, String channelName) async {
 /// The avatar and photo thumbnail a notification illustrates itself with,
 /// fetched together.
 Future<({Uint8List? avatar, Uint8List? image})> _notificationMedia(
-    String userId, String imageId) async {
+    KrabInstance instance, String userId, String imageId) async {
   const missing = SupabaseResponse<Uint8List>(success: false);
   final results = await Future.wait([
-    userId.isNotEmpty ? getProfilePictureBytes(userId) : Future.value(missing),
+    userId.isNotEmpty
+        ? instance.api.getProfilePictureBytes(userId)
+        : Future.value(missing),
     imageId.isNotEmpty
-        ? getImage(imageId, lowRes: true)
+        ? instance.api.getImage(imageId, lowRes: true)
         : Future.value(missing),
   ]);
   return (avatar: results[0].data, image: results[1].data);
@@ -219,7 +274,7 @@ Uint8List? _buildImageLargeIcon(Uint8List? imageBytes, Uint8List? pfpBytes,
 }
 
 Future<void> dispatchCommentNotification(
-    Map<String, dynamic> data, String type) async {
+    KrabInstance instance, Map<String, dynamic> data, String type) async {
   final commentId = data['comment_id'] ?? '';
 
   String groupId;
@@ -231,7 +286,7 @@ Future<void> dispatchCommentNotification(
   String? uploaderUsername;
 
   if (commentId.isNotEmpty) {
-    final ctx = await getCommentNotificationContext(commentId);
+    final ctx = await instance.api.getCommentNotificationContext(commentId);
     if (!ctx.success || ctx.data == null) return;
     final d = ctx.data!;
     groupId = (d['group_id'] as String?) ?? '';
@@ -248,7 +303,7 @@ Future<void> dispatchCommentNotification(
     groupId = data['group_id'] ?? '';
     imageId = data['image_id'] ?? '';
     commenterId = data['commenter_id'] ?? '';
-    final groupResponse = await getGroupDetails(groupId);
+    final groupResponse = await instance.api.getGroupDetails(groupId);
     groupName = (groupResponse.success && groupResponse.data != null)
         ? groupResponse.data!.name
         : '';
@@ -258,11 +313,12 @@ Future<void> dispatchCommentNotification(
   }
 
   if (groupId.isEmpty || groupName.isEmpty) return;
-  if (await UserPreferences.isGroupMuted(groupId)) return;
+  if (await UserPreferences.isGroupMuted(instance.id, groupId)) return;
   if (commenterUsername.isEmpty) commenterUsername = 'Someone';
 
-  final media = await _notificationMedia(commenterId, imageId);
+  final media = await _notificationMedia(instance, commenterId, imageId);
   await showCommentNotification(
+    instance: instance,
     groupId: groupId,
     groupName: groupName,
     commentId: commentId,
@@ -276,7 +332,8 @@ Future<void> dispatchCommentNotification(
   );
 }
 
-Future<void> dispatchReactionNotification(Map<String, dynamic> data,
+Future<void> dispatchReactionNotification(
+    KrabInstance instance, Map<String, dynamic> data,
     [String type = 'new_reaction']) async {
   final imageId = data['image_id'] ?? '';
   final reactorId = data['reactor_id'] ?? '';
@@ -284,7 +341,8 @@ Future<void> dispatchReactionNotification(Map<String, dynamic> data,
 
   if (imageId.isEmpty) return;
 
-  final ctx = await getReactionNotificationContext(imageId, reactorId);
+  final ctx =
+      await instance.api.getReactionNotificationContext(imageId, reactorId);
   if (!ctx.success || ctx.data == null) return;
   final d = ctx.data!;
 
@@ -294,8 +352,9 @@ Future<void> dispatchReactionNotification(Map<String, dynamic> data,
   final uploaderUsername =
       type == 'group_reaction' ? d['uploader_username'] as String? : null;
 
-  final media = await _notificationMedia(reactorId, imageId);
+  final media = await _notificationMedia(instance, reactorId, imageId);
   await showReactionNotification(
+    instance: instance,
     reactorUsername: reactorUsername,
     reactorId: reactorId,
     emoji: emoji,
@@ -306,7 +365,8 @@ Future<void> dispatchReactionNotification(Map<String, dynamic> data,
   );
 }
 
-Future<void> dispatchImageNotification(Map<String, dynamic> data) async {
+Future<void> dispatchImageNotification(
+    KrabInstance instance, Map<String, dynamic> data) async {
   final groupId = data['group_id'] ?? '';
   final imageId = data['image_id'] ?? '';
 
@@ -315,7 +375,7 @@ Future<void> dispatchImageNotification(Map<String, dynamic> data) async {
     return;
   }
 
-  final ctx = await getImageNotificationContext(imageId);
+  final ctx = await instance.api.getImageNotificationContext(imageId);
   if (!ctx.success || ctx.data == null) {
     debugPrint(
         'Notify: no context for image $imageId (${ctx.error}), dropping');
@@ -353,7 +413,7 @@ Future<void> dispatchImageNotification(Map<String, dynamic> data) async {
   // Drop muted groups; only suppress the notification if every group is muted.
   final unmuted = <({String id, String name})>[];
   for (final g in delivered) {
-    if (!await UserPreferences.isGroupMuted(g.id)) unmuted.add(g);
+    if (!await UserPreferences.isGroupMuted(instance.id, g.id)) unmuted.add(g);
   }
   if (unmuted.isEmpty) {
     debugPrint('Notify: every group for image $imageId is muted, dropping');
@@ -371,12 +431,14 @@ Future<void> dispatchImageNotification(Map<String, dynamic> data) async {
   if (senderUsername.isEmpty) senderUsername = 'Someone';
   final imageDescription = (ctx.data!['description'] as String?) ?? '';
 
-  final media = await _notificationMedia(senderId, imageId);
+  final media = await _notificationMedia(instance, senderId, imageId);
   await showImageNotification(
+    instance: instance,
     groupId: channel.id,
     groupName: channel.name,
     groupsDisplay: groupsDisplay,
     batchKey: imageBatchKey(delivered.map((g) => g.id)),
+    shareId: (ctx.data!['share_id'] as String?) ?? '',
     // For a photo delivered to several groups at once, the tap goes to
     // the cross-group feed
     tapGroupId: unmuted.length == 1 ? channel.id : null,
@@ -389,6 +451,7 @@ Future<void> dispatchImageNotification(Map<String, dynamic> data) async {
 }
 
 Future<void> showImageNotification({
+  required KrabInstance instance,
   required String groupId,
   required String groupName,
   required String senderUsername,
@@ -399,16 +462,77 @@ Future<void> showImageNotification({
   /// more than one group, in which case the tap opens the cross-group feed.
   String? tapGroupId,
   String batchKey = '',
+  String? shareId,
+  String imageDescription = '',
+  Uint8List? senderAvatarBytes,
+  Uint8List? imageBytes,
+}) =>
+    ShownImageNotifications.instance.serialized(() => _showImageNotification(
+          instance: instance,
+          groupId: groupId,
+          groupName: groupName,
+          senderUsername: senderUsername,
+          imageId: imageId,
+          groupsDisplay: groupsDisplay,
+          tapGroupId: tapGroupId,
+          batchKey: batchKey,
+          shareId: shareId,
+          imageDescription: imageDescription,
+          senderAvatarBytes: senderAvatarBytes,
+          imageBytes: imageBytes,
+        ));
+
+Future<void> _showImageNotification({
+  required KrabInstance instance,
+  required String groupId,
+  required String groupName,
+  required String senderUsername,
+  required String imageId,
+  String? groupsDisplay,
+  String? tapGroupId,
+  String batchKey = '',
+  String? shareId,
   String imageDescription = '',
   Uint8List? senderAvatarBytes,
   Uint8List? imageBytes,
 }) async {
   await _createFlnpChannel(groupId, groupName);
 
+  final id = imageNotificationId(imageId, batchKey: batchKey, shareId: shareId);
+
   // Shown on the notification itself; lists every group the image was sent to.
-  final subText = (groupsDisplay != null && groupsDisplay.isNotEmpty)
+  var subText = (groupsDisplay != null && groupsDisplay.isNotEmpty)
       ? groupsDisplay
       : groupName;
+
+  // Every copy this notification now stands for.
+  var covered = imageId;
+
+  // The id is the share id, so every delivery of this photo lands on the one
+  // notification: another server's copy, and a second batch of groups on this
+  // one. Fold what is already showing in, rather than overwriting it and losing
+  // the groups it named.
+  if (shareId != null && shareId.isNotEmpty) {
+    final merged = mergeImageNotification(
+      earlier: await _shownImageNotification(id),
+      arrivingGroups: subText,
+      arrivingImageId: imageId,
+      tapGroupId: tapGroupId,
+    );
+    subText = merged.groupsDisplay;
+    covered = merged.imageIds;
+    tapGroupId = merged.tapGroupId;
+  }
+
+  await ShownImageNotifications.instance.record(
+    id,
+    ShownImageNotification(
+      groupsDisplay: subText,
+      imageIds: covered,
+      tapGroupId: tapGroupId ?? '',
+      shownAt: DateTime.now(),
+    ),
+  );
 
   final compositeBytes = _buildImageLargeIcon(imageBytes, senderAvatarBytes);
 
@@ -442,7 +566,7 @@ Future<void> showImageNotification({
       : null;
 
   await _flnp.show(
-    id: imageNotificationId(imageId, batchKey: batchKey),
+    id: id,
     title: senderUsername,
     body: _l10n().new_image_notification,
     notificationDetails: NotificationDetails(
@@ -461,13 +585,48 @@ Future<void> showImageNotification({
     ),
     payload: jsonEncode({
       'type': 'new_image',
+      'instance_url': instance.url,
       'image_id': imageId,
       'group_id': tapGroupId ?? '',
+      'share_id': shareId ?? '',
+      'groups_display': subText,
+      'image_ids': covered,
     }),
   );
 }
 
+/// What an image notification still on screen is saying, if any.
+Future<ShownImageNotification?> _shownImageNotification(int id) async {
+  final recorded = await ShownImageNotifications.instance.read(id);
+  if (recorded == null) return null;
+
+  final live = await _activeNotificationIds();
+  // Unknown: trust the record. It is dropped by age, so the worst case is a
+  // stale group name rather than a notification that keeps losing
+  // what the last one said.
+  if (live != null && !live.contains(id)) {
+    await ShownImageNotifications.instance.forget([id]);
+    return null;
+  }
+  return recorded;
+}
+
+/// The ids the system is showing, or null when it cannot say.
+Future<Set<int>?> _activeNotificationIds() async {
+  try {
+    final active = await _flnp.getActiveNotifications();
+    return {
+      for (final notification in active)
+        if (notification.id != null) notification.id!
+    };
+  } catch (e) {
+    debugPrint('notif: could not list the active notifications: $e');
+    return null;
+  }
+}
+
 Future<void> showCommentNotification({
+  required KrabInstance instance,
   required String groupId,
   required String groupName,
   required String commenterUsername,
@@ -507,12 +666,17 @@ Future<void> showCommentNotification({
         styleInformation: BigTextStyleInformation(commentText),
       ),
     ),
-    payload:
-        jsonEncode({'type': type, 'image_id': imageId, 'group_id': groupId}),
+    payload: jsonEncode({
+      'type': type,
+      'instance_url': instance.url,
+      'image_id': imageId,
+      'group_id': groupId,
+    }),
   );
 }
 
 Future<void> showReactionNotification({
+  required KrabInstance instance,
   required String reactorUsername,
   required String emoji,
   required String imageId,
@@ -547,7 +711,11 @@ Future<void> showReactionNotification({
             : null,
       ),
     ),
-    payload: jsonEncode({'type': 'new_reaction', 'image_id': imageId}),
+    payload: jsonEncode({
+      'type': 'new_reaction',
+      'instance_url': instance.url,
+      'image_id': imageId
+    }),
   );
 }
 

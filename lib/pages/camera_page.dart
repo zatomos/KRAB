@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
@@ -11,13 +13,17 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:native_device_orientation/native_device_orientation.dart';
 import 'package:path_provider/path_provider.dart';
 
-import 'package:krab/services/api/supabase.dart';
 import 'package:krab/models/user.dart' as krab_user;
 import 'package:krab/widgets/dialogs/image_sent_dialog.dart';
 import 'package:krab/widgets/dialogs/send_image_dialog.dart';
 import 'package:krab/widgets/avatars/user_avatar.dart';
 import 'groups_page.dart';
 import 'account_page.dart';
+import 'package:krab/models/shared_image.dart';
+import 'package:krab/services/instance/instances.dart';
+import 'package:krab/services/instance/instance_registry.dart';
+import 'package:krab/services/shared_image_api.dart';
+import 'package:krab/services/upload_outbox.dart';
 
 class CameraPage extends StatefulWidget {
   const CameraPage({super.key});
@@ -60,6 +66,15 @@ class CameraPageState extends State<CameraPage> {
   // Tap focus UI
   Offset? _focusPoint;
 
+  // User presses the shutter button
+  bool _shutterHeld = false;
+
+  // Briefly whitens the preview when a frame is taken.
+  bool _captureFlash = false;
+
+  /// Whether the preview has been faded in.
+  bool _previewVisible = false;
+
   // User
   krab_user.User? currentUser;
 
@@ -69,10 +84,19 @@ class CameraPageState extends State<CameraPage> {
     _allowAllOrientations();
     _initializeCamera();
     _loadCurrentUser();
+    _authSubscription =
+        InstanceRegistry.instance.authEvents.listen((_) => _loadCurrentUser());
+    _orderSubscription =
+        InstanceRegistry.instance.orderChanged.listen((_) => _onOrderChanged());
   }
+
+  StreamSubscription<InstanceAuthEvent>? _authSubscription;
+  StreamSubscription<void>? _orderSubscription;
 
   @override
   void dispose() {
+    _authSubscription?.cancel();
+    _orderSubscription?.cancel();
     _lockPortrait();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     _zoomNotifier.dispose();
@@ -87,6 +111,7 @@ class CameraPageState extends State<CameraPage> {
     final controller = _controller;
     _controller = null;
     _initializeControllerFuture = null;
+    _previewVisible = false;
     if (mounted) setState(() {});
     await controller?.dispose();
   }
@@ -120,9 +145,56 @@ class CameraPageState extends State<CameraPage> {
 
   // ===== Initialization ========================================================
 
+  /// The account the camera speaks for: the highest-ranked server that can
+  /// actually answer for it.
+  KrabInstance? _accountInstance;
+
+  /// The servers to try, best first, being the order the user chose.
+  List<KrabInstance> get _rankedSignedIn => InstanceRegistry.instance.signedIn;
+
+  /// Follow a new ranking straight away.
+  void _onOrderChanged() {
+    final preferred = _rankedSignedIn.firstOrNull;
+    if (preferred != null && preferred != _accountInstance) {
+      setState(() {
+        _accountInstance = preferred;
+        currentUser = null;
+      });
+    }
+    _loadCurrentUser();
+  }
+
+  /// Find the account to show, taking the next server when one cannot answer.
   Future<void> _loadCurrentUser() async {
-    currentUser = await krab_user.getCurrentUser();
-    debugPrint("Loaded current user: $currentUser");
+    final ranked = _rankedSignedIn;
+    // Asked all at once, then read back in the user's own order: the best server
+    // that answers wins, and a server that is down costs the timeout once rather
+    // than once per server ahead of the one that works.
+    final asked = [
+      for (final instance in ranked) instance.api.getCurrentUser().orGiveUp()
+    ];
+
+    for (var i = 0; i < ranked.length; i++) {
+      final response = await asked[i];
+      if (!mounted) return;
+      if (response.success && response.data != null) {
+        setState(() {
+          _accountInstance = ranked[i];
+          currentUser = response.data;
+        });
+        return;
+      }
+      debugPrint('Camera: ${ranked[i].id} could not say who the user is '
+          '(${response.error}), trying the next server');
+    }
+
+    // Nobody answered, or nobody is signed in.
+    if (mounted) {
+      setState(() {
+        _accountInstance = null;
+        currentUser = null;
+      });
+    }
   }
 
   Future<void> _initializeCamera() async {
@@ -174,6 +246,7 @@ class CameraPageState extends State<CameraPage> {
     // Tear the old preview out of the tree before disposing its controller
     final previous = _controller;
     _controller = null;
+    _previewVisible = false;
     if (mounted) setState(() {});
     await previous?.dispose();
 
@@ -192,6 +265,16 @@ class CameraPageState extends State<CameraPage> {
     _zoomNotifier.value = 1.0;
 
     debugPrint("Zoom caps: min=$_minZoom max=$_maxZoom");
+
+    _revealPreview();
+  }
+
+  /// Start the fade once the preview is in the tree
+  void _revealPreview() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _controller == null) return;
+      setState(() => _previewVisible = true);
+    });
   }
 
   // ===== Flash, camera switching, zoom, focus/AE ===============================
@@ -286,7 +369,15 @@ class CameraPageState extends State<CameraPage> {
     final errorMessage = context.l10n.error_capturing_image;
     try {
       if (_captureInProgress) return;
-      if (mounted) setState(() => _captureInProgress = true);
+      if (mounted) {
+        setState(() {
+          _captureInProgress = true;
+          _captureFlash = true;
+        });
+        Future.delayed(const Duration(milliseconds: 90), () {
+          if (mounted) setState(() => _captureFlash = false);
+        });
+      }
 
       final image = await _controller!.takePicture();
       await _showSendImageDialog(File(image.path));
@@ -317,10 +408,18 @@ class CameraPageState extends State<CameraPage> {
     }
   }
 
-  /// Delete the just-sent photo when the user taps Undo on the snackbar.
+  /// Delete the just-sent image when the user taps Undo on the snackbar.
+  ///
+  /// Copies that never reached their server are sitting in the outbox: they have
+  /// to be cancelled here, or the flush would post the photo the user just took
+  /// back.
   Future<void> _undoSend(
-      String imageId, String removedMsg, String failedMsg) async {
-    final deleted = await deleteImage(imageId);
+      SharedImage image, String removedMsg, String failedMsg) async {
+    final shareId = image.primary.shareId;
+    if (shareId != null && shareId.isNotEmpty) {
+      await UploadOutbox.instance.cancelShare(shareId);
+    }
+    final deleted = await SharedImageApi(image).delete();
     if (deleted.success) {
       updateHomeWidget();
       showSnackBar(removedMsg, tone: SnackTone.success);
@@ -357,22 +456,32 @@ class CameraPageState extends State<CameraPage> {
 
       switch (result.outcome) {
         case SendOutcome.sent:
+        case SendOutcome.sentPartially:
+          final refused = result.outcome == SendOutcome.sentPartially;
+          final queued = result.queuedFor.isNotEmpty;
           updateHomeWidget();
           // Confirm the send with a snackbar that also offers a quick Undo.
-          final imageId = result.imageId;
+          final image = result.image;
           final removedMsg = l10n.photo_removed;
           final failedMsg = l10n.failed_to_delete_photo;
+          final String message;
+          if (refused) {
+            message = l10n.photo_sent_partially(result.refusedBy.join(', '));
+          } else if (queued) {
+            message = l10n.photo_sent_some_queued(result.queuedFor.join(', '));
+          } else {
+            message = l10n.photo_sent;
+          }
           showSnackBar(
-            l10n.photo_sent,
-            tone: SnackTone.success,
-            actionLabel: imageId == null ? null : l10n.undo,
-            onAction: imageId == null
+            message,
+            tone: (refused || queued) ? SnackTone.warning : SnackTone.success,
+            actionLabel: image == null ? null : l10n.undo,
+            onAction: image == null
                 ? null
-                : () => _undoSend(imageId, removedMsg, failedMsg),
+                : () => _undoSend(image, removedMsg, failedMsg),
           );
         case SendOutcome.queued:
-          // The photo is safe in the outbox, so this reads as a success.
-          showSnackBar(l10n.photo_queued_offline, tone: SnackTone.success);
+          showSnackBar(l10n.photo_queued_offline, tone: SnackTone.warning);
         case SendOutcome.failed:
           await showDialog(
             context: context,
@@ -397,7 +506,12 @@ class CameraPageState extends State<CameraPage> {
 
   Widget _accountButton() {
     Future<void> onTap() async {
-      await _navigateWithCameraDispose(const AccountPage());
+      final instance = _accountInstance ??
+          _rankedSignedIn.firstOrNull ??
+          InstanceRegistry.instance.all.firstOrNull;
+      if (instance == null) return;
+
+      await _navigateWithCameraDispose(AccountPage(instance: instance));
       await _loadCurrentUser();
     }
 
@@ -413,22 +527,43 @@ class CameraPageState extends State<CameraPage> {
           );
   }
 
-  Widget _shutterButton() => IconButton(
-        onPressed: _takePicture,
-        icon: Icon(
-          Icons.circle_outlined,
-          color: _captureInProgress
-              ? Theme.of(context).colorScheme.primary
-              : Colors.white,
-          size: 70,
+  Widget _shutterButton() => GestureDetector(
+        onTapDown: (_) => setState(() => _shutterHeld = true),
+        onTapCancel: () => setState(() => _shutterHeld = false),
+        onTapUp: (_) {
+          setState(() => _shutterHeld = false);
+          _takePicture();
+        },
+        child: AnimatedScale(
+          scale: _shutterHeld ? 0.88 : 1,
+          duration: const Duration(milliseconds: 90),
+          curve: Curves.easeOut,
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: Icon(
+              Icons.circle_outlined,
+              color: _captureInProgress
+                  ? Theme.of(context).colorScheme.primary
+                  : Colors.white,
+              size: 70,
+            ),
+          ),
         ),
       );
 
   Widget _flashButton() => IconButton(
         onPressed: _switchFlashLight,
-        icon: Icon(
-          _isFlashOn ? Symbols.flash_on_rounded : Symbols.flash_off_rounded,
-          color: Colors.white,
+        icon: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 200),
+          transitionBuilder: (child, animation) => ScaleTransition(
+            scale: animation,
+            child: FadeTransition(opacity: animation, child: child),
+          ),
+          child: Icon(
+            _isFlashOn ? Symbols.flash_on_rounded : Symbols.flash_off_rounded,
+            key: ValueKey(_isFlashOn),
+            color: Colors.white,
+          ),
         ),
       );
 
@@ -466,13 +601,32 @@ class CameraPageState extends State<CameraPage> {
       onScaleEnd: (_) => _onZoomChanged(_zoomNotifier.value),
       child: Stack(
         children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(20),
-            child: Container(
-              width: size.width,
-              height: size.height,
-              color: Colors.white12,
-              child: CameraPreview(_controller!),
+          AnimatedOpacity(
+            opacity: _previewVisible ? 1 : 0,
+            duration: _previewFade,
+            curve: Curves.easeOut,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: SizedBox(
+                width: size.width,
+                height: size.height,
+                child: CameraPreview(_controller!),
+              ),
+            ),
+          ),
+          Positioned.fill(
+            child: IgnorePointer(
+              child: AnimatedOpacity(
+                opacity: _captureFlash ? 0.75 : 0,
+                duration: Duration(milliseconds: _captureFlash ? 40 : 220),
+                curve: Curves.easeOut,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                ),
+              ),
             ),
           ),
           if (_focusPoint != null)
@@ -494,6 +648,9 @@ class CameraPageState extends State<CameraPage> {
   }
 
   static const double _focusRingRadius = 40;
+
+  /// How long the preview takes to come up.
+  static const Duration _previewFade = Duration(milliseconds: 100);
 
   /// Focus where the user tapped.
   void _onPreviewTap(TapDownDetails details, Size preview) {
@@ -670,7 +827,8 @@ class CameraPageState extends State<CameraPage> {
                   style: const TextStyle(color: Colors.white)),
             );
           } else {
-            return const Center(child: CircularProgressIndicator());
+            // Nothing while the camera comes up
+            return const SizedBox.shrink();
           }
         },
       ),
