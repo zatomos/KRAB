@@ -15,6 +15,7 @@ import 'package:krab/widgets/instance_status_footer.dart';
 import 'package:krab/pages/image_feed_page.dart';
 import 'package:krab/models/group.dart';
 import 'package:krab/services/instance/instances.dart';
+import 'package:krab/services/invite_token.dart';
 import 'package:krab/services/instance/instance_registry.dart';
 
 class GroupsPage extends StatefulWidget {
@@ -304,7 +305,8 @@ class JoinGroupDialog extends StatelessWidget {
       submitIcon: Symbols.groups_rounded,
       successMessage: l10n.group_joined_success,
       onSubmit: (token, instance) async {
-        final res = await instance.api.joinGroupByInvite(token);
+        final res =
+            await instance.api.joinGroupByInvite(extractInviteToken(token));
         return res.success
             ? null
             : l10n.group_code_invalid(res.error ?? l10n.unknown_error);

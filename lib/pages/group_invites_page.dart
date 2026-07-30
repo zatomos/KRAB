@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:krab/models/group_invite.dart';
@@ -87,11 +88,6 @@ class _GroupInvitesPageState extends State<GroupInvitesPage> {
     await _load();
   }
 
-  void _copyToken(String token) {
-    Clipboard.setData(ClipboardData(text: token));
-    showSnackBar(context.l10n.invite_copied, tone: SnackTone.success);
-  }
-
   String _subtitleFor(BuildContext context, GroupInvite invite) {
     final parts = <String>[];
     parts.add(invite.maxUses == null
@@ -148,7 +144,7 @@ class _GroupInvitesPageState extends State<GroupInvitesPage> {
             style: const TextStyle(fontFamily: 'monospace'),
           ),
           subtitle: Text(_subtitleFor(context, invite)),
-          onTap: () => _copyToken(invite.token),
+          onTap: () => shareInviteToken(context, invite.token),
           trailing: IconButton(
             icon: Icon(
               Symbols.delete_rounded,
@@ -172,6 +168,22 @@ class _GroupInvitesPageState extends State<GroupInvitesPage> {
           ),
         ),
       );
+}
+
+/// Hand an invite to somebody through the system share sheet.
+/// Falls back to the clipboard when nothing answers.
+Future<void> shareInviteToken(BuildContext context, String token) async {
+  final l10n = context.l10n;
+  try {
+    await SharePlus.instance.share(ShareParams(
+      text: '${l10n.invite_share_subject}\n\n$token',
+      subject: l10n.invite_share_subject,
+    ));
+  } catch (e) {
+    debugPrint('Invites: share sheet failed: $e');
+    await Clipboard.setData(ClipboardData(text: token));
+    showSnackBar(l10n.invite_copied, tone: SnackTone.success);
+  }
 }
 
 /// Dialog to create a new invite with an expiry and max-uses selection
@@ -328,11 +340,11 @@ Future<void> showInviteTokenDialog(BuildContext context, String token) {
         ),
         SoftButton(
           onPressed: () {
-            Clipboard.setData(ClipboardData(text: token));
-            showSnackBar(context.l10n.invite_copied, tone: SnackTone.success);
             Navigator.of(context).pop();
+            shareInviteToken(context, token);
           },
-          label: context.l10n.copy,
+          label: context.l10n.share,
+          icon: Symbols.share_rounded,
           color: Theme.of(context).colorScheme.primary,
         ),
       ],
