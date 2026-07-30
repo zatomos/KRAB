@@ -90,7 +90,7 @@ Future<String?> showEmojiPicker(BuildContext context) {
                   sheetContext.l10n.quick_access_emoji,
                   style: TextStyle(
                     fontSize: 12,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w400,
                     color: scheme.onSurfaceVariant,
                   ),
                 ),

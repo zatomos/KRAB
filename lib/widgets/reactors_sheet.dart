@@ -8,6 +8,7 @@ import 'package:krab/widgets/avatars/user_avatar.dart';
 import 'package:krab/models/shared_image.dart';
 import 'package:krab/services/instance/instances.dart';
 import 'package:krab/services/instance/instance_registry.dart';
+import 'package:krab/themes/global_theme_data.dart';
 
 /// One person's reaction with a given emoji.
 class Reactor {
@@ -260,7 +261,10 @@ class _ReactorsSheetState extends State<_ReactorsSheet> {
           children: [
             Text(
               context.l10n.reactions_title,
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w500,
+                  letterSpacing: GlobalThemeData.mediumTracking),
             ),
             const SizedBox(height: 8),
             TabBar(
@@ -323,7 +327,7 @@ class _ReactorsSheetState extends State<_ReactorsSheet> {
                         row.username.isEmpty ? '...' : row.username,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontWeight: FontWeight.w600),
+                        style: const TextStyle(fontWeight: FontWeight.w400),
                       ),
                     ),
                     if (_mine.contains('${row.instanceId}/${row.userId}')) ...[

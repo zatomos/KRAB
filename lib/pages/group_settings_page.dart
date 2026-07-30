@@ -22,6 +22,7 @@ import 'package:krab/pages/group_invites_page.dart';
 import 'package:krab/user_preferences.dart';
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/services/instance/instances.dart';
+import 'package:krab/themes/global_theme_data.dart';
 
 class GroupSettingsPage extends StatefulWidget {
   final Group group;
@@ -398,7 +399,10 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
 
   /// The group's name
   Widget _name(BuildContext context, bool isManager) {
-    const style = TextStyle(fontSize: 24, fontWeight: FontWeight.bold);
+    const style = TextStyle(
+        fontSize: 24,
+        fontWeight: FontWeight.w500,
+        letterSpacing: GlobalThemeData.mediumTracking);
     final name = Text(_group.name, textAlign: TextAlign.center, style: style);
     if (!isManager) return name;
 
@@ -675,7 +679,8 @@ class _MemberTileState extends State<_MemberTile> {
         PopupMenuItem(
           child: ListTile(
             leading: Icon(icon),
-            title: Text(label),
+            title: Text(label,
+                style: const TextStyle(fontWeight: FontWeight.w400)),
             onTap: () {
               Navigator.pop(context);
               onTap();

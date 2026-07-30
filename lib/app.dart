@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import 'package:krab/app_globals.dart';
 import 'package:krab/services/instance/instances.dart';
@@ -136,7 +135,7 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
         ),
         colorScheme: GlobalThemeData.darkColorScheme,
         useMaterial3: true,
-        fontFamily: GoogleFonts.rubik(fontWeight: FontWeight.w400).fontFamily,
+        fontFamily: 'Rubik',
         iconTheme: const IconThemeData(weight: 650),
         popupMenuTheme: PopupMenuThemeData(
           shape: RoundedRectangleBorder(

@@ -203,7 +203,10 @@ class HomeWidgetStatus {
   // UI helpers
   Widget _sectionTitle(String text) => Text(
         text,
-        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        style: const TextStyle(
+            fontWeight: FontWeight.w500,
+            letterSpacing: GlobalThemeData.mediumTracking,
+            fontSize: 16),
       );
 
   Widget _step(BuildContext context, String number, String text) => Row(
@@ -220,7 +223,8 @@ class HomeWidgetStatus {
               child: Text(number,
                   style: const TextStyle(
                     color: Colors.white,
-                    fontWeight: FontWeight.bold,
+                    fontWeight: FontWeight.w500,
+                    letterSpacing: GlobalThemeData.mediumTracking,
                   )),
             ),
           ),

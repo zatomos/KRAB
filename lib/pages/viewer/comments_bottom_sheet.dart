@@ -19,6 +19,7 @@ import 'package:krab/services/time_formatting.dart';
 import 'package:krab/models/shared_image.dart';
 import 'package:krab/services/instance/instances.dart';
 import 'package:krab/services/shared_image_api.dart';
+import 'package:krab/themes/global_theme_data.dart';
 
 /// How long a group's thread takes to expand or collapse.
 const Duration _expandDuration = Duration(milliseconds: 200);
@@ -623,7 +624,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
                                 TextSpan(
                                   text: username,
                                   style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
+                                      fontWeight: FontWeight.w400,
                                       fontSize: 14),
                                 ),
                                 TextSpan(
@@ -678,7 +679,8 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
                 section.groupName,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontWeight: FontWeight.w700,
+                  fontWeight: FontWeight.w500,
+                  letterSpacing: GlobalThemeData.mediumTracking,
                   fontSize: 15,
                   color: color,
                 ),
@@ -700,7 +702,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
                     '${section.commentCount}',
                     style: TextStyle(
                       fontSize: 12,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w400,
                       color: color,
                     ),
                   ),
@@ -799,7 +801,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
                   context.l10n.comments_from_other_groups,
                   style: TextStyle(
                     fontSize: 12,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w400,
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
@@ -877,8 +879,10 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
         children: [
           // Header
           Text(context.l10n.comments,
-              style:
-                  const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w500,
+                  letterSpacing: GlobalThemeData.mediumTracking)),
 
           const SizedBox(height: 12),
 

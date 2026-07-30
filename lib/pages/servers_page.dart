@@ -415,7 +415,9 @@ class _ServerCard extends StatelessWidget {
                     Text(
                       instance.label,
                       style: const TextStyle(
-                          fontSize: 16, fontWeight: FontWeight.bold),
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                          letterSpacing: GlobalThemeData.mediumTracking),
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 2),
@@ -520,7 +522,8 @@ class _ServerCard extends StatelessWidget {
         child: ListTile(
           contentPadding: EdgeInsets.zero,
           leading: Icon(icon, color: color),
-          title: Text(label, style: TextStyle(color: color)),
+          title: Text(label,
+              style: TextStyle(color: color, fontWeight: FontWeight.w400)),
         ),
       );
 }

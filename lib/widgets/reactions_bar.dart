@@ -12,6 +12,7 @@ import 'package:krab/models/shared_image.dart';
 import 'package:krab/services/cache/reaction_cache.dart';
 import 'package:krab/services/instance/instance_registry.dart';
 import 'package:krab/services/shared_image_api.dart';
+import 'package:krab/themes/global_theme_data.dart';
 
 /// Horizontal strip of emoji reaction chips with an add reaction button,
 /// laid over the dark image viewer.
@@ -318,7 +319,7 @@ class _ReactionChipState extends State<_ReactionChip> {
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 13,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w400,
               ),
             ),
           ],
@@ -363,7 +364,8 @@ class _OverflowChip extends StatelessWidget {
         style: const TextStyle(
           color: Colors.white,
           fontSize: 13,
-          fontWeight: FontWeight.w700,
+          fontWeight: FontWeight.w500,
+          letterSpacing: GlobalThemeData.mediumTracking,
         ),
       ),
     );

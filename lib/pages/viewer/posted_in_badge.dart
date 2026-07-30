@@ -10,6 +10,7 @@ import 'package:krab/widgets/member_count_label.dart';
 import 'package:krab/widgets/server_label.dart';
 import 'package:krab/services/instance/instances.dart';
 import 'package:krab/services/instance/instance_registry.dart';
+import 'package:krab/themes/global_theme_data.dart';
 
 /// How far the current-group highlight ring extends past an avatar's radius.
 const double _highlightExtra = 1.5;
@@ -90,7 +91,8 @@ class PostedInBadge extends StatelessWidget {
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 11,
-                            fontWeight: FontWeight.w700,
+                            fontWeight: FontWeight.w500,
+                            letterSpacing: GlobalThemeData.mediumTracking,
                           ),
                         ),
                       ),
@@ -160,7 +162,8 @@ Future<void> showPostedInDialog(BuildContext context, List<Group> groups) {
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 16,
-                  fontWeight: FontWeight.w700,
+                  fontWeight: FontWeight.w500,
+                  letterSpacing: GlobalThemeData.mediumTracking,
                 ),
               ),
             ),
@@ -204,7 +207,7 @@ class _GroupTile extends StatelessWidget {
       title: Text(
         group.name,
         style:
-            const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+            const TextStyle(color: Colors.white, fontWeight: FontWeight.w400),
       ),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

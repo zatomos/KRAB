@@ -258,7 +258,8 @@ class _SendImageDialogState extends State<SendImageDialog> {
           instance.label,
           style: Theme.of(context).textTheme.labelMedium?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
-                fontWeight: FontWeight.w700,
+                fontWeight: FontWeight.w500,
+                letterSpacing: GlobalThemeData.mediumTracking,
               ),
         ),
       );

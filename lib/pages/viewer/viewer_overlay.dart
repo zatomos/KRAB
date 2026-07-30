@@ -26,6 +26,7 @@ import 'package:krab/models/shared_image.dart';
 import 'package:krab/services/instance/instances.dart';
 import 'package:krab/services/instance/instance_registry.dart';
 import 'package:krab/services/shared_image_api.dart';
+import 'package:krab/themes/global_theme_data.dart';
 
 /// The chrome layered over the current image in the gallery.
 class ViewerOverlay extends StatefulWidget {
@@ -237,7 +238,8 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 16,
-                        fontWeight: FontWeight.w700,
+                        fontWeight: FontWeight.w500,
+                        letterSpacing: GlobalThemeData.mediumTracking,
                       ),
                     ),
                     if (uploadedLabel != null)
@@ -585,7 +587,7 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
                                     Expanded(
                                       child: _descriptionText(
                                         fontSize: 14,
-                                        weight: FontWeight.w500,
+                                        weight: FontWeight.w400,
                                         maxLines: 2,
                                       ),
                                     ),

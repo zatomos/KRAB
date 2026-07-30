@@ -12,6 +12,7 @@ import 'package:krab/user_preferences.dart';
 import 'package:krab/services/time_formatting.dart';
 import 'package:krab/services/instance/instances.dart';
 import 'package:krab/services/instance/instance_registry.dart';
+import 'package:krab/themes/global_theme_data.dart';
 
 class GroupCard extends StatefulWidget {
   final Group group;
@@ -140,7 +141,9 @@ class _GroupCardState extends State<GroupCard> {
                   child: Text(
                     _group.name,
                     style: const TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.bold),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                        letterSpacing: GlobalThemeData.mediumTracking),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),

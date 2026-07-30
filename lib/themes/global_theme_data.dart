@@ -20,4 +20,7 @@ class GlobalThemeData {
 
   static const double dialogActionsOverflowSpacing = 8.0;
   static const double popupMenuRadius = 12.0;
+
+  /// Tracking for text set in Rubik Medium (w500).
+  static const double mediumTracking = -0.2;
 }

@@ -64,7 +64,6 @@ extension FanOutRead<T> on Future<SupabaseResponse<T>> {
       );
 }
 
-
 /// The server was reached, but the call failed.
 const String errorServer = 'server_error';
 

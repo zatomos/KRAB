@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'avatar_color.dart';
+import 'package:krab/themes/global_theme_data.dart';
 
 enum FallbackType {
   firstLetter,
@@ -60,7 +61,8 @@ class GroupOrUserAvatar extends StatelessWidget {
         initial,
         style: TextStyle(
           fontSize: radius,
-          fontWeight: FontWeight.bold,
+          fontWeight: FontWeight.w500,
+          letterSpacing: GlobalThemeData.mediumTracking,
           color: Theme.of(context).colorScheme.onPrimaryContainer,
         ),
       );

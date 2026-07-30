@@ -50,7 +50,6 @@ dependencies:
   firebase_messaging: ^16.4.3
   flutter_local_notifications: ^22.2.0
   flutter_secure_storage: ^10.3.1
-  google_fonts: ^8.1.0
   home_widget: ^0.9.3
   image: ^4.9.1
   image_cropper: ^12.2.1
@@ -87,6 +86,19 @@ dev_dependencies:
 flutter:
   assets:
     - logo/krab_logo.png
+
+  fonts:
+    - family: Rubik
+      fonts:
+        - asset: fonts/Rubik/Rubik-Regular.ttf
+          weight: 400
+        - asset: fonts/Rubik/Rubik-Italic.ttf
+          weight: 400
+          style: italic
+        - asset: fonts/Rubik/Rubik-Medium.ttf
+          weight: 500
+        - asset: fonts/Rubik/Rubik-Bold.ttf
+          weight: 700
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in

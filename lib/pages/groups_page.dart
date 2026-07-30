@@ -154,7 +154,10 @@ class GroupsPageState extends State<GroupsPage> {
   PopupMenuItem<Widget> _menuItem(IconData icon, String label, Widget dialog) {
     return PopupMenuItem(
       value: dialog,
-      child: ListTile(leading: Icon(icon), title: Text(label)),
+      child: ListTile(
+        leading: Icon(icon),
+        title: Text(label, style: const TextStyle(fontWeight: FontWeight.w400)),
+      ),
     );
   }
 
@@ -280,7 +283,10 @@ class _RecentPhotosCard extends StatelessWidget {
         ),
         title: Text(
           context.l10n.recent_photos,
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+              letterSpacing: GlobalThemeData.mediumTracking),
         ),
         subtitle: Text(
           context.l10n.recent_photos_subtitle,

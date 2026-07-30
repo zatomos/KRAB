@@ -586,7 +586,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
                       context.l10n.new_photos,
                       style: TextStyle(
                         color: scheme.onPrimary,
-                        fontWeight: FontWeight.w600,
+                        fontWeight: FontWeight.w400,
                       ),
                     ),
                   ],
@@ -807,7 +807,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
             style: const TextStyle(
               fontSize: 12,
               color: Colors.white,
-              fontWeight: FontWeight.w600,
+              fontWeight: FontWeight.w400,
             ),
           ),
         ],

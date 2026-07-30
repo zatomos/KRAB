@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:krab/themes/global_theme_data.dart';
 
 /// How much weight a RectangleButton carries.
 enum RectangleButtonStyle {
@@ -46,7 +47,8 @@ class RectangleButton extends StatelessWidget {
     final foreground =
         enabled ? baseForeground : baseForeground.withValues(alpha: 0.45);
 
-    final shape = RoundedRectangleBorder(borderRadius: BorderRadius.circular(10));
+    final shape =
+        RoundedRectangleBorder(borderRadius: BorderRadius.circular(10));
     final minimumSize = Size(width ?? 160, height);
 
     final content = Row(
@@ -57,8 +59,7 @@ class RectangleButton extends StatelessWidget {
           SizedBox(
             width: 18,
             height: 18,
-            child:
-                CircularProgressIndicator(strokeWidth: 2, color: foreground),
+            child: CircularProgressIndicator(strokeWidth: 2, color: foreground),
           ),
           const SizedBox(width: 8),
         ] else if (icon != null) ...[
@@ -70,7 +71,8 @@ class RectangleButton extends StatelessWidget {
           style: TextStyle(
             color: foreground,
             fontSize: 16,
-            fontWeight: FontWeight.bold,
+            fontWeight: FontWeight.w500,
+            letterSpacing: GlobalThemeData.mediumTracking,
           ),
         ),
       ],

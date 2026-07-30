@@ -147,7 +147,7 @@ class _MenuItem extends StatelessWidget {
               style: TextStyle(
                 color: color,
                 fontSize: 15,
-                fontWeight: FontWeight.w500,
+                fontWeight: FontWeight.w400,
               ),
             ),
           ],

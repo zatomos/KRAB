@@ -9,6 +9,7 @@ import 'package:krab/pages/instance_setup_page.dart';
 import 'package:krab/pages/servers_page.dart';
 import 'package:krab/widgets/soft_button.dart';
 import 'package:krab/services/home_widget_status.dart';
+import 'package:krab/themes/global_theme_data.dart';
 
 class WelcomePage extends StatefulWidget {
   const WelcomePage({super.key});
@@ -91,7 +92,8 @@ class _WelcomePageState extends State<WelcomePage> {
               context.l10n.welcome_title,
               style: TextStyle(
                 fontSize: 28,
-                fontWeight: FontWeight.bold,
+                fontWeight: FontWeight.w500,
+                letterSpacing: GlobalThemeData.mediumTracking,
                 color: Theme.of(context).colorScheme.primary,
               ),
               textAlign: TextAlign.center,

@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:krab/themes/global_theme_data.dart';
 
 class SoftButton extends StatelessWidget {
   final String label;
@@ -60,7 +61,8 @@ class SoftButton extends StatelessWidget {
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: color,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w500,
+                    letterSpacing: GlobalThemeData.mediumTracking,
                     fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),

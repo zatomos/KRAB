@@ -415,7 +415,10 @@ class AccountPageState extends State<AccountPage> {
   /// User profile
   Widget _header(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    const nameStyle = TextStyle(fontSize: 24, fontWeight: FontWeight.bold);
+    const nameStyle = TextStyle(
+        fontSize: 24,
+        fontWeight: FontWeight.w500,
+        letterSpacing: GlobalThemeData.mediumTracking);
 
     return Column(
       children: [

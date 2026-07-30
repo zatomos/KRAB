@@ -46,7 +46,8 @@ Future<void> showUpdateDialog({
                 context.l10n.version(info.version),
                 style: const TextStyle(
                   fontSize: 18,
-                  fontWeight: FontWeight.bold,
+                  fontWeight: FontWeight.w500,
+                  letterSpacing: GlobalThemeData.mediumTracking,
                 ),
               ),
               if (currentVersion != null)
@@ -57,7 +58,9 @@ Future<void> showUpdateDialog({
               const SizedBox(height: 12),
               Text(
                 context.l10n.whats_new,
-                style: const TextStyle(fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                    fontWeight: FontWeight.w500,
+                    letterSpacing: GlobalThemeData.mediumTracking),
               ),
               if (info.releases.any((r) => r.changelog.isNotEmpty)) ...[
                 const SizedBox(height: 4),
@@ -84,7 +87,9 @@ Future<void> showUpdateDialog({
                                       context.l10n.version(release.version),
                                       style: const TextStyle(
                                         fontSize: 14,
-                                        fontWeight: FontWeight.bold,
+                                        fontWeight: FontWeight.w500,
+                                        letterSpacing:
+                                            GlobalThemeData.mediumTracking,
                                       ),
                                     ),
                                   ),

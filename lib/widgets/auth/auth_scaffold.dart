@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:krab/widgets/auth/auth_back_button.dart';
 import 'package:krab/widgets/auth/auth_card.dart';
+import 'package:krab/themes/global_theme_data.dart';
 
 const double authGapXS = 4;
 const double authGapS = 8;
@@ -67,7 +68,7 @@ class AuthScaffold extends StatelessWidget {
                         'KRAB',
                         textAlign: TextAlign.center,
                         style: theme.textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w700,
                           letterSpacing: 5,
                           color: theme.colorScheme.onSurfaceVariant,
                         ),
@@ -81,8 +82,10 @@ class AuthScaffold extends StatelessWidget {
                           children: [
                             Text(
                               title,
-                              style: theme.textTheme.headlineSmall
-                                  ?.copyWith(fontWeight: FontWeight.bold),
+                              style: theme.textTheme.headlineSmall?.copyWith(
+                                  fontWeight: FontWeight.w500,
+                                  letterSpacing:
+                                      GlobalThemeData.mediumTracking),
                             ),
                             if (subtitle != null) ...[
                               const SizedBox(height: authGapS),

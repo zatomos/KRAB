@@ -17,7 +17,8 @@ abstract class ImageFetchers {
   Future<Uint8List?> bytes(SharedImage image, {required bool lowRes});
 
   /// Metadata, and which copy provided it.
-  Future<DetailsFromCopy?> details(SharedImage image, {String? preferInstanceId});
+  Future<DetailsFromCopy?> details(SharedImage image,
+      {String? preferInstanceId});
 
   /// The uploader, as named by the instance the copy lives on.
   Future<krab_user.User?> uploader(ImageRef copy, String userId);

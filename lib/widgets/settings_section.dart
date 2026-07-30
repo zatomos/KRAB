@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:krab/themes/global_theme_data.dart';
 
 const double settingsGapS = 8;
 const double settingsGapM = 16;
@@ -45,7 +46,9 @@ class SettingsSection extends StatelessWidget {
                         child: Text(
                           title,
                           style: const TextStyle(
-                              fontSize: 18, fontWeight: FontWeight.bold),
+                              fontSize: 18,
+                              fontWeight: FontWeight.w500,
+                              letterSpacing: GlobalThemeData.mediumTracking),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
