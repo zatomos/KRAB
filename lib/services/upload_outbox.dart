@@ -226,6 +226,37 @@ class UploadOutbox {
     await _scheduleRetry();
   }
 
+  /// Drop every queued copy of one send.
+  Future<int> cancelShare(String shareId) async {
+    final prefs = await SharedPreferences.getInstance();
+    final entries = await _read(prefs);
+
+    final now = DateTime.now();
+    final dropped = entries
+        .where((e) =>
+            e.shareId == shareId &&
+            !(e.claimedAt != null &&
+                now.difference(e.claimedAt!) < _claimTimeout))
+        .toList();
+    if (dropped.isEmpty) return 0;
+
+    entries.removeWhere((e) => dropped.any((d) => d.id == e.id));
+    await _write(prefs, entries);
+
+    for (final entry in dropped) {
+      try {
+        final file = File(entry.path);
+        if (await file.exists()) await file.delete();
+      } catch (error) {
+        debugPrint("Outbox: could not delete ${entry.path}: $error");
+      }
+    }
+
+    debugPrint("Outbox: cancelled ${dropped.length} queued copy/copies "
+        "of $shareId");
+    return dropped.length;
+  }
+
   Future<int> pendingCount() async {
     final prefs = await SharedPreferences.getInstance();
     return (await _read(prefs)).length;

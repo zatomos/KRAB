@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:krab/services/notification_channels.dart';
+import 'package:krab/services/shown_image_notifications.dart';
 
 void main() {
   const image = '11111111-1111-1111-1111-111111111111';
@@ -146,55 +147,87 @@ void main() {
     });
   });
 
-  group('notificationCoversImage', () {
-    const shared = '99999999-9999-9999-9999-999999999999';
+  group('mergeImageNotification', () {
+    ShownImageNotification shown({
+      required String groups,
+      required String ids,
+      String tapGroupId = '',
+    }) =>
+        ShownImageNotification(
+          groupsDisplay: groups,
+          imageIds: ids,
+          tapGroupId: tapGroupId,
+          shownAt: DateTime.now(),
+        );
 
-    Map<String, dynamic> merged() => {
-          'type': 'new_image',
-          'image_id': other,
-          'image_ids': '$image,$other',
-          'share_id': shared,
-        };
-
-    test('dismisses on the copy the notification names', () {
-      expect(notificationCoversImage(merged(), other), isTrue);
-    });
-
-    test('dismisses on a copy from the other server it merged', () {
-      expect(notificationCoversImage(merged(), image), isTrue);
-    });
-
-    test('dismisses on the share id when the image is gone everywhere', () {
-      expect(
-        notificationCoversImage(merged(), 'unknown-copy', shareId: shared),
-        isTrue,
+    test('the first delivery speaks for itself', () {
+      final merged = mergeImageNotification(
+        earlier: null,
+        arrivingGroups: 'Family',
+        arrivingImageId: image,
+        tapGroupId: 'g-family',
       );
+
+      expect(merged.groupsDisplay, 'Family');
+      expect(merged.imageIds, image);
+      expect(merged.tapGroupId, 'g-family',
+          reason: 'one group, one gallery to open');
     });
 
-    test('leaves another photo alone', () {
-      expect(
-        notificationCoversImage(
-            merged(), '00000000-0000-0000-0000-000000000000',
-            shareId: 'another-share'),
-        isFalse,
+    test('another server\'s copy adds its groups and loses the tap target', () {
+      final merged = mergeImageNotification(
+        earlier: shown(groups: 'Family', ids: image, tapGroupId: 'g-family'),
+        arrivingGroups: 'Work',
+        arrivingImageId: other,
+        tapGroupId: 'g-work',
       );
+
+      expect(merged.groupsDisplay, 'Family, Work');
+      expect(merged.imageIds, '$image,$other');
+      expect(merged.tapGroupId, isNull,
+          reason: 'no single gallery holds both groups, so the tap opens the '
+              'cross-group feed');
     });
 
-    test('an empty share id matches nothing on its own', () {
-      expect(
-        notificationCoversImage(
-            {'image_id': other, 'share_id': ''}, 'unrelated',
-            shareId: ''),
-        isFalse,
+    test('a second batch of groups on the same server merges too', () {
+      // Same copy of the photo, a later send to another group on that server.
+      final merged = mergeImageNotification(
+        earlier: shown(groups: 'Family', ids: image, tapGroupId: 'g-family'),
+        arrivingGroups: 'Friends',
+        arrivingImageId: image,
+        tapGroupId: 'g-friends',
       );
+
+      expect(merged.groupsDisplay, 'Family, Friends');
+      expect(merged.imageIds, image);
+      expect(merged.tapGroupId, isNull);
     });
 
-    test('still matches a notification from a build without the copy list', () {
-      expect(
-        notificationCoversImage(
-            {'type': 'new_image', 'image_id': image}, image),
-        isTrue,
+    test('the same delivery arriving twice changes nothing', () {
+      final merged = mergeImageNotification(
+        earlier: shown(groups: 'Family', ids: image, tapGroupId: 'g-family'),
+        arrivingGroups: 'Family',
+        arrivingImageId: image,
+        tapGroupId: 'g-family',
       );
+
+      expect(merged.groupsDisplay, 'Family');
+      expect(merged.imageIds, image);
+      expect(merged.tapGroupId, 'g-family',
+          reason: 'a redelivery must not talk the notification out of its '
+              'gallery');
+    });
+
+    test('a notification already opening the feed keeps doing so', () {
+      final merged = mergeImageNotification(
+        earlier: shown(groups: 'Family, Work', ids: '$image,$other'),
+        arrivingGroups: 'Family',
+        arrivingImageId: image,
+        tapGroupId: 'g-family',
+      );
+
+      expect(merged.groupsDisplay, 'Family, Work');
+      expect(merged.tapGroupId, isNull);
     });
   });
 

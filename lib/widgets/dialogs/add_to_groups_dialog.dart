@@ -9,13 +9,13 @@ import 'package:krab/widgets/soft_button.dart';
 
 /// Lets the uploader pick which additional groups to share an existing image to.
 /// groups should already be filtered to the groups the image isn't in yet.
-/// Returns the chosen group ids, or null if cancelled.
-
-Future<Set<String>?> showAddToGroupsDialog(
+///
+/// Returns the chosen groups, or null if cancelled.
+Future<List<Group>?> showAddToGroupsDialog(
   BuildContext context, {
   required List<Group> groups,
 }) {
-  return showDialog<Set<String>>(
+  return showDialog<List<Group>>(
     context: context,
     builder: (_) => _AddToGroupsDialog(groups: groups),
   );
@@ -31,7 +31,10 @@ class _AddToGroupsDialog extends StatefulWidget {
 }
 
 class _AddToGroupsDialogState extends State<_AddToGroupsDialog> {
+  /// Ticked groups, as `instanceId/groupId`.
   final Set<String> _selected = {};
+
+  static String _keyOf(Group group) => '${group.instanceId}/${group.id}';
 
   /// The groups in the order given, headed by the server that owns them.
   List<Widget> _rows() {
@@ -66,12 +69,12 @@ class _AddToGroupsDialogState extends State<_AddToGroupsDialog> {
       );
 
   Widget _groupTile(Group group) => CheckboxListTile(
-        value: _selected.contains(group.id),
+        value: _selected.contains(_keyOf(group)),
         onChanged: (checked) => setState(() {
           if (checked == true) {
-            _selected.add(group.id);
+            _selected.add(_keyOf(group));
           } else {
-            _selected.remove(group.id);
+            _selected.remove(_keyOf(group));
           }
         }),
         contentPadding: const EdgeInsets.symmetric(horizontal: 4),
@@ -112,7 +115,9 @@ class _AddToGroupsDialogState extends State<_AddToGroupsDialog> {
         SoftButton(
           onPressed: _selected.isEmpty
               ? null
-              : () => Navigator.of(context).pop(Set.of(_selected)),
+              : () => Navigator.of(context).pop(widget.groups
+                  .where((g) => _selected.contains(_keyOf(g)))
+                  .toList()),
           label: context.l10n.add,
           icon: Icons.add,
           color: _selected.isEmpty

@@ -132,7 +132,7 @@ class _ReactorsSheetState extends State<_ReactorsSheet> {
   /// Distinct emojis ordered by how many used them
   List<String> _emojis = const [];
 
-  /// Resolved profile-picture URL per user id
+  /// Resolved profile-picture URL per `instanceId/userId`.
   final Map<String, String> _pfpUrls = {};
 
   /// `instanceId/userId` of the viewer's own accounts among the copies read, so
@@ -207,19 +207,20 @@ class _ReactorsSheetState extends State<_ReactorsSheet> {
     });
 
     // Resolve avatars against the instance each reactor is on
-    for (final pair in reachable) {
-      final response = responses[reachable.indexOf(pair)];
+    for (var i = 0; i < responses.length; i++) {
+      final response = responses[i];
       if (!response.success || response.data == null) continue;
+      final instance = reachable[i].instance;
       final ids = response.data!
           .map((e) => (e as Map<String, dynamic>)['user_id']?.toString())
           .nonNulls
           .toSet();
       for (final userId in ids) {
-        pair.instance.pictures
+        instance.pictures
             .getUrl(userId, ttl: const Duration(hours: 1))
             .then((url) {
           if (!mounted || url == null || url.isEmpty) return;
-          setState(() => _pfpUrls[userId] = url);
+          setState(() => _pfpUrls['${instance.id}/$userId'] = url);
         });
       }
     }
@@ -305,7 +306,7 @@ class _ReactorsSheetState extends State<_ReactorsSheet> {
           instanceId: row.instanceId,
           id: row.userId,
           username: row.username,
-          pfpUrl: _pfpUrls[row.userId] ?? '',
+          pfpUrl: _pfpUrls['${row.instanceId}/${row.userId}'] ?? '',
         );
         return Padding(
           padding: const EdgeInsets.symmetric(vertical: _rowVerticalPadding),

@@ -58,13 +58,37 @@ void main() {
       expect(instance?.id, 'inst_2');
     });
 
-    test('drops a message from a server we are not connected to', () async {
+    test('drops a message no other field can place either', () async {
       final instance =
           instanceForPayload({'instance_url': 'https://three.example'});
 
       expect(instance, isNull,
-          reason: 'answering it against another account would show the wrong '
-              'photo, or leak that one exists');
+          reason: 'with several servers connected and nothing else to go on, '
+              'answering against an arbitrary one would show the wrong photo');
+    });
+
+    test('a URL that matches nothing still routes on the sender', () async {
+      final instance = instanceForPayload(
+          {'instance_url': 'https://two.example:8443'},
+          senderId: '2222');
+
+      expect(instance?.id, 'inst_2');
+    });
+
+    test('a URL that matches nothing falls back to the only server', () async {
+      SharedPreferences.setMockInitialValues({
+        InstanceRegistry.prefsKey: jsonEncode([
+          {'id': 'inst_1', 'url': 'https://one.example', 'anon_key': 'k'},
+        ]),
+      });
+      await InstanceRegistry.instance.load();
+
+      final instance =
+          instanceForPayload({'instance_url': 'http://one.example'});
+
+      expect(instance?.id, 'inst_1',
+          reason: 'a single-instance install worked before the URL was ever '
+              'stamped, and has to keep working when it is stamped wrong');
     });
 
     test('falls back to the sender when the server stamped nothing', () async {

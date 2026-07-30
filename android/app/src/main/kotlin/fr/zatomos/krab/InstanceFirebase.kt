@@ -83,14 +83,13 @@ object InstanceFirebase {
      * Bring up a FirebaseApp for every instance, so each server's sender can
      * reach this device.
      *
-     * The first one becomes the default app, because the messaging plugin only
-     * talks to that one and something has to answer it. Failing on one instance
-     * must not cost the others theirs.
+     * Failing on one instance must not cost the others theirs.
      */
     fun initializeAll(context: Context, configs: List<InstanceFcmConfig>) {
-        for ((index, config) in configs.withIndex()) {
+        ensureDefaultApp(context, configs.firstOrNull())
+        for (config in configs) {
             try {
-                appFor(context, config, isDefault = index == 0)
+                appFor(context, config)
             } catch (e: Exception) {
                 Log.w(TAG, "Firebase init failed for ${config.id}", e)
             }
@@ -98,32 +97,59 @@ object InstanceFirebase {
     }
 
     /**
-     * The FirebaseApp for one instance, created if this is the first ask.
+     * Make sure a default FirebaseApp exists.
      *
-     * The first instance gets the default app, since that is the only one the
-     * messaging plugin will talk to. Both paths have to tolerate the app
-     * already existing: this runs at launch and again whenever a token is
-     * wanted.
+     * Which instance it was built from does not matter: delivery lands in the
+     * one messaging service whatever sender sent it, and per-sender tokens come
+     * from the named apps below.
      */
-    private fun appFor(
-        context: Context,
-        config: InstanceFcmConfig,
-        isDefault: Boolean,
-    ): FirebaseApp {
-        val name = if (isDefault) FirebaseApp.DEFAULT_APP_NAME else config.id
+    private fun ensureDefaultApp(context: Context, config: InstanceFcmConfig?) {
+        if (config == null) return
+        try {
+            FirebaseApp.getInstance(FirebaseApp.DEFAULT_APP_NAME)
+            return
+        } catch (_: IllegalStateException) {
+            // Not up yet.
+        }
+        try {
+            FirebaseApp.initializeApp(
+                context,
+                options(config),
+                FirebaseApp.DEFAULT_APP_NAME,
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not bring up the default Firebase app", e)
+        }
+    }
+
+    /**
+     * The named FirebaseApp for one instance, created if this is the first ask.
+     *
+     * Every instance gets its own named app, the default one included, so an
+     * instance's registration never depends on its position in the list: this
+     * runs at launch and again whenever a token is wanted, and the list can
+     * change in between.
+     */
+    private fun appFor(context: Context, config: InstanceFcmConfig): FirebaseApp {
         val existing = try {
-            FirebaseApp.getInstance(name)
+            FirebaseApp.getInstance(config.id)
         } catch (_: IllegalStateException) {
             null
         }
 
         if (existing != null) {
             if (existing.options.applicationId == config.appId) return existing
-            Log.i(TAG, "Rebuilding $name: it holds ${existing.options.applicationId}, wanted ${config.appId}")
+            // The instance republished a different Firebase project. Only this
+            // instance's own app is affected, so rebuilding it is safe.
+            Log.i(
+                TAG,
+                "Rebuilding ${config.id}: it holds " +
+                    "${existing.options.applicationId}, wanted ${config.appId}",
+            )
             existing.delete()
         }
 
-        return FirebaseApp.initializeApp(context, options(config), name)
+        return FirebaseApp.initializeApp(context, options(config), config.id)
     }
 
     /**
@@ -134,9 +160,10 @@ object InstanceFirebase {
      */
     fun tokens(context: Context, configs: List<InstanceFcmConfig>): Map<String, String> {
         val tokens = mutableMapOf<String, String>()
-        for ((index, config) in configs.withIndex()) {
+        ensureDefaultApp(context, configs.firstOrNull())
+        for (config in configs) {
             try {
-                val app = appFor(context, config, isDefault = index == 0)
+                val app = appFor(context, config)
                 // FirebaseMessaging.getInstance(app) is package-private; the
                 // component registry is the supported way to reach a secondary
                 // app's messaging.

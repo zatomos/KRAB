@@ -45,6 +45,7 @@ extension KrabApiImages on KrabApi {
     String? shareId,
     Uint8List? preparedBytes,
     Future<void> Function(String imageId)? onReserved,
+    void Function()? onShareIdDropped,
   }) async {
     try {
       // Sending one photo to several instances prepares the bytes once and
@@ -61,8 +62,9 @@ extension KrabApiImages on KrabApi {
 
       if (imageId == null) {
         // Open the upload: checks the groups, and reserves the id to store under
-        final opened = await _withRetry(
-            () => _requestUpload(selectedGroups, description, shareId));
+        final opened = await _withRetry(() => _requestUpload(
+            selectedGroups, description, shareId,
+            onShareIdDropped: onShareIdDropped));
 
         if (opened['success'] == false) {
           return SupabaseResponse(
@@ -97,7 +99,8 @@ extension KrabApiImages on KrabApi {
 
   /// Opens the upload, carrying the share id when there is one.
   Future<dynamic> _requestUpload(
-      List<String> groupIds, String description, String? shareId) async {
+      List<String> groupIds, String description, String? shareId,
+      {void Function()? onShareIdDropped}) async {
     Future<dynamic> call({required bool withShareId}) =>
         _client.rpc("request_image_upload", params: {
           "p_group_ids": groupIds,
@@ -113,6 +116,7 @@ extension KrabApiImages on KrabApi {
       if (!_isUnknownShareIdArgument(error)) rethrow;
       debugPrint('Instance $instanceId does not know share_id; '
           'sending without it');
+      onShareIdDropped?.call();
       return call(withShareId: false);
     }
   }

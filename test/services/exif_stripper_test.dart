@@ -13,7 +13,7 @@ const _dqt = 0xDB;
 const _sos = 0xDA;
 const _eoi = 0xD9;
 
-/// A segment: FF <marker> <2-byte length> <payload>. Length includes itself.
+/// A segment: `FF <marker> <2-byte length> <payload>`. Length includes itself.
 List<int> _segment(int marker, List<int> payload) {
   final len = payload.length + 2;
   return [_ff, marker, (len >> 8) & 0xFF, len & 0xFF, ...payload];

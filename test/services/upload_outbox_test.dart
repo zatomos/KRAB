@@ -360,6 +360,45 @@ void main() {
     expect(sender.calls, 0);
   });
 
+  group('cancelling a share', () {
+    test('undoing a send drops the copies still waiting to go out', () async {
+      await UploadOutbox.instance.enqueue(
+        'inst_2',
+        await photo('u1.jpg'),
+        ['g1'],
+        'undone',
+        shareId: 'share-1',
+      );
+
+      expect(await UploadOutbox.instance.cancelShare('share-1'), 1);
+      expect(await UploadOutbox.instance.pendingCount(), 0);
+      expect(Directory('${tempDir.path}/outbox').listSync(), isEmpty,
+          reason: 'the held bytes go with the entry');
+
+      await UploadOutbox.instance.flush();
+      expect(sender.calls, 0,
+          reason: 'the photo the user took back must not turn up later');
+    });
+
+    test('another photo queued at the same time is left alone', () async {
+      await UploadOutbox.instance.enqueue(
+          'inst_2', await photo('u2.jpg'), ['g1'], 'undone',
+          shareId: 'share-1');
+      await UploadOutbox.instance.enqueue(
+          'inst_2', await photo('u3.jpg'), ['g1'], 'kept',
+          shareId: 'share-2');
+
+      await UploadOutbox.instance.cancelShare('share-1');
+
+      expect(await UploadOutbox.instance.flush(), isTrue);
+      expect(sender.sentDescriptions, ['kept']);
+    });
+
+    test('cancelling a share nothing is queued for is a no-op', () async {
+      expect(await UploadOutbox.instance.cancelShare('share-9'), 0);
+    });
+  });
+
   test('several queued photos all go out in one flush', () async {
     await UploadOutbox.instance
         .enqueue('inst_1', await photo('j.jpg'), ['g1'], 'first');

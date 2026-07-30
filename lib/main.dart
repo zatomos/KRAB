@@ -69,11 +69,13 @@ Future<void> _warmUpFromNetwork() async {
   try {
     // Every connected instance, not just the one on screen: each publishes its
     // own settings and needs its own push registration.
-    for (final instance in InstanceRegistry.instance.all) {
-      await instance.api.fetchInstanceConfig();
+    //
+    // Fanned out, and each read gives up on its own
+    await Future.wait(InstanceRegistry.instance.all.map((instance) async {
+      await instance.api.fetchInstanceConfig().orGiveUp();
       await PushHelper.ensureRegistered(instance);
       await instance.pictures.hydrate();
-    }
+    }));
     // So the widget's configure screen can offer a group filter.
     await cacheUserGroupsForWidget();
     // Photos queued while offline go out as soon as we're up again.

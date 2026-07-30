@@ -88,6 +88,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
   /// True once a `new_image` push lands for this feed while it's open
   bool _hasNewPhotos = false;
   StreamSubscription<NewImageEvent>? _newImageSub;
+  StreamSubscription<String>? _removalSub;
 
   /// The bytes, uploaders and tallies for the images on screen. Shared with the
   /// viewer this page opens.
@@ -111,6 +112,15 @@ class ImageFeedPageState extends State<ImageFeedPage> {
     super.initState();
     _scrollController.addListener(_onScroll);
     _newImageSub = FeedEvents.instance.newImages.listen(_onNewImage);
+
+    // A group gallery has nothing left to show once its server is disconnected.
+    final source = _instance;
+    if (source != null) {
+      _removalSub = InstanceRegistry.instance.removals.listen((id) {
+        if (id == source.id && mounted) _backToGroupList();
+      });
+    }
+
     _bootstrap();
   }
 
@@ -200,8 +210,9 @@ class ImageFeedPageState extends State<ImageFeedPage> {
   /// up every other server's images for as long as it takes.
   ///
   /// reset starts again from the top rather than continuing from the cursors.
-  /// Returns whether any server could be read at all.
-  Future<bool> _fetchPages({bool reset = false}) async {
+  /// Returns whether any server could be read at all, and the first failure
+  /// reported by one that could not, so a total failure can say why.
+  Future<({bool any, String? error})> _fetchPages({bool reset = false}) async {
     final sources = _sources;
     if (reset) {
       _cursors.clear();
@@ -212,6 +223,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
     final failed = <KrabInstance>[];
     final waiting = List<KrabInstance>.of(sources);
     var anySucceeded = false;
+    String? firstError;
     if (mounted) setState(() => _pendingSources = List.of(waiting));
 
     await Future.wait(sources.map((instance) async {
@@ -225,6 +237,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
       if (!response.success || response.data == null) {
         debugPrint('Feed: ${instance.id} page failed (${response.error})');
         failed.add(instance);
+        firstError ??= response.error;
         // Say which servers are missing as soon as we know, rather than only
         // once the slowest has finished.
         setState(() {
@@ -258,12 +271,12 @@ class ImageFeedPageState extends State<ImageFeedPage> {
       });
     }));
 
-    if (!mounted) return anySucceeded;
+    if (!mounted) return (any: anySucceeded, error: firstError);
     setState(() {
       _unavailable = List.of(failed);
       _pendingSources = const [];
     });
-    return anySucceeded;
+    return (any: anySucceeded, error: firstError);
   }
 
   Future<SupabaseResponse<List<ImageRef>>> _pageFrom(KrabInstance instance) {
@@ -371,11 +384,11 @@ class ImageFeedPageState extends State<ImageFeedPage> {
   Future<void> _loadInitial() async {
     // Each server's images appear as they arrive; only the case where none of
     // them could answer is left to report here.
-    final any = await _fetchPages(reset: true);
-    if (!mounted || any) return;
+    final result = await _fetchPages(reset: true);
+    if (!mounted || result.any) return;
     setState(() {
       _loadingInitial = false;
-      _error = context.l10n.unknown_error;
+      _error = context.errorText(result.error);
     });
   }
 
@@ -428,6 +441,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
   @override
   void dispose() {
     _newImageSub?.cancel();
+    _removalSub?.cancel();
     _scrollController.dispose();
     _cache.clear();
     super.dispose();
@@ -490,6 +504,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
   }
 
   Widget _buildScaffold(BuildContext context) {
+    final source = _instance;
     return Scaffold(
       appBar: AppBar(
         title: widget.group != null
@@ -503,14 +518,14 @@ class ImageFeedPageState extends State<ImageFeedPage> {
                 ],
               ),
         actions: [
-          if (widget.group != null)
+          if (widget.group != null && source != null)
             IconButton(
               icon: const Icon(Symbols.settings_rounded, fill: 1),
               onPressed: () => Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => GroupSettingsPage(
-                      group: widget.group!, instance: _instance!),
+                  builder: (_) =>
+                      GroupSettingsPage(group: widget.group!, instance: source),
                 ),
               ),
             ),

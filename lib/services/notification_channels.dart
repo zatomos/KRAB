@@ -9,6 +9,7 @@ import 'package:image/image.dart' as img;
 import 'package:krab/l10n/app_localizations.dart';
 import 'package:krab/services/api/krab_api.dart';
 import 'package:krab/services/instance/krab_instance.dart';
+import 'package:krab/services/shown_image_notifications.dart';
 import 'package:krab/user_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -101,50 +102,57 @@ String mergeGroupsDisplay(String existing, String arriving) {
   return names.join(', ');
 }
 
-/// Whether a notification's payload is speaking for the image being deleted.
-bool notificationCoversImage(
-  Map<String, dynamic> payload,
-  String imageId, {
-  String? shareId,
+/// What an image notification should say once an arriving delivery is folded
+/// into the one already on screen.
+///
+/// earlier is null when nothing is showing under this id, which leaves the
+/// arriving delivery to speak for itself.
+({String groupsDisplay, String imageIds, String? tapGroupId})
+    mergeImageNotification({
+  required ShownImageNotification? earlier,
+  required String arrivingGroups,
+  required String arrivingImageId,
+  required String? tapGroupId,
 }) {
-  if (imageId.isNotEmpty) {
-    if (payload['image_id'] == imageId) return true;
-    final covered = ((payload['image_ids'] as String?) ?? '').split(',');
-    if (covered.contains(imageId)) return true;
+  if (earlier == null) {
+    return (
+      groupsDisplay: arrivingGroups,
+      imageIds: arrivingImageId,
+      tapGroupId: tapGroupId,
+    );
   }
-  if (shareId != null && shareId.isNotEmpty) {
-    if (payload['share_id'] == shareId) return true;
-  }
-  return false;
+
+  final groups = mergeGroupsDisplay(earlier.groupsDisplay, arrivingGroups);
+  final ids = mergeCoveredImageIds(earlier.imageIds, arrivingImageId);
+
+  // Merging is idempotent, so the same delivery arriving twice keeps its tap
+  // target; anything that widens what the notification covers loses it.
+  final widened = groups != arrivingGroups ||
+      ids != arrivingImageId ||
+      earlier.tapGroupId != (tapGroupId ?? '');
+
+  return (
+    groupsDisplay: groups,
+    imageIds: ids,
+    tapGroupId: widened ? null : tapGroupId,
+  );
 }
 
 /// Dismiss a deleted image's notifications and drop its cached big-picture file.
 Future<void> cancelImageNotification(String imageId, {String? shareId}) async {
   await _ensureFlnpInitialized();
 
-  // A notification shown by an older build carries the bare-image-id form.
-  await _flnp.cancel(id: imageNotificationId(imageId));
-  if (shareId != null && shareId.isNotEmpty) {
-    await _flnp.cancel(id: imageNotificationId(imageId, shareId: shareId));
-  }
+  final ids = <int>{
+    imageNotificationId(imageId),
+    if (shareId != null && shareId.isNotEmpty)
+      imageNotificationId(imageId, shareId: shareId),
+    ...await ShownImageNotifications.instance.idsCovering(imageId),
+  };
 
-  try {
-    for (final notification in await _flnp.getActiveNotifications()) {
-      final id = notification.id;
-      final payload = notification.payload;
-      if (id == null || payload == null || payload.isEmpty) continue;
-      try {
-        final data = jsonDecode(payload) as Map<String, dynamic>;
-        if (notificationCoversImage(data, imageId, shareId: shareId)) {
-          await _flnp.cancel(id: id);
-        }
-      } catch (_) {
-        // Not a payload we wrote; leave it alone.
-      }
-    }
-  } catch (e) {
-    debugPrint('notif: could not scan active notifications: $e');
+  for (final id in ids) {
+    await _flnp.cancel(id: id);
   }
+  await ShownImageNotifications.instance.forget(ids);
 
   try {
     final dir = await getTemporaryDirectory();
@@ -458,6 +466,35 @@ Future<void> showImageNotification({
   String imageDescription = '',
   Uint8List? senderAvatarBytes,
   Uint8List? imageBytes,
+}) =>
+    ShownImageNotifications.instance.serialized(() => _showImageNotification(
+          instance: instance,
+          groupId: groupId,
+          groupName: groupName,
+          senderUsername: senderUsername,
+          imageId: imageId,
+          groupsDisplay: groupsDisplay,
+          tapGroupId: tapGroupId,
+          batchKey: batchKey,
+          shareId: shareId,
+          imageDescription: imageDescription,
+          senderAvatarBytes: senderAvatarBytes,
+          imageBytes: imageBytes,
+        ));
+
+Future<void> _showImageNotification({
+  required KrabInstance instance,
+  required String groupId,
+  required String groupName,
+  required String senderUsername,
+  required String imageId,
+  String? groupsDisplay,
+  String? tapGroupId,
+  String batchKey = '',
+  String? shareId,
+  String imageDescription = '',
+  Uint8List? senderAvatarBytes,
+  Uint8List? imageBytes,
 }) async {
   await _createFlnpChannel(groupId, groupName);
 
@@ -471,15 +508,31 @@ Future<void> showImageNotification({
   // Every copy this notification now stands for.
   var covered = imageId;
 
-  // A copy from another server may already be showing under this id.
+  // The id is the share id, so every delivery of this photo lands on the one
+  // notification: another server's copy, and a second batch of groups on this
+  // one. Fold what is already showing in, rather than overwriting it and losing
+  // the groups it named.
   if (shareId != null && shareId.isNotEmpty) {
-    final earlier = await _shownImageNotification(id);
-    if (earlier != null && earlier.instanceUrl != instance.url) {
-      subText = mergeGroupsDisplay(earlier.groupsDisplay, subText);
-      covered = mergeCoveredImageIds(earlier.imageIds, imageId);
-      tapGroupId = null;
-    }
+    final merged = mergeImageNotification(
+      earlier: await _shownImageNotification(id),
+      arrivingGroups: subText,
+      arrivingImageId: imageId,
+      tapGroupId: tapGroupId,
+    );
+    subText = merged.groupsDisplay;
+    covered = merged.imageIds;
+    tapGroupId = merged.tapGroupId;
   }
+
+  await ShownImageNotifications.instance.record(
+    id,
+    ShownImageNotification(
+      groupsDisplay: subText,
+      imageIds: covered,
+      tapGroupId: tapGroupId ?? '',
+      shownAt: DateTime.now(),
+    ),
+  );
 
   final compositeBytes = _buildImageLargeIcon(imageBytes, senderAvatarBytes);
 
@@ -542,26 +595,34 @@ Future<void> showImageNotification({
   );
 }
 
-/// What an image notification already on screen is saying, if any.
-Future<({String instanceUrl, String groupsDisplay, String imageIds})?>
-    _shownImageNotification(int id) async {
-  try {
-    for (final notification in await _flnp.getActiveNotifications()) {
-      if (notification.id != id) continue;
-      final payload = notification.payload;
-      if (payload == null || payload.isEmpty) return null;
-      final data = jsonDecode(payload) as Map<String, dynamic>;
-      return (
-        instanceUrl: (data['instance_url'] as String?) ?? '',
-        groupsDisplay: (data['groups_display'] as String?) ?? '',
-        imageIds: (data['image_ids'] as String?) ??
-            ((data['image_id'] as String?) ?? ''),
-      );
-    }
-  } catch (e) {
-    debugPrint('notif: could not read the notification already shown: $e');
+/// What an image notification still on screen is saying, if any.
+Future<ShownImageNotification?> _shownImageNotification(int id) async {
+  final recorded = await ShownImageNotifications.instance.read(id);
+  if (recorded == null) return null;
+
+  final live = await _activeNotificationIds();
+  // Unknown: trust the record. It is dropped by age, so the worst case is a
+  // stale group name rather than a notification that keeps losing
+  // what the last one said.
+  if (live != null && !live.contains(id)) {
+    await ShownImageNotifications.instance.forget([id]);
+    return null;
   }
-  return null;
+  return recorded;
+}
+
+/// The ids the system is showing, or null when it cannot say.
+Future<Set<int>?> _activeNotificationIds() async {
+  try {
+    final active = await _flnp.getActiveNotifications();
+    return {
+      for (final notification in active)
+        if (notification.id != null) notification.id!
+    };
+  } catch (e) {
+    debugPrint('notif: could not list the active notifications: $e');
+    return null;
+  }
 }
 
 Future<void> showCommentNotification({

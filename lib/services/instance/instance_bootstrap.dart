@@ -33,8 +33,7 @@ KrabInstance? instanceForPayload(Map<String, String> data, {String? senderId}) {
     for (final instance in registry.all) {
       if (_normalize(instance.url) == url) return instance;
     }
-    debugPrint('Push: message from $url, which is not a connected instance');
-    return null;
+    debugPrint('Push: no instance matches $url, falling back to sender/sole');
   }
 
   if (senderId != null && senderId.isNotEmpty) {
