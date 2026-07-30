@@ -238,8 +238,8 @@ class _InstanceSetupPageState extends State<InstanceSetupPage> {
   Widget build(BuildContext context) {
     final busy = _connecting || _testing;
 
-    // Already connected to this server
-    final duplicate = _duplicate;
+    // Already connected to this server.
+    final duplicate = busy ? null : _duplicate;
 
     return AuthScaffold(
       title: context.l10n.instance_setup_title,
