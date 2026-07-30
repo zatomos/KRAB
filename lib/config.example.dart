@@ -16,6 +16,11 @@ const enableAutoUpdate = false;
 const bakedSupabaseUrl = '';
 const bakedSupabaseAnonKey = '';
 
+/// Whether this build names its own instance.
+bool get hasBakedInstance =>
+    bakedSupabaseUrl.trim().isNotEmpty &&
+    bakedSupabaseAnonKey.trim().isNotEmpty;
+
 /// How photos are encoded before being sent to the server.
 /// Longest edge in pixels, or 0 to leave the photo at full resolution.
 const maxUploadDimension = 0;

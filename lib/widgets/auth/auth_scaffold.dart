@@ -17,6 +17,8 @@ class AuthScaffold extends StatelessWidget {
     required this.children,
     this.footer,
     this.success = false,
+    this.onBack,
+    this.showBack = true,
   });
 
   /// The card's heading.
@@ -33,6 +35,12 @@ class AuthScaffold extends StatelessWidget {
 
   /// Rings the card in green once whatever this screen asked for has worked.
   final bool success;
+
+  /// Where back goes. Null pops and shows no button.
+  final VoidCallback? onBack;
+
+  /// False leaves the back button off however this screen was reached.
+  final bool showBack;
 
   @override
   Widget build(BuildContext context) {
@@ -99,7 +107,7 @@ class AuthScaffold extends StatelessWidget {
                 ),
               ),
             ),
-            const AuthBackButton(),
+            AuthBackButton(onBack: onBack, enabled: showBack),
           ],
         ),
       ),

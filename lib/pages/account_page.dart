@@ -24,6 +24,7 @@ import 'package:krab/widgets/dialogs/delete_account_dialog.dart';
 import 'package:krab/widgets/dialogs/edit_avatar_dialog.dart';
 import 'package:krab/widgets/dialogs/rename_dialog.dart';
 import 'package:krab/widgets/dialogs/update_dialog.dart';
+import 'package:krab/pages/camera_page.dart';
 import 'package:krab/pages/servers_page.dart';
 import 'package:krab/services/instance/instance_registry.dart';
 import 'package:krab/services/instance/instances.dart';
@@ -228,9 +229,18 @@ class AccountPageState extends State<AccountPage> {
       return;
     }
 
-    showSnackBar(context.l10n.account_deleted_success, tone: SnackTone.success);
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (context) => signInScreen()),
+    final message = context.l10n.account_deleted_success;
+
+    // Forget server
+    await InstanceRegistry.instance.remove(widget.instance.id);
+    if (!mounted) return;
+
+    showSnackBar(message, tone: SnackTone.success);
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (context) => anySignedIn ? const CameraPage() : signInScreen(),
+      ),
+      (route) => false,
     );
   }
 
