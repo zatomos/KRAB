@@ -346,7 +346,7 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
     // A group on a server that has no copy yet needs one, so the image goes up
     // there under the same share id and the two read as one image.
     final res = await _api.addToGroups(
-      eligible.where((g) => selected.contains(g.id)).toList(),
+      selected,
       loadBytes: widget.loadBestBytesForSave,
       description: _description,
     );

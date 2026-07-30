@@ -30,9 +30,8 @@ class PushHelper {
   static bool _initialized = false;
   static bool _handlersWired = false;
 
-  /// The instance the default FirebaseApp was brought up from, which is the one
-  /// the messaging plugin's own calls speak for.
-  static KrabInstance? _firebaseInstance;
+  /// Whether the default FirebaseApp is up.
+  static bool _firebaseReady = false;
 
   static StreamSubscription<InstanceAuthEvent>? _authSubscription;
   static StreamSubscription<String>? _removalSubscription;
@@ -60,12 +59,12 @@ class PushHelper {
         }
       });
 
-      // Disconnecting a server can move the default FirebaseApp to another one,
-      // and a token minted under the old owner is a token its new server cannot
-      // be reached with. Mint them all again.
-      _removalSubscription =
-          InstanceRegistry.instance.removals.listen((_) async {
-        await _reregisterEverything();
+      // Every instance holds its own named FirebaseApp, so disconnecting one
+      // leaves the others' tokens alone.
+      _removalSubscription = InstanceRegistry.instance.removals.listen((id) {
+        _savedForUser.remove(id);
+        _savedToken.remove(id);
+        _forgetTokens();
       });
     }
 
@@ -91,6 +90,7 @@ class PushHelper {
     _onMessageSubscription = null;
     _initialized = false;
     _handlersWired = false;
+    _firebaseReady = false;
     _savedForUser.clear();
     _savedToken.clear();
     _forgetTokens();
@@ -188,18 +188,18 @@ class PushHelper {
   /// has published no FCM config, which is the one case nothing
   /// can be done about here.
   ///
-  /// The native side owns a FirebaseApp per instance; this only ensures the
+  /// The native side owns a named FirebaseApp per instance; this only ensures the
   /// default app exists, since that is the one the messaging plugin's streams
   /// hang off.
   static Future<bool> _ensureFirebase(KrabInstance instance) async {
     if (!instance.config.hasFcm) return false;
-    if (_firebaseInstance != null) return true;
+    if (_firebaseReady) return true;
 
     try {
       if (Firebase.apps.isEmpty) {
         await Firebase.initializeApp(options: _firebaseOptions(instance));
       }
-      _firebaseInstance = instance;
+      _firebaseReady = true;
       return true;
     } catch (e) {
       debugPrint('Push: Firebase init failed: $e');
@@ -248,7 +248,6 @@ class PushHelper {
     _savedForUser.clear();
     _savedToken.clear();
     _forgetTokens();
-    _firebaseInstance = null;
     final tokens = await _instanceTokens();
     for (final instance in InstanceRegistry.instance.all) {
       if (!instance.auth.isLoggedIn) continue;

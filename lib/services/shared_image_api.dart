@@ -446,6 +446,9 @@ class SharedImageApi {
       // The outbox has to retry under any id this reserved, or it would send
       // the image a second time.
       String? reserved;
+
+      String? storedShareId = shareId;
+
       final response = await instance.api.sendImageToGroups(
         scratch,
         groupIds,
@@ -453,6 +456,7 @@ class SharedImageApi {
         shareId: shareId,
         preparedBytes: bytes,
         onReserved: (imageId) async => reserved = imageId,
+        onShareIdDropped: () => storedShareId = null,
       );
 
       if (!response.success || response.data == null) {
@@ -485,7 +489,7 @@ class SharedImageApi {
         data: ImageRef(
           instanceId: instance.id,
           id: imageId,
-          shareId: shareId,
+          shareId: storedShareId,
           uploadedBy: instance.auth.currentUserId,
         ),
       );

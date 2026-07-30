@@ -321,10 +321,12 @@ Future<({bool changed, bool newImage})> _syncWidget(
   if (api == null) return (changed: false, newImage: false);
 
   final lastId = await HomeWidget.getWidgetData<String>('lastImageId_$id');
+  // TODO: remove later, along with the rest of the single-instance migration.
+  final showing = lastId == latestId || lastId == latest.id;
   bool changed = false;
   bool newImage = false;
 
-  if (latestId != lastId) {
+  if (!showing) {
     // New main image for this widget. Previous-image slots are reconciled by
     // id in _ensurePrevImages below, so there is no fragile file rotation here.
     final imgResult = await api.getImage(latest.id);

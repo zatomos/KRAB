@@ -83,6 +83,14 @@
       }
     }
   },
+  "photo_sent_some_queued": "Photo envoyée ; {server} en attente du retour de la connexion",
+  "@photo_sent_some_queued": {
+    "placeholders": {
+      "server": {
+        "type": "String"
+      }
+    }
+  },
   "photo_queued_offline": "En attente ; sera envoyée dès le retour de la connexion",
   "photo_removed": "Photo retirée",
   "failed_to_delete_photo": "Échec de la suppression de la photo",

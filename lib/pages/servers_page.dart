@@ -56,7 +56,15 @@ class _ServersPageState extends State<ServersPage> {
   /// Ask every server whether it is there, and then who it thinks the user is.
   Future<void> _loadUsers() async {
     final all = InstanceRegistry.instance.all;
-    _pending.addAll(all.map((i) => i.id));
+    final ids = {for (final instance in all) instance.id};
+
+    setState(() {
+      _pending.addAll(ids);
+      _users.removeWhere((id, _) =>
+          !ids.contains(id) ||
+          !(InstanceRegistry.instance.byId(id)?.auth.isLoggedIn ?? false));
+      _unreachable.removeWhere((id) => !ids.contains(id));
+    });
 
     await Future.wait(all.map((instance) async {
       final reachable = await instance.api.fetchInstanceConfig().orGiveUp();

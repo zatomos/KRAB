@@ -23,6 +23,7 @@ import 'package:krab/models/shared_image.dart';
 import 'package:krab/services/instance/instances.dart';
 import 'package:krab/services/instance/instance_registry.dart';
 import 'package:krab/services/shared_image_api.dart';
+import 'package:krab/services/upload_outbox.dart';
 
 class CameraPage extends StatefulWidget {
   const CameraPage({super.key});
@@ -393,8 +394,16 @@ class CameraPageState extends State<CameraPage> {
   }
 
   /// Delete the just-sent image when the user taps Undo on the snackbar.
+  ///
+  /// Copies that never reached their server are sitting in the outbox: they have
+  /// to be cancelled here, or the flush would post the photo the user just took
+  /// back.
   Future<void> _undoSend(
       SharedImage image, String removedMsg, String failedMsg) async {
+    final shareId = image.primary.shareId;
+    if (shareId != null && shareId.isNotEmpty) {
+      await UploadOutbox.instance.cancelShare(shareId);
+    }
     final deleted = await SharedImageApi(image).delete();
     if (deleted.success) {
       updateHomeWidget();
@@ -433,17 +442,24 @@ class CameraPageState extends State<CameraPage> {
       switch (result.outcome) {
         case SendOutcome.sent:
         case SendOutcome.sentPartially:
-          final partial = result.outcome == SendOutcome.sentPartially;
+          final refused = result.outcome == SendOutcome.sentPartially;
+          final queued = result.queuedFor.isNotEmpty;
           updateHomeWidget();
           // Confirm the send with a snackbar that also offers a quick Undo.
           final image = result.image;
           final removedMsg = l10n.photo_removed;
           final failedMsg = l10n.failed_to_delete_photo;
+          final String message;
+          if (refused) {
+            message = l10n.photo_sent_partially(result.refusedBy.join(', '));
+          } else if (queued) {
+            message = l10n.photo_sent_some_queued(result.queuedFor.join(', '));
+          } else {
+            message = l10n.photo_sent;
+          }
           showSnackBar(
-            partial
-                ? l10n.photo_sent_partially(result.refusedBy.join(', '))
-                : l10n.photo_sent,
-            tone: partial ? SnackTone.warning : SnackTone.success,
+            message,
+            tone: (refused || queued) ? SnackTone.warning : SnackTone.success,
             actionLabel: image == null ? null : l10n.undo,
             onAction: image == null
                 ? null

@@ -157,7 +157,8 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
   String? _replyingToUsername;
   String? _replyingSectionKey;
 
-  /// The section a new top-level comment will be posted to.
+  /// The section a new top-level comment will be posted to. Only known once the
+  /// sections have loaded.
   String? _composingSectionKey;
 
   /// Sections whose comment threads are currently expanded
@@ -173,9 +174,6 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
   @override
   void initState() {
     super.initState();
-    // In a single-group gallery, the target group is known up front, so the
-    // input is ready immediately.
-    _composingSectionKey = null;
     // Rebuild when the input gains/loses focus so that we can fade in/out.
     _inputFocusNode.addListener(_onFocusChange);
     WidgetsBinding.instance.addPostFrameCallback((_) {

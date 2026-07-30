@@ -173,6 +173,16 @@ class _InstanceSetupPageState extends State<InstanceSetupPage> {
       _error = null;
     });
 
+    // Connecting to a URL already in the registry replaces its entry in place,
+    // keeping its id
+    final replaced = existing == null
+        ? null
+        : (
+            url: existing.url,
+            key: existing.anonKey,
+            name: existing.displayName
+          );
+
     final instance = await InstanceRegistry.instance.connect(
       url: resolved.url,
       anonKey: resolved.key,
@@ -181,7 +191,15 @@ class _InstanceSetupPageState extends State<InstanceSetupPage> {
     // Prove the instance answers before leaving this screen
     final config = await instance.api.fetchInstanceConfig();
     if (!config.success) {
-      await InstanceRegistry.instance.remove(instance.id);
+      if (replaced == null) {
+        await InstanceRegistry.instance.remove(instance.id);
+      } else {
+        await InstanceRegistry.instance.connect(
+          url: replaced.url,
+          anonKey: replaced.key,
+          displayName: replaced.name,
+        );
+      }
       if (!mounted) return;
       setState(() => _connecting = false);
       _fail(context.l10n.instance_setup_unreachable);

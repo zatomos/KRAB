@@ -32,23 +32,29 @@ class SendImageResult {
   /// tried.
   final List<String> refusedBy;
 
-  const SendImageResult.sent(this.image)
+  /// Labels of the servers that couldn't be reached.
+  final List<String> queuedFor;
+
+  const SendImageResult.sent(this.image, {this.queuedFor = const []})
       : outcome = SendOutcome.sent,
         error = null,
         refusedBy = const [];
 
   /// Some copies landed and at least one server refused its own.
-  const SendImageResult.sentPartially(this.image, this.error, this.refusedBy)
+  const SendImageResult.sentPartially(this.image, this.error, this.refusedBy,
+      {this.queuedFor = const []})
       : outcome = SendOutcome.sentPartially;
   const SendImageResult.queued()
       : outcome = SendOutcome.queued,
         image = null,
         error = null,
-        refusedBy = const [];
+        refusedBy = const [],
+        queuedFor = const [];
   const SendImageResult.failed(this.error)
       : outcome = SendOutcome.failed,
         image = null,
-        refusedBy = const [];
+        refusedBy = const [],
+        queuedFor = const [];
 }
 
 /// One instance's groups, for the picker.
@@ -89,8 +95,8 @@ class _SendImageDialogState extends State<SendImageDialog> {
   /// Every connected instance's groups, fetched together.
   Future<List<_InstanceGroups>> _loadGroups() async {
     final instances = InstanceRegistry.instance.all;
-    final responses =
-        await Future.wait(instances.map((i) => i.api.getUserGroups().orGiveUp()));
+    final responses = await Future.wait(
+        instances.map((i) => i.api.getUserGroups().orGiveUp()));
 
     final loaded = <_InstanceGroups>[];
     for (var i = 0; i < instances.length; i++) {
@@ -148,7 +154,7 @@ class _SendImageDialogState extends State<SendImageDialog> {
 
     final sent = <ImageRef>[];
     final refusedBy = <String>[];
-    var queuedAny = false;
+    final queuedFor = <String>[];
     String? failure;
 
     for (final entry in byInstance.entries) {
@@ -159,6 +165,8 @@ class _SendImageDialogState extends State<SendImageDialog> {
       // send the image a second time.
       String? reserved;
 
+      String? storedShareId = shareId;
+
       final response = await instance.api.sendImageToGroups(
         widget.imageFile,
         entry.value,
@@ -166,6 +174,7 @@ class _SendImageDialogState extends State<SendImageDialog> {
         shareId: shareId,
         preparedBytes: prepared,
         onReserved: (imageId) async => reserved = imageId,
+        onShareIdDropped: () => storedShareId = null,
       );
 
       if (response.success && response.data != null) {
@@ -173,7 +182,7 @@ class _SendImageDialogState extends State<SendImageDialog> {
         sent.add(ImageRef(
           instanceId: instance.id,
           id: imageId,
-          shareId: shareId,
+          shareId: storedShareId,
         ));
         continue;
       }
@@ -188,7 +197,7 @@ class _SendImageDialogState extends State<SendImageDialog> {
           reservedImageId: reserved,
           shareId: shareId,
         );
-        queuedAny = true;
+        queuedFor.add(instance.label);
         continue;
       }
 
@@ -201,12 +210,13 @@ class _SendImageDialogState extends State<SendImageDialog> {
 
     if (sent.isNotEmpty) {
       Navigator.of(context).pop(failure == null
-          ? SendImageResult.sent(SharedImage(sent))
-          : SendImageResult.sentPartially(SharedImage(sent), failure, refusedBy));
+          ? SendImageResult.sent(SharedImage(sent), queuedFor: queuedFor)
+          : SendImageResult.sentPartially(SharedImage(sent), failure, refusedBy,
+              queuedFor: queuedFor));
       return;
     }
     // Nothing landed.
-    Navigator.of(context).pop(queuedAny
+    Navigator.of(context).pop(queuedFor.isNotEmpty
         ? const SendImageResult.queued()
         : SendImageResult.failed(failure ?? errorServer));
   }

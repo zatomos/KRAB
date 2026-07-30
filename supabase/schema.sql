@@ -5244,7 +5244,6 @@ GRANT ALL ON FUNCTION public.get_username(user_id text) TO service_role;
 --
 
 REVOKE ALL ON FUNCTION public.handle_new_user() FROM PUBLIC;
-GRANT ALL ON FUNCTION public.handle_new_user() TO authenticated;
 GRANT ALL ON FUNCTION public.handle_new_user() TO service_role;
 
 
@@ -5308,7 +5307,6 @@ GRANT ALL ON FUNCTION public.manage_member_role(group_id uuid, target_user_id uu
 --
 
 REVOKE ALL ON FUNCTION public.promote_pending_image() FROM PUBLIC;
-GRANT ALL ON FUNCTION public.promote_pending_image() TO authenticated;
 GRANT ALL ON FUNCTION public.promote_pending_image() TO service_role;
 
 

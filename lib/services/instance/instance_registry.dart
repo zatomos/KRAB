@@ -51,9 +51,8 @@ class InstanceRegistry {
 
   /// Ids of instances that have been disconnected.
   ///
-  /// Push registration listens: which instance owns the default FirebaseApp is
-  /// decided by position in this list, so disconnecting one can hand that app to
-  /// a different server, and every token has to be minted again.
+  /// Anything holding onto an instance listens here: push registration to forget
+  /// its token, and any screen showing that instance's content to leave.
   Stream<String> get removals => _removals.stream;
 
   List<KrabInstance> get all => List.unmodifiable(_instances);
@@ -180,6 +179,9 @@ class InstanceRegistry {
       _instances[_instances.indexOf(existing)] = replacement;
       await existing.dispose();
       _attach(replacement);
+      // The id carried over, so the stored session is still this instance's.
+      // Load it, or the replacement would look signed out.
+      await replacement.load();
       await _persist(prefs);
       return replacement;
     }
