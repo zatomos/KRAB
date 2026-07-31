@@ -115,6 +115,35 @@ class _GroupCommentSection {
   String get key => '${instance.id}/${group.id}';
 }
 
+/// What the composer is pointed at right now.
+sealed class _ComposeTarget {
+  const _ComposeTarget();
+}
+
+/// A new top-level comment.
+final class _ComposeNew extends _ComposeTarget {
+  const _ComposeNew();
+}
+
+final class _ComposeReply extends _ComposeTarget {
+  const _ComposeReply({
+    required this.commentId,
+    required this.username,
+    required this.sectionKey,
+  });
+
+  final String commentId;
+  final String username;
+  final String sectionKey;
+}
+
+final class _ComposeEdit extends _ComposeTarget {
+  const _ComposeEdit({required this.commentId, required this.sectionKey});
+
+  final String commentId;
+  final String sectionKey;
+}
+
 class CommentsBottomSheet extends StatefulWidget {
   /// The image, with every copy of it. Comments are gathered from all of them
   /// and shown as one conversation.
@@ -151,15 +180,11 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
   bool _loading = true;
   bool _isSending = false;
 
-  // Active composing context
-  String? _editingCommentId;
-  String? _editingSectionKey;
-  String? _replyingToCommentId;
-  String? _replyingToUsername;
-  String? _replyingSectionKey;
+  /// What the composer is doing: a new comment, a reply, or an edit.
+  _ComposeTarget _target = const _ComposeNew();
 
   /// The section a new top-level comment will be posted to. Only known once the
-  /// sections have loaded.
+  /// sections have loaded. Independent of _target.
   String? _composingSectionKey;
 
   /// Sections whose comment threads are currently expanded
@@ -337,16 +362,21 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
 
   /// Whether a new top-level comment can currently be submitted. Replies and
   /// edits always have a group; a brand-new comment needs one chosen.
-  bool get _canSubmit =>
-      _editingCommentId != null ||
-      _replyingToCommentId != null ||
-      _composingSectionKey != null;
+  bool get _canSubmit => switch (_target) {
+        _ComposeReply() || _ComposeEdit() => true,
+        _ComposeNew() => _composingSectionKey != null,
+      };
 
   Future<void> _postComment() async {
     final text = _newCommentController.text.trim();
+    final composing = _target;
     // The section decides which server the comment goes to, and under which of
-    // the image's ids.
-    final target = _sectionFor(_replyingSectionKey ?? _composingSectionKey);
+    // the image's ids. A reply belongs to its parent's group; a new comment
+    // goes wherever the user pointed the composer.
+    final target = _sectionFor(switch (composing) {
+      _ComposeReply(:final sectionKey) => sectionKey,
+      _ => _composingSectionKey,
+    });
     if (text.isEmpty || _isSending || target == null) return;
     setState(() => _isSending = true);
 
@@ -354,13 +384,11 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
       target.imageId,
       target.groupId,
       text,
-      parentId: _replyingToCommentId,
+      parentId: composing is _ComposeReply ? composing.commentId : null,
     );
 
     if (response.success) {
-      _newCommentController.clear();
       _cancelReply();
-      _inputFocusNode.unfocus();
       // Make sure the thread the comment landed in is visible
       _expandedKeys.add(target.key);
       await _refreshAndReportCount();
@@ -383,7 +411,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
   Future<void> _updateComment(
       String commentId, _GroupCommentSection section) async {
     final text = _newCommentController.text.trim();
-    if (text.isEmpty || _editingCommentId == null || _isSending) return;
+    if (text.isEmpty || _target is! _ComposeEdit || _isSending) return;
     setState(() => _isSending = true);
 
     final response = await section.instance.api
@@ -392,8 +420,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
       _newCommentController.clear();
       _inputFocusNode.unfocus();
       setState(() {
-        _editingCommentId = null;
-        _editingSectionKey = null;
+        _target = const _ComposeNew();
         _isSending = false;
       });
       await _fetchComments();
@@ -425,11 +452,11 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
     if (!mounted) return;
 
     if (response.success) {
-      if (_editingCommentId == commentId) {
-        setState(() {
-          _editingCommentId = null;
-          _editingSectionKey = null;
-        });
+      // If the comment being edited is the one that just went away, drop back
+      // to composing.
+      final editing = _target;
+      if (editing is _ComposeEdit && editing.commentId == commentId) {
+        setState(() => _target = const _ComposeNew());
         _newCommentController.clear();
       }
       await _refreshAndReportCount();
@@ -444,40 +471,29 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
     }
   }
 
-  /// Drop any reply or edit in progress.
-  void _clearComposeTarget() {
-    _editingCommentId = null;
-    _editingSectionKey = null;
-    _replyingToCommentId = null;
-    _replyingToUsername = null;
-    _replyingSectionKey = null;
-  }
-
   void _startReply(
       Comment comment, String username, _GroupCommentSection section) {
     setState(() {
-      _clearComposeTarget();
-      _replyingToCommentId = comment.id;
-      _replyingToUsername = username;
-      _replyingSectionKey = section.key;
+      _target = _ComposeReply(
+        commentId: comment.id,
+        username: username,
+        sectionKey: section.key,
+      );
     });
     _newCommentController.clear();
     _focusInput();
   }
 
+  /// Drop the reply and clear the box.
   void _cancelReply() {
-    setState(() {
-      _replyingToCommentId = null;
-      _replyingToUsername = null;
-      _replyingSectionKey = null;
-    });
+    setState(() => _target = const _ComposeNew());
+    _newCommentController.clear();
+    _inputFocusNode.unfocus();
   }
 
   void _startEdit(Comment comment, _GroupCommentSection section) {
     setState(() {
-      _clearComposeTarget();
-      _editingCommentId = comment.id;
-      _editingSectionKey = section.key;
+      _target = _ComposeEdit(commentId: comment.id, sectionKey: section.key);
       _newCommentController.text = comment.text;
       // Put the cursor at the end of the existing text
       _newCommentController.selection = TextSelection.collapsed(
@@ -488,10 +504,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
   }
 
   void _cancelEdit() {
-    setState(() {
-      _editingCommentId = null;
-      _editingSectionKey = null;
-    });
+    setState(() => _target = const _ComposeNew());
     _newCommentController.clear();
     _inputFocusNode.unfocus();
   }
@@ -499,7 +512,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
   /// Start composing a brand-new top-level comment in section's group.
   void _composeIn(_GroupCommentSection section) {
     setState(() {
-      _clearComposeTarget();
+      _target = const _ComposeNew();
       _composingSectionKey = section.key;
       _expandedKeys.add(section.key);
     });
@@ -843,8 +856,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
   /// to comment in a group other than the one currently being viewed.
   bool get _showComposingBanner {
     if (_composingSectionKey == null) return false;
-    // In all-groups mode the banner clarifies which group a comment lands in,
-    // but that's only meaningful when the image spans multiple groups.
+    // In all-groups mode the banner clarifies which group a comment lands in.
     if (_isAllGroupsMode) return _sections.length > 1;
     return _sectionFor(_composingSectionKey)?.groupId != _primaryGroupId;
   }
@@ -921,36 +933,34 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
 
   /// The composer shown at the bottom
   Widget _composer({required bool interactive}) {
-    final isComposingNew =
-        _editingCommentId == null && _replyingToCommentId == null;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (!_loading && isComposingNew && _showComposingBanner) ...[
-          const SizedBox(height: 8),
-          _composingBanner(),
-        ],
-        if (_editingCommentId != null) ...[
-          const SizedBox(height: 8),
-          _contextBanner(
-            icon: Symbols.edit_rounded,
-            text: context.l10n.editing_comment,
-            onCancel: _cancelEdit,
-          ),
-          const SizedBox(height: 8),
-        ],
-        if (_replyingToCommentId != null) ...[
-          const SizedBox(height: 8),
-          _contextBanner(
-            icon: Symbols.reply_rounded,
-            text: _replyBannerText(),
-            onCancel: () {
-              _cancelReply();
-              _inputFocusNode.unfocus();
-            },
-          ),
-          const SizedBox(height: 8),
-        ],
+        ...switch (_target) {
+          _ComposeNew() when !_loading && _showComposingBanner => [
+              const SizedBox(height: 8),
+              _composingBanner(),
+            ],
+          _ComposeNew() => const <Widget>[],
+          _ComposeEdit() => [
+              const SizedBox(height: 8),
+              _contextBanner(
+                icon: Symbols.edit_rounded,
+                text: context.l10n.editing_comment,
+                onCancel: _cancelEdit,
+              ),
+              const SizedBox(height: 8),
+            ],
+          _ComposeReply(:final username, :final sectionKey) => [
+              const SizedBox(height: 8),
+              _contextBanner(
+                icon: Symbols.reply_rounded,
+                text: _replyBannerText(username, sectionKey),
+                onCancel: _cancelReply,
+              ),
+              const SizedBox(height: 8),
+            ],
+        },
         _inputRow(interactive: interactive),
       ],
     );
@@ -995,13 +1005,13 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
             focusNode: interactive ? _inputFocusNode : null,
             capitalizeSentences: true,
             enabled: interactive && _canSubmit,
-            hintText: _editingCommentId != null
-                ? context.l10n.edit_comment
-                : _replyingToCommentId != null
-                    ? context.l10n.write_reply
-                    : (_canSubmit || _loading)
-                        ? context.l10n.post_comment
-                        : context.l10n.select_group_to_comment,
+            hintText: switch (_target) {
+              _ComposeEdit() => context.l10n.edit_comment,
+              _ComposeReply() => context.l10n.write_reply,
+              _ComposeNew() => (_canSubmit || _loading)
+                  ? context.l10n.post_comment
+                  : context.l10n.select_group_to_comment,
+            },
             maxLength: 199,
           ),
         ),
@@ -1015,10 +1025,11 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
             : IconButton(
                 onPressed: interactive && _canSubmit
                     ? () {
-                        if (_editingCommentId != null) {
-                          final section = _sectionFor(_editingSectionKey);
+                        final target = _target;
+                        if (target is _ComposeEdit) {
+                          final section = _sectionFor(target.sectionKey);
                           if (section != null) {
-                            _updateComment(_editingCommentId!, section);
+                            _updateComment(target.commentId, section);
                           }
                         } else {
                           _postComment();
@@ -1120,11 +1131,11 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
     );
   }
 
-  String _replyBannerText() {
-    final base = "${context.l10n.replying_to} $_replyingToUsername";
+  String _replyBannerText(String username, String sectionKey) {
+    final base = "${context.l10n.replying_to} $username";
     // Surface the target group only when comments span multiple groups
     if (_sections.length > 1) {
-      final groupName = _groupNameFor(_replyingSectionKey);
+      final groupName = _groupNameFor(sectionKey);
       if (groupName != null) return "$base • $groupName";
     }
     return base;
