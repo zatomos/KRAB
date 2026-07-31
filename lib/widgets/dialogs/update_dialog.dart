@@ -21,6 +21,8 @@ Future<void> showUpdateDialog({
 
       return StatefulBuilder(
         builder: (context, setDialogState) => AlertDialog(
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
           title: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
@@ -38,107 +40,112 @@ Future<void> showUpdateDialog({
               ),
             ],
           ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                context.l10n.version(info.version),
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w500,
-                  letterSpacing: GlobalThemeData.mediumTracking,
-                ),
-              ),
-              if (currentVersion != null)
+          content: SizedBox(
+            width: MediaQuery.sizeOf(context).width,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 Text(
-                  context.l10n.current_version(currentVersion),
-                  style: const TextStyle(fontSize: 16, color: Colors.grey),
-                ),
-              const SizedBox(height: 12),
-              Text(
-                context.l10n.whats_new,
-                style: const TextStyle(
+                  context.l10n.version(info.version),
+                  style: const TextStyle(
+                    fontSize: 18,
                     fontWeight: FontWeight.w500,
-                    letterSpacing: GlobalThemeData.mediumTracking),
-              ),
-              if (info.releases.any((r) => r.changelog.isNotEmpty)) ...[
-                const SizedBox(height: 4),
-                Flexible(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 240),
-                    child: Scrollbar(
-                      child: SingleChildScrollView(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            for (final release in info.releases)
-                              if (release.changelog.isNotEmpty) ...[
-                                // Only label versions when several are shown
-                                if (info.releases
-                                        .where((r) => r.changelog.isNotEmpty)
-                                        .length >
-                                    1)
-                                  Padding(
-                                    padding: const EdgeInsets.only(
-                                        top: 8, bottom: 2),
-                                    child: Text(
-                                      context.l10n.version(release.version),
-                                      style: const TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w500,
-                                        letterSpacing:
-                                            GlobalThemeData.mediumTracking,
+                    letterSpacing: GlobalThemeData.mediumTracking,
+                  ),
+                ),
+                if (currentVersion != null)
+                  Text(
+                    context.l10n.current_version(currentVersion),
+                    style: const TextStyle(fontSize: 16, color: Colors.grey),
+                  ),
+                const SizedBox(height: 12),
+                Text(
+                  context.l10n.whats_new,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: GlobalThemeData.mediumTracking),
+                ),
+                if (info.releases.any((r) => r.changelog.isNotEmpty)) ...[
+                  const SizedBox(height: 4),
+                  Flexible(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 240),
+                      child: Scrollbar(
+                        child: SingleChildScrollView(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              for (final release in info.releases)
+                                if (release.changelog.isNotEmpty) ...[
+                                  // Only label versions when several are shown
+                                  if (info.releases
+                                          .where((r) => r.changelog.isNotEmpty)
+                                          .length >
+                                      1)
+                                    Padding(
+                                      padding: const EdgeInsets.only(
+                                          top: 8, bottom: 2),
+                                      child: Text(
+                                        context.l10n.version(release.version),
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w500,
+                                          letterSpacing:
+                                              GlobalThemeData.mediumTracking,
+                                        ),
                                       ),
                                     ),
+                                  ...release.changelog.map(
+                                    (change) => Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        const Text('• ',
+                                            style: TextStyle(fontSize: 14)),
+                                        Expanded(
+                                          child: Text(change,
+                                              style: const TextStyle(
+                                                  fontSize: 14)),
+                                        ),
+                                      ],
+                                    ),
                                   ),
-                                ...release.changelog.map(
-                                  (change) => Row(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      const Text('• ',
-                                          style: TextStyle(fontSize: 14)),
-                                      Expanded(
-                                        child: Text(change,
-                                            style:
-                                                const TextStyle(fontSize: 14)),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                          ],
+                                ],
+                            ],
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-              ] else ...[
-                Text(
-                  context.l10n.no_changelog,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontStyle: FontStyle.italic,
-                    color: Colors.grey,
+                ] else ...[
+                  Text(
+                    context.l10n.no_changelog,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontStyle: FontStyle.italic,
+                      color: Colors.grey,
+                    ),
                   ),
-                ),
+                ],
+                if (isDownloading) ...[
+                  const SizedBox(height: 16),
+                  LinearProgressIndicator(
+                    value: progress,
+                    backgroundColor:
+                        Theme.of(context).colorScheme.surfaceBright,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    context.l10n
+                        .downloading((progress * 100).toStringAsFixed(0)),
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ],
               ],
-              if (isDownloading) ...[
-                const SizedBox(height: 16),
-                LinearProgressIndicator(
-                  value: progress,
-                  backgroundColor: Theme.of(context).colorScheme.surfaceBright,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  context.l10n.downloading((progress * 100).toStringAsFixed(0)),
-                  style: const TextStyle(fontSize: 12),
-                ),
-              ],
-            ],
+            ),
           ),
           actionsOverflowButtonSpacing:
               GlobalThemeData.dialogActionsOverflowSpacing,
@@ -183,6 +190,7 @@ Future<void> showUpdateDialog({
                       }
                     },
                     label: context.l10n.update_now,
+                    icon: Icons.system_update_rounded,
                     color: Theme.of(context).colorScheme.primary,
                   ),
           ],
