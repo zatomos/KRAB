@@ -13,6 +13,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import 'package:native_device_orientation/native_device_orientation.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'package:krab/app_globals.dart';
 import 'package:krab/models/user.dart' as krab_user;
 import 'package:krab/widgets/dialogs/image_sent_dialog.dart';
 import 'package:krab/widgets/dialogs/send_image_dialog.dart';
@@ -46,7 +47,8 @@ void _allowAllOrientations() => SystemChrome.setPreferredOrientations([
       DeviceOrientation.landscapeRight,
     ]);
 
-class CameraPageState extends State<CameraPage> {
+class CameraPageState extends State<CameraPage>
+    with WidgetsBindingObserver, RouteAware {
   CameraController? _controller;
   Future<void>? _initializeControllerFuture;
   List<CameraDescription>? _cameras;
@@ -81,6 +83,7 @@ class CameraPageState extends State<CameraPage> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _allowAllOrientations();
     _initializeCamera();
     _loadCurrentUser();
@@ -94,7 +97,52 @@ class CameraPageState extends State<CameraPage> {
   StreamSubscription<void>? _orderSubscription;
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute) routeObserver.subscribe(this, route);
+  }
+
+  /// Whether a page sits on top of this one. Dialogs don't count.
+  bool _coveredByPage = false;
+
+  /// Covered by another page, hand the camera back.
+  @override
+  void didPushNext() {
+    _coveredByPage = true;
+    _disposeCamera();
+  }
+
+  /// Back on top: take the camera again.
+  @override
+  void didPopNext() {
+    _coveredByPage = false;
+    if (!mounted) return;
+    _allowAllOrientations();
+    _lastSystemUiMode = null;
+    _initializeCamera();
+  }
+
+  /// True while the system image picker is in front.
+  bool _pickerOpen = false;
+
+  /// Dispose camera when the app leaves the foreground
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (_pickerOpen) return;
+    if (state == AppLifecycleState.resumed) {
+      if (_controller == null && !_coveredByPage) _initializeCamera();
+    } else if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      _disposeCamera();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    routeObserver.unsubscribe(this);
     _authSubscription?.cancel();
     _orderSubscription?.cancel();
     _lockPortrait();
@@ -104,8 +152,12 @@ class CameraPageState extends State<CameraPage> {
     super.dispose();
   }
 
+  /// Bumped every time the camera is taken or given back.
+  int _cameraGeneration = 0;
+
   /// Dispose camera resources
   Future<void> _disposeCamera() async {
+    _cameraGeneration++;
     // Detach the controller and rebuild first, so the live CameraPreview leaves
     // the tree before we dispose it.
     final controller = _controller;
@@ -116,7 +168,7 @@ class CameraPageState extends State<CameraPage> {
     await controller?.dispose();
   }
 
-  /// Navigate to another page, disposing camera and reinitializing on return
+  /// Navigate to another page and dispose the camera.
   Future<void> _navigateWithCameraDispose(Widget page) async {
     await _disposeCamera();
     if (!mounted) return;
@@ -134,13 +186,6 @@ class CameraPageState extends State<CameraPage> {
         builder: (_) => page,
       ),
     );
-
-    if (mounted) {
-      _allowAllOrientations();
-      _lastSystemUiMode = null;
-      await _initializeCamera();
-      setState(() {});
-    }
   }
 
   // ===== Initialization ========================================================
@@ -198,6 +243,9 @@ class CameraPageState extends State<CameraPage> {
   }
 
   Future<void> _initializeCamera() async {
+    final generation = ++_cameraGeneration;
+    bool superseded() => generation != _cameraGeneration || !mounted;
+
     final cameraPermissionStatus = await Permission.camera.status;
     if (!cameraPermissionStatus.isGranted) {
       final result = await Permission.camera.request();
@@ -206,6 +254,7 @@ class CameraPageState extends State<CameraPage> {
         return;
       }
     }
+    if (superseded()) return;
 
     try {
       _cameras = await availableCameras();
@@ -213,6 +262,7 @@ class CameraPageState extends State<CameraPage> {
         debugPrint("No cameras available");
         return;
       }
+      if (superseded()) return;
 
       debugPrint("Raw cameras from platform:");
       for (var i = 0; i < _cameras!.length; i++) {
@@ -227,6 +277,11 @@ class CameraPageState extends State<CameraPage> {
       _selectedCameraIndex = backIndex != -1 ? backIndex : 0;
 
       await _createControllerForIndex(_selectedCameraIndex);
+      if (superseded()) {
+        debugPrint("Camera: startup superseded, releasing");
+        await _disposeCamera();
+        return;
+      }
       if (mounted) setState(() {});
     } catch (e) {
       debugPrint("Error during camera initialization: $e");
@@ -392,10 +447,12 @@ class CameraPageState extends State<CameraPage> {
 
   Future<void> _sendPictureFromStorage() async {
     final errorMessage = context.l10n.error_picking_image;
+    _pickerOpen = true;
     try {
       final ImagePicker imagePicker = ImagePicker();
       final XFile? pickedImage =
           await imagePicker.pickImage(source: ImageSource.gallery);
+      _pickerOpen = false;
       if (pickedImage == null) {
         debugPrint("No image selected");
         return;
@@ -405,6 +462,8 @@ class CameraPageState extends State<CameraPage> {
     } catch (e) {
       debugPrint("Error picking image: $e");
       showSnackBar(errorMessage, tone: SnackTone.failure);
+    } finally {
+      _pickerOpen = false;
     }
   }
 

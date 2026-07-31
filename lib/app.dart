@@ -121,6 +121,7 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
     return MaterialApp(
       navigatorKey: widget.navigatorKey,
+      navigatorObservers: [routeObserver],
       scaffoldMessengerKey: scaffoldMessengerKey,
       title: 'KRAB',
       theme: ThemeData(
