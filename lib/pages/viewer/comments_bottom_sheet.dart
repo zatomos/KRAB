@@ -624,7 +624,9 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
                                 TextSpan(
                                   text: username,
                                   style: const TextStyle(
-                                      fontWeight: FontWeight.w400,
+                                      fontWeight: FontWeight.w500,
+                                      letterSpacing:
+                                          GlobalThemeData.mediumTracking,
                                       fontSize: 14),
                                 ),
                                 TextSpan(

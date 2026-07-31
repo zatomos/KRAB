@@ -327,7 +327,9 @@ class _ReactorsSheetState extends State<_ReactorsSheet> {
                         row.username.isEmpty ? '...' : row.username,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontWeight: FontWeight.w400),
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w500,
+                            letterSpacing: GlobalThemeData.mediumTracking),
                       ),
                     ),
                     if (_mine.contains('${row.instanceId}/${row.userId}')) ...[
