@@ -37,7 +37,8 @@ void _openGalleryOnGroupList(
 
 /// Handle a tap on a home-screen widget. The URI is emitted by the native
 /// widget providers via the home_widget plugin:
-///   krab://open?imageId=ID     open the all-groups gallery on that image
+///   krab://open?imageId=ID     open the all-groups gallery on that image,
+///                              named as `instanceId/imageId`
 ///   krab://open?action=camera  bring the camera to the front
 Future<void> handleWidgetLaunch(Uri? uri) async {
   if (uri == null) return;
@@ -75,23 +76,22 @@ Future<void> handleLocalNotificationTap(String payload) async {
     final nav = await _awaitNavigator();
     if (nav == null) return;
 
+    // The notification says which instance it came from, open on that server
+    final instance =
+        instanceForPayload(data.map((k, v) => MapEntry(k, '${v ?? ''}')));
+
     // Nothing here belongs to a single group: a reaction isn't tied to one at
     // all, and a photo delivered to the user through several groups at once has
     // no one group to open. dispatchImageNotification leaves group_id empty to
     // say so. Both open the all-groups gallery, on the image.
     if (type == 'new_reaction' || (type == 'new_image' && groupId.isEmpty)) {
       if (imageId.isEmpty) return;
-      _openGalleryOnGroupList(nav, imageId: imageId);
+      _openGalleryOnGroupList(nav,
+          imageId: instance == null ? imageId : '${instance.id}/$imageId');
       return;
     }
 
-    if (groupId.isEmpty) return;
-
-    // The notification says which instance it came from; open the group on that
-    // server, not on whichever one happens to be active.
-    final instance =
-        instanceForPayload(data.map((k, v) => MapEntry(k, '${v ?? ''}')));
-    if (instance == null) return;
+    if (groupId.isEmpty || instance == null) return;
     final groupResponse = await instance.api.getGroupDetails(groupId);
     if (!groupResponse.success || groupResponse.data == null) return;
 

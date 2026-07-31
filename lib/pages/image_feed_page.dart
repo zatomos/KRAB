@@ -304,11 +304,17 @@ class ImageFeedPageState extends State<ImageFeedPage> {
     if (widget.imageId == null || !mounted) return;
 
     try {
+      // Resolve deep link
+      final link = widget.imageId!;
+      final slash = link.indexOf('/');
+      final linkInstanceId = slash < 0 ? null : link.substring(0, slash);
+      final linkImageId = slash < 0 ? link : link.substring(slash + 1);
+
       // The target is usually recent, but page forward until it's found (or we
       // run out / hit the lookup cap) so the gallery can open on it.
-      // A deep link names one copy, so match on any copy's id.
-      bool holdsTarget(SharedImage p) =>
-          p.copies.any((c) => c.id == widget.imageId);
+      bool holdsTarget(SharedImage p) => p.copies.any((c) =>
+          c.id == linkImageId &&
+          (linkInstanceId == null || c.instanceId == linkInstanceId));
 
       int index = _images.indexWhere(holdsTarget);
       int pages = 0;
@@ -320,15 +326,15 @@ class ImageFeedPageState extends State<ImageFeedPage> {
       }
 
       // Not in the feed: show just that copy, still as an image in its own
-      // right so everything below treats it the same way.
-      // An image asked for by id but not in the feed can only be read from the
-      // gallery's own server; the cross-group feed has none to guess with.
-      final source = _instance;
+      // right so everything below treats it the same way. Read it from the
+      // server the link names, or from the gallery's own one
+      final source = linkInstanceId != null
+          ? InstanceRegistry.instance.byId(linkInstanceId)
+          : _instance;
       if (index < 0 && source == null) return;
       final target = index >= 0
           ? _images[index]
-          : SharedImage(
-              [ImageRef(instanceId: source!.id, id: widget.imageId!)]);
+          : SharedImage([ImageRef(instanceId: source!.id, id: linkImageId)]);
 
       final initialData = await _cache.imageData(target);
       if (!mounted) return;
