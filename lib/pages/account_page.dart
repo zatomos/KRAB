@@ -553,16 +553,6 @@ class AccountPageState extends State<AccountPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text(context.l10n.auto_save_imgs),
-            subtitle: Text(context.l10n.auto_save_imgs_description),
-            value: autoImageSave,
-            onChanged: (value) {
-              UserPreferences.setAutoImageSave(value);
-              setState(() => autoImageSave = value);
-            },
-          ),
           ListTile(
             contentPadding: EdgeInsets.zero,
             title: Text(context.l10n.group_activity_notifications),
@@ -597,6 +587,16 @@ class AccountPageState extends State<AccountPage> {
                 },
               ),
             ),
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(context.l10n.auto_save_imgs),
+            subtitle: Text(context.l10n.auto_save_imgs_description),
+            value: autoImageSave,
+            onChanged: (value) {
+              UserPreferences.setAutoImageSave(value);
+              setState(() => autoImageSave = value);
+            },
           ),
           if (_updateService.isEnabled)
             SwitchListTile(
