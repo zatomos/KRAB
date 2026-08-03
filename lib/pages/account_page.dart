@@ -29,6 +29,9 @@ import 'package:krab/pages/servers_page.dart';
 import 'package:krab/services/instance/instance_registry.dart';
 import 'package:krab/services/instance/instances.dart';
 
+/// Which group activity the user wants notifications for.
+enum GroupNotificationSetting { none, comments, reactions, both }
+
 class AccountPage extends StatefulWidget {
   /// The server whose account this is.
   final KrabInstance instance;
@@ -349,33 +352,60 @@ class AccountPageState extends State<AccountPage> {
     }
   }
 
-  /// A switch whose state lives on the server.
-  Widget _serverSwitch({
-    required String title,
-    required String subtitle,
-    required bool value,
-    required Future<SupabaseResponse<void>> Function(bool) save,
-    required void Function(bool) apply,
-  }) {
-    return SwitchListTile(
-      contentPadding: EdgeInsets.zero,
-      title: Text(title),
-      subtitle: Text(subtitle),
-      value: value,
-      onChanged: (next) async {
-        final l10n = context.l10n;
-        final res = await save(next);
-        if (!mounted) return;
-        if (res.success) {
-          setState(() => apply(next));
-        } else {
-          showSnackBar(
-              l10n.error_updating_setting(res.error ?? l10n.unknown_error),
-              tone: SnackTone.failure);
-        }
-      },
-    );
+  /// The merged group-notification choice.
+  GroupNotificationSetting get _groupNotificationSetting {
+    if (receiveAllGroupComments && receiveAllGroupReactions) {
+      return GroupNotificationSetting.both;
+    }
+    if (receiveAllGroupComments) return GroupNotificationSetting.comments;
+    if (receiveAllGroupReactions) return GroupNotificationSetting.reactions;
+    return GroupNotificationSetting.none;
   }
+
+  /// Apply a merged group-notification choice by saving whichever of the two
+  /// server flags actually changed.
+  Future<void> _setGroupNotificationSetting(
+      GroupNotificationSetting setting) async {
+    final l10n = context.l10n;
+    final wantComments = setting == GroupNotificationSetting.comments ||
+        setting == GroupNotificationSetting.both;
+    final wantReactions = setting == GroupNotificationSetting.reactions ||
+        setting == GroupNotificationSetting.both;
+
+    const ok = SupabaseResponse<void>(success: true);
+    final (commentRes, reactionRes) = await (
+      wantComments != receiveAllGroupComments
+          ? _api.setGroupCommentNotificationSetting(wantComments)
+          : Future.value(ok),
+      wantReactions != receiveAllGroupReactions
+          ? _api.setGroupReactionNotificationSetting(wantReactions)
+          : Future.value(ok),
+    ).wait;
+    if (!mounted) return;
+
+    setState(() {
+      if (commentRes.success) receiveAllGroupComments = wantComments;
+      if (reactionRes.success) receiveAllGroupReactions = wantReactions;
+    });
+
+    final failed = !commentRes.success ? commentRes : reactionRes;
+    if (!failed.success) {
+      showSnackBar(
+          l10n.error_updating_setting(failed.error ?? l10n.unknown_error),
+          tone: SnackTone.failure);
+    }
+  }
+
+  String _groupNotificationLabel(
+          BuildContext context, GroupNotificationSetting setting) =>
+      switch (setting) {
+        GroupNotificationSetting.none => context.l10n.group_activity_none,
+        GroupNotificationSetting.comments =>
+          context.l10n.group_activity_comments,
+        GroupNotificationSetting.reactions =>
+          context.l10n.group_activity_reactions,
+        GroupNotificationSetting.both => context.l10n.group_activity_both,
+      };
 
   @override
   Scaffold build(BuildContext context) {
@@ -533,19 +563,40 @@ class AccountPageState extends State<AccountPage> {
               setState(() => autoImageSave = value);
             },
           ),
-          _serverSwitch(
-            title: context.l10n.group_comment_notifications,
-            subtitle: context.l10n.group_comment_notifications_description,
-            value: receiveAllGroupComments,
-            save: _api.setGroupCommentNotificationSetting,
-            apply: (v) => receiveAllGroupComments = v,
-          ),
-          _serverSwitch(
-            title: context.l10n.group_reaction_notifications,
-            subtitle: context.l10n.group_reaction_notifications_description,
-            value: receiveAllGroupReactions,
-            save: _api.setGroupReactionNotificationSetting,
-            apply: (v) => receiveAllGroupReactions = v,
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(context.l10n.group_activity_notifications),
+            subtitle: Text(context.l10n.group_activity_notifications_description),
+            trailing: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 150),
+              child: DropdownButton<GroupNotificationSetting>(
+                value: _groupNotificationSetting,
+                isExpanded: true,
+                itemHeight: null,
+                underline: const SizedBox.shrink(),
+                // Let the selected label wrap onto multiple lines.
+                selectedItemBuilder: (context) => [
+                  for (final setting in GroupNotificationSetting.values)
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        _groupNotificationLabel(context, setting),
+                        textAlign: TextAlign.end,
+                      ),
+                    ),
+                ],
+                items: [
+                  for (final setting in GroupNotificationSetting.values)
+                    DropdownMenuItem(
+                      value: setting,
+                      child: Text(_groupNotificationLabel(context, setting)),
+                    ),
+                ],
+                onChanged: (value) {
+                  if (value != null) _setGroupNotificationSetting(value);
+                },
+              ),
+            ),
           ),
           if (_updateService.isEnabled)
             SwitchListTile(
