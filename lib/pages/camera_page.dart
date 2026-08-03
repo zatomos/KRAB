@@ -59,6 +59,9 @@ class CameraPageState extends State<CameraPage>
   bool _dialogOpen = false;
   SystemUiMode? _lastSystemUiMode;
 
+  /// False while the app is fully backgrounded.
+  bool _appActive = true;
+
   // Zoom state
   final ValueNotifier<double> _zoomNotifier = ValueNotifier(1.0);
   double _baseZoom = 1.0;
@@ -131,10 +134,11 @@ class CameraPageState extends State<CameraPage>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (_pickerOpen) return;
     if (state == AppLifecycleState.resumed) {
+      _appActive = true;
       if (_controller == null && !_coveredByPage) _initializeCamera();
-    } else if (state == AppLifecycleState.inactive ||
-        state == AppLifecycleState.paused ||
+    } else if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden) {
+      _appActive = false;
       _disposeCamera();
     }
   }
@@ -818,77 +822,84 @@ class CameraPageState extends State<CameraPage>
       body: FutureBuilder<void>(
         future: _initializeControllerFuture,
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.done &&
-              _controller != null &&
-              _controller!.value.isInitialized) {
-            return Stack(
-              children: [
-                Positioned.fill(child: Center(child: _preview(preview))),
-                _zoomHud(context),
+          final cameraReady =
+              snapshot.connectionState == ConnectionState.done &&
+                  _controller != null &&
+                  _controller!.value.isInitialized;
 
-                // Nav buttons: physical top of phone
-                if (isLandscape)
-                  _landscapeStrip(
-                    isLandscapeLeft: isLandscapeLeft,
-                    physicalTop: true,
-                    items: [
-                      _navButton(child: _groupsButton()),
-                      _navButton(child: _uploadButton()),
-                      _navButton(child: _accountButton()),
-                    ],
-                  )
-                else ...[
-                  Positioned(
-                    top: 50,
-                    left: 25,
-                    child: _navButton(child: _groupsButton()),
-                  ),
-                  Positioned(
-                    top: 50,
-                    left: 0,
-                    right: 0,
-                    child: Center(child: _navButton(child: _uploadButton())),
-                  ),
-                  Positioned(
-                    top: 50,
-                    right: 25,
-                    child: _navButton(child: _accountButton()),
-                  ),
-                ],
-
-                // Shutter buttons: physical bottom of phone
-                if (isLandscape)
-                  _landscapeStrip(
-                    isLandscapeLeft: isLandscapeLeft,
-                    physicalTop: false,
-                    items: [_flashButton(), _shutterButton(), _flipButton()],
-                  )
-                else
-                  Positioned(
-                    bottom: 20,
-                    left: 0,
-                    right: 0,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        _flashButton(),
-                        _shutterButton(),
-                        _flipButton(),
-                      ],
-                    ),
-                  ),
-              ],
-            );
-          } else if (snapshot.hasError) {
+          if (!cameraReady && snapshot.hasError) {
             debugPrint("Camera initialization failed: ${snapshot.error}");
             return Center(
               child: Text(context.l10n.camera_init_failed,
                   style: const TextStyle(color: Colors.white)),
             );
-          } else {
-            // Nothing while the camera comes up
+          }
+
+          // Foreground cold start with nothing to show
+          if (!cameraReady && _appActive) {
             return const SizedBox.shrink();
           }
+
+          return Stack(
+            children: [
+              if (cameraReady) ...[
+                Positioned.fill(child: Center(child: _preview(preview))),
+                _zoomHud(context),
+              ],
+
+              // Nav buttons: physical top of phone
+              if (isLandscape)
+                _landscapeStrip(
+                  isLandscapeLeft: isLandscapeLeft,
+                  physicalTop: true,
+                  items: [
+                    _navButton(child: _groupsButton()),
+                    _navButton(child: _uploadButton()),
+                    _navButton(child: _accountButton()),
+                  ],
+                )
+              else ...[
+                Positioned(
+                  top: 50,
+                  left: 25,
+                  child: _navButton(child: _groupsButton()),
+                ),
+                Positioned(
+                  top: 50,
+                  left: 0,
+                  right: 0,
+                  child: Center(child: _navButton(child: _uploadButton())),
+                ),
+                Positioned(
+                  top: 50,
+                  right: 25,
+                  child: _navButton(child: _accountButton()),
+                ),
+              ],
+
+              // Shutter buttons: physical bottom of phone
+              if (isLandscape)
+                _landscapeStrip(
+                  isLandscapeLeft: isLandscapeLeft,
+                  physicalTop: false,
+                  items: [_flashButton(), _shutterButton(), _flipButton()],
+                )
+              else
+                Positioned(
+                  bottom: 20,
+                  left: 0,
+                  right: 0,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      _flashButton(),
+                      _shutterButton(),
+                      _flipButton(),
+                    ],
+                  ),
+                ),
+            ],
+          );
         },
       ),
     );
