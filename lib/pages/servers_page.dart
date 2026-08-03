@@ -201,7 +201,7 @@ class _ServersPageState extends State<ServersPage> {
 
   Future<void> _openAccount(KrabInstance instance) async {
     await Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => AccountPage(instance: instance),
+      builder: (_) => AccountPage(instance: instance, fromServers: true),
     ));
     if (!mounted) return;
     setState(() {});

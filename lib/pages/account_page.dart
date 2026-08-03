@@ -36,7 +36,14 @@ class AccountPage extends StatefulWidget {
   /// The server whose account this is.
   final KrabInstance instance;
 
-  const AccountPage({super.key, required this.instance});
+  /// Whether the servers page sits directly beneath this one.
+  final bool fromServers;
+
+  const AccountPage({
+    super.key,
+    required this.instance,
+    this.fromServers = false,
+  });
 
   @override
   AccountPageState createState() => AccountPageState();
@@ -206,6 +213,12 @@ class AccountPageState extends State<AccountPage> {
   }
 
   Future<void> openServersPage() async {
+    // Came from there: step back rather than opening a second one.
+    if (widget.fromServers) {
+      Navigator.of(context).pop();
+      return;
+    }
+
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const ServersPage()),
     );
@@ -407,8 +420,22 @@ class AccountPageState extends State<AccountPage> {
         GroupNotificationSetting.both => context.l10n.group_activity_both,
       };
 
+  void _backToCamera() {
+    Navigator.of(context).popUntil((route) => route.isFirst);
+  }
+
   @override
-  Scaffold build(BuildContext context) {
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _backToCamera();
+      },
+      child: _buildScaffold(context),
+    );
+  }
+
+  Scaffold _buildScaffold(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text(context.l10n.account_page_title)),
       body: _isLoading
