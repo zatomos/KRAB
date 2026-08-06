@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart' show ThemeMode, ValueNotifier;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:krab/services/file_saver.dart';
@@ -17,8 +18,13 @@ class UserPreferences {
   static late int widgetRefreshIntervalMinutes;
   static late bool updateNotifications;
 
+  static final ValueNotifier<ThemeMode> themeMode =
+      ValueNotifier(ThemeMode.dark);
+
   Future<void> initPrefs() async {
     _preferences = await SharedPreferences.getInstance();
+
+    themeMode.value = _themeModeFromName(_preferences?.getString('themeMode'));
 
     autoImageSave = _preferences?.getBool('autoImageSave') ?? false;
     isFirstLaunch = _preferences?.getBool('isFirstLaunch') ?? true;
@@ -29,6 +35,14 @@ class UserPreferences {
     widgetRefreshIntervalMinutes =
         _preferences?.getInt('widgetRefreshIntervalMinutes') ?? 30;
     updateNotifications = _preferences?.getBool('updateNotifications') ?? true;
+  }
+
+  static ThemeMode _themeModeFromName(String? name) => ThemeMode.values
+      .firstWhere((mode) => mode.name == name, orElse: () => ThemeMode.dark);
+
+  static Future<void> setThemeMode(ThemeMode mode) async {
+    await _preferences?.setString('themeMode', mode.name);
+    themeMode.value = mode;
   }
 
   static Future<bool> getAutoImageSave() async {

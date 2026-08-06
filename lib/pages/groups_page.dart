@@ -197,7 +197,7 @@ class GroupsPageState extends State<GroupsPage> {
         actions: [
           PopupMenuButton<Widget>(
             icon: const Icon(Icons.more_vert_rounded),
-            color: Theme.of(context).colorScheme.surfaceBright,
+            color: Theme.of(context).colorScheme.surfaceContainer,
             position: PopupMenuPosition.under,
             onSelected: _openDialog,
             itemBuilder: (context) => [
@@ -271,7 +271,7 @@ class _RecentPhotosCard extends StatelessWidget {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       elevation: 0,
-      color: scheme.surfaceBright,
+      color: scheme.surfaceContainer,
       child: ListTile(
         contentPadding: const EdgeInsets.fromLTRB(15, 2, 15, 2),
         minVerticalPadding: 0,
@@ -279,7 +279,8 @@ class _RecentPhotosCard extends StatelessWidget {
         leading: CircleAvatar(
           radius: 25,
           backgroundColor: scheme.primary,
-          child: Icon(Symbols.photo_library, fill: 1, color: scheme.onPrimary),
+          child: const Icon(Symbols.photo_library,
+              fill: 1, color: GlobalThemeData.onAccent),
         ),
         title: Text(
           context.l10n.recent_photos,
@@ -290,7 +291,7 @@ class _RecentPhotosCard extends StatelessWidget {
         ),
         subtitle: Text(
           context.l10n.recent_photos_subtitle,
-          style: const TextStyle(fontSize: 14, color: Colors.grey),
+          style: TextStyle(fontSize: 14, color: scheme.muted),
         ),
         trailing: const Icon(Symbols.chevron_right_rounded),
         onTap: () => Navigator.push(

@@ -5,6 +5,7 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/models/reaction.dart';
+import 'package:krab/themes/frosted_palette.dart';
 import 'package:krab/widgets/emoji_picker_sheet.dart';
 import 'package:krab/widgets/reactors_sheet.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
@@ -219,15 +220,15 @@ const double _kOverflowChipWidth = 52;
 const double _kChipHeight = 42;
 
 class _Chip extends StatelessWidget {
-  final Color color;
-  final Color borderColor;
+  final Color? color;
+  final Color? borderColor;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final Widget child;
 
   const _Chip({
-    required this.color,
-    required this.borderColor,
+    this.color,
+    this.borderColor,
     required this.child,
     this.onTap,
     this.onLongPress,
@@ -240,8 +241,10 @@ class _Chip extends StatelessWidget {
       child: BackdropFilter.grouped(
         filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
         child: Material(
-          color: color,
-          shape: StadiumBorder(side: BorderSide(color: borderColor, width: 1)),
+          color: color ?? context.frostedTint,
+          shape: StadiumBorder(
+            side: BorderSide(color: borderColor ?? context.frostedBorder),
+          ),
           child: InkWell(
             customBorder: const StadiumBorder(),
             onTap: onTap,
@@ -294,16 +297,17 @@ class _ReactionChipState extends State<_ReactionChip> {
   Widget build(BuildContext context) {
     final reaction = widget.reaction;
     final mine = reaction.reactedByMe;
-    final accent = Theme.of(context).colorScheme.primary;
+    final accent = frostedAccent;
     return AnimatedScale(
       scale: _scale,
       duration: _popDuration,
       curve: Curves.easeOut,
       child: _Chip(
         color: mine
-            ? accent.withValues(alpha: 0.35)
-            : Colors.black.withValues(alpha: 0.4),
-        borderColor: mine ? accent : Colors.white.withValues(alpha: 0.2),
+            ? Color.alphaBlend(
+                accent.withValues(alpha: 0.25), context.frostedTint)
+            : null,
+        borderColor: mine ? accent : null,
         onTap: () {
           _pop();
           widget.onTap();
@@ -317,7 +321,7 @@ class _ReactionChipState extends State<_ReactionChip> {
             Text(
               '${reaction.count}',
               style: const TextStyle(
-                color: Colors.white,
+                color: frostedOn,
                 fontSize: 13,
                 fontWeight: FontWeight.w400,
               ),
@@ -337,11 +341,9 @@ class _AddReactionChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _Chip(
-      color: Colors.black.withValues(alpha: 0.4),
-      borderColor: Colors.white.withValues(alpha: 0.2),
       onTap: onTap,
-      child: const Icon(Symbols.add_reaction_rounded,
-          color: Colors.white, size: 18),
+      child:
+          const Icon(Symbols.add_reaction_rounded, color: frostedOn, size: 18),
     );
   }
 }
@@ -356,13 +358,11 @@ class _OverflowChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _Chip(
-      color: Colors.black.withValues(alpha: 0.4),
-      borderColor: Colors.white.withValues(alpha: 0.2),
       onTap: onTap,
       child: Text(
         '+$count',
         style: const TextStyle(
-          color: Colors.white,
+          color: frostedOn,
           fontSize: 13,
           fontWeight: FontWeight.w500,
           letterSpacing: GlobalThemeData.mediumTracking,

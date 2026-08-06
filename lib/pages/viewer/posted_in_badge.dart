@@ -5,6 +5,7 @@ import 'package:krab/l10n/l10n.dart';
 import 'package:krab/models/group.dart';
 import 'package:krab/pages/image_feed_page.dart';
 import 'package:krab/pages/viewer/frosted.dart';
+import 'package:krab/themes/frosted_palette.dart';
 import 'package:krab/widgets/avatars/group_avatar.dart';
 import 'package:krab/widgets/member_count_label.dart';
 import 'package:krab/widgets/server_label.dart';
@@ -56,7 +57,7 @@ class PostedInBadge extends StatelessWidget {
 
     return FrostedSurface(
       borderRadius: BorderRadius.circular(999),
-      tint: frostedTint,
+      tint: context.frostedTint,
       sigma: 10,
       progress: progress,
       child: Padding(
@@ -64,7 +65,7 @@ class PostedInBadge extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Symbols.group_rounded, color: Colors.white, size: 18),
+            const Icon(Symbols.group_rounded, color: frostedOn, size: 18),
             const SizedBox(width: 8),
             SizedBox(
               width: clusterWidth,
@@ -85,11 +86,11 @@ class PostedInBadge extends StatelessWidget {
                       left: avatarCount * _step,
                       child: CircleAvatar(
                         radius: _radius,
-                        backgroundColor: Colors.white.withValues(alpha: 0.25),
+                        backgroundColor: frostedOn.withValues(alpha: 0.25),
                         child: Text(
                           "+${count - avatarCount}",
                           style: const TextStyle(
-                            color: Colors.white,
+                            color: frostedOn,
                             fontSize: 11,
                             fontWeight: FontWeight.w500,
                             letterSpacing: GlobalThemeData.mediumTracking,
@@ -133,10 +134,7 @@ class _PillAvatar extends StatelessWidget {
       alignment: Alignment.center,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        border: Border.all(
-          color: Theme.of(context).colorScheme.primary,
-          width: 1.5,
-        ),
+        border: Border.all(color: frostedAccent, width: 1.5),
       ),
       child: avatar,
     );
@@ -154,13 +152,13 @@ Future<void> showPostedInDialog(BuildContext context, List<Group> groups) {
       children: [
         Row(
           children: [
-            const Icon(Symbols.group_rounded, color: Colors.white, size: 22),
+            const Icon(Symbols.group_rounded, color: frostedOn, size: 22),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
                 context.l10n.posted_in,
                 style: const TextStyle(
-                  color: Colors.white,
+                  color: frostedOn,
                   fontSize: 16,
                   fontWeight: FontWeight.w500,
                   letterSpacing: GlobalThemeData.mediumTracking,
@@ -168,7 +166,7 @@ Future<void> showPostedInDialog(BuildContext context, List<Group> groups) {
               ),
             ),
             IconButton(
-              icon: const Icon(Symbols.close_rounded, color: Colors.white),
+              icon: const Icon(Symbols.close_rounded, color: frostedOn),
               onPressed: () => Navigator.pop(context),
               visualDensity: VisualDensity.compact,
               padding: EdgeInsets.zero,
@@ -206,8 +204,7 @@ class _GroupTile extends StatelessWidget {
       leading: GroupAvatar(group, radius: 20),
       title: Text(
         group.name,
-        style:
-            const TextStyle(color: Colors.white, fontWeight: FontWeight.w400),
+        style: const TextStyle(color: frostedOn, fontWeight: FontWeight.w400),
       ),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -218,16 +215,15 @@ class _GroupTile extends StatelessWidget {
             builder: (context, snapshot) {
               final count = snapshot.data?.data;
               if (count == null) return const Text(" ");
-              return MemberCountLabel(count,
-                  color: Colors.white.withValues(alpha: 0.85));
+              return MemberCountLabel(count, color: frostedOnMuted);
             },
           ),
           if (ServerLabel.relevant)
-            ServerLabel(_instance, color: Colors.white.withValues(alpha: 0.55)),
+            ServerLabel(_instance, color: frostedOn.withValues(alpha: 0.55)),
         ],
       ),
-      trailing: Icon(Symbols.chevron_right_rounded,
-          color: Colors.white.withValues(alpha: 0.7)),
+      trailing:
+          const Icon(Symbols.chevron_right_rounded, color: frostedOnMuted),
       onTap: () {
         Navigator.pop(context);
         Navigator.push(

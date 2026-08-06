@@ -1016,11 +1016,12 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
           ),
         ),
         _isSending
-            ? const SizedBox(
+            ? SizedBox(
                 width: 20,
                 height: 20,
                 child: CircularProgressIndicator(
-                    strokeWidth: 2, color: Colors.white),
+                    strokeWidth: 2,
+                    color: Theme.of(context).colorScheme.primary),
               )
             : IconButton(
                 onPressed: interactive && _canSubmit
@@ -1039,7 +1040,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
                 icon: Icon(
                   Symbols.send_rounded,
                   color: _canSubmit
-                      ? Colors.white
+                      ? Theme.of(context).colorScheme.primary
                       : Theme.of(context).disabledColor,
                 ),
               ),

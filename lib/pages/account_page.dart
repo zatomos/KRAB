@@ -409,6 +409,13 @@ class AccountPageState extends State<AccountPage> {
     }
   }
 
+  String _themeModeLabel(BuildContext context, ThemeMode mode) =>
+      switch (mode) {
+        ThemeMode.system => context.l10n.theme_system,
+        ThemeMode.light => context.l10n.theme_light,
+        ThemeMode.dark => context.l10n.theme_dark,
+      };
+
   String _groupNotificationLabel(
           BuildContext context, GroupNotificationSetting setting) =>
       switch (setting) {
@@ -490,7 +497,7 @@ class AccountPageState extends State<AccountPage> {
               onTap: openEditPfpDialog,
               child: CircleAvatar(
                 radius: 16,
-                backgroundColor: colors.surfaceBright,
+                backgroundColor: colors.surfaceContainer,
                 child: Icon(Symbols.photo_camera_rounded,
                     size: 18, color: colors.onSurfaceVariant),
               ),
@@ -582,8 +589,31 @@ class AccountPageState extends State<AccountPage> {
         children: [
           ListTile(
             contentPadding: EdgeInsets.zero,
+            title: Text(context.l10n.appearance),
+            subtitle: Text(context.l10n.appearance_description),
+            trailing: ValueListenableBuilder<ThemeMode>(
+              valueListenable: UserPreferences.themeMode,
+              builder: (context, mode, _) => DropdownButton<ThemeMode>(
+                value: mode,
+                underline: const SizedBox.shrink(),
+                items: [
+                  for (final option in ThemeMode.values)
+                    DropdownMenuItem(
+                      value: option,
+                      child: Text(_themeModeLabel(context, option)),
+                    ),
+                ],
+                onChanged: (value) {
+                  if (value != null) UserPreferences.setThemeMode(value);
+                },
+              ),
+            ),
+          ),
+          ListTile(
+            contentPadding: EdgeInsets.zero,
             title: Text(context.l10n.group_activity_notifications),
-            subtitle: Text(context.l10n.group_activity_notifications_description),
+            subtitle:
+                Text(context.l10n.group_activity_notifications_description),
             trailing: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 150),
               child: DropdownButton<GroupNotificationSetting>(
@@ -752,13 +782,13 @@ class AccountPageState extends State<AccountPage> {
               onTap: _handleVersionTap,
               child: Text(
                 'KRAB v$appVersion',
-                style: const TextStyle(color: Colors.grey),
+                style: TextStyle(color: Theme.of(context).colorScheme.muted),
               ),
             ),
             const SizedBox(width: 4),
             IconButton(
               icon: const Icon(SimpleIcons.github, size: 18),
-              color: Colors.grey,
+              color: Theme.of(context).colorScheme.muted,
               visualDensity: VisualDensity.compact,
               onPressed: _openProjectPage,
             ),

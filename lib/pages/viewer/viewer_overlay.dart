@@ -13,6 +13,7 @@ import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/services/file_saver.dart';
 import 'package:krab/pages/viewer/comments_bottom_sheet.dart';
 import 'package:krab/pages/viewer/frosted.dart';
+import 'package:krab/themes/frosted_palette.dart';
 import 'package:krab/pages/viewer/posted_in_badge.dart';
 import 'package:krab/pages/viewer/viewer_actions_menu.dart';
 import 'package:krab/widgets/dialogs/add_to_groups_dialog.dart';
@@ -236,7 +237,7 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
                     Text(
                       widget.uploader.username,
                       style: const TextStyle(
-                        color: Colors.white,
+                        color: frostedOn,
                         fontSize: 16,
                         fontWeight: FontWeight.w500,
                         letterSpacing: GlobalThemeData.mediumTracking,
@@ -245,8 +246,8 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
                     if (uploadedLabel != null)
                       Text(
                         context.l10n.uploaded_on(uploadedLabel),
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.6),
+                        style: const TextStyle(
+                          color: frostedOnMuted,
                           fontSize: 12,
                         ),
                       ),
@@ -255,8 +256,8 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
                         padding: const EdgeInsets.only(top: 2),
                         child: Text(
                           context.l10n.shared_here_on(sharedLabel),
-                          style: TextStyle(
-                            color: Colors.white.withValues(alpha: 0.6),
+                          style: const TextStyle(
+                            color: frostedOnMuted,
                             fontSize: 12,
                           ),
                         ),
@@ -265,7 +266,7 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
                 ),
               ),
               IconButton(
-                icon: const Icon(Symbols.close_rounded, color: Colors.white),
+                icon: const Icon(Symbols.close_rounded, color: frostedOn),
                 onPressed: () => Navigator.pop(context),
               ),
             ],
@@ -290,7 +291,7 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
       maxLines: maxLines,
       overflow: maxLines == null ? null : TextOverflow.ellipsis,
       style: TextStyle(
-        color: empty ? Colors.white.withValues(alpha: 0.5) : Colors.white,
+        color: empty ? frostedOn.withValues(alpha: 0.5) : frostedOn,
         fontSize: fontSize,
         height: height,
         fontStyle: empty ? FontStyle.italic : FontStyle.normal,
@@ -574,7 +575,7 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
                           child: RepaintBoundary(
                             child: FrostedSurface(
                               borderRadius: BorderRadius.circular(14),
-                              tint: frostedTint,
+                              tint: context.frostedTint,
                               sigma: 10,
                               progress: t,
                               child: Padding(
@@ -605,7 +606,7 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
                       onPressed: _openComments,
                       label: _commentCount.toString(),
                       icon: Symbols.comment_rounded,
-                      color: Theme.of(context).colorScheme.primary,
+                      color: frostedAccent,
                       opacity: 0.3,
                       height: 48,
                       minLabelWidth: 10,

@@ -57,7 +57,9 @@ Future<void> showUpdateDialog({
                 if (currentVersion != null)
                   Text(
                     context.l10n.current_version(currentVersion),
-                    style: const TextStyle(fontSize: 16, color: Colors.grey),
+                    style: TextStyle(
+                        fontSize: 16,
+                        color: Theme.of(context).colorScheme.muted),
                   ),
                 const SizedBox(height: 12),
                 Text(
@@ -122,10 +124,10 @@ Future<void> showUpdateDialog({
                 ] else ...[
                   Text(
                     context.l10n.no_changelog,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 14,
                       fontStyle: FontStyle.italic,
-                      color: Colors.grey,
+                      color: Theme.of(context).colorScheme.muted,
                     ),
                   ),
                 ],
@@ -134,7 +136,7 @@ Future<void> showUpdateDialog({
                   LinearProgressIndicator(
                     value: progress,
                     backgroundColor:
-                        Theme.of(context).colorScheme.surfaceBright,
+                        Theme.of(context).colorScheme.surfaceContainer,
                     color: Theme.of(context).colorScheme.primary,
                   ),
                   const SizedBox(height: 8),

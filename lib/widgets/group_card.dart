@@ -112,6 +112,7 @@ class _GroupCardState extends State<GroupCard> {
 
   @override
   Widget build(BuildContext context) {
+    final unfilledStar = Theme.of(context).colorScheme.muted;
     return GestureDetector(
       onTap: () async {
         await Navigator.push<Group>(
@@ -154,7 +155,9 @@ class _GroupCardState extends State<GroupCard> {
                 if (widget.group.latestImageAt != null)
                   Text(
                     timeAgoShort(context, widget.group.latestImageAt!),
-                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                    style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.muted),
                   ),
               ],
             ),
@@ -180,7 +183,8 @@ class _GroupCardState extends State<GroupCard> {
                         },
                       ),
                 if (widget.showOrigin)
-                  ServerLabel(_instance, color: Colors.grey),
+                  ServerLabel(_instance,
+                      color: Theme.of(context).colorScheme.muted),
               ],
             ),
 
@@ -200,7 +204,7 @@ class _GroupCardState extends State<GroupCard> {
                     curve: Curves.easeOut,
                     builder: (context, fill, _) => Icon(
                       Symbols.star_rounded,
-                      color: Color.lerp(Colors.grey, Colors.amber, fill),
+                      color: Color.lerp(unfilledStar, Colors.amber, fill),
                       fill: fill,
                       size: 28,
                     ),

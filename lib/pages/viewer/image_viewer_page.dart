@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:extended_image/extended_image.dart';
 import 'package:image/image.dart' as img;
 
@@ -12,6 +13,8 @@ import 'package:krab/models/image_ref.dart';
 import 'package:krab/models/shared_image.dart';
 import 'package:krab/services/shared_image_api.dart';
 import 'package:krab/pages/viewer/viewer_overlay.dart';
+import 'package:krab/themes/frosted_palette.dart';
+import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/services/cache/feed_image_cache.dart';
 
 /// Resolves the pixel dimensions of an encoded image.
@@ -470,50 +473,53 @@ class _ImageViewerPageState extends State<ImageViewerPage>
   @override
   Widget build(BuildContext context) {
     final viewport = MediaQuery.sizeOf(context);
-    return Scaffold(
-      backgroundColor: Colors.black,
-      resizeToAvoidBottomInset: false,
-      body: GestureDetector(
-        onTap: _toggleChrome,
-        child: Stack(
-          children: [
-            Positioned.fill(child: _buildBackground()),
-            Positioned.fill(
-              child: ColoredBox(color: Colors.black.withValues(alpha: 0.7)),
-            ),
-            Positioned.fill(
-              child: ExtendedImageGesturePageView.builder(
-                controller: _pageController,
-                itemCount: widget.images.length,
-                onPageChanged: _onPageChanged,
-                physics: const _SnappyPageScrollPhysics(),
-                itemBuilder: (context, index) {
-                  _touch(index);
-                  final pagePhoto = widget.images[index];
-                  return RepaintBoundary(
-                    child: _ViewerPhoto(
-                      key: ValueKey(pagePhoto.identity),
-                      displaySize: _displaySizeFor(index, viewport),
-                      // Only the page nearest center gets a Hero
-                      heroTag: index == _heroIndex
-                          ? "image_${pagePhoto.identity}"
-                          : null,
-                      // Seed from the prefetch cache so a known page paints its
-                      // low-res image on the first frame instead of flashing
-                      initialBytes: _pageBytes[index],
-                      imageDataFuture: _imageDataFor(index),
-                      fullFuture: widget.cache.fullResBytes(pagePhoto),
-                      onLowBytes: (bytes) => _cachePageBytes(index, bytes),
-                      onNaturalSize: (size) => _setChildSize(index, size),
-                      onZoomChanged: _onPageZoomChanged,
-                      settled: _settled,
-                    ),
-                  );
-                },
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: systemBarsFor(Brightness.dark),
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        resizeToAvoidBottomInset: false,
+        body: GestureDetector(
+          onTap: _toggleChrome,
+          child: Stack(
+            children: [
+              Positioned.fill(child: _buildBackground()),
+              Positioned.fill(
+                child: ColoredBox(color: context.frostedVeil),
               ),
-            ),
-            Positioned.fill(child: _buildOverlay()),
-          ],
+              Positioned.fill(
+                child: ExtendedImageGesturePageView.builder(
+                  controller: _pageController,
+                  itemCount: widget.images.length,
+                  onPageChanged: _onPageChanged,
+                  physics: const _SnappyPageScrollPhysics(),
+                  itemBuilder: (context, index) {
+                    _touch(index);
+                    final pagePhoto = widget.images[index];
+                    return RepaintBoundary(
+                      child: _ViewerPhoto(
+                        key: ValueKey(pagePhoto.identity),
+                        displaySize: _displaySizeFor(index, viewport),
+                        // Only the page nearest center gets a Hero
+                        heroTag: index == _heroIndex
+                            ? "image_${pagePhoto.identity}"
+                            : null,
+                        // Seed from the prefetch cache so a known page paints its
+                        // low-res image on the first frame instead of flashing
+                        initialBytes: _pageBytes[index],
+                        imageDataFuture: _imageDataFor(index),
+                        fullFuture: widget.cache.fullResBytes(pagePhoto),
+                        onLowBytes: (bytes) => _cachePageBytes(index, bytes),
+                        onNaturalSize: (size) => _setChildSize(index, size),
+                        onZoomChanged: _onPageZoomChanged,
+                        settled: _settled,
+                      ),
+                    );
+                  },
+                ),
+              ),
+              Positioned.fill(child: _buildOverlay()),
+            ],
+          ),
         ),
       ),
     );

@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:krab/themes/frosted_palette.dart';
 import 'package:krab/themes/global_theme_data.dart';
 
 class SoftButton extends StatelessWidget {
@@ -74,6 +75,7 @@ class SoftButton extends StatelessWidget {
     );
 
     if (blurBackground) {
+      final tint = context.frostedTint;
       content = ClipRRect(
         borderRadius: BorderRadius.circular(radius),
         // Shares the enclosing BackdropGroup's blur pass when one is present
@@ -82,8 +84,8 @@ class SoftButton extends StatelessWidget {
           enabled: progress > 0,
           filter:
               ImageFilter.blur(sigmaX: 15 * progress, sigmaY: 15 * progress),
-          child: Container(
-            color: Colors.black.withValues(alpha: 0.3 * progress),
+          child: ColoredBox(
+            color: tint.withValues(alpha: tint.a * progress),
             child: content,
           ),
         ),

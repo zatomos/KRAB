@@ -19,7 +19,7 @@ class AuthCard extends StatelessWidget {
       curve: Curves.easeOut,
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceBright,
+        color: Theme.of(context).colorScheme.surfaceContainer,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: success ? GlobalThemeData.success : Colors.transparent,

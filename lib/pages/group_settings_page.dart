@@ -377,7 +377,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
               IgnorePointer(
                 child: CircleAvatar(
                   radius: 16,
-                  backgroundColor: Theme.of(context).colorScheme.surfaceBright,
+                  backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
                   child: Icon(Symbols.photo_camera_rounded,
                       size: 18,
                       color: Theme.of(context).colorScheme.onSurfaceVariant),
@@ -690,7 +690,7 @@ class _MemberTileState extends State<_MemberTile> {
 
     await showMenu<void>(
       context: context,
-      color: Theme.of(context).colorScheme.surfaceBright,
+      color: Theme.of(context).colorScheme.surfaceContainer,
       position: RelativeRect.fromRect(
         Rect.fromLTWH(pos.dx, pos.dy + size.height, size.width, 0),
         Offset.zero & overlay.size,
@@ -735,7 +735,7 @@ class _MemberTileState extends State<_MemberTile> {
         curve: Curves.easeOut,
         decoration: BoxDecoration(
           color: _highlighted
-              ? Colors.white.withValues(alpha: 0.08)
+              ? Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.08)
               : Colors.transparent,
           borderRadius: BorderRadius.circular(12),
         ),

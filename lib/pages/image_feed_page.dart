@@ -681,7 +681,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
             key: const ValueKey('failed'),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(10),
-              color: Theme.of(context).colorScheme.surfaceBright,
+              color: Theme.of(context).colorScheme.surfaceContainer,
             ),
             child: Icon(Symbols.error_rounded,
                 size: 50,

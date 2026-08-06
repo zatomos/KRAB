@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:image_cropper/image_cropper.dart';
 
 import 'package:krab/themes/global_theme_data.dart';
+import 'package:krab/user_preferences.dart';
 
 /// Picks an image from the gallery and crops it to a 1:1 square.
 ///
@@ -12,6 +13,8 @@ import 'package:krab/themes/global_theme_data.dart';
 Future<File?> pickAndCropSquareImage({required String toolbarTitle}) async {
   final picked = await ImagePicker().pickImage(source: ImageSource.gallery);
   if (picked == null) return null;
+
+  final scheme = GlobalThemeData.schemeFor(UserPreferences.themeMode.value);
 
   try {
     final cropped = await ImageCropper().cropImage(
@@ -22,10 +25,10 @@ Future<File?> pickAndCropSquareImage({required String toolbarTitle}) async {
       uiSettings: [
         AndroidUiSettings(
           toolbarTitle: toolbarTitle,
-          toolbarColor: GlobalThemeData.darkColorScheme.surface,
-          toolbarWidgetColor: Colors.white,
-          activeControlsWidgetColor: GlobalThemeData.darkColorScheme.primary,
-          statusBarLight: false,
+          toolbarColor: scheme.surface,
+          toolbarWidgetColor: scheme.onSurface,
+          activeControlsWidgetColor: scheme.primary,
+          statusBarLight: scheme.brightness == Brightness.light,
           initAspectRatio: CropAspectRatioPreset.square,
           lockAspectRatio: true,
         ),

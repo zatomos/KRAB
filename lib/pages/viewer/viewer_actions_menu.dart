@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:krab/l10n/l10n.dart';
+import 'package:krab/themes/frosted_palette.dart';
 
 /// Actions offered by the viewer's overflow menu.
 enum ViewerAction { save, addToGroups, delete }
@@ -68,17 +69,17 @@ class _ActionsPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final divider = Container(
       height: 1,
-      color: Colors.white.withValues(alpha: 0.08),
+      color: frostedOn.withValues(alpha: 0.08),
     );
     return ClipRRect(
       borderRadius: BorderRadius.circular(16),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
         child: Material(
-          color: Colors.black.withValues(alpha: 0.6),
+          color: context.frostedTintStrong,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
-            side: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
+            side: BorderSide(color: context.frostedBorder),
           ),
           clipBehavior: Clip.antiAlias,
           child: IntrinsicWidth(
@@ -132,7 +133,7 @@ class _MenuItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = destructive ? const Color(0xFFFF6B6B) : Colors.white;
+    final color = destructive ? frostedError : frostedOn;
     return InkWell(
       onTap: () => Navigator.of(context).pop(value),
       child: Padding(

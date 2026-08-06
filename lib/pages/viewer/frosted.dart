@@ -2,6 +2,8 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
+import 'package:krab/themes/frosted_palette.dart';
+
 /// The frosted look shared by every piece of chrome over a photo.
 class FrostedSurface extends StatelessWidget {
   final BorderRadius borderRadius;
@@ -21,6 +23,7 @@ class FrostedSurface extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final edge = context.frostedBorder;
     return ClipRRect(
       borderRadius: borderRadius,
       child: ClipRect(
@@ -32,6 +35,10 @@ class FrostedSurface extends StatelessWidget {
             decoration: BoxDecoration(
               color: tint.withValues(alpha: tint.a * progress),
               borderRadius: borderRadius,
+              border: Border.all(
+                color: edge.withValues(alpha: edge.a * progress),
+                width: 1,
+              ),
             ),
             child: Opacity(opacity: progress, child: child),
           ),
@@ -40,8 +47,6 @@ class FrostedSurface extends StatelessWidget {
     );
   }
 }
-
-Color get frostedTint => Colors.black.withValues(alpha: 0.35);
 
 /// A circular frosted icon button.
 class CircleAction extends StatelessWidget {
@@ -78,11 +83,11 @@ class CircleAction extends StatelessWidget {
               onTap: onTap,
               child: FrostedSurface(
                 borderRadius: BorderRadius.circular(999),
-                tint: frostedTint,
+                tint: context.frostedTint,
                 progress: progress,
                 child: Padding(
                   padding: const EdgeInsets.all(8),
-                  child: Icon(icon, color: Colors.white, size: 30),
+                  child: Icon(icon, color: frostedOn, size: 30),
                 ),
               ),
             ),
@@ -106,7 +111,7 @@ Future<T?> showFrostedDialog<T>(
     barrierColor: Colors.black.withValues(alpha: 0.4),
     transitionDuration: const Duration(milliseconds: 220),
     pageBuilder: (context, _, __) => Dialog(
-      backgroundColor: Colors.black.withValues(alpha: 0.3),
+      backgroundColor: Colors.transparent,
       insetPadding: const EdgeInsets.all(20),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: ClipRRect(
@@ -116,8 +121,9 @@ Future<T?> showFrostedDialog<T>(
           child: Container(
             padding: padding,
             decoration: BoxDecoration(
-              color: frostedTint,
+              color: context.frostedTintStrong,
               borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: context.frostedBorder, width: 1),
             ),
             child: Material(
               type: MaterialType.transparency,

@@ -8,6 +8,8 @@ enum FallbackType {
   icon,
 }
 
+const Duration _fade = Duration(milliseconds: 100);
+
 class GroupOrUserAvatar extends StatelessWidget {
   final String name;
   final String? imageUrl;
@@ -28,50 +30,53 @@ class GroupOrUserAvatar extends StatelessWidget {
     this.cacheKey,
   });
 
-  @override
-  Widget build(BuildContext context) {
-    final hasImage = imageUrl != null && imageUrl!.isNotEmpty;
-
-    if (hasImage) {
-      return CircleAvatar(
-        radius: radius,
-        backgroundColor: Colors.transparent,
-        backgroundImage:
-            CachedNetworkImageProvider(imageUrl!, cacheKey: cacheKey),
-        onBackgroundImageError: (_, __) {
-          debugPrint('⚠️ Failed to load image for $name');
-        },
-      );
-    }
-
+  Widget _fallback(BuildContext context) {
     final bgColor = useRandomColor
         ? colorFromName(name, context)
         : Theme.of(context).colorScheme.primaryContainer;
 
-    Widget child;
-    if (fallbackType == FallbackType.icon) {
-      child = Icon(
-        fallbackIcon ?? Icons.group_rounded,
-        size: radius * 1.2,
-        color: Theme.of(context).colorScheme.onPrimaryContainer,
-      );
-    } else {
-      final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
-      child = Text(
-        initial,
-        style: TextStyle(
-          fontSize: radius,
-          fontWeight: FontWeight.w500,
-          letterSpacing: GlobalThemeData.mediumTracking,
-          color: Theme.of(context).colorScheme.onPrimaryContainer,
-        ),
-      );
-    }
-
     return CircleAvatar(
       radius: radius,
       backgroundColor: bgColor,
-      child: child,
+      child: fallbackType == FallbackType.icon
+          ? Icon(
+              fallbackIcon ?? Icons.group_rounded,
+              size: radius * 1.2,
+              color: GlobalThemeData.onAccent,
+            )
+          : Text(
+              name.isNotEmpty ? name[0].toUpperCase() : '?',
+              style: TextStyle(
+                fontSize: radius,
+                fontWeight: FontWeight.w500,
+                letterSpacing: GlobalThemeData.mediumTracking,
+                color: GlobalThemeData.onAccent,
+              ),
+            ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final url = imageUrl;
+    if (url == null || url.isEmpty) return _fallback(context);
+
+    return ClipOval(
+      child: CachedNetworkImage(
+        imageUrl: url,
+        cacheKey: cacheKey,
+        width: radius * 2,
+        height: radius * 2,
+        fit: BoxFit.cover,
+        fadeInDuration: _fade,
+        fadeOutDuration: _fade,
+        placeholderFadeInDuration: _fade,
+        placeholder: (context, __) => _fallback(context),
+        errorWidget: (context, __, ___) {
+          debugPrint('⚠️ Failed to load image for $name');
+          return _fallback(context);
+        },
+      ),
     );
   }
 }

@@ -482,7 +482,7 @@ class _ServerCard extends StatelessWidget {
       ColorScheme colors) {
     return PopupMenuButton<_ServerAction>(
       icon: Icon(Icons.more_vert_rounded, color: colors.onSurface),
-      color: colors.surfaceBright,
+      color: colors.surfaceContainer,
       position: PopupMenuPosition.under,
       onSelected: (action) {
         switch (action) {

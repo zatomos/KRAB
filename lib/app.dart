@@ -112,55 +112,38 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
       DeviceOrientation.portraitDown,
     ]);
 
-    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-      systemNavigationBarColor: Colors.black,
-      systemNavigationBarIconBrightness: Brightness.light,
-    ));
-
     debugPrint('Building MyApp - isAppInitialized: $isAppInitialized');
 
-    return MaterialApp(
-      navigatorKey: widget.navigatorKey,
-      navigatorObservers: [routeObserver],
-      scaffoldMessengerKey: scaffoldMessengerKey,
-      title: 'KRAB',
-      theme: ThemeData(
-        actionIconTheme: ActionIconThemeData(
-          backButtonIconBuilder: (context) {
-            return const Icon(
-              Icons.arrow_back_ios_new_rounded,
-              fill: 1,
-              size: 24,
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: UserPreferences.themeMode,
+      builder: (context, themeMode, _) => MaterialApp(
+        navigatorKey: widget.navigatorKey,
+        navigatorObservers: [routeObserver],
+        scaffoldMessengerKey: scaffoldMessengerKey,
+        title: 'KRAB',
+        theme: GlobalThemeData.light,
+        darkTheme: GlobalThemeData.dark,
+        themeMode: themeMode,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
+          value: systemBarsFor(Theme.of(context).brightness),
+          child: SafeArea(top: false, child: child!),
+        ),
+        home: FutureBuilder(
+          future: _homePageFuture,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Scaffold(
+                body: Center(child: CircularProgressIndicator()),
+              );
+            }
+
+            return UpdateChecker(
+              child: snapshot.data ?? signInScreen(),
             );
           },
         ),
-        colorScheme: GlobalThemeData.darkColorScheme,
-        useMaterial3: true,
-        fontFamily: 'Rubik',
-        iconTheme: const IconThemeData(weight: 650),
-        popupMenuTheme: PopupMenuThemeData(
-          shape: RoundedRectangleBorder(
-            borderRadius:
-                BorderRadius.circular(GlobalThemeData.popupMenuRadius),
-          ),
-        ),
-      ),
-      localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
-      builder: (context, child) => SafeArea(top: false, child: child!),
-      home: FutureBuilder(
-        future: _homePageFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Scaffold(
-              body: Center(child: CircularProgressIndicator()),
-            );
-          }
-
-          return UpdateChecker(
-            child: snapshot.data ?? signInScreen(),
-          );
-        },
       ),
     );
   }

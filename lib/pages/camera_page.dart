@@ -14,6 +14,7 @@ import 'package:native_device_orientation/native_device_orientation.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'package:krab/app_globals.dart';
+import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/models/user.dart' as krab_user;
 import 'package:krab/widgets/dialogs/image_sent_dialog.dart';
 import 'package:krab/widgets/dialogs/send_image_dialog.dart';
@@ -816,91 +817,94 @@ class CameraPageState extends State<CameraPage>
     }
     final preview = _previewSize(context, isLandscape: isLandscape);
 
-    return Scaffold(
-      backgroundColor: Colors.black,
-      resizeToAvoidBottomInset: false,
-      body: FutureBuilder<void>(
-        future: _initializeControllerFuture,
-        builder: (context, snapshot) {
-          final cameraReady =
-              snapshot.connectionState == ConnectionState.done &&
-                  _controller != null &&
-                  _controller!.value.isInitialized;
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: systemBarsFor(Brightness.dark),
+      child: Scaffold(
+        backgroundColor: Colors.black,
+        resizeToAvoidBottomInset: false,
+        body: FutureBuilder<void>(
+          future: _initializeControllerFuture,
+          builder: (context, snapshot) {
+            final cameraReady =
+                snapshot.connectionState == ConnectionState.done &&
+                    _controller != null &&
+                    _controller!.value.isInitialized;
 
-          if (!cameraReady && snapshot.hasError) {
-            debugPrint("Camera initialization failed: ${snapshot.error}");
-            return Center(
-              child: Text(context.l10n.camera_init_failed,
-                  style: const TextStyle(color: Colors.white)),
-            );
-          }
+            if (!cameraReady && snapshot.hasError) {
+              debugPrint("Camera initialization failed: ${snapshot.error}");
+              return Center(
+                child: Text(context.l10n.camera_init_failed,
+                    style: const TextStyle(color: Colors.white)),
+              );
+            }
 
-          // Foreground cold start with nothing to show
-          if (!cameraReady && _appActive) {
-            return const SizedBox.shrink();
-          }
+            // Foreground cold start with nothing to show
+            if (!cameraReady && _appActive) {
+              return const SizedBox.shrink();
+            }
 
-          return Stack(
-            children: [
-              if (cameraReady) ...[
-                Positioned.fill(child: Center(child: _preview(preview))),
-                _zoomHud(context),
-              ],
+            return Stack(
+              children: [
+                if (cameraReady) ...[
+                  Positioned.fill(child: Center(child: _preview(preview))),
+                  _zoomHud(context),
+                ],
 
-              // Nav buttons: physical top of phone
-              if (isLandscape)
-                _landscapeStrip(
-                  isLandscapeLeft: isLandscapeLeft,
-                  physicalTop: true,
-                  items: [
-                    _navButton(child: _groupsButton()),
-                    _navButton(child: _uploadButton()),
-                    _navButton(child: _accountButton()),
-                  ],
-                )
-              else ...[
-                Positioned(
-                  top: 50,
-                  left: 25,
-                  child: _navButton(child: _groupsButton()),
-                ),
-                Positioned(
-                  top: 50,
-                  left: 0,
-                  right: 0,
-                  child: Center(child: _navButton(child: _uploadButton())),
-                ),
-                Positioned(
-                  top: 50,
-                  right: 25,
-                  child: _navButton(child: _accountButton()),
-                ),
-              ],
-
-              // Shutter buttons: physical bottom of phone
-              if (isLandscape)
-                _landscapeStrip(
-                  isLandscapeLeft: isLandscapeLeft,
-                  physicalTop: false,
-                  items: [_flashButton(), _shutterButton(), _flipButton()],
-                )
-              else
-                Positioned(
-                  bottom: 20,
-                  left: 0,
-                  right: 0,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      _flashButton(),
-                      _shutterButton(),
-                      _flipButton(),
+                // Nav buttons: physical top of phone
+                if (isLandscape)
+                  _landscapeStrip(
+                    isLandscapeLeft: isLandscapeLeft,
+                    physicalTop: true,
+                    items: [
+                      _navButton(child: _groupsButton()),
+                      _navButton(child: _uploadButton()),
+                      _navButton(child: _accountButton()),
                     ],
+                  )
+                else ...[
+                  Positioned(
+                    top: 50,
+                    left: 25,
+                    child: _navButton(child: _groupsButton()),
                   ),
-                ),
-            ],
-          );
-        },
+                  Positioned(
+                    top: 50,
+                    left: 0,
+                    right: 0,
+                    child: Center(child: _navButton(child: _uploadButton())),
+                  ),
+                  Positioned(
+                    top: 50,
+                    right: 25,
+                    child: _navButton(child: _accountButton()),
+                  ),
+                ],
+
+                // Shutter buttons: physical bottom of phone
+                if (isLandscape)
+                  _landscapeStrip(
+                    isLandscapeLeft: isLandscapeLeft,
+                    physicalTop: false,
+                    items: [_flashButton(), _shutterButton(), _flipButton()],
+                  )
+                else
+                  Positioned(
+                    bottom: 20,
+                    left: 0,
+                    right: 0,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _flashButton(),
+                        _shutterButton(),
+                        _flipButton(),
+                      ],
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
