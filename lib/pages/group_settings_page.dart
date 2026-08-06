@@ -377,7 +377,8 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
               IgnorePointer(
                 child: CircleAvatar(
                   radius: 16,
-                  backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+                  backgroundColor:
+                      Theme.of(context).colorScheme.surfaceContainer,
                   child: Icon(Symbols.photo_camera_rounded,
                       size: 18,
                       color: Theme.of(context).colorScheme.onSurfaceVariant),
@@ -652,7 +653,12 @@ class _MemberTile extends StatefulWidget {
 
 class _MemberTileState extends State<_MemberTile> {
   final _itemKey = GlobalKey();
+  final _menuButtonKey = GlobalKey();
   bool _highlighted = false;
+
+  /// Where a long press landed, so the menu opens under the finger. Null when
+  /// the menu was opened from the three-dot button, which anchors to itself.
+  Offset? _pressPosition;
 
   ({IconData? icon, Color? color}) _roleBadge(String role) {
     switch (role) {
@@ -667,13 +673,31 @@ class _MemberTileState extends State<_MemberTile> {
     }
   }
 
+  /// The rect the menu grows from, in overlay coordinates.
+  Rect _anchorRect(RenderBox overlay) {
+    final press = _pressPosition;
+    if (press != null) {
+      final local = overlay.globalToLocal(press);
+      return Rect.fromPoints(local, local);
+    }
+    final button =
+        _menuButtonKey.currentContext?.findRenderObject() as RenderBox?;
+    if (button != null) {
+      final rect =
+          button.localToGlobal(Offset.zero, ancestor: overlay) & button.size;
+      return Rect.fromLTRB(rect.left, rect.bottom, rect.right, rect.bottom);
+    }
+    final tile = _itemKey.currentContext?.findRenderObject() as RenderBox?;
+    final pos =
+        tile?.localToGlobal(Offset.zero, ancestor: overlay) ?? Offset.zero;
+    final size = tile?.size ?? const Size(300, 56);
+    return Rect.fromLTWH(pos.dx, pos.dy + size.height, size.width, 0);
+  }
+
   Future<void> _showMenu() async {
     final targetRole = widget.member.role;
     final currentRole = widget.currentRole;
     final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
-    final box = _itemKey.currentContext?.findRenderObject() as RenderBox?;
-    final pos = box?.localToGlobal(Offset.zero) ?? Offset.zero;
-    final size = box?.size ?? const Size(300, 56);
 
     PopupMenuItem<void> item(IconData icon, String label, VoidCallback onTap) =>
         PopupMenuItem(
@@ -692,7 +716,7 @@ class _MemberTileState extends State<_MemberTile> {
       context: context,
       color: Theme.of(context).colorScheme.surfaceContainer,
       position: RelativeRect.fromRect(
-        Rect.fromLTWH(pos.dx, pos.dy + size.height, size.width, 0),
+        _anchorRect(overlay),
         Offset.zero & overlay.size,
       ),
       items: [
@@ -717,6 +741,7 @@ class _MemberTileState extends State<_MemberTile> {
               () => widget.onRoleAction('transfer_ownership')),
       ],
     );
+    _pressPosition = null;
     if (mounted) setState(() => _highlighted = false);
   }
 
@@ -724,10 +749,18 @@ class _MemberTileState extends State<_MemberTile> {
   Widget build(BuildContext context) {
     final badge = _roleBadge(widget.member.role);
     return GestureDetector(
-      onLongPressDown:
-          widget.canManage ? (_) => setState(() => _highlighted = true) : null,
-      onLongPressCancel:
-          widget.canManage ? () => setState(() => _highlighted = false) : null,
+      onLongPressDown: widget.canManage
+          ? (details) {
+              _pressPosition = details.globalPosition;
+              setState(() => _highlighted = true);
+            }
+          : null,
+      onLongPressCancel: widget.canManage
+          ? () {
+              _pressPosition = null;
+              setState(() => _highlighted = false);
+            }
+          : null,
       onLongPress: widget.canManage ? _showMenu : null,
       child: AnimatedContainer(
         key: _itemKey,
@@ -759,8 +792,12 @@ class _MemberTileState extends State<_MemberTile> {
           ),
           trailing: widget.canManage
               ? IconButton(
+                  key: _menuButtonKey,
                   icon: const Icon(Icons.more_vert_rounded),
-                  onPressed: _showMenu,
+                  onPressed: () {
+                    _pressPosition = null;
+                    _showMenu();
+                  },
                   visualDensity: VisualDensity.compact,
                 )
               : null,
