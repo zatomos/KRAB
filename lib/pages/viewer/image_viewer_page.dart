@@ -15,6 +15,7 @@ import 'package:krab/services/shared_image_api.dart';
 import 'package:krab/pages/viewer/viewer_overlay.dart';
 import 'package:krab/themes/frosted_palette.dart';
 import 'package:krab/themes/global_theme_data.dart';
+import 'package:krab/services/cache/avatar_cache.dart';
 import 'package:krab/services/cache/feed_image_cache.dart';
 
 /// Resolves the pixel dimensions of an encoded image.
@@ -256,9 +257,10 @@ class _ImageViewerPageState extends State<ImageViewerPage>
       final neighbour = widget.images[i];
       SharedImageApi(neighbour).postedInGroups();
       SharedImageApi(neighbour).reactions();
-      if (_pageBytes.containsKey(i)) continue;
       _imageDataFor(i).then((data) {
-        if (mounted) _cachePageBytes(i, data.imageBytes);
+        if (!mounted) return;
+        _cachePageBytes(i, data.imageBytes);
+        precacheAvatar(context, widget.cache.user(neighbour));
       });
     }
   }

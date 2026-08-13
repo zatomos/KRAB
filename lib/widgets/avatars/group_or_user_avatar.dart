@@ -62,20 +62,28 @@ class GroupOrUserAvatar extends StatelessWidget {
     if (url == null || url.isEmpty) return _fallback(context);
 
     return ClipOval(
-      child: CachedNetworkImage(
-        imageUrl: url,
-        cacheKey: cacheKey,
-        width: radius * 2,
-        height: radius * 2,
-        fit: BoxFit.cover,
-        fadeInDuration: _fade,
-        fadeOutDuration: _fade,
-        placeholderFadeInDuration: _fade,
-        placeholder: (context, __) => _fallback(context),
-        errorWidget: (context, __, ___) {
-          debugPrint('⚠️ Failed to load image for $name');
-          return _fallback(context);
-        },
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          _fallback(context),
+          CachedNetworkImage(
+            key: ValueKey(cacheKey ?? url),
+            imageUrl: url,
+            cacheKey: cacheKey,
+            width: radius * 2,
+            height: radius * 2,
+            fit: BoxFit.cover,
+            useOldImageOnUrlChange: true,
+            fadeInDuration: _fade,
+            fadeOutDuration: _fade,
+            placeholderFadeInDuration: Duration.zero,
+            placeholder: (_, __) => const SizedBox.shrink(),
+            errorWidget: (_, __, ___) {
+              debugPrint('⚠️ Failed to load image for $name');
+              return const SizedBox.shrink();
+            },
+          ),
+        ],
       ),
     );
   }
