@@ -285,6 +285,12 @@ Future<void> dispatchCommentNotification(
   String commentText;
   String? uploaderUsername;
 
+  var uploaderIsMe = false;
+  var uploaderIsCommenter = false;
+  var parentAuthorIsMe = false;
+  var parentAuthorIsUploader = false;
+  var parentAuthorUsername = '';
+
   if (commentId.isNotEmpty) {
     final ctx = await instance.api.getCommentNotificationContext(commentId);
     if (!ctx.success || ctx.data == null) return;
@@ -295,9 +301,16 @@ Future<void> dispatchCommentNotification(
     groupName = (d['group_name'] as String?) ?? '';
     commenterUsername = (d['commenter_username'] as String?) ?? '';
     commentText = (d['comment_text'] as String?) ?? '';
-    // Only group_comment renders the uploader's name in the body.
-    uploaderUsername =
-        type == 'group_comment' ? d['uploader_username'] as String? : null;
+    uploaderUsername = d['uploader_username'] as String?;
+
+    final uploaderId = (d['uploader_id'] as String?) ?? '';
+    final parentAuthorId = (d['parent_author_id'] as String?) ?? '';
+    uploaderIsMe = d['uploader_is_me'] == true;
+    uploaderIsCommenter = uploaderId.isNotEmpty && uploaderId == commenterId;
+    parentAuthorIsMe = d['parent_author_is_me'] == true;
+    parentAuthorIsUploader =
+        parentAuthorId.isNotEmpty && parentAuthorId == uploaderId;
+    parentAuthorUsername = (d['parent_author_username'] as String?) ?? '';
   } else {
     // Legacy plaintext payload
     groupId = data['group_id'] ?? '';
@@ -310,6 +323,8 @@ Future<void> dispatchCommentNotification(
     commenterUsername = (data['commenter_username'] as String?) ?? '';
     commentText = (data['comment_text'] as String?) ?? '';
     uploaderUsername = data['uploader_username'] as String?;
+    uploaderIsMe = type == 'new_comment';
+    parentAuthorIsMe = type == 'comment_reply';
   }
 
   if (groupId.isEmpty || groupName.isEmpty) return;
@@ -328,6 +343,11 @@ Future<void> dispatchCommentNotification(
     type: type,
     commenterAvatarBytes: media.avatar,
     uploaderUsername: uploaderUsername,
+    uploaderIsMe: uploaderIsMe,
+    uploaderIsCommenter: uploaderIsCommenter,
+    parentAuthorUsername: parentAuthorUsername,
+    parentAuthorIsMe: parentAuthorIsMe,
+    parentAuthorIsUploader: parentAuthorIsUploader,
     imageBytes: media.image,
   );
 }
@@ -748,6 +768,53 @@ Future<Set<int>?> _activeNotificationIds() async {
   }
 }
 
+/// What a comment notification says on its title line.
+String commentNotificationTitle({
+  required String commenterUsername,
+  required String uploaderUsername,
+  required bool uploaderIsMe,
+  required bool uploaderIsCommenter,
+  required String parentAuthorUsername,
+  required bool parentAuthorIsMe,
+  required bool parentAuthorIsUploader,
+}) {
+  final l10n = _l10n();
+  final uploader = uploaderUsername.isNotEmpty ? uploaderUsername : 'Someone';
+
+  if (parentAuthorIsMe) {
+    if (uploaderIsMe) {
+      return l10n.reply_to_you_on_your_image_notification(commenterUsername);
+    }
+    if (uploaderIsCommenter) {
+      return l10n.reply_to_you_on_own_image_notification(commenterUsername);
+    }
+    return l10n.reply_to_you_on_someone_image_notification(
+        commenterUsername, uploader);
+  }
+
+  if (parentAuthorUsername.isNotEmpty) {
+    if (uploaderIsMe) {
+      return l10n.reply_to_someone_on_your_image_notification(
+          commenterUsername, parentAuthorUsername);
+    }
+    if (parentAuthorIsUploader) {
+      return l10n.reply_to_someone_on_own_image_notification(
+          commenterUsername, parentAuthorUsername);
+    }
+    return l10n.reply_to_someone_on_someone_image_notification(
+        commenterUsername, parentAuthorUsername, uploader);
+  }
+
+  if (uploaderIsMe) {
+    return l10n.comment_on_your_image_notification(commenterUsername);
+  }
+  if (uploaderIsCommenter) {
+    return l10n.comment_on_own_image_notification(commenterUsername);
+  }
+  return l10n.comment_on_someone_image_notification(
+      commenterUsername, uploader);
+}
+
 Future<void> showCommentNotification({
   required KrabInstance instance,
   required String groupId,
@@ -759,6 +826,11 @@ Future<void> showCommentNotification({
   String commentId = '',
   Uint8List? commenterAvatarBytes,
   String? uploaderUsername,
+  bool uploaderIsMe = false,
+  bool uploaderIsCommenter = false,
+  String parentAuthorUsername = '',
+  bool parentAuthorIsMe = false,
+  bool parentAuthorIsUploader = false,
   Uint8List? imageBytes,
 }) async {
   await _createFlnpChannel(groupId, groupName);
@@ -769,12 +841,16 @@ Future<void> showCommentNotification({
     id: commentId.isEmpty
         ? _unidentifiedNotificationId()
         : commentNotificationId(commentId),
-    title: commenterUsername,
-    body: type == 'comment_reply'
-        ? _l10n().new_reply_notification
-        : (uploaderUsername != null && uploaderUsername.isNotEmpty)
-            ? _l10n().new_comment_on_someone_notification(uploaderUsername)
-            : _l10n().new_comment_on_your_image_notification,
+    title: commentNotificationTitle(
+      commenterUsername: commenterUsername,
+      uploaderUsername: uploaderUsername ?? '',
+      uploaderIsMe: uploaderIsMe,
+      uploaderIsCommenter: uploaderIsCommenter,
+      parentAuthorUsername: parentAuthorUsername,
+      parentAuthorIsMe: parentAuthorIsMe,
+      parentAuthorIsUploader: parentAuthorIsUploader,
+    ),
+    body: commentText,
     notificationDetails: NotificationDetails(
       android: AndroidNotificationDetails(
         groupId,

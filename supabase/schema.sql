@@ -781,13 +781,18 @@ BEGIN
          cu.username   AS commenter_username,
          c.text        AS comment_text,
          i.uploaded_by AS uploader_id,
-         uu.username   AS uploader_username
+         uu.username   AS uploader_username,
+         c.parent_id   AS parent_id,
+         pc.user_id    AS parent_author_id,
+         pu.username   AS parent_author_username
   INTO r
   FROM "Comments" c
   JOIN "Groups" g      ON g.id = c.group_id
   JOIN "Images" i      ON i.id = c.image_id
   LEFT JOIN "Users" cu ON cu.id = c.user_id
   LEFT JOIN "Users" uu ON uu.id = i.uploaded_by
+  LEFT JOIN "Comments" pc ON pc.id = c.parent_id
+  LEFT JOIN "Users" pu ON pu.id = pc.user_id
   WHERE c.id = p_comment_id
     AND EXISTS (
       SELECT 1 FROM "Members" m
@@ -807,7 +812,12 @@ BEGIN
     'commenter_username', COALESCE(r.commenter_username, ''),
     'comment_text', COALESCE(r.comment_text, ''),
     'uploader_id', r.uploader_id,
-    'uploader_username', COALESCE(r.uploader_username, '')
+    'uploader_username', COALESCE(r.uploader_username, ''),
+    'uploader_is_me', COALESCE(r.uploader_id = uid, false),
+    'parent_id', r.parent_id,
+    'parent_author_id', r.parent_author_id,
+    'parent_author_username', COALESCE(r.parent_author_username, ''),
+    'parent_author_is_me', COALESCE(r.parent_author_id = uid, false)
   );
 EXCEPTION
   WHEN OTHERS THEN
