@@ -72,7 +72,7 @@
   "error_adding_to_groups": "Impossible d'ajouter la photo : {errorMsg}",
   "delete_photo": "Supprimer la photo",
   "delete_photo_confirm": "Supprimer cette photo pour tout le monde ? Cette action est irréversible.",
-  "delete_photo_group_confirm": "Supprimer cette photo de ce groupe ? Cette action est irréversible.",
+  "delete_photo_group_confirm": "Supprimer cette photo de {group} ? Cette action est irréversible.",
   "photo_deleted": "Photo supprimée",
   "photo_sent": "Photo envoyée !",
   "photo_sent_partially": "Photo envoyée, mais {server} l'a refusée",

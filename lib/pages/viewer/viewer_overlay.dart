@@ -1,5 +1,5 @@
-import 'dart:typed_data';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'package:intl/intl.dart';
@@ -101,11 +101,10 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
   final GlobalKey<ReactionsBarState> _reactionsBarKey =
       GlobalKey<ReactionsBarState>();
 
-  // Groups this image was posted in
   List<Group> _postedInGroups = [];
+  List<Group> _moderatedGroups = const [];
 
-  // Whether the user moderates the group the image was opened from.
-  bool _canModerate = false;
+  bool get _canModerate => _moderatedGroups.isNotEmpty;
 
   String get _description => widget.imageData.description ?? '';
 
@@ -114,21 +113,38 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
     super.initState();
     _commentCount = widget.commentCount;
     _initPostedInGroups();
-    _initModeration();
   }
 
-  /// Group owners and admins may delete anyone's image from their group.
-  void _initModeration() {
+  /// Group owners and admins may delete anyone's image from a group they
+  /// moderate.
+  Future<void> _refreshModeration() async {
+    final identity = widget.image.identity;
     final group = widget.group;
-    if (group == null) return;
-    final instance = InstanceRegistry.instance.byId(group.instanceId);
-    if (instance == null) return;
-    instance.viewer.canModerateGroup(group.id).then((canModerate) {
-      if (mounted && canModerate != _canModerate) {
-        setState(() => _canModerate = canModerate);
-      }
-    });
+    final candidates =
+        group != null ? [group] : await _api.postedInGroups() ?? const <Group>[];
+    if (!mounted || identity != widget.image.identity) return;
+
+    final flags = await Future.wait(candidates.map(_moderates));
+    if (!mounted || identity != widget.image.identity) return;
+
+    final moderated = [
+      for (var i = 0; i < candidates.length; i++)
+        if (flags[i]) candidates[i]
+    ];
+    if (listEquals(moderated.map(_groupKey).toList(),
+        _moderatedGroups.map(_groupKey).toList())) {
+      return;
+    }
+    setState(() => _moderatedGroups = moderated);
   }
+
+  Future<bool> _moderates(Group group) async {
+    final instance = InstanceRegistry.instance.byId(group.instanceId);
+    if (instance == null) return false;
+    return instance.viewer.canModerateGroup(group.id);
+  }
+
+  static String _groupKey(Group group) => '${group.instanceId}/${group.id}';
 
   @override
   void didUpdateWidget(covariant ViewerOverlay oldWidget) {
@@ -152,6 +168,8 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
       _postedInGroups = [];
       _loadPostedInGroups();
     }
+    _moderatedGroups = const [];
+    _refreshModeration();
   }
 
   Future<void> _loadPostedInGroups() async {
@@ -400,22 +418,13 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
       _api.isOwnedBy(widget.imageData.uploadedBy, widget.uploader.instanceId);
 
   Future<void> _deleteImage() async {
-    // A moderator can only remove someone else's image from the group they
-    // moderate, never from the other groups it was shared to.
+    // A moderator can only remove someone else's image from the groups they
+    // moderate.
     if (!_isOwner) {
-      final group = widget.group;
-      if (group == null) return;
-      final confirmed = await showConfirmDialog(
-        context,
-        title: context.l10n.delete_photo,
-        message: context.l10n.delete_photo_group_confirm,
-        confirmLabel: context.l10n.delete,
-        destructive: true,
-      );
-      if (!confirmed || !mounted) return;
-      final res = await _api.removeFromGroups([group]);
-      _afterDelete(res.success, res.error,
-          fullyDeleted: res.data ?? false, removedCurrent: true);
+      if (_moderatedGroups.isEmpty) return;
+      final shownIn = await _api.postedInGroups() ?? _moderatedGroups;
+      if (!mounted) return;
+      await _removeFrom(_moderatedGroups, shownIn: shownIn);
       return;
     }
 
@@ -434,30 +443,52 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
       if (!confirmed || !mounted) return;
       final res = await _api.delete();
       _afterDelete(res.success, res.error,
-          fullyDeleted: true, removedCurrent: true);
+          fullyDeleted: true, leftView: true);
       return;
     }
 
-    final selected = await showDeleteImageDialog(
-      context,
-      groups: groups,
-      currentGroupId: _groupId,
-    );
-    if (selected == null || selected.isEmpty || !mounted) return;
+    await _removeFrom(groups, shownIn: groups);
+  }
 
-    final chosen = groups.where((g) => selected.contains(g.id)).toList();
+  Future<void> _removeFrom(
+    List<Group> offered, {
+    required List<Group> shownIn,
+  }) async {
+    final List<Group> chosen;
+    if (offered.length == 1) {
+      final confirmed = await showConfirmDialog(
+        context,
+        title: context.l10n.delete_photo,
+        message: context.l10n.delete_photo_group_confirm(offered.single.name),
+        confirmLabel: context.l10n.delete,
+        destructive: true,
+      );
+      if (!confirmed || !mounted) return;
+      chosen = offered;
+    } else {
+      final selected = await showDeleteImageDialog(
+        context,
+        groups: offered,
+        currentGroupId: _groupId,
+      );
+      if (selected == null || selected.isEmpty || !mounted) return;
+      chosen = offered.where((g) => selected.contains(g.id)).toList();
+    }
+
+    final gone = chosen.map(_groupKey).toSet();
+    final group = widget.group;
+    final leftView = group != null
+        ? gone.contains(_groupKey(group))
+        : shownIn.every((g) => gone.contains(_groupKey(g)));
+
     final res = await _api.removeFromGroups(chosen);
-    _afterDelete(
-      res.success,
-      res.error,
-      fullyDeleted: res.data ?? false,
-      removedCurrent: _groupId != null && selected.contains(_groupId),
-    );
+    _afterDelete(res.success, res.error,
+        fullyDeleted: res.data ?? false, leftView: leftView);
   }
 
   /// Reconcile UI after a delete/removal.
   void _afterDelete(bool success, String? error,
-      {required bool fullyDeleted, required bool removedCurrent}) {
+      {required bool fullyDeleted, required bool leftView}) {
     if (!mounted) return;
     if (!success) {
       showSnackBar(error ?? context.l10n.failed_to_delete_photo,
@@ -469,7 +500,7 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
 
     final message =
         fullyDeleted ? context.l10n.photo_deleted : context.l10n.photo_removed;
-    if (fullyDeleted || removedCurrent) {
+    if (fullyDeleted || leftView) {
       // Close the viewer
       Navigator.pop(context);
       widget.onImageDeleted?.call(widget.image);

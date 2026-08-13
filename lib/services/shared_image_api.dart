@@ -304,14 +304,12 @@ class SharedImageApi {
   /// has been loaded yet. Lets the viewer draw the pill without a flash.
   List<Group>? cachedPostedInGroups() {
     final groups = <Group>[];
-    var anyCached = false;
     for (final pair in _present) {
       final cached = pair.instance.viewer.cachedPostedInGroups(pair.copy.id);
-      if (cached == null) continue;
-      anyCached = true;
+      if (cached == null) return null;
       groups.addAll(cached);
     }
-    return anyCached ? groups : null;
+    return groups.isEmpty ? null : groups;
   }
 
   /// The groups this image can be added to.

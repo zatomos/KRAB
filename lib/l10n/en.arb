@@ -72,7 +72,14 @@
   "error_adding_to_groups": "Couldn't add the photo: {errorMsg}",
   "delete_photo": "Delete photo",
   "delete_photo_confirm": "Delete this photo for everyone? This can't be undone.",
-  "delete_photo_group_confirm": "Delete this photo from this group? This can't be undone.",
+  "delete_photo_group_confirm": "Delete this photo from {group}? This can't be undone.",
+  "@delete_photo_group_confirm": {
+    "placeholders": {
+      "group": {
+        "type": "String"
+      }
+    }
+  },
   "photo_deleted": "Photo deleted",
   "photo_sent": "Photo sent",
   "photo_sent_partially": "Photo sent, but {server} refused it",
