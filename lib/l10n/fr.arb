@@ -60,6 +60,8 @@
   "save": "Enregistrer",
   "delete_group": "Supprimer le groupe",
   "delete_group_confirmation": "Êtes-vous sûr de vouloir supprimer ce groupe ? Cette action est irréversible.",
+  "delete_group_type_confirm": "Saisissez le nom du groupe « {groupName} » pour confirmer.",
+  "group_name": "Nom du groupe",
   "delete": "Supprimer",
   "undo": "Annuler",
   "remove": "Supprimer",

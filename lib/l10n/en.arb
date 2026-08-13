@@ -60,6 +60,8 @@
   "save": "Save",
   "delete_group": "Delete Group",
   "delete_group_confirmation": "Are you sure you want to delete this group? This action cannot be undone.",
+  "delete_group_type_confirm": "Type the group name \"{groupName}\" to confirm.",
+  "group_name": "Group name",
   "delete": "Delete",
   "undo": "Undo",
   "remove": "Remove",

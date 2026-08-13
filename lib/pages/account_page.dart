@@ -20,7 +20,7 @@ import 'package:krab/widgets/settings_section.dart';
 import 'package:krab/widgets/avatars/user_avatar.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/widgets/dialogs/change_password_dialog.dart';
-import 'package:krab/widgets/dialogs/delete_account_dialog.dart';
+import 'package:krab/widgets/dialogs/type_to_confirm_dialog.dart';
 import 'package:krab/widgets/dialogs/edit_avatar_dialog.dart';
 import 'package:krab/widgets/dialogs/rename_dialog.dart';
 import 'package:krab/widgets/dialogs/update_dialog.dart';
@@ -227,11 +227,18 @@ class AccountPageState extends State<AccountPage> {
   }
 
   Future<void> _deleteAccount() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (_) => DeleteAccountDialog(username: user.username),
+    final l10n = context.l10n;
+    final confirmed = await showTypeToConfirmDialog(
+      context,
+      title: l10n.delete_account,
+      message: l10n.delete_account_confirmation,
+      prompt: l10n.delete_account_type_confirm(user.username),
+      expectedText: user.username,
+      hintText: l10n.username,
+      confirmLabel: l10n.delete_account,
+      maxLength: 19,
     );
-    if (confirmed != true || !mounted) return;
+    if (!confirmed || !mounted) return;
 
     final res = await _api.deleteAccount();
     if (!mounted) return;

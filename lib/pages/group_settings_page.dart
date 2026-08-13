@@ -13,6 +13,7 @@ import 'package:krab/widgets/dialogs/dialogs.dart';
 import 'package:krab/widgets/dialogs/member_roles_dialog.dart';
 import 'package:krab/widgets/dialogs/edit_avatar_dialog.dart';
 import 'package:krab/widgets/dialogs/rename_dialog.dart';
+import 'package:krab/widgets/dialogs/type_to_confirm_dialog.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/widgets/rectangle_button.dart';
 import 'package:krab/widgets/settings_section.dart';
@@ -204,11 +205,17 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
       );
 
   Future<void> _deleteGroup() async {
-    final confirm = await showConfirmDialog(context,
-        title: context.l10n.delete_group,
-        message: context.l10n.delete_group_confirmation,
-        confirmLabel: context.l10n.delete,
-        destructive: true);
+    final l10n = context.l10n;
+    final confirm = await showTypeToConfirmDialog(
+      context,
+      title: l10n.delete_group,
+      message: l10n.delete_group_confirmation,
+      prompt: l10n.delete_group_type_confirm(_group.name),
+      expectedText: _group.name,
+      hintText: l10n.group_name,
+      confirmLabel: l10n.delete_group,
+      maxLength: 19,
+    );
     if (!confirm || !mounted) return;
 
     final res = await _instance.api.deleteGroup(_group.id);
