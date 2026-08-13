@@ -77,43 +77,47 @@ class _WelcomePageState extends State<WelcomePage> {
     final permissionGranted = _permissionGranted ?? false;
 
     return Scaffold(
-      body: Padding(
-        padding: const EdgeInsets.all(20.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Image.asset(
-              'logo/krab_logo.png',
-              width: 100,
-              height: 100,
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20.0),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Image.asset(
+                  'logo/krab_logo.png',
+                  width: 100,
+                  height: 100,
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  context.l10n.welcome_title,
+                  style: TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w500,
+                    letterSpacing: GlobalThemeData.mediumTracking,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 15),
+                Text(
+                  context.l10n.welcome_subtitle,
+                  style: const TextStyle(fontSize: 18),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 30),
+                _buildSettingsCard(context, permissionGranted),
+                const SizedBox(height: 30),
+                SoftButton(
+                  icon: Icons.check_rounded,
+                  label: context.l10n.go_button,
+                  color: Theme.of(context).colorScheme.primary,
+                  onPressed: () => _continue(context),
+                ),
+              ],
             ),
-            const SizedBox(height: 20),
-            Text(
-              context.l10n.welcome_title,
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.w500,
-                letterSpacing: GlobalThemeData.mediumTracking,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 15),
-            Text(
-              context.l10n.welcome_subtitle,
-              style: const TextStyle(fontSize: 18),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 30),
-            _buildSettingsCard(context, permissionGranted),
-            const SizedBox(height: 30),
-            SoftButton(
-              icon: Icons.check_rounded,
-              label: context.l10n.go_button,
-              color: Theme.of(context).colorScheme.primary,
-              onPressed: () => _continue(context),
-            ),
-          ],
+          ),
         ),
       ),
     );

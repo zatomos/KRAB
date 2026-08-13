@@ -209,6 +209,7 @@ class LoginPageState extends State<LoginPage> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
+              scrollable: true,
               title: Text(context.l10n.forgot_password),
               content: Column(
                 mainAxisSize: MainAxisSize.min,

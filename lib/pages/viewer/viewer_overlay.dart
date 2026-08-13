@@ -272,7 +272,11 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
             ],
           ),
           const SizedBox(height: 16),
-          _descriptionText(fontSize: 15, height: 1.3),
+          Flexible(
+            child: SingleChildScrollView(
+              child: _descriptionText(fontSize: 15, height: 1.3),
+            ),
+          ),
         ],
       ),
     );
