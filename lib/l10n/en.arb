@@ -255,6 +255,8 @@
   "widget_refresh_interval": "Widget refresh interval",
   "widget_refresh_interval_description": "How often to check for new photos in the background.",
   "no_description": "No description",
+  "edit_description": "Edit description",
+  "description_updated": "Description updated",
   "off": "Off",
   "new_image_notification": "sent a new image",
   "new_comment_on_someone_notification": "commented on {uploader_username}'s image",

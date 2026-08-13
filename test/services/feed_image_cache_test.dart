@@ -328,6 +328,31 @@ void main() {
     });
   });
 
+  group('updateDescription', () {
+    test('rewords what is held, without reading the details again', () async {
+      await cache.imageData(_photo('a'));
+      cache.updateDescription(_photo('a'), 'now about something else');
+
+      final data = await cache.imageData(_photo('a'));
+      expect(data.description, 'now about something else');
+      expect(fake.detailFetches, ['a'], reason: 'the rewording was local');
+    });
+
+    test('an emptied description reads as none at all', () async {
+      await cache.imageData(_photo('a'));
+      cache.updateDescription(_photo('a'), '');
+
+      expect((await cache.imageData(_photo('a'))).description, isNull);
+    });
+
+    test('leaves an image that was never loaded to its own fetch', () async {
+      cache.updateDescription(_photo('a'), 'unheard');
+
+      expect(fake.detailFetches, isEmpty);
+      expect((await cache.imageData(_photo('a'))).description, 'about a');
+    });
+  });
+
   test('addToCommentCount moves the tally in both directions', () {
     cache.addToCommentCount(_photo('a'), 1);
     cache.addToCommentCount(_photo('a'), 1);

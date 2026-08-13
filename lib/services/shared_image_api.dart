@@ -507,6 +507,29 @@ class SharedImageApi {
     return instance != null && instance.auth.currentUserId == uploaderId;
   }
 
+  /// Update the description on every server holding a copy, so the copies keep
+  /// reading as one photo.
+  Future<SupabaseResponse<void>> updateDescription(String description) async {
+    final copies = _present;
+    if (copies.isEmpty) {
+      return const SupabaseResponse(success: false, error: errorServer);
+    }
+
+    final results = await Future.wait(copies.map((pair) =>
+        pair.instance.api.updateImageDescription(pair.copy.id, description)));
+
+    final failed = results.where((r) => !r.success).toList();
+    if (failed.isEmpty) return const SupabaseResponse(success: true);
+
+    debugPrint('SharedImage: ${failed.length} of ${results.length} copies '
+        'could not be reworded');
+    return SupabaseResponse(
+      success: false,
+      error: failed.first.error,
+      offline: failed.every((r) => r.offline),
+    );
+  }
+
   /// Forget the cached group lists for every copy, after one of them changed.
   void invalidatePostedInGroups() {
     for (final pair in _present) {

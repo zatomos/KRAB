@@ -375,6 +375,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
         group: widget.group,
         cache: _cache,
         onCommentCountChanged: _onCommentCountChanged,
+        onDescriptionChanged: _onDescriptionChanged,
         onImageDeleted: _onImageDeleted,
         onCopiesAdded: _onCopiesAdded,
         onImageChanged: paginated ? _revealTile : null,
@@ -469,6 +470,10 @@ class ImageFeedPageState extends State<ImageFeedPage> {
 
   void _onCommentCountChanged(SharedImage image, int delta) {
     setState(() => _cache.addToCommentCount(image, delta));
+  }
+
+  void _onDescriptionChanged(SharedImage image, String description) {
+    setState(() => _cache.updateDescription(image, description));
   }
 
   /// Pull-to-refresh

@@ -164,6 +164,15 @@ class FeedImageCache {
     return future;
   }
 
+  /// Carry a changed description into what is already held, so the grid and
+  /// the viewer show the new text without re-reading the image's details.
+  void updateDescription(SharedImage image, String description) {
+    final held = _imageDataFutures[image.identity];
+    if (held == null) return;
+    _imageDataFutures[image.identity] =
+        held.then((data) => data.withDescription(description));
+  }
+
   /// Start (or join) the full-resolution download for an image.
   Future<Uint8List?> fullResBytes(SharedImage image) {
     _touchFullRes(image.identity);

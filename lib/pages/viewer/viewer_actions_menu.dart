@@ -7,7 +7,7 @@ import 'package:krab/l10n/l10n.dart';
 import 'package:krab/themes/frosted_palette.dart';
 
 /// Actions offered by the viewer's overflow menu.
-enum ViewerAction { save, addToGroups, delete }
+enum ViewerAction { save, editDescription, addToGroups, delete }
 
 Future<ViewerAction?> showViewerActionsMenu(
   BuildContext context, {
@@ -93,6 +93,12 @@ class _ActionsPanel extends StatelessWidget {
                   value: ViewerAction.save,
                 ),
                 if (isOwner) ...[
+                  divider,
+                  _MenuItem(
+                    icon: Symbols.edit_rounded,
+                    label: context.l10n.edit_description,
+                    value: ViewerAction.editDescription,
+                  ),
                   divider,
                   _MenuItem(
                     icon: Symbols.group_add_rounded,

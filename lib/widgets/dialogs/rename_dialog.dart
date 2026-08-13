@@ -17,6 +17,9 @@ class RenameDialog extends StatefulWidget {
   final String initialValue;
   final String? emptyError;
   final int? maxLength;
+  final int maxLines;
+  final bool capitalizeSentences;
+
   final Future<String?> Function(String value) onSubmit;
 
   const RenameDialog({
@@ -27,6 +30,8 @@ class RenameDialog extends StatefulWidget {
     required this.onSubmit,
     this.emptyError,
     this.maxLength,
+    this.maxLines = 1,
+    this.capitalizeSentences = false,
   });
 
   @override
@@ -80,6 +85,9 @@ class _RenameDialogState extends State<RenameDialog> {
             controller: _controller,
             hintText: widget.hintText,
             maxLength: widget.maxLength,
+            maxLines: widget.maxLines,
+            minLines: widget.maxLines > 1 ? 1 : null,
+            capitalizeSentences: widget.capitalizeSentences,
           ),
           if (_error != null)
             Padding(

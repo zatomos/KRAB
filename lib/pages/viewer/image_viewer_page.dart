@@ -92,6 +92,11 @@ class ImageViewerPage extends StatefulWidget {
   final void Function(SharedImage image, int delta)? onCommentCountChanged;
   final void Function(SharedImage image)? onImageDeleted;
 
+  /// An image was changed by its uploader, so the gallery underneath can show
+  /// the new description too.
+  final void Function(SharedImage image, String description)?
+      onDescriptionChanged;
+
   /// Copies that appeared on servers this image was not on before, so the list
   /// behind the viewer can fold them into it.
   final void Function(List<ImageRef> copies)? onCopiesAdded;
@@ -116,6 +121,7 @@ class ImageViewerPage extends StatefulWidget {
     required this.cache,
     this.onCommentCountChanged,
     this.onImageDeleted,
+    this.onDescriptionChanged,
     this.onCopiesAdded,
     this.onImageChanged,
     this.loadMore,
@@ -429,6 +435,17 @@ class _ImageViewerPageState extends State<ImageViewerPage>
     });
   }
 
+  /// Carry a rewording into the page this viewer already holds, so swiping away
+  /// and back shows the new text, then let the gallery underneath know.
+  void _onDescriptionChanged(SharedImage image, String description) {
+    final held = _imageDataFutures[_currentIndex];
+    if (held != null) {
+      _imageDataFutures[_currentIndex] =
+          held.then((data) => data.withDescription(description));
+    }
+    widget.onDescriptionChanged?.call(image, description);
+  }
+
   Widget _buildOverlay() {
     final image = _currentImage;
     return AnimatedBuilder(
@@ -462,6 +479,8 @@ class _ImageViewerPageState extends State<ImageViewerPage>
                 loadBestBytesForSave: () => widget.cache.bestBytes(image),
                 onCommentCountChanged: (delta) =>
                     widget.onCommentCountChanged?.call(image, delta),
+                onDescriptionChanged: (description) =>
+                    _onDescriptionChanged(image, description),
                 onImageDeleted: widget.onImageDeleted,
                 onCopiesAdded: widget.onCopiesAdded,
               );

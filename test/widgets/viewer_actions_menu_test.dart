@@ -59,14 +59,17 @@ void main() {
     expect(find.byIcon(Symbols.download_rounded), findsOneWidget);
     expect(find.byIcon(Symbols.group_add_rounded), findsNothing,
         reason: 'only the owner may reshare their photo');
+    expect(find.byIcon(Symbols.edit_rounded), findsNothing,
+        reason: 'a stranger may not update someone else\'s description');
     expect(find.byIcon(Symbols.delete_rounded), findsNothing,
         reason: 'a stranger may not delete someone else\'s photo');
   });
 
-  testWidgets('the owner can save, reshare and delete', (tester) async {
+  testWidgets('the owner can save, reword, reshare and delete', (tester) async {
     await _openMenu(tester, isOwner: true, canModerate: false);
 
     expect(find.byIcon(Symbols.download_rounded), findsOneWidget);
+    expect(find.byIcon(Symbols.edit_rounded), findsOneWidget);
     expect(find.byIcon(Symbols.group_add_rounded), findsOneWidget);
     expect(find.byIcon(Symbols.delete_rounded), findsOneWidget);
   });
@@ -79,6 +82,9 @@ void main() {
         reason: 'a moderator may remove a photo from the group they moderate');
     expect(find.byIcon(Symbols.group_add_rounded), findsNothing,
         reason: 'moderating a group does not make the photo theirs to spread');
+    expect(find.byIcon(Symbols.edit_rounded), findsNothing,
+        reason: 'a moderator does not get to update the uploader\'s '
+            'description');
   });
 
   testWidgets('reports the action that was chosen', (tester) async {

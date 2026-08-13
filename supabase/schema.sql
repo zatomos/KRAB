@@ -2653,6 +2653,42 @@ END;$$;
 
 
 --
+-- Name: update_image_description(uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.update_image_description(p_image_id uuid, p_description text) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$DECLARE
+  current_user_id UUID;
+BEGIN
+  current_user_id := auth.uid();
+  IF current_user_id IS NULL THEN
+    RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
+  END IF;
+
+  IF length(COALESCE(p_description, '')) >= 200 THEN
+    RETURN jsonb_build_object('success', false, 'error', 'Description is too long');
+  END IF;
+
+  -- Only the uploader may update their description
+  UPDATE "Images" i
+  SET description = NULLIF(p_description, '')
+  WHERE i.id = update_image_description.p_image_id
+    AND i.uploaded_by = current_user_id;
+
+  IF FOUND THEN
+    RETURN jsonb_build_object('success', true, 'message', 'Description updated successfully');
+  ELSE
+    RETURN jsonb_build_object('success', false, 'error', 'No image found to update or permission denied');
+  END IF;
+EXCEPTION
+  WHEN OTHERS THEN
+    RETURN jsonb_build_object('success', false, 'error', SQLERRM);
+END;$$;
+
+
+--
 -- Name: allow_any_operation(text[]); Type: FUNCTION; Schema: storage; Owner: -
 --
 
@@ -5435,6 +5471,15 @@ GRANT ALL ON FUNCTION public.update_comment(comment_id uuid, image_id uuid, grou
 GRANT ALL ON FUNCTION public.update_group_name(group_id uuid, new_name text) TO anon;
 GRANT ALL ON FUNCTION public.update_group_name(group_id uuid, new_name text) TO authenticated;
 GRANT ALL ON FUNCTION public.update_group_name(group_id uuid, new_name text) TO service_role;
+
+
+--
+-- Name: FUNCTION update_image_description(p_image_id uuid, p_description text); Type: ACL; Schema: public; Owner: -
+--
+
+REVOKE ALL ON FUNCTION public.update_image_description(p_image_id uuid, p_description text) FROM PUBLIC;
+GRANT ALL ON FUNCTION public.update_image_description(p_image_id uuid, p_description text) TO authenticated;
+GRANT ALL ON FUNCTION public.update_image_description(p_image_id uuid, p_description text) TO service_role;
 
 
 --

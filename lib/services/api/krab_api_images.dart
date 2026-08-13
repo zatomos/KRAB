@@ -5,6 +5,9 @@ part of 'krab_api.dart';
 /// Largest photo the server will accept
 const int maxImageUploadBytes = 15 * 1024 * 1024;
 
+/// Longest description the server will store.
+const int maxDescriptionLength = 199;
+
 /// The bytes are already in storage under this name.
 bool _isAlreadyUploaded(Object error) =>
     error is StorageException &&
@@ -131,6 +134,13 @@ extension KrabApiImages on KrabApi {
     await _imageCache.remove(imageId);
     return SupabaseResponse(success: true);
   }
+
+  /// Update an image the current user uploaded. An empty description clears it.
+  Future<SupabaseResponse<void>> updateImageDescription(
+          String imageId, String description) =>
+      _rpc<void>("update_image_description",
+          params: {"p_image_id": imageId, "p_description": description},
+          errorContext: "updating the image description");
 
   /// Remove the current user's image from the given groups only. If that leaves
   /// it in no groups it's deleted outright. Returns whether it was fully

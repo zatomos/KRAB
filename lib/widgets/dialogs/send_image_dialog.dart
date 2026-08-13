@@ -363,7 +363,7 @@ class _SendImageDialogState extends State<SendImageDialog> {
                   hintText: context.l10n.add_description,
                   capitalizeSentences: true,
                   controller: _description,
-                  maxLength: 199,
+                  maxLength: maxDescriptionLength,
                   minLines: 1,
                   maxLines: 4,
                 ),

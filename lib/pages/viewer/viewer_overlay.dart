@@ -19,6 +19,7 @@ import 'package:krab/pages/viewer/viewer_actions_menu.dart';
 import 'package:krab/widgets/dialogs/add_to_groups_dialog.dart';
 import 'package:krab/widgets/dialogs/delete_image_dialog.dart';
 import 'package:krab/widgets/dialogs/dialogs.dart';
+import 'package:krab/widgets/dialogs/rename_dialog.dart';
 import 'package:krab/widgets/soft_button.dart';
 import 'package:krab/widgets/reactions_bar.dart';
 import 'package:krab/widgets/avatars/user_avatar.dart';
@@ -61,6 +62,7 @@ class ViewerOverlay extends StatefulWidget {
 
   final void Function(int delta)? onCommentCountChanged;
   final void Function(SharedImage image)? onImageDeleted;
+  final void Function(String description)? onDescriptionChanged;
 
   /// Copies of this image that now exist on servers it was not on before.
   final void Function(List<ImageRef> copies)? onCopiesAdded;
@@ -79,6 +81,7 @@ class ViewerOverlay extends StatefulWidget {
     this.onCommentCountChanged,
     this.onImageDeleted,
     this.onCopiesAdded,
+    this.onDescriptionChanged,
   });
 
   @override
@@ -106,7 +109,10 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
 
   bool get _canModerate => _moderatedGroups.isNotEmpty;
 
-  String get _description => widget.imageData.description ?? '';
+  String? _editedDescription;
+
+  String get _description =>
+      _editedDescription ?? widget.imageData.description ?? '';
 
   @override
   void initState() {
@@ -153,6 +159,7 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
     // the underlying image changes.
     if (oldWidget.image.identity != widget.image.identity) {
       _commentCount = widget.commentCount;
+      _editedDescription = null;
       _initPostedInGroups();
     }
   }
@@ -334,11 +341,38 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
     switch (action) {
       case ViewerAction.save:
         _saveImage();
+      case ViewerAction.editDescription:
+        _editDescription();
       case ViewerAction.addToGroups:
         _addToGroups();
       case ViewerAction.delete:
         _deleteImage();
     }
+  }
+
+  /// Edit the description on every server holding a copy of it.
+  Future<void> _editDescription() async {
+    final l10n = context.l10n;
+    final updated = await showDialog<String>(
+      context: context,
+      builder: (_) => RenameDialog(
+        title: l10n.edit_description,
+        hintText: l10n.add_description,
+        initialValue: _description,
+        maxLength: maxDescriptionLength,
+        maxLines: 4,
+        capitalizeSentences: true,
+        onSubmit: (value) async {
+          final res = await _api.updateDescription(value);
+          return res.success ? null : describeError(l10n, res.error);
+        },
+      ),
+    );
+    if (updated == null || !mounted) return;
+
+    setState(() => _editedDescription = updated);
+    widget.onDescriptionChanged?.call(updated);
+    showSnackBar(l10n.description_updated, tone: SnackTone.success);
   }
 
   /// Share this already-uploaded image to more of the user's groups.

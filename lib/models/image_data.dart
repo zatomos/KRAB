@@ -18,6 +18,15 @@ class ImageData {
     this.description,
   });
 
+  /// The same image with an updated description. An empty one reads as none.
+  ImageData withDescription(String description) => ImageData(
+        imageBytes: imageBytes,
+        uploadedBy: uploadedBy,
+        uploaderInstanceId: uploaderInstanceId,
+        createdAt: createdAt,
+        description: description.isEmpty ? null : description,
+      );
+
   @override
   String toString() {
     return 'ImageData{uploadedBy: $uploadedBy@$uploaderInstanceId, '
