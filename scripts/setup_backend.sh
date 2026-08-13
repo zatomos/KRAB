@@ -38,6 +38,7 @@ new_image_notify:image-notification
 new_comment_notify:comment-notification
 new_reaction_notify:reaction-notification
 image_deleted_notify:image-deleted-notification
+image_edited_notify:image-edited-notification
 generate-thumbnail:thumbnail-generation
 auth_pages:pages
 "

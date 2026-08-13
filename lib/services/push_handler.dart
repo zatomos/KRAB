@@ -107,7 +107,8 @@ Future<void> handlePushPayload(
       type != 'comment_reply' &&
       type != 'new_reaction' &&
       type != 'group_reaction' &&
-      type != 'image_deleted') {
+      type != 'image_deleted' &&
+      type != 'image_description_changed') {
     debugPrint('Push message type "$type" not handled, skipping');
     return;
   }
@@ -157,6 +158,13 @@ Future<void> handlePushPayload(
         shareId: data['share_id'],
       );
       await updateHomeWidget();
+    } else if (type == 'image_description_changed') {
+      await updateImageNotificationDescription(
+        instance,
+        data['image_id'] ?? '',
+        shareId: data['share_id'],
+      );
+      await updateHomeWidget(updatedDescriptions: true);
     } else if (type == 'new_reaction' || type == 'group_reaction') {
       // Non-null: the guard above returned for every other value of type.
       await dispatchReactionNotification(instance, data, type!);

@@ -11,6 +11,7 @@ import 'package:krab/models/user.dart' as krab_user;
 import 'package:krab/models/group.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/services/file_saver.dart';
+import 'package:krab/services/home_widget_updater.dart';
 import 'package:krab/pages/viewer/comments_bottom_sheet.dart';
 import 'package:krab/pages/viewer/frosted.dart';
 import 'package:krab/themes/frosted_palette.dart';
@@ -372,6 +373,7 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
 
     setState(() => _editedDescription = updated);
     widget.onDescriptionChanged?.call(updated);
+    updateHomeWidget(updatedDescriptions: true);
     showSnackBar(l10n.description_updated, tone: SnackTone.success);
   }
 

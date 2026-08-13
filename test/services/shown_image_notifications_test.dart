@@ -42,6 +42,46 @@ void main() {
     expect(await store.read(7), isNull);
   });
 
+  test('the channel it was posted on comes back with it', () async {
+    await store.record(
+      7,
+      ShownImageNotification(
+        groupsDisplay: 'Family',
+        imageIds: image,
+        tapGroupId: 'g1',
+        shownAt: DateTime.now(),
+        channelId: 'g1',
+        channelName: 'Family',
+      ),
+    );
+
+    final read = await store.read(7);
+
+    expect(read?.channelId, 'g1',
+        reason: 'a rewording has to be posted back to the same channel');
+    expect(read?.channelName, 'Family');
+  });
+
+  test('a record written before channels were kept is still readable',
+      () async {
+    SharedPreferences.setMockInitialValues({
+      ShownImageNotifications.prefsKey: jsonEncode({
+        '7': {
+          'groups_display': 'Family',
+          'image_ids': image,
+          'tap_group_id': 'g1',
+          'shown_at': DateTime.now().toIso8601String(),
+        }
+      }),
+    });
+
+    final read = await store.read(7);
+
+    expect(read?.groupsDisplay, 'Family');
+    expect(read?.channelId, isEmpty,
+        reason: 'the channel is worked out from the photo instead');
+  });
+
   test('recording again replaces what the notification said', () async {
     await store.record(7, entry(groups: 'Family'));
     await store.record(7, entry(groups: 'Family, Work', ids: '$image,$other'));

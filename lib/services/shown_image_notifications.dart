@@ -15,6 +15,8 @@ class ShownImageNotification {
     required this.imageIds,
     required this.tapGroupId,
     required this.shownAt,
+    this.channelId = '',
+    this.channelName = '',
   });
 
   /// The group names the notification currently lists.
@@ -27,12 +29,16 @@ class ShownImageNotification {
   final String tapGroupId;
 
   final DateTime shownAt;
+  final String channelId;
+  final String channelName;
 
   Map<String, dynamic> toJson() => {
         'groups_display': groupsDisplay,
         'image_ids': imageIds,
         'tap_group_id': tapGroupId,
         'shown_at': shownAt.toIso8601String(),
+        if (channelId.isNotEmpty) 'channel_id': channelId,
+        if (channelName.isNotEmpty) 'channel_name': channelName,
       };
 
   static ShownImageNotification? fromJson(Object? raw) {
@@ -44,6 +50,8 @@ class ShownImageNotification {
       imageIds: raw['image_ids']?.toString() ?? '',
       tapGroupId: raw['tap_group_id']?.toString() ?? '',
       shownAt: shownAt,
+      channelId: raw['channel_id']?.toString() ?? '',
+      channelName: raw['channel_name']?.toString() ?? '',
     );
   }
 

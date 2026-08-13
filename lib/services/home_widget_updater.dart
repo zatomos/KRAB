@@ -148,7 +148,8 @@ Future<List<String>> _readWidgetGroups(int id) async {
       .toList();
 }
 
-Future<void> updateHomeWidget() async {
+/// Bring every widget on the home screen up to date.
+Future<void> updateHomeWidget({bool updatedDescriptions = false}) async {
   try {
     if (!await refreshWidgetAuthState()) {
       debugPrint("Widget: no session, showing the signed-out state");
@@ -207,7 +208,8 @@ Future<void> updateHomeWidget() async {
         fetchCache[cacheKey] = images;
       }
 
-      final result = await _syncWidget(entry, images, dir);
+      final result = await _syncWidget(entry, images, dir,
+          updatedDescriptions: updatedDescriptions);
       if (result.newImage) anyNewImage = true;
       if (result.changed) {
         if (entry.isMulti) {
@@ -311,7 +313,8 @@ String _photoKey(ImageRef ref) => '${ref.instanceId}/${ref.id}';
 
 /// Sync a single widget instance.
 Future<({bool changed, bool newImage})> _syncWidget(
-    _WidgetEntry entry, List<ImageRef> images, Directory dir) async {
+    _WidgetEntry entry, List<ImageRef> images, Directory dir,
+    {bool updatedDescriptions = false}) async {
   if (images.isEmpty) return (changed: false, newImage: false);
 
   final id = entry.id;
@@ -373,6 +376,20 @@ Future<({bool changed, bool newImage})> _syncWidget(
 
     // Auto-save the original image to the gallery
     await _maybeAutoSave(latestId, bytes, uploaderName);
+  } else if (updatedDescriptions) {
+    final details = await api.getImageDetails(latest.id);
+    if (details.success) {
+      final description = details.data?.description ?? "";
+      final shown = await HomeWidget.getWidgetData<String>(
+          'recentImageDescription_$id');
+      if (shown != description) {
+        await HomeWidget.saveWidgetData(
+            'recentImageDescription_$id', description);
+        changed = true;
+      }
+    } else {
+      debugPrint("Widget $id: could not re-read the description");
+    }
   }
 
   // Ensure previous images and pfps are present

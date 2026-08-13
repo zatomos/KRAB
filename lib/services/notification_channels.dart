@@ -531,9 +531,45 @@ Future<void> _showImageNotification({
       imageIds: covered,
       tapGroupId: tapGroupId ?? '',
       shownAt: DateTime.now(),
+      channelId: groupId,
+      channelName: groupName,
     ),
   );
 
+  await _postImageNotification(
+    instance: instance,
+    id: id,
+    channelId: groupId,
+    channelName: groupName,
+    senderUsername: senderUsername,
+    subText: subText,
+    covered: covered,
+    tapGroupId: tapGroupId,
+    imageId: imageId,
+    imageDescription: imageDescription,
+    shareId: shareId,
+    senderAvatarBytes: senderAvatarBytes,
+    imageBytes: imageBytes,
+  );
+}
+
+/// Put one image notification on screen, or replace whatever is under id.
+Future<void> _postImageNotification({
+  required KrabInstance instance,
+  required int id,
+  required String channelId,
+  required String channelName,
+  required String senderUsername,
+  required String subText,
+  required String covered,
+  required String? tapGroupId,
+  required String imageId,
+  required String imageDescription,
+  required String? shareId,
+  Uint8List? senderAvatarBytes,
+  Uint8List? imageBytes,
+  bool silent = false,
+}) async {
   final compositeBytes = _buildImageLargeIcon(imageBytes, senderAvatarBytes);
 
   final pfpCircle = _circleImage(senderAvatarBytes, 192);
@@ -571,12 +607,13 @@ Future<void> _showImageNotification({
     body: _l10n().new_image_notification,
     notificationDetails: NotificationDetails(
       android: AndroidNotificationDetails(
-        groupId,
-        groupName,
+        channelId,
+        channelName,
         icon: '@drawable/ic_stat_krab_logo',
         subText: subText,
         importance: Importance.high,
         priority: Priority.high,
+        onlyAlertOnce: silent,
         largeIcon: compositeBytes != null
             ? ByteArrayAndroidBitmap(compositeBytes)
             : (pfpBytes != null ? ByteArrayAndroidBitmap(pfpBytes) : null),
@@ -593,6 +630,92 @@ Future<void> _showImageNotification({
       'image_ids': covered,
     }),
   );
+}
+
+/// Carry an edited description into the notifications already showing this
+/// image.
+Future<void> updateImageNotificationDescription(
+  KrabInstance instance,
+  String imageId, {
+  String? shareId,
+}) async {
+  if (imageId.isEmpty) return;
+  await _ensureFlnpInitialized();
+
+  final candidates = <int>{
+    imageNotificationId(imageId),
+    if (shareId != null && shareId.isNotEmpty)
+      imageNotificationId(imageId, shareId: shareId),
+    ...await ShownImageNotifications.instance.idsCovering(imageId),
+  };
+
+  final live = await _activeNotificationIds();
+  if (live == null) {
+    debugPrint('notif: cannot tell what is on screen, leaving it as it is');
+    return;
+  }
+
+  final showing = candidates.where(live.contains).toList();
+  if (showing.isEmpty) return;
+
+  final ctx = await instance.api.getImageNotificationContext(imageId);
+  if (!ctx.success || ctx.data == null) {
+    debugPrint('notif: no context for reworded image $imageId (${ctx.error})');
+    return;
+  }
+
+  var senderUsername = (ctx.data!['sender_username'] as String?) ?? '';
+  if (senderUsername.isEmpty) senderUsername = 'Someone';
+  final description = (ctx.data!['description'] as String?) ?? '';
+  final senderId = (ctx.data!['sender_id'] as String?) ?? '';
+  final contextShareId = (ctx.data!['share_id'] as String?) ?? shareId ?? '';
+
+  final groups = ((ctx.data!['groups'] as List?) ?? const [])
+      .whereType<Map>()
+      .map((g) => (
+            id: (g['id'] as String?) ?? '',
+            name: (g['name'] as String?) ?? '',
+          ))
+      .where((g) => g.id.isNotEmpty && g.name.isNotEmpty)
+      .toList();
+
+  final media = await _notificationMedia(instance, senderId, imageId);
+
+  for (final id in showing) {
+    final record = await ShownImageNotifications.instance.read(id);
+    if (record == null) continue;
+
+    final channel = record.channelId.isNotEmpty
+        ? (id: record.channelId, name: record.channelName)
+        : groups
+            .where((g) => g.id == record.tapGroupId)
+            .map((g) => (id: g.id, name: g.name))
+            .firstOrNull ??
+            (groups.isNotEmpty
+                ? (id: groups.first.id, name: groups.first.name)
+                : null);
+    if (channel == null) {
+      debugPrint('notif: no channel to repost $id on, leaving it as it is');
+      continue;
+    }
+
+    await _postImageNotification(
+      instance: instance,
+      id: id,
+      channelId: channel.id,
+      channelName: channel.name,
+      senderUsername: senderUsername,
+      subText: record.groupsDisplay,
+      covered: record.imageIds,
+      tapGroupId: record.tapGroupId.isEmpty ? null : record.tapGroupId,
+      imageId: imageId,
+      imageDescription: description,
+      shareId: contextShareId,
+      senderAvatarBytes: media.avatar,
+      imageBytes: media.image,
+      silent: true,
+    );
+  }
 }
 
 /// What an image notification still on screen is saying, if any.

@@ -4269,6 +4269,13 @@ CREATE TRIGGER "on-image-insert" AFTER INSERT ON public."ImageGroups" FOR EACH R
 
 
 --
+-- Name: Images on-image-description-update; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER "on-image-description-update" AFTER UPDATE OF description ON public."Images" FOR EACH ROW WHEN ((old.description IS DISTINCT FROM new.description)) EXECUTE FUNCTION supabase_functions.http_request('your_supabase_url/functions/v1/image-edited-notification', 'POST', '{"Content-type":"application/json","Authorization":"Bearer <SERVICE_ROLE_KEY>"}', '{}', '5000');
+
+
+--
 -- Name: Reactions on-reaction-insert; Type: TRIGGER; Schema: public; Owner: -
 --
 
