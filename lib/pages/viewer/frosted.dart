@@ -136,9 +136,12 @@ Future<T?> showFrostedDialog<T>(
     transitionBuilder: (context, animation, _, child) {
       final curved =
           CurvedAnimation(parent: animation, curve: Curves.easeOutCubic);
-      return ScaleTransition(
-        scale: Tween<double>(begin: 0.94, end: 1.0).animate(curved),
-        child: child,
+      return FadeTransition(
+        opacity: curved,
+        child: ScaleTransition(
+          scale: Tween<double>(begin: 0.94, end: 1.0).animate(curved),
+          child: child,
+        ),
       );
     },
   );
