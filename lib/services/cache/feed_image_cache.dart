@@ -6,6 +6,7 @@ import 'package:krab/models/image_ref.dart';
 import 'package:krab/models/shared_image.dart';
 import 'package:krab/models/user.dart' as krab_user;
 import 'package:krab/services/api/krab_api.dart';
+import 'package:krab/services/cache/bounded_cache.dart';
 import 'package:krab/services/instance/instance_registry.dart';
 import 'package:krab/services/shared_image_api.dart';
 
@@ -127,14 +128,15 @@ class FeedImageCache {
 
   static const int maxImages = 60;
   static const int maxFullResImages = 5;
+  static const int maxTallies = 100;
 
   final Map<String, Uint8List> _lowRes = {};
   final Map<String, Uint8List> _fullRes = {};
   final Map<String, Future<Uint8List?>> _fullResFutures = {};
   final Map<String, Future<ImageData>> _imageDataFutures = {};
-  final Map<String, krab_user.User> _users = {};
-  final Map<String, int> _commentCounts = {};
-  final Map<String, int> _reactionCounts = {};
+  final BoundedCache<krab_user.User> _users = BoundedCache(maxTallies);
+  final BoundedCache<int> _commentCounts = BoundedCache(maxTallies);
+  final BoundedCache<int> _reactionCounts = BoundedCache(maxTallies);
 
   final List<String> _lru = [];
   final List<String> _fullResLru = [];
@@ -205,10 +207,10 @@ class FeedImageCache {
     final identity = image.identity;
     final bytesFuture = bytes(image, lowRes: true);
     final detailsFuture = _fetch.details(image, preferInstanceId: instanceId);
-    final countFuture = _commentCounts.containsKey(identity)
+    final countFuture = _commentCounts[identity] != null
         ? null
         : _fetch.commentCount(image, groupId);
-    final reactionsFuture = _reactionCounts.containsKey(identity)
+    final reactionsFuture = _reactionCounts[identity] != null
         ? null
         : _fetch.reactionCount(image);
 
@@ -220,7 +222,7 @@ class FeedImageCache {
     final details = resolved.details;
 
     final uploaderId = details.uploadedBy;
-    if (!_users.containsKey(identity)) {
+    if (_users[identity] == null) {
       final user = await _fetch.uploader(resolved.copy, uploaderId);
       _users[identity] = user ??
           krab_user.User(

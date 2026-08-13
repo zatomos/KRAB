@@ -11,12 +11,21 @@ class ViewerCache {
   final BoundedCache<List<Group>> _postedInGroups =
       BoundedCache<List<Group>>(200);
   final Map<String, bool> _moderatedGroups = {};
+  final Map<String, Future<List<Group>?>> _inFlight = {};
 
   /// The groups an image was shared to that the current user can see.
-  Future<List<Group>?> fetchPostedInGroups(String imageId) async {
+  Future<List<Group>?> fetchPostedInGroups(String imageId) {
     final cached = _postedInGroups[imageId];
-    if (cached != null) return cached;
+    if (cached != null) return Future.value(cached);
 
+    return _inFlight.putIfAbsent(
+      imageId,
+      () => _fetchPostedInGroups(imageId)
+          .whenComplete(() => _inFlight.remove(imageId)),
+    );
+  }
+
+  Future<List<Group>?> _fetchPostedInGroups(String imageId) async {
     final response = await _api.getImageGroups(imageId);
     if (!response.success || response.data == null) return null;
 

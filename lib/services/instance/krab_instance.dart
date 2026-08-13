@@ -69,7 +69,7 @@ class KrabInstance {
 
   late final KrabApi api = KrabApi(this);
 
-  late final ReactionCache reactions = ReactionCache(api);
+  final ReactionCache reactions = ReactionCache();
 
   late final ViewerCache viewer = ViewerCache(api);
 

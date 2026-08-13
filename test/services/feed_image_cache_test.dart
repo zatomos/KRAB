@@ -249,6 +249,20 @@ void main() {
       expect(cache.user(_photo('uploader-of-a')), isNull);
       expect(cache.commentCount(_photo('a')), 0);
     });
+
+    test('the tallies stop growing once past their cap', () async {
+      for (var i = 0; i < FeedImageCache.maxTallies + 5; i++) {
+        await cache.imageData(_photo('image-$i'));
+      }
+
+      expect(cache.commentCount(_photo('image-0')), 0,
+          reason: 'the oldest tallies were forgotten to make room');
+      expect(cache.user(_photo('image-0')), isNull);
+      final newest = _photo('image-${FeedImageCache.maxTallies + 4}');
+      expect(cache.commentCount(newest), 3,
+          reason: 'the newest are still held');
+      expect(cache.user(newest), isNotNull);
+    });
   });
 
   group('an image held on several servers', () {

@@ -89,6 +89,15 @@ class SharedImageApi {
     return (tally: merged, mineByInstance: mine);
   }
 
+  Future<void> warmReactions() async {
+    final cache =
+        InstanceRegistry.instance.byId(image.primary.instanceId)?.reactions;
+    if (cache == null) return;
+    final result = await reactions();
+    if (result == null) return;
+    cache.put(image.primary.id, result.tally);
+  }
+
   /// Which copies a write has to touch to leave the viewer's reaction [on].
   ///
   /// onlyOn confines the write to one server.Left null every copy is written to.

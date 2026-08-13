@@ -12,11 +12,19 @@ import 'package:krab/models/group.dart';
 import 'package:krab/models/image_ref.dart';
 import 'package:krab/models/shared_image.dart';
 import 'package:krab/services/shared_image_api.dart';
+import 'package:krab/pages/viewer/posted_in_badge.dart';
 import 'package:krab/pages/viewer/viewer_overlay.dart';
 import 'package:krab/themes/frosted_palette.dart';
 import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/services/cache/avatar_cache.dart';
 import 'package:krab/services/cache/feed_image_cache.dart';
+
+/// Where the viewer's decoded photos are held.
+const String viewerImageCacheName = 'krab_viewer_photos';
+const int _viewerCacheImages = 3;
+const int _viewerCacheBytes = 64 << 20;
+
+int _openViewers = 0;
 
 /// Resolves the pixel dimensions of an encoded image.
 /// Used to give the viewer a stable child size before the hero flight starts,
@@ -170,6 +178,11 @@ class _ImageViewerPageState extends State<ImageViewerPage>
   @override
   void initState() {
     super.initState();
+    imageCaches.putIfAbsent(viewerImageCacheName, ImageCache.new)
+      ..maximumSize = _viewerCacheImages
+      ..maximumSizeBytes = _viewerCacheBytes;
+    _openViewers++;
+
     _currentIndex = widget.initialIndex;
     _heroIndex = widget.initialIndex;
     _pageController = ExtendedPageController(initialPage: widget.initialIndex);
@@ -195,7 +208,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
     // The entry image may already sit near the end of the loaded set
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _maybeLoadMore();
-      _prefetchNeighbors(widget.initialIndex);
+      _prefetchAround(widget.initialIndex);
     });
   }
 
@@ -230,6 +243,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
     _pageController.removeListener(_onScroll);
     _pageController.dispose();
     _controlsAnim.dispose();
+    if (--_openViewers == 0) clearMemoryImageCache(viewerImageCacheName);
     super.dispose();
   }
 
@@ -250,24 +264,42 @@ class _ImageViewerPageState extends State<ImageViewerPage>
     });
     widget.onImageChanged?.call(index);
     _maybeLoadMore();
-    _prefetchNeighbors(index);
+    _prefetchAround(index);
     _evictDistantPages();
   }
 
-  /// Warm the low-res bytes of the adjacent pages so swiping onto them shows
-  /// the image immediately and the blurred background for the new page
-  /// is already cached when it becomes current.
-  void _prefetchNeighbors(int index) {
-    for (final i in [index - 1, index + 1]) {
-      if (i < 0 || i >= widget.images.length) continue;
-      final neighbour = widget.images[i];
-      SharedImageApi(neighbour).postedInGroups();
-      SharedImageApi(neighbour).reactions();
-      _imageDataFor(i).then((data) {
-        if (!mounted) return;
-        _cachePageBytes(i, data.imageBytes);
-        precacheAvatar(context, widget.cache.user(neighbour));
-      });
+  /// Warm the page on screen and the ones on either side of it.
+  void _prefetchAround(int index) {
+    _prefetch(index, isCurrent: true);
+    _prefetch(index - 1);
+    _prefetch(index + 1);
+  }
+
+  void _prefetch(int index, {bool isCurrent = false}) {
+    if (index < 0 || index >= widget.images.length) return;
+    final image = widget.images[index];
+
+    if (!isCurrent && widget.group == null) {
+      SharedImageApi(image).warmReactions();
+    }
+    _prefetchPostedIn(image);
+
+    _imageDataFor(index).then((data) {
+      if (!mounted) return;
+      _cachePageBytes(index, data.imageBytes);
+      precacheAvatar(context, widget.cache.user(image));
+    });
+  }
+
+  Future<void> _prefetchPostedIn(SharedImage image) async {
+    final groups = await SharedImageApi(image).postedInGroups();
+    if (!mounted || groups == null) return;
+    final shown = [
+      ...groups.where((g) => g.id == widget.group?.id),
+      ...groups.where((g) => g.id != widget.group?.id),
+    ].take(postedInBadgeMaxIcons);
+    for (final group in shown) {
+      precacheGroupIcon(context, group);
     }
   }
 
@@ -636,7 +668,10 @@ class _ViewerPhotoState extends State<_ViewerPhoto>
   Future<void> _loadFull() async {
     final full = await widget.fullFuture;
     if (!mounted || full == null) return;
-    await precacheImage(MemoryImage(full), context);
+    await precacheImage(
+      ExtendedMemoryImageProvider(full, imageCacheName: viewerImageCacheName),
+      context,
+    );
     if (!mounted) return;
     setState(() => _full = full);
     _resolveNaturalSize(full);
@@ -737,6 +772,7 @@ class _ViewerPhotoState extends State<_ViewerPhoto>
           curve: Curves.easeOut,
           child: ExtendedImage.memory(
             _full ?? low,
+            imageCacheName: viewerImageCacheName,
             fit: BoxFit.contain,
             gaplessPlayback: true,
             filterQuality: FilterQuality.medium,

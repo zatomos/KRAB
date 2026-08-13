@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/widgets.dart';
+import 'package:krab/models/group.dart';
 import 'package:krab/models/user.dart' as krab_user;
 
 /// The cache key an avatar or group icon is stored under.
@@ -22,13 +23,33 @@ Future<void> evictAvatar(String instanceId, String id) async {
 
 /// Decodes a user's avatar into the in-memory image cache ahead of being shown.
 Future<void> precacheAvatar(BuildContext context, krab_user.User? user) async {
-  if (user == null || user.pfpUrl.isEmpty) return;
-  await precacheImage(
-    CachedNetworkImageProvider(
-      user.pfpUrl,
-      cacheKey: avatarCacheKey(user.instanceId, user.id),
-    ),
+  if (user == null) return;
+  await _precachePicture(
     context,
-    onError: (error, _) => debugPrint('⚠️ Failed to precache avatar: $error'),
+    user.pfpUrl,
+    avatarCacheKey(user.instanceId, user.id),
+  );
+}
+
+Future<void> precacheGroupIcon(BuildContext context, Group? group) async {
+  if (group == null) return;
+  await _precachePicture(
+    context,
+    group.iconUrl,
+    avatarCacheKey(group.instanceId, group.id),
+  );
+}
+
+Future<void> _precachePicture(
+  BuildContext context,
+  String? url,
+  String cacheKey,
+) async {
+  if (url == null || url.isEmpty) return;
+  await precacheImage(
+    CachedNetworkImageProvider(url, cacheKey: cacheKey),
+    context,
+    onError: (error, _) =>
+        debugPrint('⚠️ Failed to precache $cacheKey: $error'),
   );
 }
