@@ -48,19 +48,44 @@ export const HTML = `<!DOCTYPE html>
         h1 { font-size: 20px; font-weight: 800; color: #fff; margin-bottom: 0.4rem; }
         .subtitle { font-size: 14px; color: #888; margin-bottom: 2rem; line-height: 1.5; }
         label { display: block; font-size: 13px; color: #aaa; margin-bottom: 6px; }
-        input[type="password"] {
+        .field { position: relative; margin-bottom: 1rem; }
+        .field input {
+          display: block;
           width: 100%;
           background: #252525;
           border: 0.5px solid #333;
           border-radius: 10px;
-          padding: 0.75rem 1rem;
+          padding: 0.75rem 3rem 0.75rem 1rem;
           color: #f0f0f0;
           font-size: 15px;
           outline: none;
           transition: border-color 0.15s;
-          margin-bottom: 1rem;
         }
-        input[type="password"]:focus { border-color: #dd6b3a; }
+        .field input:focus { border-color: #dd6b3a; }
+        .reveal {
+          position: absolute;
+          top: 0;
+          right: 0;
+          width: 3rem;
+          height: 100%;
+          margin: 0;
+          padding: 0;
+          background: none;
+          border: none;
+          border-radius: 0 10px 10px 0;
+          color: #888;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+        }
+        .reveal:hover { color: #f0f0f0; opacity: 1; }
+        .reveal:active { transform: none; }
+        .reveal:disabled { opacity: 0.4; cursor: not-allowed; }
+        .reveal svg { width: 20px; height: 20px; display: block; }
+        .reveal .icon-hide { display: none; }
+        .reveal.revealed .icon-show { display: none; }
+        .reveal.revealed .icon-hide { display: block; }
         button {
           width: 100%;
           background: #dd6b3a;
@@ -114,11 +139,23 @@ export const HTML = `<!DOCTYPE html>
         <p class="subtitle" id="subtitle">Enter a new password for your account.</p>
 
         <label for="password">New password</label>
-        <input type="password" id="password" placeholder="At least 8 characters" oninput="updateStrength()" disabled />
+        <div class="field">
+            <input type="password" id="password" placeholder="At least 8 characters" oninput="updateStrength()" disabled />
+            <button type="button" class="reveal" id="reveal-password" onclick="toggleReveal('password', this)" aria-label="Show password" aria-pressed="false" aria-controls="password" disabled>
+                <svg class="icon-show" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                <svg class="icon-hide" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+            </button>
+        </div>
         <div class="strength-bar"><div class="strength-fill" id="strength-fill"></div></div>
 
         <label for="confirm">Confirm password</label>
-        <input type="password" id="confirm" placeholder="Repeat your password" disabled />
+        <div class="field">
+            <input type="password" id="confirm" placeholder="Repeat your password" disabled />
+            <button type="button" class="reveal" id="reveal-confirm" onclick="toggleReveal('confirm', this)" aria-label="Show password" aria-pressed="false" aria-controls="confirm" disabled>
+                <svg class="icon-show" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                <svg class="icon-hide" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+            </button>
+        </div>
 
         <button id="btn" onclick="updatePassword()" disabled>Update password</button>
         <div class="msg" id="msg"></div>
@@ -147,6 +184,8 @@ export const HTML = `<!DOCTYPE html>
       document.getElementById('invalid-section').style.display = 'none';
       document.getElementById('password').disabled = false;
       document.getElementById('confirm').disabled = false;
+      document.getElementById('reveal-password').disabled = false;
+      document.getElementById('reveal-confirm').disabled = false;
       document.getElementById('btn').disabled = false;
       if (email) {
         document.getElementById('subtitle').textContent = 'Enter a new password for ' + email + '.';
@@ -178,6 +217,19 @@ export const HTML = `<!DOCTYPE html>
       });
     } else {
       showInvalid();
+    }
+
+    function toggleReveal(inputId, btn) {
+      const input = document.getElementById(inputId);
+      const reveal = input.type === 'password';
+      const start = input.selectionStart;
+      const end = input.selectionEnd;
+      input.type = reveal ? 'text' : 'password';
+      btn.classList.toggle('revealed', reveal);
+      btn.setAttribute('aria-pressed', String(reveal));
+      btn.setAttribute('aria-label', reveal ? 'Hide password' : 'Show password');
+      input.focus();
+      try { input.setSelectionRange(start, end); } catch (e) { /* unsupported */ }
     }
 
     function updateStrength() {
