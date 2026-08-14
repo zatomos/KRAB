@@ -13,6 +13,7 @@ import 'package:krab/services/upload_outbox.dart';
 import 'package:krab/user_preferences.dart';
 import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/widgets/avatars/group_avatar.dart';
+import 'package:krab/widgets/dialogs/image_preview_dialog.dart';
 import 'package:krab/widgets/rounded_input_field.dart';
 import 'package:krab/widgets/soft_button.dart';
 import 'package:krab/services/instance/instances.dart';
@@ -221,6 +222,12 @@ class _SendImageDialogState extends State<SendImageDialog> {
         : SendImageResult.failed(failure ?? errorServer));
   }
 
+  /// Full-screen look at the image.
+  void _openPreview() {
+    if (_sending) return;
+    showImagePreview(context, widget.imageFile);
+  }
+
   Widget _buildGroups() {
     return FutureBuilder(
       future: _groupsFuture,
@@ -296,9 +303,12 @@ class _SendImageDialogState extends State<SendImageDialog> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Expanded(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: Image.file(widget.imageFile, fit: BoxFit.cover),
+            child: GestureDetector(
+              onTap: _openPreview,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Image.file(widget.imageFile, fit: BoxFit.cover),
+              ),
             ),
           ),
           const SizedBox(width: 12),
@@ -309,13 +319,16 @@ class _SendImageDialogState extends State<SendImageDialog> {
       dialogContent = Column(
         children: [
           if (!keyboardOpen) ...[
-            Container(
-              width: double.infinity,
-              height: 200,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(10),
-                image: DecorationImage(
-                    image: FileImage(widget.imageFile), fit: BoxFit.cover),
+            GestureDetector(
+              onTap: _openPreview,
+              child: Container(
+                width: double.infinity,
+                height: 200,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  image: DecorationImage(
+                      image: FileImage(widget.imageFile), fit: BoxFit.cover),
+                ),
               ),
             ),
             const SizedBox(height: 10),
