@@ -84,6 +84,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
   bool _loadingMore = false;
   bool _hasMore = true;
   String? _error;
+  String? _heroImageIdentity;
 
   /// True once a `new_image` push lands for this feed while it's open
   bool _hasNewPhotos = false;
@@ -365,27 +366,31 @@ class ImageFeedPageState extends State<ImageFeedPage> {
     final initialSize = await decodeImageSize(data.imageBytes);
     if (!mounted) return;
 
-    await Navigator.push(
-      context,
-      _viewerRoute(ImageViewerPage(
-        images: images,
-        initialIndex: index,
-        initialImageData: data,
-        initialImageSize: initialSize,
-        group: widget.group,
-        cache: _cache,
-        onCommentCountChanged: _onCommentCountChanged,
-        onDescriptionChanged: _onDescriptionChanged,
-        onImageDeleted: _onImageDeleted,
-        onCopiesAdded: _onCopiesAdded,
-        onImageChanged: paginated ? _revealTile : null,
-        loadMore: paginated ? _loadMore : null,
-        hasMore: paginated ? () => _hasMore : null,
-      )),
-    );
+    final route = _viewerRoute(ImageViewerPage(
+      images: images,
+      initialIndex: index,
+      initialImageData: data,
+      initialImageSize: initialSize,
+      group: widget.group,
+      cache: _cache,
+      onCommentCountChanged: _onCommentCountChanged,
+      onDescriptionChanged: _onDescriptionChanged,
+      onImageDeleted: _onImageDeleted,
+      onCopiesAdded: _onCopiesAdded,
+      onImageChanged: (i) =>
+          _onViewerImageChanged(i, images, reveal: paginated),
+      loadMore: paginated ? _loadMore : null,
+      hasMore: paginated ? () => _hasMore : null,
+    ));
+
+    setState(() => _heroImageIdentity = images[index].identity);
+
+    await Navigator.push(context, route);
+    await route.completed;
+    if (!mounted) return;
 
     // Reaction badges may have changed in the viewer; rebuild.
-    if (mounted) setState(() {});
+    setState(() => _heroImageIdentity = null);
   }
 
   Future<void> _loadInitial() async {
@@ -414,6 +419,17 @@ class ImageFeedPageState extends State<ImageFeedPage> {
     if (position.pixels >= position.maxScrollExtent - 600) {
       _loadMore();
     }
+  }
+
+  void _onViewerImageChanged(int index, List<SharedImage> images,
+      {required bool reveal}) {
+    if (index >= 0 && index < images.length) {
+      final identity = images[index].identity;
+      if (identity != _heroImageIdentity) {
+        setState(() => _heroImageIdentity = identity);
+      }
+    }
+    if (reveal) _revealTile(index);
   }
 
   /// Scrolls the grid so the tile at index is on-screen, but only when it
@@ -703,6 +719,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
         final hasDescription = imageData.description?.isNotEmpty ?? false;
         final reactions = _reactionCountFor(image);
         final comments = _cache.commentCount(image);
+        final heroOpen = _heroImageIdentity == image.identity;
 
         return stage(GestureDetector(
           key: const ValueKey('loaded'),
@@ -733,25 +750,32 @@ class ImageFeedPageState extends State<ImageFeedPage> {
                   Positioned(
                     top: 8,
                     right: 8,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      spacing: 4,
-                      children: [
-                        if (reactions > 0)
-                          _countBadge(
-                            Symbols.emoji_emotions_rounded,
-                            reactions,
-                            borderColor:
-                                const Color(0xFFFFC107).withValues(alpha: 0.8),
-                          ),
-                        if (comments > 0)
-                          _countBadge(
-                            Symbols.comment_rounded,
-                            comments,
-                            borderColor:
-                                const Color(0xFF42A5F5).withValues(alpha: 0.8),
-                          ),
-                      ],
+                    child: AnimatedOpacity(
+                      opacity: heroOpen ? 0 : 1,
+                      duration: heroOpen
+                          ? Duration.zero
+                          : const Duration(milliseconds: 220),
+                      curve: Curves.easeOut,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        spacing: 4,
+                        children: [
+                          if (reactions > 0)
+                            _countBadge(
+                              Symbols.emoji_emotions_rounded,
+                              reactions,
+                              borderColor: const Color(0xFFFFC107)
+                                  .withValues(alpha: 0.8),
+                            ),
+                          if (comments > 0)
+                            _countBadge(
+                              Symbols.comment_rounded,
+                              comments,
+                              borderColor: const Color(0xFF42A5F5)
+                                  .withValues(alpha: 0.8),
+                            ),
+                        ],
+                      ),
                     ),
                   ),
                 if (hasDescription)
