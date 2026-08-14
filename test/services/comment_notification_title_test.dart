@@ -40,6 +40,16 @@ void main() {
       );
     });
 
+    test('does not repeat the replier when the photo is theirs', () {
+      expect(
+        title(
+            parentAuthor: 'Théo',
+            uploader: 'Camille',
+            uploaderIsCommenter: true),
+        'Camille replied to Théo on their own image',
+      );
+    });
+
     test('says the photo is yours', () {
       expect(
         title(parentAuthor: 'Théo', uploaderIsMe: true),

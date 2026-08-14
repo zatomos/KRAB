@@ -260,6 +260,7 @@
   "reply_to_you_on_someone_image_notification": "{commenter} vous a répondu sur l'image de {uploader}",
   "reply_to_someone_on_your_image_notification": "{commenter} a répondu à {parent} sur votre image",
   "reply_to_someone_on_own_image_notification": "{commenter} a répondu à {parent} sur son image",
+  "reply_to_someone_on_commenter_image_notification": "{commenter} a répondu à {parent} sur sa propre image",
   "reply_to_someone_on_someone_image_notification": "{commenter} a répondu à {parent} sur l'image de {uploader}",
   "change_password": "Changer le mot de passe",
   "current_password": "Mot de passe actuel",

@@ -267,6 +267,7 @@
   "reply_to_you_on_someone_image_notification": "{commenter} replied to you on {uploader}'s image",
   "reply_to_someone_on_your_image_notification": "{commenter} replied to {parent} on your image",
   "reply_to_someone_on_own_image_notification": "{commenter} replied to {parent} on their image",
+  "reply_to_someone_on_commenter_image_notification": "{commenter} replied to {parent} on their own image",
   "reply_to_someone_on_someone_image_notification": "{commenter} replied to {parent} on {uploader}'s image",
   "change_password": "Change password",
   "current_password": "Current password",

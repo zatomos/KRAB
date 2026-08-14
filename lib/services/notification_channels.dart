@@ -801,6 +801,10 @@ String commentNotificationTitle({
       return l10n.reply_to_someone_on_own_image_notification(
           commenterUsername, parentAuthorUsername);
     }
+    if (uploaderIsCommenter) {
+      return l10n.reply_to_someone_on_commenter_image_notification(
+          commenterUsername, parentAuthorUsername);
+    }
     return l10n.reply_to_someone_on_someone_image_notification(
         commenterUsername, parentAuthorUsername, uploader);
   }
