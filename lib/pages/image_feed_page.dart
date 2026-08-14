@@ -744,18 +744,17 @@ class ImageFeedPageState extends State<ImageFeedPage> {
                 Positioned(
                   bottom: hasDescription ? 12 : 8,
                   right: hasDescription ? 12 : 8,
-                  child: UserAvatar(uploader, radius: 20),
+                  child: _heroFade(
+                    hidden: heroOpen,
+                    child: UserAvatar(uploader, radius: 20),
+                  ),
                 ),
                 if (reactions > 0 || comments > 0)
                   Positioned(
                     top: 8,
                     right: 8,
-                    child: AnimatedOpacity(
-                      opacity: heroOpen ? 0 : 1,
-                      duration: heroOpen
-                          ? Duration.zero
-                          : const Duration(milliseconds: 220),
-                      curve: Curves.easeOut,
+                    child: _heroFade(
+                      hidden: heroOpen,
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         spacing: 4,
@@ -782,16 +781,19 @@ class ImageFeedPageState extends State<ImageFeedPage> {
                   Positioned(
                     bottom: 6,
                     right: 6,
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.6),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Icon(
-                        Symbols.notes_rounded,
-                        size: 12,
-                        color: Colors.white,
+                    child: _heroFade(
+                      hidden: heroOpen,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.6),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(
+                          Symbols.notes_rounded,
+                          size: 12,
+                          color: Colors.white,
+                        ),
                       ),
                     ),
                   ),
@@ -819,6 +821,15 @@ class ImageFeedPageState extends State<ImageFeedPage> {
     final merged = SharedImageApi.mergeTallies(perCopy, anyAnswered: anyCached);
     if (merged == null) return _cache.reactionCount(image);
     return merged.fold<int>(0, (sum, r) => sum + r.count);
+  }
+
+  Widget _heroFade({required bool hidden, required Widget child}) {
+    return AnimatedOpacity(
+      opacity: hidden ? 0 : 1,
+      duration: hidden ? Duration.zero : const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+      child: child,
+    );
   }
 
   /// A small frosted count badge for the grid tile corner.
