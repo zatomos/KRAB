@@ -768,7 +768,7 @@ class _ViewerPhotoState extends State<_ViewerPhoto>
       );
     }
 
-    final showFullRes = widget.settled && _full != null;
+    final showGesture = widget.settled;
 
     return Stack(
       fit: StackFit.expand,
@@ -777,8 +777,8 @@ class _ViewerPhotoState extends State<_ViewerPhoto>
           child: SizedBox.fromSize(size: widget.displaySize, child: base),
         ),
         AnimatedOpacity(
-          opacity: showFullRes ? 1.0 : 0.0,
-          duration: showFullRes ? _fadeInDuration : Duration.zero,
+          opacity: showGesture ? 1.0 : 0.0,
+          duration: showGesture ? _fadeInDuration : Duration.zero,
           curve: Curves.easeOut,
           child: ExtendedImage.memory(
             _full ?? low,
@@ -789,6 +789,10 @@ class _ViewerPhotoState extends State<_ViewerPhoto>
             mode: ExtendedImageMode.gesture,
             onDoubleTap: _onDoubleTap,
             initGestureConfigHandler: _initGestureConfig,
+            loadStateChanged: (state) =>
+                state.extendedImageLoadState == LoadState.completed
+                    ? null
+                    : const SizedBox.expand(),
           ),
         ),
       ],
