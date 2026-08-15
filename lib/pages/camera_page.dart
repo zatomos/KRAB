@@ -106,7 +106,14 @@ class CameraPageState extends State<CameraPage>
     super.didChangeDependencies();
     final route = ModalRoute.of(context);
     if (route is PageRoute) routeObserver.subscribe(this, route);
+
+    if (!_initialCoverageChecked) {
+      _initialCoverageChecked = true;
+      if (route != null && !route.isCurrent) _lockPortrait();
+    }
   }
+
+  bool _initialCoverageChecked = false;
 
   /// Whether a page sits on top of this one. Dialogs don't count.
   bool _coveredByPage = false;
@@ -115,6 +122,7 @@ class CameraPageState extends State<CameraPage>
   @override
   void didPushNext() {
     _coveredByPage = true;
+    _lockPortrait();
     _disposeCamera();
   }
 
