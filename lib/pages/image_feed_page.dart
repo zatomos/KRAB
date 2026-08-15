@@ -39,7 +39,15 @@ class ImageFeedPage extends StatefulWidget {
   final Group? group;
   final String? imageId;
 
-  const ImageFeedPage({super.key, this.group, this.imageId});
+  /// Open the deep-linked image with its comments sheet already up.
+  final bool openComments;
+
+  const ImageFeedPage({
+    super.key,
+    this.group,
+    this.imageId,
+    this.openComments = false,
+  });
 
   @override
   ImageFeedPageState createState() => ImageFeedPageState();
@@ -349,6 +357,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
         index: found ? index : 0,
         data: initialData,
         paginated: found,
+        openComments: widget.openComments,
       );
     } catch (err) {
       debugPrint("Failed to preload image: $err");
@@ -361,6 +370,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
     required int index,
     required ImageData data,
     bool paginated = true,
+    bool openComments = false,
   }) async {
     // Decode the size first so the viewer's hero flight is stable.
     final initialSize = await decodeImageSize(data.imageBytes);
@@ -371,6 +381,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
       initialIndex: index,
       initialImageData: data,
       initialImageSize: initialSize,
+      openComments: openComments,
       group: widget.group,
       cache: _cache,
       onCommentCountChanged: _onCommentCountChanged,

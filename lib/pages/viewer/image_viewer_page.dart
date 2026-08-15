@@ -91,6 +91,9 @@ class ImageViewerPage extends StatefulWidget {
   /// Natural pixel size of the entry image
   final Size? initialImageSize;
 
+  /// Raise the comments sheet over the entry image as soon as it lands.
+  final bool openComments;
+
   /// The group being viewed, or null for the cross-group recent images gallery.
   final Group? group;
 
@@ -125,6 +128,7 @@ class ImageViewerPage extends StatefulWidget {
     required this.initialIndex,
     required this.initialImageData,
     this.initialImageSize,
+    this.openComments = false,
     required this.group,
     required this.cache,
     this.onCommentCountChanged,
@@ -170,6 +174,10 @@ class _ImageViewerPageState extends State<ImageViewerPage>
   // Start fetching the next page once within this many images of the end
   static const int _loadMoreThreshold = 3;
   bool _isLoadingMore = false;
+
+  // Still owing the entry image its comments sheet. Dropped as soon as the user
+  // swipes, so a photo they moved on to never has it appear over it.
+  late bool _pendingComments = widget.openComments;
 
   // Cap on how many pages' bytes/sizes/futures are retained.
   static const int _maxCachedPages = 7;
@@ -258,6 +266,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
 
   void _onPageChanged(int index) {
     setState(() {
+      _pendingComments = false;
       _currentIndex = index;
       // A freshly settled page always starts fitted to the screen
       _isZoomed = false;
@@ -505,6 +514,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
                 imageData: data,
                 uploader: uploader,
                 commentCount: widget.cache.commentCount(image),
+                openComments: _pendingComments,
                 progress: t,
                 uploadedAt: widget.images[_currentIndex].uploadedAt,
                 flingToCommentsEnabled: !_isZoomed,

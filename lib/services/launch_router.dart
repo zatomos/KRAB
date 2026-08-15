@@ -24,6 +24,7 @@ void _openGalleryOnGroupList(
   NavigatorState nav, {
   Group? group,
   String? imageId,
+  bool openComments = false,
 }) {
   nav.popUntil((route) => route.isFirst);
   nav.push(MaterialPageRoute(
@@ -31,9 +32,15 @@ void _openGalleryOnGroupList(
     builder: (_) => const GroupsPage(),
   ));
   nav.push(MaterialPageRoute(
-    builder: (_) => ImageFeedPage(group: group, imageId: imageId),
+    builder: (_) => ImageFeedPage(
+      group: group,
+      imageId: imageId,
+      openComments: openComments,
+    ),
   ));
 }
+
+const _commentTypes = {'new_comment', 'group_comment', 'comment_reply'};
 
 /// Handle a tap on a home-screen widget. The URI is emitted by the native
 /// widget providers via the home_widget plugin:
@@ -99,6 +106,7 @@ Future<void> handleLocalNotificationTap(String payload) async {
       nav,
       group: groupResponse.data!,
       imageId: imageId,
+      openComments: _commentTypes.contains(type),
     );
   } catch (e) {
     debugPrint('Error handling local notification tap: $e');

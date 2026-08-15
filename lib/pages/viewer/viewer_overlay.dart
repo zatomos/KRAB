@@ -43,6 +43,7 @@ class ViewerOverlay extends StatefulWidget {
   final ImageData imageData;
   final krab_user.User uploader;
   final int commentCount;
+  final bool openComments;
 
   /// When this image was posted to the group it was opened from.
   /// Null in the cross-group feed or when unknown, in which case
@@ -75,6 +76,7 @@ class ViewerOverlay extends StatefulWidget {
     required this.imageData,
     required this.uploader,
     required this.commentCount,
+    this.openComments = false,
     required this.loadBestBytesForSave,
     required this.progress,
     this.uploadedAt,
@@ -120,6 +122,45 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
     super.initState();
     _commentCount = widget.commentCount;
     _initPostedInGroups();
+    if (widget.openComments) _openCommentsOnceLanded();
+  }
+
+  @override
+  void dispose() {
+    _clearLandingListener();
+    super.dispose();
+  }
+
+  /// The route animation being waited on before the comments sheet goes up,
+  /// with the listener doing the waiting.
+  Animation<double>? _landing;
+  void Function(AnimationStatus)? _landingListener;
+
+  void _clearLandingListener() {
+    final listener = _landingListener;
+    if (listener != null) _landing?.removeStatusListener(listener);
+    _landing = null;
+    _landingListener = null;
+  }
+
+  /// Raise the comments sheet, but only once the hero flight has settled, so it
+  /// doesn't slide up over an image still on its way in.
+  void _openCommentsOnceLanded() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final animation = ModalRoute.of(context)?.animation;
+      if (animation == null || animation.isCompleted) {
+        _openComments();
+        return;
+      }
+      _landing = animation;
+      _landingListener = (status) {
+        if (status != AnimationStatus.completed) return;
+        _clearLandingListener();
+        if (mounted) _openComments();
+      };
+      animation.addStatusListener(_landingListener!);
+    });
   }
 
   /// Group owners and admins may delete anyone's image from a group they
