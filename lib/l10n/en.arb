@@ -64,6 +64,7 @@
   "group_name": "Group name",
   "delete": "Delete",
   "undo": "Undo",
+  "view_photo": "View",
   "remove": "Remove",
   "remove_from_groups_message": "Select the groups for which this photo will be deleted.",
   "save_to_device": "Save to device",

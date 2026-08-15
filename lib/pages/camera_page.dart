@@ -21,6 +21,7 @@ import 'package:krab/widgets/dialogs/send_image_dialog.dart';
 import 'package:krab/widgets/avatars/user_avatar.dart';
 import 'groups_page.dart';
 import 'account_page.dart';
+import 'image_feed_page.dart';
 import 'package:krab/models/shared_image.dart';
 import 'package:krab/services/instance/instances.dart';
 import 'package:krab/services/instance/instance_registry.dart';
@@ -492,6 +493,14 @@ class CameraPageState extends State<CameraPage>
     }
   }
 
+  /// Open the all-groups feed on the image that was just sent.
+  Future<void> _openSentImage(SharedImage image) async {
+    final copy = image.primary;
+    await _navigateWithCameraDispose(
+      ImageFeedPage(imageId: '${copy.instanceId}/${copy.id}'),
+    );
+  }
+
   /// Delete a capture once the send dialog is done with it.
   Future<void> _discardCapture(File imageFile) async {
     try {
@@ -539,10 +548,20 @@ class CameraPageState extends State<CameraPage>
           showSnackBar(
             message,
             tone: (refused || queued) ? SnackTone.warning : SnackTone.success,
-            actionLabel: image == null ? null : l10n.undo,
-            onAction: image == null
-                ? null
-                : () => _undoSend(image, removedMsg, failedMsg),
+            actions: image == null
+                ? const []
+                : [
+                    SnackAction(
+                      label: l10n.view_photo,
+                      onPressed: () => _openSentImage(image),
+                      prominent: true,
+                    ),
+                    SnackAction(
+                      label: l10n.undo,
+                      onPressed: () =>
+                          _undoSend(image, removedMsg, failedMsg),
+                    ),
+                  ],
           );
         case SendOutcome.queued:
           showSnackBar(l10n.photo_queued_offline, tone: SnackTone.warning);
