@@ -11,6 +11,7 @@ import 'package:krab/models/image_data.dart';
 import 'package:krab/models/image_ref.dart';
 import 'package:krab/models/reaction.dart';
 import 'package:krab/models/shared_image.dart';
+import 'package:krab/services/image_size.dart';
 import 'package:krab/services/shared_image_api.dart';
 import 'package:krab/pages/group_settings_page.dart';
 import 'package:krab/pages/groups_page.dart';
@@ -373,7 +374,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
     bool openComments = false,
   }) async {
     // Decode the size first so the viewer's hero flight is stable.
-    final initialSize = await decodeImageSize(data.imageBytes);
+    final initialSize = await readImageSize(data.imageBytes);
     if (!mounted) return;
 
     final route = _viewerRoute(ImageViewerPage(

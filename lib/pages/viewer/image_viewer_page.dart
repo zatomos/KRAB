@@ -4,15 +4,16 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:extended_image/extended_image.dart';
-import 'package:image/image.dart' as img;
 
 import 'package:krab/models/user.dart' as krab_user;
 import 'package:krab/models/image_data.dart';
 import 'package:krab/models/group.dart';
 import 'package:krab/models/image_ref.dart';
 import 'package:krab/models/shared_image.dart';
+import 'package:krab/services/blur_worker.dart';
 import 'package:krab/services/shared_image_api.dart';
 import 'package:krab/pages/viewer/posted_in_badge.dart';
+import 'package:krab/pages/viewer/viewer_photo.dart';
 import 'package:krab/pages/viewer/viewer_overlay.dart';
 import 'package:krab/themes/frosted_palette.dart';
 import 'package:krab/themes/global_theme_data.dart';
@@ -25,29 +26,6 @@ const int _viewerCacheImages = 3;
 const int _viewerCacheBytes = 64 << 20;
 
 int _openViewers = 0;
-
-/// Resolves the pixel dimensions of an encoded image.
-/// Used to give the viewer a stable child size before the hero flight starts,
-/// so the entry image flies to its exact on-screen rect without a
-/// mid-flight resize.
-Future<Size> decodeImageSize(Uint8List bytes) {
-  final completer = Completer<Size>();
-  final stream = MemoryImage(bytes).resolve(const ImageConfiguration());
-  late final ImageStreamListener listener;
-  void finish(Size size) {
-    stream.removeListener(listener);
-    if (!completer.isCompleted) completer.complete(size);
-  }
-
-  listener = ImageStreamListener(
-    (info, _) => finish(
-      Size(info.image.width.toDouble(), info.image.height.toDouble()),
-    ),
-    onError: (_, __) => finish(Size.zero),
-  );
-  stream.addListener(listener);
-  return completer.future;
-}
 
 /// Page physics with a stiff spring so a swipe snaps to the next image quickly
 class _SnappyPageScrollPhysics extends ClampingScrollPhysics {
@@ -63,21 +41,6 @@ class _SnappyPageScrollPhysics extends ClampingScrollPhysics {
         stiffness: 220,
         ratio: 1.1,
       );
-}
-
-/// Downscales and gaussian-blurs an image off the main isolate for the gallery
-/// backdrop.
-Uint8List? createBlurredBackgroundBytes(Uint8List sourceBytes) {
-  final decoded = img.decodeImage(sourceBytes);
-  if (decoded == null) return null;
-
-  final resized = img.copyResize(
-    decoded,
-    width: 128,
-    interpolation: img.Interpolation.average,
-  );
-  final blurred = img.gaussianBlur(resized, radius: 16);
-  return Uint8List.fromList(img.encodeJpg(blurred, quality: 75));
 }
 
 /// Full-screen, swipeable viewer for a feed of images with a blurred backdrop.
@@ -156,8 +119,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
   // lookup, keyed by page index.
   final Map<int, Uint8List> _pageBytes = {};
   // Pre-blurred backdrop bytes per page
-  final Map<int, Uint8List> _blurredBg = {};
-  final Set<int> _blurInFlight = {};
+  final Map<int, Uint8List?> _blurredBg = {};
   // Natural image size per page, used to compute the contained on-screen rect
   // Resolved lazily, except the entry page which is seeded up front to keep its
   // hero flight stable.
@@ -251,7 +213,10 @@ class _ImageViewerPageState extends State<ImageViewerPage>
     _pageController.removeListener(_onScroll);
     _pageController.dispose();
     _controlsAnim.dispose();
-    if (--_openViewers == 0) clearMemoryImageCache(viewerImageCacheName);
+    if (--_openViewers == 0) {
+      clearMemoryImageCache(viewerImageCacheName);
+      BlurWorker.instance.stop();
+    }
     super.dispose();
   }
 
@@ -356,11 +321,14 @@ class _ImageViewerPageState extends State<ImageViewerPage>
 
   /// Build the page's pre-blurred backdrop off-thread once
   void _ensureBlur(int index, Uint8List srcBytes) {
-    if (_blurredBg.containsKey(index) || _blurInFlight.contains(index)) return;
-    _blurInFlight.add(index);
-    compute(createBlurredBackgroundBytes, srcBytes).then((bytes) {
-      _blurInFlight.remove(index);
-      if (!mounted || bytes == null) return;
+    if (_blurredBg.containsKey(index)) return;
+    _blurredBg[index] = null;
+    BlurWorker.instance.blur(srcBytes).then((bytes) {
+      if (!mounted) return;
+      if (bytes == null) {
+        _blurredBg.remove(index);
+        return;
+      }
       setState(() => _blurredBg[index] = bytes);
     });
   }
@@ -559,8 +527,9 @@ class _ImageViewerPageState extends State<ImageViewerPage>
                     _touch(index);
                     final pagePhoto = widget.images[index];
                     return RepaintBoundary(
-                      child: _ViewerPhoto(
+                      child: ViewerPhoto(
                         key: ValueKey(pagePhoto.identity),
+                        imageCacheName: viewerImageCacheName,
                         displaySize: _displaySizeFor(index, viewport),
                         // Only the page nearest center gets a Hero
                         heroTag: index == _heroIndex
@@ -591,215 +560,6 @@ class _ImageViewerPageState extends State<ImageViewerPage>
 
 /// The zoomable content for one page: the low-res image shown immediately with
 /// the full-res image crossfading in on top once it loads
-class _ViewerPhoto extends StatefulWidget {
-  final Size displaySize;
-  final String? heroTag;
-  final Uint8List? initialBytes;
-  final Future<ImageData> imageDataFuture;
-  final Future<Uint8List?> fullFuture;
-  final void Function(Uint8List lowBytes) onLowBytes;
-  final void Function(Size naturalSize) onNaturalSize;
-  final void Function(bool zoomed) onZoomChanged;
-
-  /// False while the hero is flying
-  final bool settled;
-
-  const _ViewerPhoto({
-    super.key,
-    required this.displaySize,
-    required this.heroTag,
-    required this.initialBytes,
-    required this.imageDataFuture,
-    required this.fullFuture,
-    required this.onLowBytes,
-    required this.onNaturalSize,
-    required this.onZoomChanged,
-    required this.settled,
-  });
-
-  @override
-  State<_ViewerPhoto> createState() => _ViewerPhotoState();
-}
-
-class _ViewerPhotoState extends State<_ViewerPhoto>
-    with SingleTickerProviderStateMixin {
-  Uint8List? _low;
-  Uint8List? _full;
-  static const Duration _fadeInDuration = Duration(milliseconds: 250);
-
-  static const double _doubleTapScale = 2.5;
-
-  late final AnimationController _doubleTapController;
-  Animation<double>? _doubleTapAnimation;
-  VoidCallback? _doubleTapListener;
-
-  @override
-  void initState() {
-    super.initState();
-    _doubleTapController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 200),
-    );
-    _low = widget.initialBytes;
-    if (_low != null) {
-      widget.onLowBytes(_low!);
-      _resolveNaturalSize(_low!);
-    } else {
-      _loadLow();
-    }
-    _loadFull();
-  }
-
-  @override
-  void dispose() {
-    if (_doubleTapListener != null) {
-      _doubleTapAnimation?.removeListener(_doubleTapListener!);
-    }
-    _doubleTapController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _loadLow() async {
-    final data = await widget.imageDataFuture;
-    if (!mounted) return;
-    setState(() => _low = data.imageBytes);
-    widget.onLowBytes(data.imageBytes);
-    _resolveNaturalSize(data.imageBytes);
-  }
-
-  /// Decodes the image's natural size and reports it up so the page can compute
-  /// the contained rect
-  void _resolveNaturalSize(Uint8List bytes) {
-    decodeImageSize(bytes).then((size) {
-      if (mounted && !size.isEmpty) widget.onNaturalSize(size);
-    });
-  }
-
-  Future<void> _loadFull() async {
-    final full = await widget.fullFuture;
-    if (!mounted || full == null) return;
-    await precacheImage(
-      ExtendedMemoryImageProvider(full, imageCacheName: viewerImageCacheName),
-      context,
-    );
-    if (!mounted) return;
-    setState(() => _full = full);
-    _resolveNaturalSize(full);
-  }
-
-  /// The image that actually flies between the grid and the viewer.
-  Widget _buildHeroFlight(
-    BuildContext flightContext,
-    Animation<double> animation,
-    HeroFlightDirection direction,
-    BuildContext fromHeroContext,
-    BuildContext toHeroContext,
-  ) {
-    // Fly the low-res bytes
-    final bytes = _low;
-    if (bytes == null) return const SizedBox.shrink();
-    return Image.memory(
-      bytes,
-      fit: direction == HeroFlightDirection.pop
-          ? BoxFit.cover // back into the grid's square tile
-          : BoxFit.contain, // out to the viewer's contained rect
-      gaplessPlayback: true,
-      filterQuality: FilterQuality.medium,
-    );
-  }
-
-  GestureConfig _initGestureConfig(ExtendedImageState state) {
-    return GestureConfig(
-      inPageView: true,
-      initialScale: 1.0,
-      minScale: 1.0,
-      animationMinScale: 1.0,
-      maxScale: 5.0,
-      animationMaxScale: 6.0,
-      cacheGesture: false,
-      gestureDetailsIsChanged: (details) {
-        if (details == null) return;
-        widget.onZoomChanged((details.totalScale ?? 1.0) > 1.01);
-      },
-    );
-  }
-
-  /// Animates a double-tap zoom toward the tapped point
-  void _onDoubleTap(ExtendedImageGestureState state) {
-    final pointer = state.pointerDownPosition;
-    final begin = state.gestureDetails?.totalScale ?? 1.0;
-    final end = begin <= 1.01 ? _doubleTapScale : 1.0;
-
-    if (_doubleTapListener != null) {
-      _doubleTapAnimation?.removeListener(_doubleTapListener!);
-    }
-    _doubleTapController.stop();
-    _doubleTapController.value = 0.0;
-    _doubleTapAnimation = Tween<double>(begin: begin, end: end).animate(
-      CurvedAnimation(parent: _doubleTapController, curve: Curves.easeOutCubic),
-    );
-    _doubleTapListener = () => state.handleDoubleTap(
-          scale: _doubleTapAnimation!.value,
-          doubleTapPosition: pointer,
-        );
-    _doubleTapAnimation!.addListener(_doubleTapListener!);
-    _doubleTapController.forward();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final low = _low;
-    // Transparent until the low-res bytes arrive so the blurred backdrop shows
-    // through instead of flashing black during a fast swipe onto a new page.
-    if (low == null) return const SizedBox.expand();
-
-    // Low-res base
-    Widget base = Image.memory(
-      low,
-      fit: BoxFit.contain,
-      gaplessPlayback: true,
-      filterQuality: FilterQuality.medium,
-    );
-    if (widget.heroTag != null) {
-      base = Hero(
-        tag: widget.heroTag!,
-        flightShuttleBuilder: _buildHeroFlight,
-        child: base,
-      );
-    }
-
-    final showGesture = widget.settled;
-
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Center(
-          child: SizedBox.fromSize(size: widget.displaySize, child: base),
-        ),
-        AnimatedOpacity(
-          opacity: showGesture ? 1.0 : 0.0,
-          duration: showGesture ? _fadeInDuration : Duration.zero,
-          curve: Curves.easeOut,
-          child: ExtendedImage.memory(
-            _full ?? low,
-            imageCacheName: viewerImageCacheName,
-            fit: BoxFit.contain,
-            gaplessPlayback: true,
-            filterQuality: FilterQuality.medium,
-            mode: ExtendedImageMode.gesture,
-            onDoubleTap: _onDoubleTap,
-            initGestureConfigHandler: _initGestureConfig,
-            loadStateChanged: (state) =>
-                state.extendedImageLoadState == LoadState.completed
-                    ? null
-                    : const SizedBox.expand(),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 class _ViewerBackground extends StatelessWidget {
   final Uint8List? blurredBytes;
   const _ViewerBackground({super.key, required this.blurredBytes});
