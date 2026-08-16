@@ -113,6 +113,10 @@
             </intent-filter>
 
             <meta-data
+                android:name="flutter_deeplinking_enabled"
+                android:value="false" />
+
+            <meta-data
                 android:name="io.flutter.embedding.android.NormalTheme"
                 android:resource="@style/NormalTheme" />
         </activity>

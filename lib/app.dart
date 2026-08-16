@@ -76,6 +76,13 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
     super.dispose();
   }
 
+  /// Swallow platform route pushes.
+  @override
+  Future<bool> didPushRouteInformation(RouteInformation routeInformation) async {
+    debugPrint('Ignoring platform route push: ${routeInformation.uri}');
+    return true;
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) return;
