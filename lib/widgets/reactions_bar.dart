@@ -183,7 +183,7 @@ class ReactionsBarState extends State<ReactionsBar> {
 
         // Right-aligned, grow upward.
         return AnimatedSize(
-          duration: const Duration(milliseconds: 180),
+          duration: _kAppearDuration,
           curve: Curves.easeOut,
           alignment: Alignment.bottomRight,
           child: Wrap(
@@ -192,14 +192,17 @@ class ReactionsBarState extends State<ReactionsBar> {
             runSpacing: _kChipSpacing,
             children: [
               for (final r in visible)
-                _ReactionChip(
-                  reaction: r,
-                  onTap: () => _toggle(r.emoji),
-                  onLongPress: _openReactors,
+                _FadeIn(
+                  child: _ReactionChip(
+                    reaction: r,
+                    onTap: () => _toggle(r.emoji),
+                    onLongPress: _openReactors,
+                  ),
                 ),
               // Tapping the overflow chip opens the full reactors list.
               if (hidden > 0)
-                _OverflowChip(count: hidden, onTap: _openReactors),
+                _FadeIn(
+                    child: _OverflowChip(count: hidden, onTap: _openReactors)),
               _AddReactionChip(onTap: _openPicker),
             ],
           ),
@@ -209,15 +212,29 @@ class ReactionsBarState extends State<ReactionsBar> {
   }
 }
 
+class _FadeIn extends StatelessWidget {
+  final Widget child;
+
+  const _FadeIn({required this.child});
+
+  @override
+  Widget build(BuildContext context) => TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0.0, end: 1.0),
+        duration: _kAppearDuration,
+        curve: Curves.easeOut,
+        builder: (context, t, child) => Opacity(opacity: t, child: child),
+        child: child,
+      );
+}
+
 const double _kChipSpacing = 8;
 
 /// Roughly one emoji plus a two-digit count.
 const double _kChipWidth = 64;
 const double _kAddChipWidth = 44;
 const double _kOverflowChipWidth = 52;
-
-/// Shared height
 const double _kChipHeight = 42;
+const Duration _kAppearDuration = Duration(milliseconds: 180);
 
 class _Chip extends StatelessWidget {
   final Color? color;

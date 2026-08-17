@@ -78,7 +78,8 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
 
   /// Swallow platform route pushes.
   @override
-  Future<bool> didPushRouteInformation(RouteInformation routeInformation) async {
+  Future<bool> didPushRouteInformation(
+      RouteInformation routeInformation) async {
     debugPrint('Ignoring platform route push: ${routeInformation.uri}');
     return true;
   }

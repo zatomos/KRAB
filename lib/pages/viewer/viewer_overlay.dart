@@ -22,6 +22,7 @@ import 'package:krab/widgets/dialogs/delete_image_dialog.dart';
 import 'package:krab/widgets/dialogs/dialogs.dart';
 import 'package:krab/widgets/dialogs/rename_dialog.dart';
 import 'package:krab/widgets/soft_button.dart';
+import 'package:krab/widgets/cross_fade.dart';
 import 'package:krab/widgets/reactions_bar.dart';
 import 'package:krab/widgets/avatars/user_avatar.dart';
 import 'package:krab/models/image_ref.dart';
@@ -168,8 +169,9 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
   Future<void> _refreshModeration() async {
     final identity = widget.image.identity;
     final group = widget.group;
-    final candidates =
-        group != null ? [group] : await _api.postedInGroups() ?? const <Group>[];
+    final candidates = group != null
+        ? [group]
+        : await _api.postedInGroups() ?? const <Group>[];
     if (!mounted || identity != widget.image.identity) return;
 
     final flags = await Future.wait(candidates.map(_moderates));
@@ -519,8 +521,7 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
       );
       if (!confirmed || !mounted) return;
       final res = await _api.delete();
-      _afterDelete(res.success, res.error,
-          fullyDeleted: true, leftView: true);
+      _afterDelete(res.success, res.error, fullyDeleted: true, leftView: true);
       return;
     }
 
@@ -695,13 +696,21 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
                                     const EdgeInsets.symmetric(horizontal: 8),
                                 child: Row(
                                   children: [
-                                    UserAvatar(widget.uploader, radius: 19),
+                                    CrossFade(
+                                      token: widget.uploader.id,
+                                      child: UserAvatar(widget.uploader,
+                                          radius: 19),
+                                    ),
                                     const SizedBox(width: 10),
                                     Expanded(
-                                      child: _descriptionText(
-                                        fontSize: 14,
-                                        weight: FontWeight.w400,
-                                        maxLines: 2,
+                                      child: CrossFade(
+                                        token: _description,
+                                        alignment: Alignment.centerLeft,
+                                        child: _descriptionText(
+                                          fontSize: 14,
+                                          weight: FontWeight.w400,
+                                          maxLines: 2,
+                                        ),
                                       ),
                                     ),
                                   ],

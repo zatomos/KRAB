@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:krab/themes/frosted_palette.dart';
 import 'package:krab/themes/global_theme_data.dart';
+import 'package:krab/widgets/cross_fade.dart';
 
 class SoftButton extends StatelessWidget {
   final String label;
@@ -57,14 +58,17 @@ class SoftButton extends StatelessWidget {
             Flexible(
               child: ConstrainedBox(
                 constraints: BoxConstraints(minWidth: minLabelWidth),
-                child: Text(
-                  label,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: color,
-                    fontWeight: FontWeight.w500,
-                    letterSpacing: GlobalThemeData.mediumTracking,
-                    fontFeatures: const [FontFeature.tabularFigures()],
+                child: CrossFade(
+                  token: label,
+                  child: Text(
+                    label,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: color,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: GlobalThemeData.mediumTracking,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
                   ),
                 ),
               ),

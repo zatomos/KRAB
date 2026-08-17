@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:extended_image/extended_image.dart';
@@ -109,7 +110,7 @@ class ImageViewerPage extends StatefulWidget {
 
 class _ImageViewerPageState extends State<ImageViewerPage>
     with SingleTickerProviderStateMixin {
-  late final ExtendedPageController _pageController;
+  late final PageController _pageController;
 
   late int _currentIndex;
   // The page nearest screen-center, so popping mid-swipe flies a single image.
@@ -129,9 +130,8 @@ class _ImageViewerPageState extends State<ImageViewerPage>
   // flicker as the flying image passes over and behind it
   late final AnimationController _controlsAnim;
 
-  // Whether the current page is zoomed past its fitted size, which gates the
-  // swipe-up-to-comments gesture in the overlay
   bool _isZoomed = false;
+  ImageData? _lastImageData;
 
   // Start fetching the next page once within this many images of the end
   static const int _loadMoreThreshold = 3;
@@ -155,7 +155,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
 
     _currentIndex = widget.initialIndex;
     _heroIndex = widget.initialIndex;
-    _pageController = ExtendedPageController(initialPage: widget.initialIndex);
+    _pageController = PageController(initialPage: widget.initialIndex);
     _pageController.addListener(_onScroll);
     _pageBytes[widget.initialIndex] = widget.initialImageData.imageBytes;
     _ensureBlur(widget.initialIndex, widget.initialImageData.imageBytes);
@@ -465,9 +465,11 @@ class _ImageViewerPageState extends State<ImageViewerPage>
           ignoring: t < 1,
           child: FutureBuilder<ImageData>(
             future: _imageDataFor(_currentIndex),
+            initialData: _lastImageData,
             builder: (context, snapshot) {
               final data = snapshot.data;
               if (data == null) return const SizedBox.shrink();
+              _lastImageData = data;
               // The instance has to be the one the id came from, not the
               // primary: the details are read from whichever copy answered
               final uploader = widget.cache.user(image) ??
@@ -476,7 +478,6 @@ class _ImageViewerPageState extends State<ImageViewerPage>
                       id: data.uploadedBy,
                       username: '');
               return ViewerOverlay(
-                key: ValueKey(image.identity),
                 image: image,
                 group: widget.group,
                 imageData: data,
@@ -518,35 +519,42 @@ class _ImageViewerPageState extends State<ImageViewerPage>
                 child: ColoredBox(color: context.frostedVeil),
               ),
               Positioned.fill(
-                child: ExtendedImageGesturePageView.builder(
-                  controller: _pageController,
-                  itemCount: widget.images.length,
-                  onPageChanged: _onPageChanged,
-                  physics: const _SnappyPageScrollPhysics(),
-                  itemBuilder: (context, index) {
-                    _touch(index);
-                    final pagePhoto = widget.images[index];
-                    return RepaintBoundary(
-                      child: ViewerPhoto(
-                        key: ValueKey(pagePhoto.identity),
-                        imageCacheName: viewerImageCacheName,
-                        displaySize: _displaySizeFor(index, viewport),
-                        // Only the page nearest center gets a Hero
-                        heroTag: index == _heroIndex
-                            ? "image_${pagePhoto.identity}"
-                            : null,
-                        // Seed from the prefetch cache so a known page paints its
-                        // low-res image on the first frame instead of flashing
-                        initialBytes: _pageBytes[index],
-                        imageDataFuture: _imageDataFor(index),
-                        fullFuture: widget.cache.fullResBytes(pagePhoto),
-                        onLowBytes: (bytes) => _cachePageBytes(index, bytes),
-                        onNaturalSize: (size) => _setChildSize(index, size),
-                        onZoomChanged: _onPageZoomChanged,
-                        settled: _settled,
-                      ),
-                    );
-                  },
+                child: MediaQuery(
+                  data: MediaQuery.of(context).copyWith(
+                    gestureSettings: const DeviceGestureSettings(
+                      touchSlop: kPagingTouchSlop,
+                    ),
+                  ),
+                  child: PageView.builder(
+                    controller: _pageController,
+                    itemCount: widget.images.length,
+                    onPageChanged: _onPageChanged,
+                    physics: _isZoomed
+                        ? const NeverScrollableScrollPhysics()
+                        : const _SnappyPageScrollPhysics(),
+                    itemBuilder: (context, index) {
+                      _touch(index);
+                      final pagePhoto = widget.images[index];
+                      return RepaintBoundary(
+                        child: ViewerPhoto(
+                          key: ValueKey(pagePhoto.identity),
+                          imageCacheName: viewerImageCacheName,
+                          displaySize: _displaySizeFor(index, viewport),
+                          heroTag: index == _heroIndex
+                              ? "image_${pagePhoto.identity}"
+                              : null,
+                          initialBytes: _pageBytes[index],
+                          imageDataFuture: _imageDataFor(index),
+                          fullFuture: widget.cache.fullResBytes(pagePhoto),
+                          onLowBytes: (bytes) => _cachePageBytes(index, bytes),
+                          onNaturalSize: (size) => _setChildSize(index, size),
+                          onZoomChanged: _onPageZoomChanged,
+                          onTap: _toggleChrome,
+                          settled: _settled,
+                        ),
+                      );
+                    },
+                  ),
                 ),
               ),
               Positioned.fill(child: _buildOverlay()),
@@ -558,8 +566,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
   }
 }
 
-/// The zoomable content for one page: the low-res image shown immediately with
-/// the full-res image crossfading in on top once it loads
+/// The blurred backdrop behind a page, faded in once its blur is ready.
 class _ViewerBackground extends StatelessWidget {
   final Uint8List? blurredBytes;
   const _ViewerBackground({super.key, required this.blurredBytes});
