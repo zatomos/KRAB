@@ -89,6 +89,7 @@ class HomeWidgetStatus {
           ),
           SoftButton(
             label: context.l10n.add_widget,
+            icon: Icons.add_to_home_screen,
             color: Theme.of(context).colorScheme.primary,
             onPressed: () {
               Navigator.pop(dialogContext);
