@@ -154,6 +154,7 @@ Future<void> handlePushPayload(
       // the one on screen. Absent when the image is gone from the server
       // entirely, which is what the copies recorded on the notification cover.
       await cancelImageNotification(
+        instance,
         data['image_id'] ?? '',
         shareId: data['share_id'],
       );

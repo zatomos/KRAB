@@ -32,6 +32,13 @@ class _Gallery extends _Destination {
 
 const _commentTypes = {'new_comment', 'group_comment', 'comment_reply'};
 
+/// The headings of a bundle.
+const _summaryTypes = {
+  'images_summary',
+  'comments_summary',
+  'reactions_summary'
+};
+
 class LaunchRouter {
   LaunchRouter._();
 
@@ -44,7 +51,7 @@ class LaunchRouter {
 
   /// Captures what opened the app and subscribes to later taps.
   Future<void> initialize() async {
-    await initCommentNotifications(onTap: handleNotificationPayload);
+    await initNotifications(onTap: handleNotificationPayload);
     _widgetTaps ??= HomeWidget.widgetClicked.listen(handleWidgetUri);
 
     final payload = await getLocalNotificationLaunchPayload();
@@ -117,6 +124,8 @@ class LaunchRouter {
     final instance =
         instanceForPayload(data.map((k, v) => MapEntry(k, '${v ?? ''}')));
 
+    if (_summaryTypes.contains(type)) return const _Gallery();
+
     // Nothing here belongs to a single group: a reaction isn't tied to one at
     // all, and a photo delivered to the user through several groups at once has
     // no one group to open. dispatchImageNotification leaves group_id empty to
@@ -134,7 +143,7 @@ class LaunchRouter {
 
     return _Gallery(
       group: groupResponse.data!,
-      imageId: imageId,
+      imageId: imageId.isEmpty ? null : imageId,
       openComments: _commentTypes.contains(type),
     );
   }

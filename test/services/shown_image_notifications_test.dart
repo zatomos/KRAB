@@ -42,7 +42,7 @@ void main() {
     expect(await store.read(7), isNull);
   });
 
-  test('the channel it was posted on comes back with it', () async {
+  test('the group it was bundled under comes back with it', () async {
     await store.record(
       7,
       ShownImageNotification(
@@ -50,22 +50,22 @@ void main() {
         imageIds: image,
         tapGroupId: 'g1',
         shownAt: DateTime.now(),
-        channelId: 'g1',
-        channelName: 'Family',
+        groupId: 'g1',
+        groupName: 'Family',
       ),
     );
 
     final read = await store.read(7);
 
-    expect(read?.channelId, 'g1',
-        reason: 'a rewording has to be posted back to the same channel');
-    expect(read?.channelName, 'Family');
+    expect(read?.groupId, 'g1',
+        reason: 'a rewording has to be posted back into the same bundle');
+    expect(read?.groupName, 'Family');
   });
 
-  test('a record written before channels were kept is still readable',
+  test('a record written before the group was kept is still readable',
       () async {
     SharedPreferences.setMockInitialValues({
-      ShownImageNotifications.prefsKey: jsonEncode({
+      ShownImageNotifications.storeKey: jsonEncode({
         '7': {
           'groups_display': 'Family',
           'image_ids': image,
@@ -78,8 +78,57 @@ void main() {
     final read = await store.read(7);
 
     expect(read?.groupsDisplay, 'Family');
-    expect(read?.channelId, isEmpty,
-        reason: 'the channel is worked out from the photo instead');
+    expect(read?.groupId, isEmpty,
+        reason: 'the group is worked out from the photo instead');
+  });
+
+  test('a record from the build that kept the channel names the group',
+      () async {
+    // Back when every group had a channel of its own, the group was recorded as
+    // the channel the notification was posted on.
+    SharedPreferences.setMockInitialValues({
+      ShownImageNotifications.storeKey: jsonEncode({
+        '7': {
+          'groups_display': 'Family',
+          'image_ids': image,
+          'tap_group_id': 'g1',
+          'shown_at': DateTime.now().toIso8601String(),
+          'channel_id': 'g1',
+          'channel_name': 'Family',
+        }
+      }),
+    });
+
+    final read = await store.read(7);
+
+    expect(read?.groupId, 'g1');
+    expect(read?.groupName, 'Family');
+  });
+
+  test('a photo the server timed sorts by when it was taken', () async {
+    final taken = DateTime.now().subtract(const Duration(hours: 3));
+    await store.record(
+      7,
+      ShownImageNotification(
+        groupsDisplay: 'Family',
+        imageIds: image,
+        tapGroupId: 'g1',
+        shownAt: DateTime.now(),
+        eventAt: taken,
+      ),
+    );
+
+    expect((await store.read(7))?.eventAt, taken);
+  });
+
+  test('a photo from a server too old to say falls back to when it was shown',
+      () async {
+    final record = await store.serialized(() async {
+      await store.record(7, entry());
+      return store.read(7);
+    });
+
+    expect(record?.eventAt, record?.shownAt);
   });
 
   test('recording again replaces what the notification said', () async {
@@ -101,8 +150,11 @@ void main() {
   });
 
   test('a record too old to be on screen is not offered', () async {
-    await store.record(7,
-        entry(age: ShownImageNotifications.maxAge + const Duration(hours: 1)));
+    await store.record(
+        7,
+        entry(
+            age: ShownImageNotifications.storeMaxAge +
+                const Duration(hours: 1)));
 
     expect(await store.read(7), isNull,
         reason: 'merging into it would name groups from a photo long gone');
@@ -140,7 +192,7 @@ void main() {
 
   test('unreadable storage is treated as nothing recorded', () async {
     SharedPreferences.setMockInitialValues(
-        {ShownImageNotifications.prefsKey: 'not json'});
+        {ShownImageNotifications.storeKey: 'not json'});
 
     expect(await store.read(7), isNull);
   });
@@ -150,7 +202,7 @@ void main() {
     // one's back, the way a background push handler's write looks from here.
     await store.record(7, entry(groups: 'Family'));
     SharedPreferences.setMockInitialValues({
-      ShownImageNotifications.prefsKey: jsonEncode({
+      ShownImageNotifications.storeKey: jsonEncode({
         '7': {
           'groups_display': 'Family, Work',
           'image_ids': '$image,$other',

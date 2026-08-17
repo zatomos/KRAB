@@ -210,9 +210,8 @@ class FeedImageCache {
     final countFuture = _commentCounts[identity] != null
         ? null
         : _fetch.commentCount(image, groupId);
-    final reactionsFuture = _reactionCounts[identity] != null
-        ? null
-        : _fetch.reactionCount(image);
+    final reactionsFuture =
+        _reactionCounts[identity] != null ? null : _fetch.reactionCount(image);
 
     final imageBytes = await bytesFuture;
     if (imageBytes == null) throw Exception("Error downloading low-res image");

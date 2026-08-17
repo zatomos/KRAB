@@ -56,51 +56,104 @@ void main() {
     });
   });
 
-  group('commentNotificationId', () {
-    const comment = '33333333-3333-3333-3333-333333333333';
+  group('commentThreadNotificationId', () {
+    const family = 'g-family';
+    const work = 'g-work';
 
-    test('is stable for the same comment', () {
-      expect(commentNotificationId(comment), commentNotificationId(comment));
+    test('every comment on one photo in one group lands on one notification',
+        () {
+      expect(
+        commentThreadNotificationId(groupId: family, imageId: image),
+        commentThreadNotificationId(groupId: family, imageId: image),
+      );
     });
 
-    test('tells two comments apart', () {
-      expect(commentNotificationId(comment),
-          isNot(commentNotificationId('44444444-4444-4444-4444-444444444444')));
+    test('the same photo in two groups keeps a thread each', () {
+      // A tap opens the comments of the group the comment was written in, so the
+      // two cannot share a notification.
+      expect(
+        commentThreadNotificationId(groupId: family, imageId: image),
+        isNot(commentThreadNotificationId(groupId: work, imageId: image)),
+      );
+    });
+
+    test('two photos in one group stay apart', () {
+      expect(
+        commentThreadNotificationId(groupId: family, imageId: image),
+        isNot(commentThreadNotificationId(groupId: family, imageId: other)),
+      );
     });
 
     test('is a valid Android notification id', () {
-      final id = commentNotificationId(comment);
+      final id = commentThreadNotificationId(groupId: family, imageId: image);
       expect(id, greaterThanOrEqualTo(0));
       expect(id, lessThanOrEqualTo(0x7FFFFFFF));
     });
   });
 
   group('reactionNotificationId', () {
-    const reactor = '55555555-5555-5555-5555-555555555555';
-
-    test('is stable for one user reacting to one photo', () {
-      expect(reactionNotificationId(image, reactor),
-          reactionNotificationId(image, reactor));
+    test('everyone reacting to one photo lands on one notification', () {
+      expect(reactionNotificationId(image), reactionNotificationId(image));
     });
 
-    test('tells two reactors on the same photo apart', () {
-      expect(reactionNotificationId(image, reactor),
-          isNot(reactionNotificationId(image, 'someone-else')));
-    });
-
-    test('tells the same reactor on two photos apart', () {
-      expect(reactionNotificationId(image, reactor),
-          isNot(reactionNotificationId(other, reactor)));
+    test('tells two photos apart', () {
+      expect(
+          reactionNotificationId(image), isNot(reactionNotificationId(other)));
     });
   });
 
   test('a comment and a reaction never collide with the photo itself', () {
     final ids = {
       imageNotificationId(image),
-      commentNotificationId(image),
-      reactionNotificationId(image, image),
+      commentThreadNotificationId(groupId: image, imageId: image),
+      reactionNotificationId(image),
     };
     expect(ids, hasLength(3));
+  });
+
+  group('bundles', () {
+    test('one server bundles apart from another', () {
+      expect(imageBundleKey('inst_1'), isNot(imageBundleKey('inst_2')));
+    });
+
+    test('images gather whichever group they arrived in', () {
+      // A bundle per group left every one of them heading a single
+      // notification, since two photos rarely land in the same group.
+      expect(imageBundleKey('inst_1'), imageBundleKey('inst_1'));
+    });
+
+    test('the three kinds bundle apart', () {
+      // Android only draws a bundle when its summary and children share a
+      // channel, and these are on three.
+      expect(
+        {
+          imageBundleKey('inst_1'),
+          commentBundleKey('inst_1'),
+          reactionBundleKey('inst_1'),
+        },
+        hasLength(3),
+      );
+    });
+
+    test('a summary never collides with a notification under it', () {
+      final bundle = imageBundleKey('inst_1');
+      expect(
+        bundleSummaryId(bundle),
+        isNot(imageNotificationId(image, batchKey: imageBatchKey(['g']))),
+      );
+    });
+  });
+
+  group('unidentifiedNotificationId', () {
+    test('a second unidentified event of a kind replaces the first', () {
+      expect(unidentifiedNotificationId('comment'),
+          unidentifiedNotificationId('comment'));
+    });
+
+    test('two kinds do not overwrite each other', () {
+      expect(unidentifiedNotificationId('comment'),
+          isNot(unidentifiedNotificationId('reaction')));
+    });
   });
 
   group('image copies on several servers', () {

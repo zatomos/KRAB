@@ -380,8 +380,8 @@ Future<({bool changed, bool newImage})> _syncWidget(
     final details = await api.getImageDetails(latest.id);
     if (details.success) {
       final description = details.data?.description ?? "";
-      final shown = await HomeWidget.getWidgetData<String>(
-          'recentImageDescription_$id');
+      final shown =
+          await HomeWidget.getWidgetData<String>('recentImageDescription_$id');
       if (shown != description) {
         await HomeWidget.saveWidgetData(
             'recentImageDescription_$id', description);

@@ -762,7 +762,7 @@ END;$$;
 -- Name: get_comment_notification(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.get_comment_notification(p_comment_id uuid) RETURNS jsonb
+CREATE OR REPLACE FUNCTION public.get_comment_notification(p_comment_id uuid) RETURNS jsonb
     LANGUAGE plpgsql
     SET search_path TO 'public'
     AS $$DECLARE
@@ -776,6 +776,7 @@ BEGIN
 
   SELECT c.group_id    AS group_id,
          c.image_id    AS image_id,
+         c.created_at  AS created_at,
          g.name        AS group_name,
          c.user_id     AS commenter_id,
          cu.username   AS commenter_username,
@@ -807,6 +808,7 @@ BEGIN
     'success', true,
     'group_id', r.group_id,
     'image_id', r.image_id,
+    'created_at', r.created_at,
     'group_name', r.group_name,
     'commenter_id', r.commenter_id,
     'commenter_username', COALESCE(r.commenter_username, ''),
@@ -1231,7 +1233,7 @@ END;$$;
 -- Name: get_image_notification(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.get_image_notification(p_image_id uuid) RETURNS jsonb
+CREATE OR REPLACE FUNCTION public.get_image_notification(p_image_id uuid) RETURNS jsonb
     LANGUAGE plpgsql
     SET search_path TO 'public'
     AS $$
@@ -1241,6 +1243,7 @@ DECLARE
   v_sender_username TEXT;
   v_description TEXT;
   v_share_id UUID;
+  v_created_at TIMESTAMPTZ;
   v_groups JSONB;
 BEGIN
   uid := auth.uid();
@@ -1248,8 +1251,8 @@ BEGIN
     RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
   END IF;
 
-  SELECT i.uploaded_by, u.username, i.description, i.share_id
-  INTO v_sender_id, v_sender_username, v_description, v_share_id
+  SELECT i.uploaded_by, u.username, i.description, i.share_id, i.created_at
+  INTO v_sender_id, v_sender_username, v_description, v_share_id, v_created_at
   FROM "Images" i
   LEFT JOIN "Users" u ON u.id = i.uploaded_by
   WHERE i.id = p_image_id;
@@ -1278,7 +1281,8 @@ BEGIN
     'sender_id', v_sender_id,
     'sender_username', COALESCE(v_sender_username, ''),
     'description', COALESCE(v_description, ''),
-    'share_id', v_share_id
+    'share_id', v_share_id,
+    'created_at', v_created_at
   );
 EXCEPTION
   WHEN OTHERS THEN

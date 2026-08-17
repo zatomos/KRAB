@@ -253,16 +253,6 @@
   "description_updated": "Description modifiée",
   "off": "Désactivé",
   "new_image_notification": "a envoyé une nouvelle image",
-  "comment_on_your_image_notification": "{commenter} a commenté votre image",
-  "comment_on_own_image_notification": "{commenter} a commenté sa propre image",
-  "comment_on_someone_image_notification": "{commenter} a commenté l'image de {uploader}",
-  "reply_to_you_on_your_image_notification": "{commenter} vous a répondu sur votre image",
-  "reply_to_you_on_own_image_notification": "{commenter} vous a répondu sur son image",
-  "reply_to_you_on_someone_image_notification": "{commenter} vous a répondu sur l'image de {uploader}",
-  "reply_to_someone_on_your_image_notification": "{commenter} a répondu à {parent} sur votre image",
-  "reply_to_someone_on_own_image_notification": "{commenter} a répondu à {parent} sur son image",
-  "reply_to_someone_on_commenter_image_notification": "{commenter} a répondu à {parent} sur sa propre image",
-  "reply_to_someone_on_someone_image_notification": "{commenter} a répondu à {parent} sur l'image de {uploader}",
   "change_password": "Changer le mot de passe",
   "current_password": "Mot de passe actuel",
   "new_password": "Nouveau mot de passe",
@@ -339,6 +329,83 @@
   "no_recents": "Aucun emoji récent",
   "new_reaction_on_your_image_notification": "a réagi {emoji} à votre image",
   "new_reaction_on_someone_notification": "a réagi {emoji} à l'image de {uploader_username}",
+  "reactions_on_your_photo": "Réactions à votre photo",
+  "reactions_on_someone_photo": "Réactions à la photo de {uploader}",
+  "@reactions_on_someone_photo": {
+    "placeholders": {
+      "uploader": {
+        "type": "String"
+      }
+    }
+  },
+  "notification_your_image": "votre image",
+  "notification_someone_image": "l'image de {uploader}",
+  "@notification_someone_image": {
+    "placeholders": {
+      "uploader": {
+        "type": "String"
+      }
+    }
+  },
+  "commented_notification": "a commenté : {text}",
+  "@commented_notification": {
+    "placeholders": {
+      "text": {
+        "type": "String"
+      }
+    }
+  },
+  "replied_to_you_notification": "vous a répondu : {text}",
+  "replied_to_someone_notification": "a répondu à {parent} : {text}",
+  "@replied_to_you_notification": {
+    "placeholders": {
+      "text": {
+        "type": "String"
+      }
+    }
+  },
+  "@replied_to_someone_notification": {
+    "placeholders": {
+      "parent": {
+        "type": "String"
+      },
+      "text": {
+        "type": "String"
+      }
+    }
+  },
+  "notification_image_count": "{count, plural, =1{1 image} other{{count} images}}",
+  "@notification_image_count": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "notification_comment_count": "{count, plural, =1{1 commentaire} other{{count} commentaires}}",
+  "@notification_comment_count": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "notification_reaction_count": "{count, plural, =1{1 réaction} other{{count} réactions}}",
+  "@notification_reaction_count": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "channel_photos": "Nouvelles images",
+  "channel_photos_description": "Une image partagée dans l'un de vos groupes.",
+  "channel_comments": "Commentaires et réponses",
+  "channel_comments_description": "Les commentaires sur les images que vous voyez, et les réponses aux vôtres.",
+  "channel_reactions": "Réactions",
+  "channel_reactions_description": "Les réactions emoji aux images. Silencieuses par défaut.",
+  "channel_app_updates": "Mises à jour de l'app",
+  "channel_app_updates_description": "Une nouvelle version de KRAB est disponible.",
   "instance_setup_title": "Se connecter à un serveur KRAB",
   "instance_setup_subtitle": "Saisissez l'adresse et la clé publique de l'instance qu'on vous a communiquée.",
   "instance_setup_url_hint": "URL du serveur",
