@@ -59,7 +59,7 @@ void workmanagerCallbackDispatcher() {
       final instances = InstanceRegistry.instance.all;
       if (instances.isEmpty) {
         debugPrint('WorkManager: no instance configured, nothing to do');
-        return Future.value(false);
+        return false;
       }
 
       var anyUsable = false;
@@ -72,21 +72,21 @@ void workmanagerCallbackDispatcher() {
         // Queued images keep until the user reopens the app and
         // re-authenticates.
         debugPrint('WorkManager: no valid session anywhere, skipping');
-        return Future.value(true);
+        return true;
       }
 
       // Reporting failure here is what earns the WorkManager retry, so the
       // queue keeps draining on its own once the connection is back.
       if (isOutboxFlush) {
-        return Future.value(await UploadOutbox.instance.flush());
+        return await UploadOutbox.instance.flush();
       }
 
       await UploadOutbox.instance.flush();
       await updateHomeWidget();
-      return Future.value(true);
+      return true;
     } catch (e, st) {
       debugPrint('WorkManager task failed: $e\n$st');
-      return Future.value(false);
+      return false;
     }
   });
 }

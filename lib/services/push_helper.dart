@@ -122,7 +122,7 @@ class PushHelper {
         debugPrint('Push: no FCM token for ${instance.id}');
         return false;
       }
-      return _saveToken(instance, token);
+      return await _saveToken(instance, token);
     } catch (e, st) {
       debugPrint('Push: ensureRegistered failed: $e\n$st');
       return false;
