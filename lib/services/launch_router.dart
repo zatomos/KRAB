@@ -127,7 +127,7 @@ class LaunchRouter {
     if (_summaryTypes.contains(type)) return const _Gallery();
 
     // Nothing here belongs to a single group: a reaction isn't tied to one at
-    // all, and a photo delivered to the user through several groups at once has
+    // all, and an image delivered to the user through several groups at once has
     // no one group to open. dispatchImageNotification leaves group_id empty to
     // say so. Both open the all-groups gallery, on the image.
     if (type == 'new_reaction' || (type == 'new_image' && groupId.isEmpty)) {

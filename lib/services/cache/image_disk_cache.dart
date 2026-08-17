@@ -11,16 +11,16 @@ const String imageCacheDirName = 'image_cache';
 /// On-disk cache for one instance's image bytes, behind `getImage`, so the
 /// feed, viewer and home-screen widget all share it.
 ///
-/// Photos are keyed by UUID and never change, so entries are only evicted for
+/// Images are keyed by UUID and never change, so entries are only evicted for
 /// space. Writes are atomic, and every I/O failure is swallowed as a miss.
 ///
 /// Each instance gets its own subdirectory: ids collide across servers in
-/// principle, and dropping one instance's photos must not touch another's. The
+/// principle, and dropping one instance's images must not touch another's. The
 /// size cap is therefore per instance, not per device.
 class ImageDiskCache {
   ImageDiskCache({required this.instanceId});
 
-  /// Which instance's photos these are. Names the subdirectory.
+  /// Which instance's images these are. Names the subdirectory.
   final String instanceId;
 
   static const int _maxBytes = 50 * 1024 * 1024; // 50 MB

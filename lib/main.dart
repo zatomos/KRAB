@@ -72,7 +72,7 @@ Future<void> _warmUpFromNetwork() async {
     }));
     // So the widget's configure screen can offer a group filter.
     await cacheUserGroupsForWidget();
-    // Photos queued while offline go out as soon as we're up again.
+    // Images queued while offline go out as soon as we're up again.
     await UploadOutbox.instance.flush();
   } catch (e, st) {
     debugPrint('Warm-up failed: $e\n$st');
@@ -86,7 +86,7 @@ void _listenToAuthEvents() {
     debugPrint('Auth state changed on ${event.instance.id}: ${event.status}');
     switch (event.status) {
       case AppAuthStatus.signedOut:
-        // Say so on the widget now. Otherwise it keeps showing the photos from
+        // Say so on the widget now. Otherwise it keeps showing the images from
         // just before the sign-out until some later refresh happens to notice.
         unawaited(updateHomeWidget());
         if (DebugNotifier.instance.isIntentionalLogout) {

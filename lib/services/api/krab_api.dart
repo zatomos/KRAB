@@ -70,7 +70,7 @@ const String errorServer = 'server_error';
 /// The call needs a signed-in user and there isn't one.
 const String errorNotLoggedIn = 'not_logged_in';
 
-const String errorPhotoTooLarge = 'photo_too_large';
+const String errorImageTooLarge = 'image_too_large';
 
 const String errorNameTooShort = 'name_too_short';
 
@@ -79,7 +79,7 @@ const Set<String> errorCodes = {
   errorNetwork,
   errorServer,
   errorNotLoggedIn,
-  errorPhotoTooLarge,
+  errorImageTooLarge,
   errorNameTooShort,
 };
 

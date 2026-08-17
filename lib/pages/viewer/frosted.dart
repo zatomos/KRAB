@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'package:krab/themes/frosted_palette.dart';
 
-/// The frosted look shared by every piece of chrome over a photo.
+/// The frosted look shared by every piece of chrome over an image.
 class FrostedSurface extends StatelessWidget {
   final BorderRadius borderRadius;
   final Color tint;
@@ -98,7 +98,7 @@ class CircleAction extends StatelessWidget {
   }
 }
 
-/// Present a frosted dialog over the photo.
+/// Present a frosted dialog over the image.
 Future<T?> showFrostedDialog<T>(
   BuildContext context, {
   required EdgeInsets padding,

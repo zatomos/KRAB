@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:krab/pages/viewer/frosted.dart';
-import 'package:krab/widgets/zoomable_photo.dart';
+import 'package:krab/widgets/zoomable_image.dart';
 
 Future<void> showImagePreview(BuildContext context, File file) {
   return showGeneralDialog<void>(
@@ -33,7 +33,7 @@ class _ImagePreview extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          ZoomablePhoto(image: FileImage(file)),
+          ZoomableImage(image: FileImage(file)),
           // Close btn
           Positioned(
             top: MediaQuery.paddingOf(context).top + 4,

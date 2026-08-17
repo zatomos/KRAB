@@ -64,39 +64,39 @@
   "group_name": "Nom du groupe",
   "delete": "Supprimer",
   "undo": "Annuler",
-  "view_photo": "Voir",
+  "view_image": "Voir",
   "remove": "Supprimer",
   "remove_from_groups_message": "Sélectionnez les groupes pour lesquels cette photo sera supprimée.",
   "save_to_device": "Enregistrer sur l'appareil",
   "add_to_group": "Ajouter à un groupe",
   "add_to_groups_message": "Sélectionnez les groupes auxquels ajouter cette photo.",
-  "photo_added_success": "Photo ajoutée aux groupes sélectionnés.",
+  "image_added_success": "Photo ajoutée aux groupes sélectionnés.",
   "already_in_all_groups": "Cette photo est déjà dans tous vos groupes.",
   "error_adding_to_groups": "Impossible d'ajouter la photo : {errorMsg}",
-  "delete_photo": "Supprimer la photo",
-  "delete_photo_confirm": "Supprimer cette photo pour tout le monde ? Cette action est irréversible.",
-  "delete_photo_group_confirm": "Supprimer cette photo de {group} ? Cette action est irréversible.",
-  "photo_deleted": "Photo supprimée",
-  "photo_sent": "Photo envoyée !",
-  "photo_sent_partially": "Photo envoyée, mais {server} l'a refusée",
-  "@photo_sent_partially": {
+  "delete_image": "Supprimer la photo",
+  "delete_image_confirm": "Supprimer cette photo pour tout le monde ? Cette action est irréversible.",
+  "delete_image_group_confirm": "Supprimer cette photo de {group} ? Cette action est irréversible.",
+  "image_deleted": "Photo supprimée",
+  "image_sent": "Photo envoyée !",
+  "image_sent_partially": "Photo envoyée, mais {server} l'a refusée",
+  "@image_sent_partially": {
     "placeholders": {
       "server": {
         "type": "String"
       }
     }
   },
-  "photo_sent_some_queued": "Photo envoyée ; {server} en attente du retour de la connexion",
-  "@photo_sent_some_queued": {
+  "image_sent_some_queued": "Photo envoyée ; {server} en attente du retour de la connexion",
+  "@image_sent_some_queued": {
     "placeholders": {
       "server": {
         "type": "String"
       }
     }
   },
-  "photo_queued_offline": "En attente ; sera envoyée dès le retour de la connexion",
-  "photo_removed": "Photo retirée",
-  "failed_to_delete_photo": "Échec de la suppression de la photo",
+  "image_queued_offline": "En attente ; sera envoyée dès le retour de la connexion",
+  "image_removed": "Photo retirée",
+  "failed_to_delete_image": "Échec de la suppression de la photo",
   "image_saved": "Image enregistrée !",
   "error_saving_image": "Impossible d'enregistrer l'image. Veuillez réessayer.",
   "error_capturing_image": "Impossible de capturer l'image. Veuillez réessayer.",
@@ -138,10 +138,10 @@
   "uploaded_on": "Publiée le {date}",
   "shared_here_on": "Partagée dans ce groupe le {date}",
   "select_group_to_comment": "Sélectionnez un groupe",
-  "recent_photos": "Photos récentes",
-  "recent_photos_subtitle": "Dernières images de vos groupes",
-  "no_recent_photos": "Aucune photo récente (pour l'instant).",
-  "new_photos": "Nouvelles photos",
+  "recent_images": "Photos récentes",
+  "recent_images_subtitle": "Dernières images de vos groupes",
+  "no_recent_images": "Aucune photo récente (pour l'instant).",
+  "new_images": "Nouvelles photos",
   "edit": "Modifier",
   "edit_comment": "Modifier votre commentaire...",
   "post_comment": "Publier un commentaire...",
@@ -329,9 +329,9 @@
   "no_recents": "Aucun emoji récent",
   "new_reaction_on_your_image_notification": "a réagi {emoji} à votre image",
   "new_reaction_on_someone_notification": "a réagi {emoji} à l'image de {uploader_username}",
-  "reactions_on_your_photo": "Réactions à votre photo",
-  "reactions_on_someone_photo": "Réactions à la photo de {uploader}",
-  "@reactions_on_someone_photo": {
+  "reactions_on_your_image": "Réactions à votre photo",
+  "reactions_on_someone_image": "Réactions à la photo de {uploader}",
+  "@reactions_on_someone_image": {
     "placeholders": {
       "uploader": {
         "type": "String"
@@ -398,8 +398,8 @@
       }
     }
   },
-  "channel_photos": "Nouvelles images",
-  "channel_photos_description": "Une image partagée dans l'un de vos groupes.",
+  "channel_images": "Nouvelles images",
+  "channel_images_description": "Une image partagée dans l'un de vos groupes.",
   "channel_comments": "Commentaires et réponses",
   "channel_comments_description": "Les commentaires sur les images que vous voyez, et les réponses aux vôtres.",
   "channel_reactions": "Réactions",
@@ -446,8 +446,8 @@
   "error_network": "Pas de connexion. Vérifiez votre réseau et réessayez.",
   "error_server": "Une erreur est survenue sur le serveur. Veuillez réessayer.",
   "error_not_logged_in": "Vous n'êtes pas connecté.",
-  "error_photo_too_large": "Cette photo est trop lourde pour être envoyée (max {sizeMb} Mo).",
-  "@error_photo_too_large": {
+  "error_image_too_large": "Cette photo est trop lourde pour être envoyée (max {sizeMb} Mo).",
+  "@error_image_too_large": {
     "placeholders": {
       "sizeMb": {
         "type": "int"

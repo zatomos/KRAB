@@ -429,7 +429,7 @@ BEGIN
     RETURN jsonb_build_object('success', false, 'error', 'owns_groups');
   END IF;
 
-  -- Remove the user's photos from every group they were shared to
+  -- Remove the user's images from every group they were shared to
   DELETE FROM "ImageGroups" ig
     USING "Images" i
    WHERE ig.image_id = i.id
@@ -1685,7 +1685,7 @@ BEGIN
     RETURN 'Too many photos sent recently, try again later';
   END IF;
 
-  -- Photos opened but never uploaded. Capped so a client that only ever opens
+  -- Images opened but never uploaded. Capped so a client that only ever opens
   -- uploads, and never finishes one, cannot keep claiming slots.
   SELECT count(*) INTO pending_count
     FROM "Images" i
@@ -2183,7 +2183,7 @@ BEGIN
   IF is_uploader THEN
     allowed_group_ids := p_group_ids;
   ELSE
-    -- Owners and admins can remove anyone's photo from the groups they moderate
+    -- Owners and admins can remove anyone's image from the groups they moderate
     SELECT coalesce(array_agg(g), '{}'::uuid[])
       INTO allowed_group_ids
       FROM unnest(p_group_ids) AS g

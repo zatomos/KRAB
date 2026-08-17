@@ -69,7 +69,7 @@ void workmanagerCallbackDispatcher() {
       if (!anyUsable) {
         await refreshWidgetAuthState();
 
-        // Queued photos keep until the user reopens the app and
+        // Queued images keep until the user reopens the app and
         // re-authenticates.
         debugPrint('WorkManager: no valid session anywhere, skipping');
         return Future.value(true);
@@ -141,7 +141,7 @@ Future<void> handlePushPayload(
       await dispatchImageNotification(instance, data);
       await updateHomeWidget();
       if (!background) {
-        // Let an open feed surface a new photos pill without a refresh
+        // Let an open feed surface a new images pill without a refresh
         FeedEvents.instance.notifyNewImage(NewImageEvent(
           imageId: data['image_id'] ?? '',
           groupId: data['group_id'],
@@ -150,7 +150,7 @@ Future<void> handlePushPayload(
     } else if (type == 'image_deleted') {
       // The image is gone, clear any standing notification for it and refresh
       // the widget so it drops out
-      // The share id names the photo's other copies, whose notification may be
+      // The share id names the image's other copies, whose notification may be
       // the one on screen. Absent when the image is gone from the server
       // entirely, which is what the copies recorded on the notification cover.
       await cancelImageNotification(

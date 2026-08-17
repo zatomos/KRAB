@@ -34,7 +34,7 @@ void main() {
   });
 
   test('the size cap is spelled out in the too-large message', () {
-    final text = describeError(en, errorPhotoTooLarge);
+    final text = describeError(en, errorImageTooLarge);
     final megabytes = maxImageUploadBytes ~/ (1024 * 1024);
     expect(text, contains('$megabytes'));
   });

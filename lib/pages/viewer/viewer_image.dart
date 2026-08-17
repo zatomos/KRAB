@@ -4,9 +4,9 @@ import 'package:extended_image/extended_image.dart';
 
 import 'package:krab/models/image_data.dart';
 import 'package:krab/services/image_size.dart';
-import 'package:krab/widgets/zoomable_photo.dart';
+import 'package:krab/widgets/zoomable_image.dart';
 
-class ViewerPhoto extends StatefulWidget {
+class ViewerImage extends StatefulWidget {
   final Size displaySize;
   final String? heroTag;
   final Uint8List? initialBytes;
@@ -17,13 +17,13 @@ class ViewerPhoto extends StatefulWidget {
   final void Function(bool zoomed) onZoomChanged;
   final VoidCallback onTap;
 
-  /// Where the viewer's decoded photos are held.
+  /// Where the viewer's decoded images are held.
   final String imageCacheName;
 
   /// False while the hero is flying
   final bool settled;
 
-  const ViewerPhoto({
+  const ViewerImage({
     super.key,
     required this.displaySize,
     required this.heroTag,
@@ -39,10 +39,10 @@ class ViewerPhoto extends StatefulWidget {
   });
 
   @override
-  State<ViewerPhoto> createState() => _ViewerPhotoState();
+  State<ViewerImage> createState() => _ViewerImageState();
 }
 
-class _ViewerPhotoState extends State<ViewerPhoto> {
+class _ViewerImageState extends State<ViewerImage> {
   static const Duration _fadeInDuration = Duration(milliseconds: 250);
 
   late bool _handedOver = widget.settled;
@@ -67,7 +67,7 @@ class _ViewerPhotoState extends State<ViewerPhoto> {
   }
 
   @override
-  void didUpdateWidget(ViewerPhoto old) {
+  void didUpdateWidget(ViewerImage old) {
     super.didUpdateWidget(old);
     if (!widget.settled && _handedOver) _handedOver = false;
   }
@@ -159,7 +159,7 @@ class _ViewerPhotoState extends State<ViewerPhoto> {
               setState(() => _handedOver = true);
             }
           },
-          child: ZoomablePhoto(
+          child: ZoomableImage(
             image: _providerFor(_full ?? low),
             onZoomChanged: widget.onZoomChanged,
             onTap: widget.onTap,

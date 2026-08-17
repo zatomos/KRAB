@@ -517,7 +517,7 @@ class SharedImageApi {
   }
 
   /// Update the description on every server holding a copy, so the copies keep
-  /// reading as one photo.
+  /// reading as one image.
   Future<SupabaseResponse<void>> updateDescription(String description) async {
     final copies = _present;
     if (copies.isEmpty) {

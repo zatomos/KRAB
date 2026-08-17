@@ -66,7 +66,7 @@ void main() {
     });
 
     test('the same comment delivered twice is shown once', () {
-      // Both copies of a photo answer for it, and a push can simply arrive
+      // Both copies of an image answer for it, and a push can simply arrive
       // again.
       final arriving = message('bob', 'nice one');
       final thread = emptyThread().withMessage(arriving).withMessage(arriving);
@@ -103,7 +103,7 @@ void main() {
           'comment ${CommentThread.maxMessages + 3}');
     });
 
-    test('who the photo belongs to survives a new comment', () {
+    test('who the image belongs to survives a new comment', () {
       final thread = emptyThread(uploaderIsMe: true, uploader: '')
           .withMessage(message('bob', 'nice one'));
 
@@ -172,7 +172,7 @@ void main() {
       expect(tally.newestFirst.first.reactorUsername, 'carol');
     });
 
-    test('a busy photo keeps the newest reactors', () {
+    test('a busy image keeps the newest reactors', () {
       var tally = emptyTally();
       for (var i = 0; i < ReactionTally.maxReactions + 3; i++) {
         tally = tally.withReaction(reaction('person$i', '👍'));
@@ -183,7 +183,7 @@ void main() {
           'person${ReactionTally.maxReactions + 2}');
     });
 
-    test('whose photo it is survives a new reaction', () {
+    test('whose image it is survives a new reaction', () {
       final tally =
           emptyTally(uploader: 'alice').withReaction(reaction('bob', '👍'));
 
@@ -219,7 +219,7 @@ void main() {
       expect(await store.read(7), isNull);
     });
 
-    test('the threads about a deleted photo can all be found', () async {
+    test('the threads about a deleted image can all be found', () async {
       await store.record(7, emptyThread(groupId: 'g-family'));
       await store.record(8, emptyThread(groupId: 'g-work'));
       await store.record(

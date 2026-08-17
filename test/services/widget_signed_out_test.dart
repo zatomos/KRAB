@@ -96,7 +96,7 @@ void main() {
     expect(host.data['widgetSignedOut'], isTrue);
     expect(host.redraws,
         containsAll(['HomeScreenWidget', 'HomeScreenWidgetMulti']),
-        reason: 'both kinds have to be told, or one keeps stale photos');
+        reason: 'both kinds have to be told, or one keeps stale images');
   });
 
   test('signing back in clears it and redraws', () async {
@@ -108,7 +108,7 @@ void main() {
 
     expect(await refreshWidgetAuthState(), isTrue);
     expect(host.data['widgetSignedOut'], isFalse,
-        reason: 'a stuck flag leaves the overlay over photos that are fine');
+        reason: 'a stuck flag leaves the overlay over images that are fine');
     expect(host.redraws,
         containsAll(['HomeScreenWidget', 'HomeScreenWidgetMulti']));
   });

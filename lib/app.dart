@@ -84,7 +84,7 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
     }
 
     // Coming back to the app is the most likely moment for a connection to have
-    // returned, so try the photos that were queued without one.
+    // returned, so try the images that were queued without one.
     UploadOutbox.instance.flush();
 
     // Tapping a widget that says "signed out" lands here

@@ -75,7 +75,7 @@ void main() {
       expect(decoded.height, 200);
     });
 
-    test('caps the longest edge of a landscape photo', () async {
+    test('caps the longest edge of a landscape image', () async {
       final out = await stripImageMetadata(
         _realJpeg(width: 400, height: 200),
         maxDimension: 100,
@@ -86,7 +86,7 @@ void main() {
       expect(decoded.height, 50, reason: 'aspect ratio must be preserved');
     });
 
-    test('caps the longest edge of a portrait photo', () async {
+    test('caps the longest edge of a portrait image', () async {
       final out = await stripImageMetadata(
         _realJpeg(width: 200, height: 400),
         maxDimension: 100,
@@ -97,7 +97,7 @@ void main() {
       expect(decoded.height, 100);
     });
 
-    test('does not upscale a photo smaller than the cap', () async {
+    test('does not upscale an image smaller than the cap', () async {
       final out = await stripImageMetadata(
         _realJpeg(width: 80, height: 40),
         maxDimension: 1000,

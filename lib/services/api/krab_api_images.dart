@@ -2,7 +2,7 @@ part of 'krab_api.dart';
 
 /// ------------------ IMAGE FUNCTIONS ------------------
 
-/// Largest photo the server will accept
+/// Largest image the server will accept
 const int maxImageUploadBytes = 15 * 1024 * 1024;
 
 /// Longest description the server will store.
@@ -18,7 +18,7 @@ bool _isAlreadyUploaded(Object error) =>
 /// when a thumbnail hasn't been generated.
 const String _thumbnailsBucket = 'image-thumbnails';
 
-/// Strip EXIF metadata, and shrink the photo if this build asks for it.
+/// Strip EXIF metadata, and shrink the image if this build asks for it.
 Future<Uint8List> prepareImageForUpload(File imageFile) async =>
     stripImageMetadata(
       await imageFile.readAsBytes(),
@@ -38,7 +38,7 @@ bool _isUnknownShareIdArgument(Object error) {
 extension KrabApiImages on KrabApi {
   /// Send an image to selected groups with an optional description.
   ///
-  /// shareId is what lets every copy of a photo be recognised as one photo
+  /// shareId is what lets every copy of an image be recognised as one image
   /// later.
   Future<SupabaseResponse<String>> sendImageToGroups(
     File imageFile,
@@ -51,14 +51,14 @@ extension KrabApiImages on KrabApi {
     void Function()? onShareIdDropped,
   }) async {
     try {
-      // Sending one photo to several instances prepares the bytes once and
-      // hands them to each, so a fan-out re-encodes the photo once rather than
+      // Sending one image to several instances prepares the bytes once and
+      // hands them to each, so a fan-out re-encodes the image once rather than
       // once per server.
       final imageBytes =
           preparedBytes ?? await prepareImageForUpload(imageFile);
 
       if (imageBytes.length > maxImageUploadBytes) {
-        return SupabaseResponse(success: false, error: errorPhotoTooLarge);
+        return SupabaseResponse(success: false, error: errorImageTooLarge);
       }
 
       var imageId = resumeImageId;
@@ -80,7 +80,7 @@ extension KrabApiImages on KrabApi {
         await onReserved?.call(imageId);
       }
 
-      // Landing the bytes is what sends the photo.
+      // Landing the bytes is what sends the image.
       try {
         await _withRetry(() => _client.storage.from("images").uploadBinary(
               imageId!,
@@ -88,8 +88,8 @@ extension KrabApiImages on KrabApi {
               fileOptions: const FileOptions(contentType: 'image/jpeg'),
             ));
       } catch (error) {
-        // The photo is already there: an earlier attempt landed and only its
-        // reply went missing. The trigger ran with it, so the photo is sent.
+        // The image is already there: an earlier attempt landed and only its
+        // reply went missing. The trigger ran with it, so the image is sent.
         if (!_isAlreadyUploaded(error)) rethrow;
         debugPrint("Image $imageId was already uploaded, treating as sent");
       }
@@ -245,7 +245,7 @@ extension KrabApiImages on KrabApi {
       );
     } catch (error) {
       if (_isUnknownShareIdArgument(error)) {
-        debugPrint('Instance $instanceId cannot look photos up by share id');
+        debugPrint('Instance $instanceId cannot look images up by share id');
         return const SupabaseResponse(success: true, data: []);
       }
       return _failure(error, 'looking up shared copies');

@@ -3,7 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 
-/// Removes metadata from a photo before it leaves the device.
+/// Removes metadata from an image before it leaves the device.
 Future<Uint8List> stripImageMetadata(
   Uint8List bytes, {
   int maxDimension = 0,

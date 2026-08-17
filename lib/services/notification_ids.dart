@@ -15,16 +15,16 @@ int imageNotificationId(String imageId,
         ? shareId
         : (batchKey.isEmpty ? imageId : '$imageId|$batchKey'));
 
-/// Stable notification id for the comments on one photo in one group.
+/// Stable notification id for the comments on one image in one group.
 int commentThreadNotificationId(
         {required String groupId, required String imageId}) =>
     notificationIdFrom('comments|$groupId|$imageId');
 
-/// Stable notification id for the reactions to one photo.
+/// Stable notification id for the reactions to one image.
 int reactionNotificationId(String imageId) =>
     notificationIdFrom('reaction|$imageId');
 
-/// Identifies one delivery of a photo.
+/// Identifies one delivery of an image.
 String imageBatchKey(Iterable<String> groupIds) =>
     (groupIds.toList()..sort()).join(',');
 

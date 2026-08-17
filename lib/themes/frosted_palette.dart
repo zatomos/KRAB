@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:krab/themes/global_theme_data.dart';
 
-/// The glass palette for chrome laid over a photo.
+/// The glass palette for chrome laid over an image.
 
 const Color frostedOn = Colors.white;
 const Color frostedOnMuted = Color(0x99ffffff);

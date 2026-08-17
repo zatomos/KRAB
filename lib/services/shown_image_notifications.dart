@@ -2,7 +2,7 @@ import 'package:krab/services/notification_records.dart';
 
 /// What one image notification on screen stands for.
 ///
-/// A photo sent to several servers, or to several groups on one, arrives as one
+/// A image sent to several servers, or to several groups on one, arrives as one
 /// push per sender and all of them land on the same notification id. Each has to
 /// fold into what is already showing rather than replace it, so what is showing
 /// has to be readable.
@@ -22,7 +22,7 @@ class ShownImageNotification {
   /// The group names the notification currently lists.
   final String groupsDisplay;
 
-  /// Every copy of the photo it now speaks for, comma separated.
+  /// Every copy of the image it now speaks for, comma separated.
   final String imageIds;
 
   /// The group a tap opens, empty when it opens the cross-group feed.
@@ -67,7 +67,7 @@ class ShownImageNotification {
     );
   }
 
-  /// Whether this notification is speaking for the given copy of a photo.
+  /// Whether this notification is speaking for the given copy of an image.
   bool covers(String imageId) =>
       imageId.isNotEmpty &&
       imageIds.split(',').map((s) => s.trim()).contains(imageId);
@@ -100,8 +100,8 @@ class ShownImageNotifications
   ShownImageNotification? fromJson(Object? raw) =>
       ShownImageNotification.fromJson(raw);
 
-  /// The ids of every notification standing for this copy of a photo, so a
-  /// deleted photo can be taken off the screen even where it was merged into a
+  /// The ids of every notification standing for this copy of an image, so a
+  /// deleted image can be taken off the screen even where it was merged into a
   /// notification another copy started.
   Future<List<int>> idsCovering(String imageId) async {
     if (imageId.isEmpty) return const [];

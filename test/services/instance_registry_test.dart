@@ -185,7 +185,7 @@ void main() {
 
       expect(second.id, isNot(first.id),
           reason: 'reusing an id would hand the new server the old one\'s '
-              'session key and cached photos');
+              'session key and cached images');
     });
 
     test('one unreadable entry does not take the others with it', () async {

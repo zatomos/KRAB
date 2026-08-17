@@ -7,7 +7,7 @@ import 'package:krab/models/shared_image.dart';
 import 'package:krab/models/user.dart' as krab_user;
 import 'package:krab/services/cache/feed_image_cache.dart';
 
-SharedImage _photo(String id, {String instanceId = 'inst_1'}) =>
+SharedImage _image(String id, {String instanceId = 'inst_1'}) =>
     SharedImage([ImageRef(instanceId: instanceId, id: id)]);
 
 /// The same image on two instances, sharing an id minted at send time.
@@ -108,15 +108,15 @@ void main() {
 
   group('bytes', () {
     test('fetches once, then serves from memory', () async {
-      expect(_text(await cache.bytes(_photo('a'))), 'a:low');
-      expect(_text(await cache.bytes(_photo('a'))), 'a:low');
+      expect(_text(await cache.bytes(_image('a'))), 'a:low');
+      expect(_text(await cache.bytes(_image('a'))), 'a:low');
 
       expect(fake.lowResFetches, ['a'], reason: 'the second read was a hit');
     });
 
     test('keeps the two resolutions apart', () async {
-      expect(_text(await cache.bytes(_photo('a'), lowRes: true)), 'a:low');
-      expect(_text(await cache.bytes(_photo('a'), lowRes: false)), 'a:full');
+      expect(_text(await cache.bytes(_image('a'), lowRes: true)), 'a:low');
+      expect(_text(await cache.bytes(_image('a'), lowRes: false)), 'a:full');
 
       expect(fake.lowResFetches, ['a']);
       expect(fake.fullResFetches, ['a']);
@@ -125,15 +125,15 @@ void main() {
     test('returns null when the fetch fails, and does not cache the failure',
         () async {
       final failing = FeedImageCache(fetchers: _FailingFetchers());
-      expect(await failing.bytes(_photo('a')), isNull);
-      expect(await failing.bytes(_photo('a')), isNull);
+      expect(await failing.bytes(_image('a')), isNull);
+      expect(await failing.bytes(_image('a')), isNull);
     });
   });
 
   group('imageData', () {
     test('hands back the same future rather than re-fetching', () async {
-      final first = cache.imageData(_photo('a'));
-      final second = cache.imageData(_photo('a'));
+      final first = cache.imageData(_image('a'));
+      final second = cache.imageData(_image('a'));
       expect(identical(first, second), isTrue);
 
       await first;
@@ -142,23 +142,23 @@ void main() {
 
     test('fills in the uploader, comment count and reaction total', () async {
       fake.reactionTotal = 7;
-      final data = await cache.imageData(_photo('a'));
+      final data = await cache.imageData(_image('a'));
 
       expect(data.uploadedBy, 'uploader-of-a');
       expect(data.description, 'about a');
-      expect(cache.user(_photo('a'))?.username, 'name-of-uploader-of-a');
-      expect(cache.commentCount(_photo('a')), 3);
-      expect(cache.reactionCount(_photo('a')), 7);
+      expect(cache.user(_image('a'))?.username, 'name-of-uploader-of-a');
+      expect(cache.commentCount(_image('a')), 3);
+      expect(cache.reactionCount(_image('a')), 7);
     });
 
     test('asks for the per-group comment count in a group feed', () async {
-      await cache.imageData(_photo('a'));
+      await cache.imageData(_image('a'));
       expect(fake.lastCommentGroupId, 'g1');
     });
 
     test('asks across every group in the cross-group feed', () async {
       final crossGroup = FeedImageCache(fetchers: fake);
-      await crossGroup.imageData(_photo('a'));
+      await crossGroup.imageData(_image('a'));
       expect(fake.lastCommentGroupId, isNull);
     });
 
@@ -166,9 +166,9 @@ void main() {
         () async {
       // Two images, but _FakeFetchers gives each its own uploader, so force a
       // shared one by loading the same image twice after a byte-only drop.
-      await cache.imageData(_photo('a'));
-      cache.drop(_photo('a'));
-      await cache.imageData(_photo('a'));
+      await cache.imageData(_image('a'));
+      cache.drop(_image('a'));
+      await cache.imageData(_image('a'));
 
       expect(fake.userFetches, ['uploader-of-a'],
           reason: 'the uploader was already known');
@@ -176,9 +176,9 @@ void main() {
 
     test('does not re-fetch tallies for an image whose bytes were evicted',
         () async {
-      await cache.imageData(_photo('a'));
-      cache.drop(_photo('a'));
-      await cache.imageData(_photo('a'));
+      await cache.imageData(_image('a'));
+      cache.drop(_image('a'));
+      await cache.imageData(_image('a'));
 
       expect(fake.commentCountFetches, ['a'],
           reason: 'the count survives a byte eviction');
@@ -188,32 +188,32 @@ void main() {
   group('memory bounds', () {
     test('keeps only the last maxImages thumbnails', () async {
       for (var i = 0; i < FeedImageCache.maxImages + 5; i++) {
-        await cache.imageData(_photo('img$i'));
+        await cache.imageData(_image('img$i'));
       }
 
       // The five oldest fell out of the window and must be re-fetched.
       expect(fake.lowResFetches.length, FeedImageCache.maxImages + 5);
-      await cache.bytes(_photo('img0'));
+      await cache.bytes(_image('img0'));
       expect(fake.lowResFetches.where((id) => id == 'img0').length, 2);
 
       // While a recent one is still held.
       final recent = 'img${FeedImageCache.maxImages + 4}';
-      await cache.bytes(_photo(recent));
+      await cache.bytes(_image(recent));
       expect(fake.lowResFetches.where((id) => id == recent).length, 1);
     });
 
     test('holds far fewer full-resolution images than thumbnails', () async {
       for (var i = 0; i < FeedImageCache.maxFullResImages + 2; i++) {
-        await cache.fullResBytes(_photo('img$i'));
+        await cache.fullResBytes(_image('img$i'));
       }
 
       // The first two originals were pushed out of the small window.
-      await cache.bytes(_photo('img0'), lowRes: false);
+      await cache.bytes(_image('img0'), lowRes: false);
       expect(fake.fullResFetches.where((id) => id == 'img0').length, 2);
 
       // The most recent original is still resident.
       final recent = 'img${FeedImageCache.maxFullResImages + 1}';
-      await cache.bytes(_photo(recent), lowRes: false);
+      await cache.bytes(_image(recent), lowRes: false);
       expect(fake.fullResFetches.where((id) => id == recent).length, 1);
     });
 
@@ -226,39 +226,39 @@ void main() {
 
   group('eviction', () {
     test('drop forgets the bytes but keeps the tallies', () async {
-      await cache.imageData(_photo('a'));
-      cache.addToCommentCount(_photo('a'), 2);
+      await cache.imageData(_image('a'));
+      cache.addToCommentCount(_image('a'), 2);
 
-      cache.drop(_photo('a'));
+      cache.drop(_image('a'));
 
-      expect(cache.commentCount(_photo('a')), 5);
+      expect(cache.commentCount(_image('a')), 5);
     });
 
     test('evict forgets an image entirely', () async {
-      await cache.imageData(_photo('a'));
-      cache.evict(_photo('a'));
+      await cache.imageData(_image('a'));
+      cache.evict(_image('a'));
 
-      expect(cache.commentCount(_photo('a')), 0);
-      expect(cache.reactionCount(_photo('a')), 0);
+      expect(cache.commentCount(_image('a')), 0);
+      expect(cache.reactionCount(_image('a')), 0);
     });
 
     test('clear forgets everything, including uploaders', () async {
-      await cache.imageData(_photo('a'));
+      await cache.imageData(_image('a'));
       cache.clear();
 
-      expect(cache.user(_photo('uploader-of-a')), isNull);
-      expect(cache.commentCount(_photo('a')), 0);
+      expect(cache.user(_image('uploader-of-a')), isNull);
+      expect(cache.commentCount(_image('a')), 0);
     });
 
     test('the tallies stop growing once past their cap', () async {
       for (var i = 0; i < FeedImageCache.maxTallies + 5; i++) {
-        await cache.imageData(_photo('image-$i'));
+        await cache.imageData(_image('image-$i'));
       }
 
-      expect(cache.commentCount(_photo('image-0')), 0,
+      expect(cache.commentCount(_image('image-0')), 0,
           reason: 'the oldest tallies were forgotten to make room');
-      expect(cache.user(_photo('image-0')), isNull);
-      final newest = _photo('image-${FeedImageCache.maxTallies + 4}');
+      expect(cache.user(_image('image-0')), isNull);
+      final newest = _image('image-${FeedImageCache.maxTallies + 4}');
       expect(cache.commentCount(newest), 3,
           reason: 'the newest are still held');
       expect(cache.user(newest), isNotNull);
@@ -294,8 +294,8 @@ void main() {
     test('is a different entry from an unrelated image with the same id',
         () async {
       // Two servers can mint the same image id for two unrelated images.
-      await cache.imageData(_photo('a', instanceId: 'inst_1'));
-      await cache.imageData(_photo('a', instanceId: 'inst_2'));
+      await cache.imageData(_image('a', instanceId: 'inst_1'));
+      await cache.imageData(_image('a', instanceId: 'inst_2'));
 
       expect(fake.lowResFetches, hasLength(2),
           reason: 'an id only identifies an image together with its server');
@@ -344,35 +344,35 @@ void main() {
 
   group('updateDescription', () {
     test('rewords what is held, without reading the details again', () async {
-      await cache.imageData(_photo('a'));
-      cache.updateDescription(_photo('a'), 'now about something else');
+      await cache.imageData(_image('a'));
+      cache.updateDescription(_image('a'), 'now about something else');
 
-      final data = await cache.imageData(_photo('a'));
+      final data = await cache.imageData(_image('a'));
       expect(data.description, 'now about something else');
       expect(fake.detailFetches, ['a'], reason: 'the rewording was local');
     });
 
     test('an emptied description reads as none at all', () async {
-      await cache.imageData(_photo('a'));
-      cache.updateDescription(_photo('a'), '');
+      await cache.imageData(_image('a'));
+      cache.updateDescription(_image('a'), '');
 
-      expect((await cache.imageData(_photo('a'))).description, isNull);
+      expect((await cache.imageData(_image('a'))).description, isNull);
     });
 
     test('leaves an image that was never loaded to its own fetch', () async {
-      cache.updateDescription(_photo('a'), 'unheard');
+      cache.updateDescription(_image('a'), 'unheard');
 
       expect(fake.detailFetches, isEmpty);
-      expect((await cache.imageData(_photo('a'))).description, 'about a');
+      expect((await cache.imageData(_image('a'))).description, 'about a');
     });
   });
 
   test('addToCommentCount moves the tally in both directions', () {
-    cache.addToCommentCount(_photo('a'), 1);
-    cache.addToCommentCount(_photo('a'), 1);
-    expect(cache.commentCount(_photo('a')), 2);
+    cache.addToCommentCount(_image('a'), 1);
+    cache.addToCommentCount(_image('a'), 1);
+    expect(cache.commentCount(_image('a')), 2);
 
-    cache.addToCommentCount(_photo('a'), -1);
-    expect(cache.commentCount(_photo('a')), 1);
+    cache.addToCommentCount(_image('a'), -1);
+    expect(cache.commentCount(_image('a')), 1);
   });
 }

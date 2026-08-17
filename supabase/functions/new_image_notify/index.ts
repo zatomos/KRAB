@@ -98,14 +98,14 @@ Deno.serve(async (req) => {
         // would have sent them.
         const usersWithSub = users.filter(isReachable)
 
-        // Sending one photo to several groups fires this webhook once per group,
-        // so somebody in two of them would be told twice about the same photo.
+        // Sending one image to several groups fires this webhook once per group,
+        // so somebody in two of them would be told twice about the same image.
         //
-        // Each one works out whether it speaks for a given person: among the groups this photo
+        // Each one works out whether it speaks for a given person: among the groups this image
         // reached in the same send, the lowest by id owns that person, and only that group's run
         // notifies them.
         //
-        // Adding an old photo to another group later is its own event and fires this webhook again.
+        // Adding an old image to another group later is its own event and fires this webhook again.
         const { data: imageGroups, error: imageGroupsError } = await supabase
             .from('ImageGroups')
             .select('group_id, uploaded_at')

@@ -211,7 +211,7 @@ class GroupsPageState extends State<GroupsPage> {
       ),
       body: Column(
         children: [
-          _RecentPhotosCard(),
+          _RecentimagesCard(),
           Expanded(
             child: DelayedLoading(
               loading: _loading,
@@ -263,8 +263,8 @@ class _GroupsSkeleton extends StatelessWidget {
   }
 }
 
-/// Pinned card opening the cross-group gallery of recent photos
-class _RecentPhotosCard extends StatelessWidget {
+/// Pinned card opening the cross-group gallery of recent images
+class _RecentimagesCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -283,14 +283,14 @@ class _RecentPhotosCard extends StatelessWidget {
               fill: 1, color: GlobalThemeData.onAccent),
         ),
         title: Text(
-          context.l10n.recent_photos,
+          context.l10n.recent_images,
           style: const TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w500,
               letterSpacing: GlobalThemeData.mediumTracking),
         ),
         subtitle: Text(
-          context.l10n.recent_photos_subtitle,
+          context.l10n.recent_images_subtitle,
           style: TextStyle(fontSize: 14, color: scheme.muted),
         ),
         trailing: const Icon(Symbols.chevron_right_rounded),

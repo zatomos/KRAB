@@ -64,46 +64,46 @@
   "group_name": "Group name",
   "delete": "Delete",
   "undo": "Undo",
-  "view_photo": "View",
+  "view_image": "View",
   "remove": "Remove",
   "remove_from_groups_message": "Select the groups for which this photo will be deleted.",
   "save_to_device": "Save to device",
   "add_to_group": "Add to group",
   "add_to_groups_message": "Select the groups to add this photo to.",
-  "photo_added_success": "Photo added to the selected groups.",
+  "image_added_success": "Photo added to the selected groups.",
   "already_in_all_groups": "This photo is already in all your groups.",
   "error_adding_to_groups": "Couldn't add the photo: {errorMsg}",
-  "delete_photo": "Delete photo",
-  "delete_photo_confirm": "Delete this photo for everyone? This can't be undone.",
-  "delete_photo_group_confirm": "Delete this photo from {group}? This can't be undone.",
-  "@delete_photo_group_confirm": {
+  "delete_image": "Delete photo",
+  "delete_image_confirm": "Delete this photo for everyone? This can't be undone.",
+  "delete_image_group_confirm": "Delete this photo from {group}? This can't be undone.",
+  "@delete_image_group_confirm": {
     "placeholders": {
       "group": {
         "type": "String"
       }
     }
   },
-  "photo_deleted": "Photo deleted",
-  "photo_sent": "Photo sent",
-  "photo_sent_partially": "Photo sent, but {server} refused it",
-  "@photo_sent_partially": {
+  "image_deleted": "Photo deleted",
+  "image_sent": "Photo sent",
+  "image_sent_partially": "Photo sent, but {server} refused it",
+  "@image_sent_partially": {
     "placeholders": {
       "server": {
         "type": "String"
       }
     }
   },
-  "photo_sent_some_queued": "Photo sent; {server} is queued until you're back online",
-  "@photo_sent_some_queued": {
+  "image_sent_some_queued": "Photo sent; {server} is queued until you're back online",
+  "@image_sent_some_queued": {
     "placeholders": {
       "server": {
         "type": "String"
       }
     }
   },
-  "photo_queued_offline": "Queued; will send when you're back online",
-  "photo_removed": "Photo removed",
-  "failed_to_delete_photo": "Failed to delete photo",
+  "image_queued_offline": "Queued; will send when you're back online",
+  "image_removed": "Photo removed",
+  "failed_to_delete_image": "Failed to delete photo",
   "image_saved": "Image saved!",
   "error_saving_image": "Couldn't save the image. Please try again.",
   "error_capturing_image": "Couldn't capture the image. Please try again.",
@@ -145,10 +145,10 @@
   "uploaded_on": "Uploaded {date}",
   "shared_here_on": "Shared to this group {date}",
   "select_group_to_comment": "Select a group",
-  "recent_photos": "Recent Photos",
-  "recent_photos_subtitle": "Latest from all your groups",
-  "no_recent_photos": "No recent photos (yet).",
-  "new_photos": "New photos",
+  "recent_images": "Recent Photos",
+  "recent_images_subtitle": "Latest from all your groups",
+  "no_recent_images": "No recent photos (yet).",
+  "new_images": "New photos",
   "edit": "Edit",
   "edit_comment": "Edit your comment...",
   "post_comment": "Post a comment...",
@@ -336,9 +336,9 @@
   "no_recents": "No recent emojis",
   "new_reaction_on_your_image_notification": "reacted {emoji} to your image",
   "new_reaction_on_someone_notification": "reacted {emoji} to {uploader_username}'s image",
-  "reactions_on_your_photo": "Reactions to your photo",
-  "reactions_on_someone_photo": "Reactions to {uploader}'s photo",
-  "@reactions_on_someone_photo": {
+  "reactions_on_your_image": "Reactions to your photo",
+  "reactions_on_someone_image": "Reactions to {uploader}'s photo",
+  "@reactions_on_someone_image": {
     "placeholders": {
       "uploader": {
         "type": "String"
@@ -405,8 +405,8 @@
       }
     }
   },
-  "channel_photos": "New images",
-  "channel_photos_description": "An image shared to one of your groups.",
+  "channel_images": "New images",
+  "channel_images_description": "An image shared to one of your groups.",
   "channel_comments": "Comments and replies",
   "channel_comments_description": "Comments on images you can see, and replies to yours.",
   "channel_reactions": "Reactions",
@@ -453,8 +453,8 @@
   "error_network": "No connection. Check your network and try again.",
   "error_server": "Something went wrong on the server. Please try again.",
   "error_not_logged_in": "You are not signed in.",
-  "error_photo_too_large": "That photo is too large to send (max {sizeMb} MB).",
-  "@error_photo_too_large": {
+  "error_image_too_large": "That photo is too large to send (max {sizeMb} MB).",
+  "@error_image_too_large": {
     "placeholders": {
       "sizeMb": {
         "type": "int"

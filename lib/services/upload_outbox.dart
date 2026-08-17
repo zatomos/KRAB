@@ -17,20 +17,20 @@ const String _outboxFlushUniqueName = 'outbox_flush';
 
 const String _outboxPrefsKey = 'uploadOutbox';
 
-/// Photos are dropped rather than retried forever
+/// Images are dropped rather than retried forever
 const int _maxAttempts = 10;
 const Duration _maxAge = Duration(days: 7);
 
 /// How long a claim by one isolate is honored by the other. The app and the
-/// background worker can both flush; a claim stops them sending the same photo
+/// background worker can both flush; a claim stops them sending the same image
 /// twice, and expires so a worker killed mid-send doesn't strand it.
 const Duration _claimTimeout = Duration(minutes: 5);
 
-/// A photo waiting to go out, and its copy of the image bytes.
+/// A image waiting to go out, and its copy of the image bytes.
 class _OutboxEntry {
   final String id;
 
-  /// The instance this photo is going to. A queued photo belongs to the server
+  /// The instance this image is going to. A queued image belongs to the server
   /// it was composed for, not to whichever one is active when the queue drains.
   final String instanceId;
 
@@ -42,7 +42,7 @@ class _OutboxEntry {
   final int attempts;
   final DateTime? claimedAt;
 
-  /// The id the server reserved for this photo, once a send got that far.
+  /// The id the server reserved for this image, once a send got that far.
   final String? reservedImageId;
 
   const _OutboxEntry({
@@ -111,7 +111,7 @@ class _OutboxEntry {
   }
 }
 
-/// Sends one queued photo to one instance.
+/// Sends one queued image to one instance.
 typedef ImageSender = Future<SupabaseResponse<String>> Function(
   String instanceId,
   File imageFile,
@@ -122,7 +122,7 @@ typedef ImageSender = Future<SupabaseResponse<String>> Function(
   Future<void> Function(String imageId)? onReserved,
 });
 
-/// Sends through the instance the photo was queued for, refusing rather than
+/// Sends through the instance the image was queued for, refusing rather than
 /// sending it to the wrong server if that instance is gone.
 Future<SupabaseResponse<String>> _sendToInstance(
   String instanceId,
@@ -135,7 +135,7 @@ Future<SupabaseResponse<String>> _sendToInstance(
 }) async {
   final instance = InstanceRegistry.instance.byId(instanceId);
   if (instance == null) {
-    debugPrint('Outbox: instance $instanceId is gone, dropping the photo');
+    debugPrint('Outbox: instance $instanceId is gone, dropping the image');
     return const SupabaseResponse(success: false, error: errorServer);
   }
   return instance.api.sendImageToGroups(
@@ -148,7 +148,7 @@ Future<SupabaseResponse<String>> _sendToInstance(
   );
 }
 
-/// Photos that couldn't be sent because the device was offline, held until it
+/// Images that couldn't be sent because the device was offline, held until it
 /// can.
 class UploadOutbox {
   UploadOutbox._();
@@ -187,7 +187,7 @@ class UploadOutbox {
     if (onDelivered != null) _onDelivered = onDelivered;
   }
 
-  /// Queue a photo for sending once the device is back online, and ask
+  /// Queue an image for sending once the device is back online, and ask
   /// WorkManager to retry as soon as it has a connection.
   ///
   /// Pass reservedImageId when the failed send already got an id out of the
@@ -203,7 +203,7 @@ class UploadOutbox {
     final prefs = await SharedPreferences.getInstance();
     final entries = await _read(prefs);
 
-    // The counter keeps two photos queued in the same microsecond apart.
+    // The counter keeps two images queued in the same microsecond apart.
     final id = "${DateTime.now().microsecondsSinceEpoch}-${_nextId++}";
     final dir = await _storageDir();
     await dir.create(recursive: true);
@@ -300,7 +300,7 @@ class UploadOutbox {
 
         // A fresh id is written down the instant it exists: if we die between
         // reserving it and finishing, the next attempt has to find it, or it
-        // would reserve another and send the photo twice.
+        // would reserve another and send the image twice.
         var reserved = entry.reservedImageId;
 
         final response = await _sender(
@@ -326,7 +326,7 @@ class UploadOutbox {
         final attempts = entry.attempts + 1;
         final expired = now.difference(entry.createdAt) > _maxAge;
 
-        // An offline failure isn't the photo's fault, so it doesn't count
+        // An offline failure isn't the image's fault, so it doesn't count
         // against the attempt cap. Age still does.
         if (expired || (!offline && attempts >= _maxAttempts)) {
           debugPrint("Outbox: giving up on ${entry.id}: ${response.error}");

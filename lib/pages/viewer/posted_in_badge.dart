@@ -24,7 +24,7 @@ const double _step = 20;
 /// Avatars beyond this collapse into a "+N" circle, so the pill can't overflow.
 const int postedInBadgeMaxIcons = 4;
 
-/// The pill over the photo showing which groups it was posted in: an
+/// The pill over the image showing which groups it was posted in: an
 /// overlapping cluster of group avatars, with the one being viewed ringed.
 class PostedInBadge extends StatelessWidget {
   /// The groups, already ordered with the current one first.

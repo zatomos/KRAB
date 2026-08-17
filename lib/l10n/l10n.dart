@@ -20,8 +20,8 @@ String describeError(AppLocalizations l10n, String? error) {
       return l10n.error_server;
     case errorNotLoggedIn:
       return l10n.error_not_logged_in;
-    case errorPhotoTooLarge:
-      return l10n.error_photo_too_large(maxImageUploadBytes ~/ (1024 * 1024));
+    case errorImageTooLarge:
+      return l10n.error_image_too_large(maxImageUploadBytes ~/ (1024 * 1024));
     case errorNameTooShort:
       return l10n.error_name_too_short;
     default:

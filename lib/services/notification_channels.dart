@@ -39,7 +39,7 @@ AppLocalizations _l10n() {
 
 /// The channels KRAB posts on.
 enum KrabChannel {
-  photos('krab_photos', Importance.high),
+  images('krab_images', Importance.high),
   comments('krab_comments', Importance.high),
   reactions('krab_reactions', Importance.low),
 
@@ -53,9 +53,9 @@ enum KrabChannel {
   ({String name, String description}) get text {
     final l10n = _l10n();
     return switch (this) {
-      KrabChannel.photos => (
-          name: l10n.channel_photos,
-          description: l10n.channel_photos_description
+      KrabChannel.images => (
+          name: l10n.channel_images,
+          description: l10n.channel_images_description
         ),
       KrabChannel.comments => (
           name: l10n.channel_comments,
@@ -212,7 +212,7 @@ Future<void> _pruneOldNotifImages(Directory dir,
   }
 }
 
-/// The avatar and photo thumbnail a notification illustrates itself with,
+/// The avatar and image thumbnail a notification illustrates itself with,
 /// fetched together.
 Future<({Uint8List? avatar, Uint8List? image})> _notificationMedia(
     KrabInstance instance, String userId, String imageId) async {

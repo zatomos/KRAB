@@ -77,8 +77,8 @@ void main() {
   late int retriesScheduled;
   late int widgetRefreshes;
 
-  /// A throwaway photo to queue.
-  Future<File> photo(String name) async {
+  /// A throwaway image to queue.
+  Future<File> image(String name) async {
     final file = File('${tempDir.path}/$name');
     await file.writeAsBytes([1, 2, 3]);
     return file;
@@ -105,9 +105,9 @@ void main() {
     if (await tempDir.exists()) await tempDir.delete(recursive: true);
   });
 
-  test('a queued photo is sent on the next flush, then dropped', () async {
+  test('a queued image is sent on the next flush, then dropped', () async {
     await UploadOutbox.instance
-        .enqueue('inst_1', await photo('a.jpg'), ['g1'], 'hello');
+        .enqueue('inst_1', await image('a.jpg'), ['g1'], 'hello');
 
     expect(await UploadOutbox.instance.pendingCount(), 1);
     expect(retriesScheduled, 1, reason: 'enqueue asks the platform to retry');
@@ -122,22 +122,22 @@ void main() {
     ]);
     expect(await UploadOutbox.instance.pendingCount(), 0);
     expect(widgetRefreshes, 1,
-        reason: 'the delivered photo belongs on the widget');
+        reason: 'the delivered image belongs on the widget');
   });
 
   test('a flush that sends nothing leaves the widget alone', () async {
     sender.responses = [_offline()];
     await UploadOutbox.instance
-        .enqueue('inst_1', await photo('z.jpg'), ['g1'], 'held');
+        .enqueue('inst_1', await image('z.jpg'), ['g1'], 'held');
 
     await UploadOutbox.instance.flush();
 
     expect(widgetRefreshes, 0);
   });
 
-  test('the photo bytes survive the original file being cleared away',
+  test('the image bytes survive the original file being cleared away',
       () async {
-    final original = await photo('b.jpg');
+    final original = await image('b.jpg');
     await UploadOutbox.instance.enqueue('inst_1', original, ['g1'], 'caption');
 
     // The camera writes captures to a cache directory the OS is free to purge.
@@ -147,9 +147,9 @@ void main() {
     expect(sender.calls, 1);
   });
 
-  test('sent photos have their copy of the bytes deleted', () async {
+  test('sent images have their copy of the bytes deleted', () async {
     await UploadOutbox.instance
-        .enqueue('inst_1', await photo('c.jpg'), ['g1'], '');
+        .enqueue('inst_1', await image('c.jpg'), ['g1'], '');
     final stored = Directory('${tempDir.path}/outbox').listSync();
     expect(stored, hasLength(1));
 
@@ -158,10 +158,10 @@ void main() {
     expect(Directory('${tempDir.path}/outbox').listSync(), isEmpty);
   });
 
-  test('an offline flush keeps the photo queued and reports failure', () async {
+  test('an offline flush keeps the image queued and reports failure', () async {
     sender.responses = [_offline()];
     await UploadOutbox.instance
-        .enqueue('inst_1', await photo('d.jpg'), ['g1'], 'held');
+        .enqueue('inst_1', await image('d.jpg'), ['g1'], 'held');
 
     final drained = await UploadOutbox.instance.flush();
 
@@ -170,10 +170,10 @@ void main() {
     expect(await UploadOutbox.instance.pendingCount(), 1);
   });
 
-  test('a photo queued offline goes out once the connection is back', () async {
+  test('an image queued offline goes out once the connection is back', () async {
     sender.responses = [_offline()];
     await UploadOutbox.instance
-        .enqueue('inst_1', await photo('e.jpg'), ['g1'], 'later');
+        .enqueue('inst_1', await image('e.jpg'), ['g1'], 'later');
 
     expect(await UploadOutbox.instance.flush(), isFalse);
     expect(await UploadOutbox.instance.pendingCount(), 1);
@@ -188,9 +188,9 @@ void main() {
       () async {
     sender.responses = [_offline()];
     await UploadOutbox.instance
-        .enqueue('inst_1', await photo('f.jpg'), ['g1'], 'one');
+        .enqueue('inst_1', await image('f.jpg'), ['g1'], 'one');
     await UploadOutbox.instance
-        .enqueue('inst_1', await photo('g.jpg'), ['g1'], 'two');
+        .enqueue('inst_1', await image('g.jpg'), ['g1'], 'two');
 
     await UploadOutbox.instance.flush();
 
@@ -199,13 +199,13 @@ void main() {
     expect(await UploadOutbox.instance.pendingCount(), 2);
   });
 
-  test('an offline flush hands back the claims on the photos it never reached',
+  test('an offline flush hands back the claims on the images it never reached',
       () async {
     sender.responses = [_offline()];
     await UploadOutbox.instance
-        .enqueue('inst_1', await photo('f.jpg'), ['g1'], 'one');
+        .enqueue('inst_1', await image('f.jpg'), ['g1'], 'one');
     await UploadOutbox.instance
-        .enqueue('inst_1', await photo('g.jpg'), ['g1'], 'two');
+        .enqueue('inst_1', await image('g.jpg'), ['g1'], 'two');
 
     await UploadOutbox.instance.flush();
     expect(sender.calls, 1);
@@ -218,14 +218,14 @@ void main() {
     expect(await UploadOutbox.instance.pendingCount(), 0);
   });
 
-  test('a photo nobody could send for a week is dropped, offline or not',
+  test('an image nobody could send for a week is dropped, offline or not',
       () async {
     // Being offline does not count against the attempt cap, but it cannot buy
-    // unlimited time either, or a photo from a long-dead outing would still be
+    // unlimited time either, or an image from a long-dead outing would still be
     // trying to go out.
     sender.responses = [_offline()];
     await UploadOutbox.instance
-        .enqueue('inst_1', await photo('old.jpg'), ['g1'], 'stale');
+        .enqueue('inst_1', await image('old.jpg'), ['g1'], 'stale');
 
     // Backdate the entry past the 7-day cap, as if it had been queued then.
     final prefs = await SharedPreferences.getInstance();
@@ -239,14 +239,14 @@ void main() {
 
     expect(await UploadOutbox.instance.pendingCount(), 0);
     expect(Directory('${tempDir.path}/outbox').listSync(), isEmpty,
-        reason: 'an abandoned photo must not leave its bytes behind');
+        reason: 'an abandoned image must not leave its bytes behind');
   });
 
-  test('a photo the server refuses is dropped rather than retried forever',
+  test('an image the server refuses is dropped rather than retried forever',
       () async {
     sender.responses = [_rejected()];
     await UploadOutbox.instance
-        .enqueue('inst_1', await photo('h.jpg'), ['g1'], 'bad');
+        .enqueue('inst_1', await image('h.jpg'), ['g1'], 'bad');
 
     // Each flush is one attempt; the cap is 10.
     for (var i = 0; i < 10; i++) {
@@ -256,14 +256,14 @@ void main() {
     expect(sender.calls, 10);
     expect(await UploadOutbox.instance.pendingCount(), 0);
     expect(Directory('${tempDir.path}/outbox').listSync(), isEmpty,
-        reason: 'an abandoned photo must not leave its bytes behind');
+        reason: 'an abandoned image must not leave its bytes behind');
   });
 
   test('being offline does not burn attempts against the give-up cap',
       () async {
     sender.responses = [_offline()];
     await UploadOutbox.instance
-        .enqueue('inst_1', await photo('i.jpg'), ['g1'], 'patient');
+        .enqueue('inst_1', await image('i.jpg'), ['g1'], 'patient');
 
     // Far more offline flushes than the attempt cap.
     for (var i = 0; i < 15; i++) {
@@ -271,17 +271,17 @@ void main() {
     }
     expect(await UploadOutbox.instance.pendingCount(), 1,
         reason:
-            'a photo must not be dropped just for waiting out a long outage');
+            'an image must not be dropped just for waiting out a long outage');
 
     sender.responses = [SupabaseResponse(success: true, data: 'image-2')];
     expect(await UploadOutbox.instance.flush(), isTrue);
   });
 
-  group('not sending the same photo twice', () {
+  group('not sending the same image twice', () {
     test('a retry resumes under the id the first attempt reserved', () async {
       sender.responses = [_offline()];
       await UploadOutbox.instance
-          .enqueue('inst_1', await photo('r1.jpg'), ['g1'], 'once');
+          .enqueue('inst_1', await image('r1.jpg'), ['g1'], 'once');
 
       // First attempt reserves an id, then loses the connection mid-upload.
       await UploadOutbox.instance.flush();
@@ -295,17 +295,17 @@ void main() {
 
       expect(sender.resumedWith, [null, 'reserved-0']);
       expect(sender.reserved, ['reserved-0'],
-          reason: 'reserving a second id would send the photo twice');
+          reason: 'reserving a second id would send the image twice');
     });
 
     test('the reserved id is written to disk, not just held in memory',
         () async {
       // Nothing in memory survives the process being killed, and the bytes may
       // already be in storage under that id. If it were only in memory, the next
-      // launch would open a second send and the photo would go out twice.
+      // launch would open a second send and the image would go out twice.
       sender.responses = [_offline()];
       await UploadOutbox.instance
-          .enqueue('inst_1', await photo('r2.jpg'), ['g1'], 'crash');
+          .enqueue('inst_1', await image('r2.jpg'), ['g1'], 'crash');
       await UploadOutbox.instance.flush();
 
       final prefs = await SharedPreferences.getInstance();
@@ -323,7 +323,7 @@ void main() {
         () async {
       sender.responses = [_rejected()];
       await UploadOutbox.instance
-          .enqueue('inst_1', await photo('r3.jpg'), ['g1'], 'bad');
+          .enqueue('inst_1', await image('r3.jpg'), ['g1'], 'bad');
 
       await UploadOutbox.instance.flush();
       expect(sender.resumedWith, [null]);
@@ -334,13 +334,13 @@ void main() {
       expect(sender.resumedWith, [null, null]);
     });
 
-    test('a photo queued after a failed upload keeps that upload\'s id',
+    test('an image queued after a failed upload keeps that upload\'s id',
         () async {
       // What SendImageDialog does: the send reserved an id, then went offline,
-      // so the photo is queued carrying it. The bytes may already be in storage.
+      // so the image is queued carrying it. The bytes may already be in storage.
       await UploadOutbox.instance.enqueue(
         'inst_1',
-        await photo('r4.jpg'),
+        await image('r4.jpg'),
         ['g1'],
         'maybe landed',
         reservedImageId: 'already-reserved',
@@ -351,7 +351,7 @@ void main() {
       expect(sender.resumedWith, ['already-reserved']);
       expect(sender.reserved, isEmpty,
           reason:
-              'it must not open a second send for a photo that may be sent');
+              'it must not open a second send for an image that may be sent');
     });
   });
 
@@ -364,7 +364,7 @@ void main() {
     test('undoing a send drops the copies still waiting to go out', () async {
       await UploadOutbox.instance.enqueue(
         'inst_2',
-        await photo('u1.jpg'),
+        await image('u1.jpg'),
         ['g1'],
         'undone',
         shareId: 'share-1',
@@ -377,15 +377,15 @@ void main() {
 
       await UploadOutbox.instance.flush();
       expect(sender.calls, 0,
-          reason: 'the photo the user took back must not turn up later');
+          reason: 'the image the user took back must not turn up later');
     });
 
-    test('another photo queued at the same time is left alone', () async {
+    test('another image queued at the same time is left alone', () async {
       await UploadOutbox.instance.enqueue(
-          'inst_2', await photo('u2.jpg'), ['g1'], 'undone',
+          'inst_2', await image('u2.jpg'), ['g1'], 'undone',
           shareId: 'share-1');
       await UploadOutbox.instance.enqueue(
-          'inst_2', await photo('u3.jpg'), ['g1'], 'kept',
+          'inst_2', await image('u3.jpg'), ['g1'], 'kept',
           shareId: 'share-2');
 
       await UploadOutbox.instance.cancelShare('share-1');
@@ -399,11 +399,11 @@ void main() {
     });
   });
 
-  test('several queued photos all go out in one flush', () async {
+  test('several queued images all go out in one flush', () async {
     await UploadOutbox.instance
-        .enqueue('inst_1', await photo('j.jpg'), ['g1'], 'first');
+        .enqueue('inst_1', await image('j.jpg'), ['g1'], 'first');
     await UploadOutbox.instance
-        .enqueue('inst_1', await photo('k.jpg'), ['g2'], 'second');
+        .enqueue('inst_1', await image('k.jpg'), ['g2'], 'second');
 
     expect(await UploadOutbox.instance.flush(), isTrue);
 

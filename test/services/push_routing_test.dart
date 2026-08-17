@@ -64,7 +64,7 @@ void main() {
 
       expect(instance, isNull,
           reason: 'with several servers connected and nothing else to go on, '
-              'answering against an arbitrary one would show the wrong photo');
+              'answering against an arbitrary one would show the wrong image');
     });
 
     test('a URL that matches nothing still routes on the sender', () async {

@@ -9,8 +9,8 @@ Future<void> _refreshImageBundle(
   final l10n = _l10n();
   final children = <BundleChild>[];
 
-  final photos = await ShownImageNotifications.instance.readAll();
-  for (final entry in photos.entries) {
+  final images = await ShownImageNotifications.instance.readAll();
+  for (final entry in images.entries) {
     final record = entry.value;
     if (record.instanceId != instance.id) continue;
     if (onScreen != null && !onScreen.contains(entry.key)) continue;
@@ -26,8 +26,8 @@ Future<void> _refreshImageBundle(
   await _postBundleSummary(
     id: bundleSummaryId(bundleKey),
     bundleKey: bundleKey,
-    channel: KrabChannel.photos,
-    title: l10n.channel_photos,
+    channel: KrabChannel.images,
+    title: l10n.channel_images,
     summary: summarizeBundle(children),
     payload: jsonEncode({
       'type': 'images_summary',

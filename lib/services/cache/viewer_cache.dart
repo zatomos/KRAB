@@ -3,7 +3,7 @@ import 'package:krab/services/api/krab_api.dart';
 import 'package:krab/services/cache/bounded_cache.dart';
 
 /// What the viewer holds about one instance's images: which of its groups a
-/// photo was posted to, and which of them the user may moderate.
+/// image was posted to, and which of them the user may moderate.
 class ViewerCache {
   ViewerCache(this._api);
 
@@ -53,7 +53,7 @@ class ViewerCache {
       _postedInGroups.remove(imageId);
 
   /// Whether the user owns or administers groupId, and may remove other
-  /// people's photos from it.
+  /// people's images from it.
   Future<bool> canModerateGroup(String groupId) async {
     final cached = _moderatedGroups[groupId];
     if (cached != null) return cached;

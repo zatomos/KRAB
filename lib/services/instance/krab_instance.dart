@@ -16,7 +16,7 @@ import 'package:krab/services/instance/instance_registry.dart';
 /// it: the session, the Supabase client, the caches and the API.
 ///
 /// Nothing here is static. Two instances share no session, no signed URLs and
-/// no cached photos, so one server being slow, unreachable or signed out cannot
+/// no cached images, so one server being slow, unreachable or signed out cannot
 /// affect another.
 ///
 /// The client is built directly rather than through `Supabase.initialize`,

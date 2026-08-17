@@ -96,7 +96,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
   String? _heroImageIdentity;
 
   /// True once a `new_image` push lands for this feed while it's open
-  bool _hasNewPhotos = false;
+  bool _hasNewimages = false;
   StreamSubscription<NewImageEvent>? _newImageSub;
   StreamSubscription<String>? _removalSub;
 
@@ -137,12 +137,12 @@ class ImageFeedPageState extends State<ImageFeedPage> {
   /// Surface the new images pill when an incoming image belongs to this feed
   void _onNewImage(NewImageEvent event) {
     final relevant = _groupId == null || event.groupId == _groupId;
-    if (!relevant || _hasNewPhotos || !mounted) return;
-    setState(() => _hasNewPhotos = true);
+    if (!relevant || _hasNewimages || !mounted) return;
+    setState(() => _hasNewimages = true);
   }
 
   /// Refresh to the top in response to the new images pill.
-  Future<void> _loadNewPhotos() async {
+  Future<void> _loadNewimages() async {
     await _refreshGroupImages();
     if (_scrollController.hasClients) {
       _scrollController.animateTo(
@@ -507,7 +507,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
   /// Pull-to-refresh
   Future<void> _refreshGroupImages() async {
     _cache.clear();
-    if (mounted) setState(() => _hasNewPhotos = false);
+    if (mounted) setState(() => _hasNewimages = false);
     await _fetchPages(reset: true);
   }
 
@@ -553,7 +553,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
                 children: [
                   const Icon(Symbols.photo_library, fill: 1, size: 22),
                   const SizedBox(width: 10),
-                  Flexible(child: Text(context.l10n.recent_photos)),
+                  Flexible(child: Text(context.l10n.recent_images)),
                 ],
               ),
         actions: [
@@ -587,31 +587,31 @@ class ImageFeedPageState extends State<ImageFeedPage> {
             top: 8,
             left: 0,
             right: 0,
-            child: Center(child: _newPhotosPill(context)),
+            child: Center(child: _newimagesPill(context)),
           ),
         ],
       ),
     );
   }
 
-  Widget _newPhotosPill(BuildContext context) {
+  Widget _newimagesPill(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return AnimatedSlide(
-      offset: _hasNewPhotos ? Offset.zero : const Offset(0, -2),
+      offset: _hasNewimages ? Offset.zero : const Offset(0, -2),
       duration: const Duration(milliseconds: 250),
       curve: Curves.easeOut,
       child: AnimatedOpacity(
-        opacity: _hasNewPhotos ? 1 : 0,
+        opacity: _hasNewimages ? 1 : 0,
         duration: const Duration(milliseconds: 250),
         child: IgnorePointer(
-          ignoring: !_hasNewPhotos,
+          ignoring: !_hasNewimages,
           child: Material(
             color: scheme.primary,
             elevation: 4,
             borderRadius: BorderRadius.circular(20),
             child: InkWell(
               borderRadius: BorderRadius.circular(20),
-              onTap: _loadNewPhotos,
+              onTap: _loadNewimages,
               child: Padding(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -622,7 +622,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
                         size: 18, color: scheme.onPrimary),
                     const SizedBox(width: 6),
                     Text(
-                      context.l10n.new_photos,
+                      context.l10n.new_images,
                       style: TextStyle(
                         color: scheme.onPrimary,
                         fontWeight: FontWeight.w400,
@@ -651,7 +651,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
       return Center(
           child: Text(widget.group != null
               ? context.l10n.no_images
-              : context.l10n.no_recent_photos));
+              : context.l10n.no_recent_images));
     }
 
     return RefreshIndicator(

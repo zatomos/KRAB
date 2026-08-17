@@ -6,9 +6,9 @@ import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/widgets/avatars/group_avatar.dart';
 import 'package:krab/widgets/soft_button.dart';
 
-/// Lets the uploader pick which groups to remove a photo from. Selecting every
-/// group removes it from all of them, which deletes the photo outright.
-/// Only shown when the photo is shared to more than one group;
+/// Lets the uploader pick which groups to remove an image from. Selecting every
+/// group removes it from all of them, which deletes the image outright.
+/// Only shown when the image is shared to more than one group;
 /// returns the chosen group ids, or null if cancelled.
 Future<Set<String>?> showDeleteImageDialog(
   BuildContext context, {
@@ -45,7 +45,7 @@ class _DeleteImageDialogState extends State<_DeleteImageDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: Text(context.l10n.delete_photo),
+      title: Text(context.l10n.delete_image),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,

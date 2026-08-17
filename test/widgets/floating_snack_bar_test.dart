@@ -17,7 +17,7 @@ Future<void> _pumpMessenger(WidgetTester tester, {double width = 360}) async {
   ));
 }
 
-/// The pair the photo-sent snackbar shows: one filled, one plain.
+/// The pair the image-sent snackbar shows: one filled, one plain.
 List<SnackAction> _viewAndUndo() => [
       SnackAction(label: 'View', onPressed: () {}, prominent: true),
       SnackAction(label: 'Undo', onPressed: () {}),
@@ -35,7 +35,7 @@ void main() {
       await _pumpMessenger(tester);
 
       var tapped = false;
-      showSnackBar('Photo sent', actions: [
+      showSnackBar('image sent', actions: [
         SnackAction(label: 'Undo', onPressed: () => tapped = true),
       ]);
       await tester.pumpAndSettle();
@@ -52,7 +52,7 @@ void main() {
 
       var viewed = false;
       var undone = false;
-      showSnackBar('Photo sent', actions: [
+      showSnackBar('image sent', actions: [
         SnackAction(label: 'View', onPressed: () => viewed = true),
         SnackAction(label: 'Undo', onPressed: () => undone = true),
       ]);
@@ -67,14 +67,14 @@ void main() {
       expect(undone, isFalse);
       // Tapping an action closes the snackbar.
       await tester.pumpAndSettle();
-      expect(find.text('Photo sent'), findsNothing);
+      expect(find.text('image sent'), findsNothing);
     });
 
     testWidgets('a prominent action is filled, the others are plain',
         (tester) async {
       await _pumpMessenger(tester);
 
-      showSnackBar('Photo sent', actions: _viewAndUndo());
+      showSnackBar('image sent', actions: _viewAndUndo());
       await tester.pumpAndSettle();
 
       Color? fillOf(String label) => tester
@@ -113,7 +113,7 @@ void main() {
       await _pumpMessenger(tester, width: width);
 
       const message =
-          'Photo sent, but server-alpha, server-beta and server-gamma refused it';
+          'image sent, but server-alpha, server-beta and server-gamma refused it';
       showSnackBar(message, actions: _viewAndUndo());
       await tester.pumpAndSettle();
 

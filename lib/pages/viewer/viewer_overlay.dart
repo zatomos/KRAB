@@ -467,7 +467,7 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
 
     showSnackBar(
       res.success
-          ? context.l10n.photo_added_success
+          ? context.l10n.image_added_success
           : context.l10n.error_adding_to_groups(context.errorText(res.error)),
       tone: res.success ? SnackTone.success : SnackTone.failure,
     );
@@ -514,8 +514,8 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
       // Shared to a single group: removing it there deletes it outright
       final confirmed = await showConfirmDialog(
         context,
-        title: context.l10n.delete_photo,
-        message: context.l10n.delete_photo_confirm,
+        title: context.l10n.delete_image,
+        message: context.l10n.delete_image_confirm,
         confirmLabel: context.l10n.delete,
         destructive: true,
       );
@@ -536,8 +536,8 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
     if (offered.length == 1) {
       final confirmed = await showConfirmDialog(
         context,
-        title: context.l10n.delete_photo,
-        message: context.l10n.delete_photo_group_confirm(offered.single.name),
+        title: context.l10n.delete_image,
+        message: context.l10n.delete_image_group_confirm(offered.single.name),
         confirmLabel: context.l10n.delete,
         destructive: true,
       );
@@ -569,7 +569,7 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
       {required bool fullyDeleted, required bool leftView}) {
     if (!mounted) return;
     if (!success) {
-      showSnackBar(error ?? context.l10n.failed_to_delete_photo,
+      showSnackBar(error ?? context.l10n.failed_to_delete_image,
           tone: SnackTone.failure);
       return;
     }
@@ -577,7 +577,7 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
     _api.invalidatePostedInGroups();
 
     final message =
-        fullyDeleted ? context.l10n.photo_deleted : context.l10n.photo_removed;
+        fullyDeleted ? context.l10n.image_deleted : context.l10n.image_removed;
     if (fullyDeleted || leftView) {
       // Close the viewer
       Navigator.pop(context);

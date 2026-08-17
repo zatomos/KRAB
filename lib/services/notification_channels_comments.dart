@@ -157,7 +157,7 @@ Future<void> _showCommentNotification({
 }) async {
   await _ensureChannels();
 
-  // Every comment on one photo in one group reads as one conversation.
+  // Every comment on one image in one group reads as one conversation.
   final threaded = imageId.isNotEmpty;
   final id = threaded
       ? commentThreadNotificationId(groupId: groupId, imageId: imageId)

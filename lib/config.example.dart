@@ -21,8 +21,8 @@ bool get hasBakedInstance =>
     bakedSupabaseUrl.trim().isNotEmpty &&
     bakedSupabaseAnonKey.trim().isNotEmpty;
 
-/// How photos are encoded before being sent to the server.
-/// Longest edge in pixels, or 0 to leave the photo at full resolution.
+/// How images are encoded before being sent to the server.
+/// Longest edge in pixels, or 0 to leave the image at full resolution.
 const maxUploadDimension = 0;
 
 /// JPEG quality, 1-100.

@@ -136,7 +136,7 @@ Future<void> showImageNotification({
   required String imageId,
   String? groupsDisplay,
 
-  /// The group a tap should open. Null when the photo reached the user through
+  /// The group a tap should open. Null when the image reached the user through
   /// more than one group, in which case the tap opens the cross-group feed.
   String? tapGroupId,
   String batchKey = '',
@@ -287,9 +287,9 @@ Future<void> _postImageNotification({
     body: _l10n().new_image_notification,
     notificationDetails: NotificationDetails(
       android: AndroidNotificationDetails(
-        KrabChannel.photos.id,
-        KrabChannel.photos.text.name,
-        channelDescription: KrabChannel.photos.text.description,
+        KrabChannel.images.id,
+        KrabChannel.images.text.name,
+        channelDescription: KrabChannel.images.text.description,
         icon: _icon,
         subText: subText,
         importance: Importance.high,
@@ -426,7 +426,7 @@ Future<void> cancelImageNotification(
 }) async {
   await _ensureChannels();
 
-  final photoIds = <int>{
+  final imageIds = <int>{
     imageNotificationId(imageId),
     if (shareId != null && shareId.isNotEmpty)
       imageNotificationId(imageId, shareId: shareId),
@@ -438,9 +438,9 @@ Future<void> cancelImageNotification(
   // The bundles these were sitting in, read before the records go, so their
   // summaries can be brought back in line afterwards.
   final bundles = <({String groupId, String groupName})>{};
-  final photos = await ShownImageNotifications.instance.readAll();
-  for (final id in photoIds) {
-    final record = photos[id];
+  final images = await ShownImageNotifications.instance.readAll();
+  for (final id in imageIds) {
+    final record = images[id];
     if (record != null && record.groupId.isNotEmpty) {
       bundles.add((groupId: record.groupId, groupName: record.groupName));
     }
@@ -453,10 +453,10 @@ Future<void> cancelImageNotification(
     }
   }
 
-  for (final id in {...photoIds, ...threadIds, reactionId}) {
+  for (final id in {...imageIds, ...threadIds, reactionId}) {
     await _flnp.cancel(id: id);
   }
-  await ShownImageNotifications.instance.forget(photoIds);
+  await ShownImageNotifications.instance.forget(imageIds);
   await CommentThreads.instance.forget(threadIds);
   await ReactionTallies.instance.forget([reactionId]);
 

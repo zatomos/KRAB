@@ -92,7 +92,7 @@ List<T> _readList<T>(List<Object?>? raw, T? Function(Object?) parse) {
   return entries;
 }
 
-/// One comment shown by a photo's comment notification.
+/// One comment shown by an image's comment notification.
 class ThreadMessage {
   const ThreadMessage({
     required this.authorId,
@@ -126,7 +126,7 @@ class ThreadMessage {
   }
 }
 
-/// Every comment one notification is showing for one photo in one group.
+/// Every comment one notification is showing for one image in one group.
 class CommentThread {
   const CommentThread({
     required this.instanceId,
@@ -244,7 +244,7 @@ class CommentThreads extends NotificationRecordStore<CommentThread> {
   @override
   CommentThread? fromJson(Object? raw) => CommentThread.fromJson(raw);
 
-  /// The ids of the threads about one photo.
+  /// The ids of the threads about one image.
   Future<List<int>> idsForImage(String imageId) async {
     if (imageId.isEmpty) return const [];
     final entries = await readAll();
@@ -255,7 +255,7 @@ class CommentThreads extends NotificationRecordStore<CommentThread> {
   }
 }
 
-/// One person's reaction to a photo.
+/// One person's reaction to an image.
 class ReactionEntry {
   const ReactionEntry({
     required this.reactorId,
@@ -289,7 +289,7 @@ class ReactionEntry {
   }
 }
 
-/// Every reaction one notification is showing for one photo.
+/// Every reaction one notification is showing for one image.
 class ReactionTally {
   const ReactionTally({
     required this.instanceId,

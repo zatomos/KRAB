@@ -100,8 +100,8 @@ Future<void> _showReactionNotification({
   final title = single
       ? reactorUsername
       : (onSomeoneElses
-          ? l10n.reactions_on_someone_photo(tally.uploaderUsername)
-          : l10n.reactions_on_your_photo);
+          ? l10n.reactions_on_someone_image(tally.uploaderUsername)
+          : l10n.reactions_on_your_image);
   final body = single
       ? (onSomeoneElses
           ? l10n.new_reaction_on_someone_notification(

@@ -14,15 +14,15 @@ import 'package:krab/models/shared_image.dart';
 import 'package:krab/services/blur_worker.dart';
 import 'package:krab/services/shared_image_api.dart';
 import 'package:krab/pages/viewer/posted_in_badge.dart';
-import 'package:krab/pages/viewer/viewer_photo.dart';
+import 'package:krab/pages/viewer/viewer_image.dart';
 import 'package:krab/pages/viewer/viewer_overlay.dart';
 import 'package:krab/themes/frosted_palette.dart';
 import 'package:krab/themes/global_theme_data.dart';
 import 'package:krab/services/cache/avatar_cache.dart';
 import 'package:krab/services/cache/feed_image_cache.dart';
 
-/// Where the viewer's decoded photos are held.
-const String viewerImageCacheName = 'krab_viewer_photos';
+/// Where the viewer's decoded images are held.
+const String viewerImageCacheName = 'krab_viewer_images';
 const int _viewerCacheImages = 3;
 const int _viewerCacheBytes = 64 << 20;
 
@@ -138,7 +138,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
   bool _isLoadingMore = false;
 
   // Still owing the entry image its comments sheet. Dropped as soon as the user
-  // swipes, so a photo they moved on to never has it appear over it.
+  // swipes, so an image they moved on to never has it appear over it.
   late bool _pendingComments = widget.openComments;
 
   // Cap on how many pages' bytes/sizes/futures are retained.
@@ -534,18 +534,18 @@ class _ImageViewerPageState extends State<ImageViewerPage>
                         : const _SnappyPageScrollPhysics(),
                     itemBuilder: (context, index) {
                       _touch(index);
-                      final pagePhoto = widget.images[index];
+                      final pageimage = widget.images[index];
                       return RepaintBoundary(
-                        child: ViewerPhoto(
-                          key: ValueKey(pagePhoto.identity),
+                        child: ViewerImage(
+                          key: ValueKey(pageimage.identity),
                           imageCacheName: viewerImageCacheName,
                           displaySize: _displaySizeFor(index, viewport),
                           heroTag: index == _heroIndex
-                              ? "image_${pagePhoto.identity}"
+                              ? "image_${pageimage.identity}"
                               : null,
                           initialBytes: _pageBytes[index],
                           imageDataFuture: _imageDataFor(index),
-                          fullFuture: widget.cache.fullResBytes(pagePhoto),
+                          fullFuture: widget.cache.fullResBytes(pageimage),
                           onLowBytes: (bytes) => _cachePageBytes(index, bytes),
                           onNaturalSize: (size) => _setChildSize(index, size),
                           onZoomChanged: _onPageZoomChanged,

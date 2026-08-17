@@ -484,7 +484,7 @@ class CameraPageState extends State<CameraPage>
   /// Delete the just-sent image when the user taps Undo on the snackbar.
   ///
   /// Copies that never reached their server are sitting in the outbox: they have
-  /// to be cancelled here, or the flush would post the photo the user just took
+  /// to be cancelled here, or the flush would post the image the user just took
   /// back.
   Future<void> _undoSend(
       SharedImage image, String removedMsg, String failedMsg) async {
@@ -543,15 +543,15 @@ class CameraPageState extends State<CameraPage>
           updateHomeWidget();
           // Confirm the send with a snackbar that also offers a quick Undo.
           final image = result.image;
-          final removedMsg = l10n.photo_removed;
-          final failedMsg = l10n.failed_to_delete_photo;
+          final removedMsg = l10n.image_removed;
+          final failedMsg = l10n.failed_to_delete_image;
           final String message;
           if (refused) {
-            message = l10n.photo_sent_partially(result.refusedBy.join(', '));
+            message = l10n.image_sent_partially(result.refusedBy.join(', '));
           } else if (queued) {
-            message = l10n.photo_sent_some_queued(result.queuedFor.join(', '));
+            message = l10n.image_sent_some_queued(result.queuedFor.join(', '));
           } else {
-            message = l10n.photo_sent;
+            message = l10n.image_sent;
           }
           showSnackBar(
             message,
@@ -560,7 +560,7 @@ class CameraPageState extends State<CameraPage>
                 ? const []
                 : [
                     SnackAction(
-                      label: l10n.view_photo,
+                      label: l10n.view_image,
                       onPressed: () => _openSentImage(image),
                       prominent: true,
                     ),
@@ -572,7 +572,7 @@ class CameraPageState extends State<CameraPage>
                   ],
           );
         case SendOutcome.queued:
-          showSnackBar(l10n.photo_queued_offline, tone: SnackTone.warning);
+          showSnackBar(l10n.image_queued_offline, tone: SnackTone.warning);
         case SendOutcome.failed:
           await showDialog(
             context: context,

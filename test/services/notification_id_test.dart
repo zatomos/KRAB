@@ -18,7 +18,7 @@ void main() {
   });
 
   group('imageNotificationId', () {
-    test('is stable for the same photo and the same delivery', () {
+    test('is stable for the same image and the same delivery', () {
       expect(
         imageNotificationId(image, batchKey: imageBatchKey(['a', 'b'])),
         imageNotificationId(image, batchKey: imageBatchKey(['b', 'a'])),
@@ -26,7 +26,7 @@ void main() {
     });
 
     test(
-        'a later delivery of the same photo gets its own id, so the two '
+        'a later delivery of the same image gets its own id, so the two '
         'notifications coexist instead of replacing each other', () {
       final firstSend =
           imageNotificationId(image, batchKey: imageBatchKey(['a', 'b']));
@@ -35,7 +35,7 @@ void main() {
       expect(firstSend, isNot(addedLater));
     });
 
-    test('different photos delivered to the same groups stay distinct', () {
+    test('different images delivered to the same groups stay distinct', () {
       final key = imageBatchKey(['a']);
       expect(imageNotificationId(image, batchKey: key),
           isNot(imageNotificationId(other, batchKey: key)));
@@ -60,7 +60,7 @@ void main() {
     const family = 'g-family';
     const work = 'g-work';
 
-    test('every comment on one photo in one group lands on one notification',
+    test('every comment on one image in one group lands on one notification',
         () {
       expect(
         commentThreadNotificationId(groupId: family, imageId: image),
@@ -68,7 +68,7 @@ void main() {
       );
     });
 
-    test('the same photo in two groups keeps a thread each', () {
+    test('the same image in two groups keeps a thread each', () {
       // A tap opens the comments of the group the comment was written in, so the
       // two cannot share a notification.
       expect(
@@ -77,7 +77,7 @@ void main() {
       );
     });
 
-    test('two photos in one group stay apart', () {
+    test('two images in one group stay apart', () {
       expect(
         commentThreadNotificationId(groupId: family, imageId: image),
         isNot(commentThreadNotificationId(groupId: family, imageId: other)),
@@ -92,17 +92,17 @@ void main() {
   });
 
   group('reactionNotificationId', () {
-    test('everyone reacting to one photo lands on one notification', () {
+    test('everyone reacting to one image lands on one notification', () {
       expect(reactionNotificationId(image), reactionNotificationId(image));
     });
 
-    test('tells two photos apart', () {
+    test('tells two images apart', () {
       expect(
           reactionNotificationId(image), isNot(reactionNotificationId(other)));
     });
   });
 
-  test('a comment and a reaction never collide with the photo itself', () {
+  test('a comment and a reaction never collide with the image itself', () {
     final ids = {
       imageNotificationId(image),
       commentThreadNotificationId(groupId: image, imageId: image),
@@ -118,7 +118,7 @@ void main() {
 
     test('images gather whichever group they arrived in', () {
       // A bundle per group left every one of them heading a single
-      // notification, since two photos rarely land in the same group.
+      // notification, since two images rarely land in the same group.
       expect(imageBundleKey('inst_1'), imageBundleKey('inst_1'));
     });
 
@@ -179,7 +179,7 @@ void main() {
       );
     });
 
-    test('two different photos keep their own notifications', () {
+    test('two different images keep their own notifications', () {
       expect(imageNotificationId(image, shareId: shared),
           isNot(imageNotificationId(other, shareId: 'other-share')));
     });
@@ -243,7 +243,7 @@ void main() {
     });
 
     test('a second batch of groups on the same server merges too', () {
-      // Same copy of the photo, a later send to another group on that server.
+      // Same copy of the image, a later send to another group on that server.
       final merged = mergeImageNotification(
         earlier: shown(groups: 'Family', ids: image, tapGroupId: 'g-family'),
         arrivingGroups: 'Friends',

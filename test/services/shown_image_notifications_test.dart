@@ -79,7 +79,7 @@ void main() {
 
     expect(read?.groupsDisplay, 'Family');
     expect(read?.groupId, isEmpty,
-        reason: 'the group is worked out from the photo instead');
+        reason: 'the group is worked out from the image instead');
   });
 
   test('a record from the build that kept the channel names the group',
@@ -105,7 +105,7 @@ void main() {
     expect(read?.groupName, 'Family');
   });
 
-  test('a photo the server timed sorts by when it was taken', () async {
+  test('an image the server timed sorts by when it was taken', () async {
     final taken = DateTime.now().subtract(const Duration(hours: 3));
     await store.record(
       7,
@@ -121,7 +121,7 @@ void main() {
     expect((await store.read(7))?.eventAt, taken);
   });
 
-  test('a photo from a server too old to say falls back to when it was shown',
+  test('an image from a server too old to say falls back to when it was shown',
       () async {
     final record = await store.serialized(() async {
       await store.record(7, entry());
@@ -157,7 +157,7 @@ void main() {
                 const Duration(hours: 1)));
 
     expect(await store.read(7), isNull,
-        reason: 'merging into it would name groups from a photo long gone');
+        reason: 'merging into it would name groups from an image long gone');
   });
 
   test('a forgotten notification stops being merged into', () async {
@@ -177,7 +177,7 @@ void main() {
       expect(await store.idsCovering(other), [7]);
     });
 
-    test('leaves a notification about another photo alone', () async {
+    test('leaves a notification about another image alone', () async {
       await store.record(7, entry(ids: image));
 
       expect(await store.idsCovering(other), isEmpty);
@@ -216,7 +216,7 @@ void main() {
   });
 
   test('serialized bodies do not interleave', () async {
-    // What the merge relies on: read-then-record for one photo completes before
+    // What the merge relies on: read-then-record for one image completes before
     // the next copy of it starts reading.
     final order = <String>[];
 

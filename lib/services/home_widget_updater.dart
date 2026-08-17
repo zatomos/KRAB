@@ -260,7 +260,7 @@ String _pfpPath(Directory dir, int id) =>
 String _prevPfpPath(Directory dir, int id, int i) =>
     "${dir.path}/krab_widget_${id}_prev${i}_pfp.jpg";
 
-/// The newest photos across every signed-in server.
+/// The newest images across every signed-in server.
 /// Returns null only when nothing could be reached at all.
 Future<List<ImageRef>?> _latestAcross(int needed, List<String> groupIds) async {
   final registry = InstanceRegistry.instance;
@@ -297,19 +297,19 @@ Future<List<ImageRef>?> _latestAcross(int needed, List<String> groupIds) async {
   }
   if (!anySucceeded) return null;
 
-  // One photo sent to several servers should fill one slot
+  // One image sent to several servers should fill one slot
   final merged =
       mergeImages(refs, instanceOrder: [for (final i in sources) i.id]);
   sortImagesNewestFirst(merged);
-  return [for (final photo in merged.take(needed)) photo.primary];
+  return [for (final image in merged.take(needed)) image.primary];
 }
 
-/// The API of the server holding a photo, or null once that server is gone.
+/// The API of the server holding an image, or null once that server is gone.
 KrabApi? _apiFor(ImageRef ref) =>
     InstanceRegistry.instance.byId(ref.instanceId)?.api;
 
-/// How a shown photo is recorded
-String _photoKey(ImageRef ref) => '${ref.instanceId}/${ref.id}';
+/// How a shown image is recorded
+String _imageKey(ImageRef ref) => '${ref.instanceId}/${ref.id}';
 
 /// Sync a single widget instance.
 Future<({bool changed, bool newImage})> _syncWidget(
@@ -319,7 +319,7 @@ Future<({bool changed, bool newImage})> _syncWidget(
 
   final id = entry.id;
   final latest = images[0];
-  final latestId = _photoKey(latest);
+  final latestId = _imageKey(latest);
   final api = _apiFor(latest);
   if (api == null) return (changed: false, newImage: false);
 
@@ -433,7 +433,7 @@ Future<bool> _ensurePrevImages(
     }
 
     final prev = images[i];
-    final prevId = _photoKey(prev);
+    final prevId = _imageKey(prev);
     final prevApi = _apiFor(prev);
     if (prevApi == null) continue;
     final storedId = await HomeWidget.getWidgetData<String>(idKey);

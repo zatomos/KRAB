@@ -3,16 +3,16 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-/// A photo the user can pinch, pan and double tap.
-class ZoomablePhoto extends StatefulWidget {
+/// A image the user can pinch, pan and double tap.
+class ZoomableImage extends StatefulWidget {
   final ImageProvider image;
 
-  /// Called as the photo goes past, or comes back to, its fitted size.
+  /// Called as the image goes past, or comes back to, its fitted size.
   final void Function(bool zoomed)? onZoomChanged;
 
   final VoidCallback? onTap;
 
-  const ZoomablePhoto({
+  const ZoomableImage({
     super.key,
     required this.image,
     this.onZoomChanged,
@@ -20,10 +20,10 @@ class ZoomablePhoto extends StatefulWidget {
   });
 
   @override
-  State<ZoomablePhoto> createState() => _ZoomablePhotoState();
+  State<ZoomableImage> createState() => _ZoomableImageState();
 }
 
-class _ZoomablePhotoState extends State<ZoomablePhoto>
+class _ZoomableImageState extends State<ZoomableImage>
     with SingleTickerProviderStateMixin {
 
   static const Duration _moveDuration = Duration(milliseconds: 200);
@@ -37,8 +37,8 @@ class _ZoomablePhotoState extends State<ZoomablePhoto>
 
   final _view = TransformationController();
 
-  /// The photo's pixel size, which fixes the shape of the rect it fills.
-  Size? _photoSize;
+  /// The image's pixel size, which fixes the shape of the rect it fills.
+  Size? _imageSize;
 
   /// Where a double tap last landed, in this widget's coordinates.
   Offset? _tappedAt;
@@ -57,13 +57,13 @@ class _ZoomablePhotoState extends State<ZoomablePhoto>
     _mover = AnimationController(vsync: this, duration: _moveDuration)
       ..addListener(_onMoveTick);
     _view.addListener(_onViewChanged);
-    _measurePhoto();
+    _measureimage();
   }
 
   @override
-  void didUpdateWidget(ZoomablePhoto old) {
+  void didUpdateWidget(ZoomableImage old) {
     super.didUpdateWidget(old);
-    if (widget.image != old.image) _measurePhoto();
+    if (widget.image != old.image) _measureimage();
   }
 
   @override
@@ -75,15 +75,15 @@ class _ZoomablePhotoState extends State<ZoomablePhoto>
     super.dispose();
   }
 
-  /// Takes the photo's size off the decoded image.
-  void _measurePhoto() {
+  /// Takes the image's size off the decoded image.
+  void _measureimage() {
     final stream = widget.image.resolve(const ImageConfiguration());
     late final ImageStreamListener listener;
     listener = ImageStreamListener((info, _) {
       stream.removeListener(listener);
       final size =
           Size(info.image.width.toDouble(), info.image.height.toDouble());
-      if (mounted && size != _photoSize) setState(() => _photoSize = size);
+      if (mounted && size != _imageSize) setState(() => _imageSize = size);
     }, onError: (_, __) => stream.removeListener(listener));
     stream.addListener(listener);
   }
@@ -99,13 +99,13 @@ class _ZoomablePhotoState extends State<ZoomablePhoto>
     ..translateByDouble(offset.dx, offset.dy, 0, 1)
     ..scaleByDouble(scale, scale, scale, 1);
 
-  /// The photo's rect at scale 1
+  /// The image's rect at scale 1
   Size? get _fittedSize {
-    final photo = _photoSize;
+    final image = _imageSize;
     final box = context.size;
-    if (photo == null || box == null || photo.isEmpty) return null;
-    final scale = math.min(box.width / photo.width, box.height / photo.height);
-    return photo * scale;
+    if (image == null || box == null || image.isEmpty) return null;
+    final scale = math.min(box.width / image.width, box.height / image.height);
+    return image * scale;
   }
 
   Offset? _homeFor(Offset offset, double scale) {
@@ -137,7 +137,7 @@ class _ZoomablePhotoState extends State<ZoomablePhoto>
     widget.onZoomChanged?.call(zoomed);
   }
 
-  /// Anything that moves the photo
+  /// Anything that moves the image
   void _onViewChanged() {
     _reportZoom();
     if (_mover.isAnimating) return;
@@ -145,7 +145,7 @@ class _ZoomablePhotoState extends State<ZoomablePhoto>
     _settleTimer = Timer(_stillFor, _settle);
   }
 
-  /// Eases the photo back over the screen.
+  /// Eases the image back over the screen.
   void _settle() {
     if (!mounted || _interacting) return;
     final scale = _scale;
@@ -167,8 +167,8 @@ class _ZoomablePhotoState extends State<ZoomablePhoto>
     final to = zoomedIn ? _minScale : _doubleTapScale;
 
     final tap = _tappedAt ?? box.center(Offset.zero);
-    final onPhoto = (tap - _offset) / from;
-    final offset = tap - onPhoto * to;
+    final onimage = (tap - _offset) / from;
+    final offset = tap - onimage * to;
 
     _animateTo(_matrixOf(to, _homeFor(offset, to) ?? offset));
   }
