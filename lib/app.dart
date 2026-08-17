@@ -46,20 +46,7 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
         navigatorReady.complete(navigatorKey.currentState!);
       }
 
-      // Handle pending local notification (app launched from local notification
-      // tap)
-      if (pendingLocalNotificationPayload != null) {
-        debugPrint('Processing pending local notification');
-        await handleLocalNotificationTap(pendingLocalNotificationPayload!);
-        pendingLocalNotificationPayload = null;
-      }
-
-      // Handle pending widget tap
-      if (pendingWidgetUri != null) {
-        debugPrint('Processing pending widget launch');
-        await handleWidgetLaunch(pendingWidgetUri);
-        pendingWidgetUri = null;
-      }
+      await LaunchRouter.instance.settled;
 
       // Show widget prompt if not first launch
       if (!UserPreferences.isFirstLaunch &&

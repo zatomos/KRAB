@@ -2,8 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-/// App-wide keys and one-shot launch state shared by the entry point, the
-/// notification router and the widget tree. Each isolate has its own copy.
+/// App-wide keys and launch state shared by the entry point, the launch router
+/// and the widget tree. Each isolate has its own copy.
 
 final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey =
     GlobalKey<ScaffoldMessengerState>();
@@ -18,7 +18,3 @@ final RouteObserver<PageRoute<void>> routeObserver =
 
 /// True once the foreground boot sequence in `main` has finished.
 bool isAppInitialized = false;
-
-/// Local-notification and widget taps captured during launch
-String? pendingLocalNotificationPayload;
-Uri? pendingWidgetUri;

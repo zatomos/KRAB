@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:home_widget/home_widget.dart';
 import 'package:workmanager/workmanager.dart';
 
 import 'package:krab/app.dart';
@@ -28,21 +27,16 @@ void main(List<String> args) async {
     WidgetsFlutterBinding.ensureInitialized();
     await UserPreferences().initPrefs();
     await DebugNotifier.instance.initialize();
-    await initCommentNotifications(onTap: handleLocalNotificationTap);
+    await LaunchRouter.instance.initialize();
 
     final connected = await loadInstances();
     await PushHelper.initialize(background: false);
 
-    pendingLocalNotificationPayload = await getLocalNotificationLaunchPayload();
     await requestNotificationPermission();
 
     HomeWidgetStatus.instance.initialize();
     await Workmanager().initialize(workmanagerCallbackDispatcher);
     await scheduleWidgetRefresh(UserPreferences.widgetRefreshIntervalMinutes);
-
-    // App launched from a home-screen widget tap
-    pendingWidgetUri = await HomeWidget.initiallyLaunchedFromHomeWidget();
-    HomeWidget.widgetClicked.listen(handleWidgetLaunch);
 
     isAppInitialized = true;
 
