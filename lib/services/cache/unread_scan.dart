@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import 'package:krab/models/group.dart';
 import 'package:krab/services/cache/seen_state.dart';
+import 'package:krab/user_preferences.dart';
 import 'package:krab/services/api/krab_api.dart';
 import 'package:krab/services/instance/instance_registry.dart';
 
@@ -20,6 +21,8 @@ class UnreadScan extends ChangeNotifier {
   final Map<String, List<({String identity, DateTime? uploadedAt})>> _recent =
       {};
 
+  final Set<String> _muted = {};
+
   DateTime? _scannedAt;
   Future<void>? _running;
 
@@ -35,8 +38,11 @@ class UnreadScan extends ChangeNotifier {
   }
 
   /// How many of a group's recent images have not been opened.
-  int countFor(String instanceId, String groupId) => SeenState.instance
-      .newImageCount(_recent[groupKey(instanceId, groupId)] ?? const []);
+  int countFor(String instanceId, String groupId) {
+    final key = groupKey(instanceId, groupId);
+    if (_muted.contains(key)) return 0;
+    return SeenState.instance.newImageCount(_recent[key] ?? const []);
+  }
 
   /// Whether a count is only as high as the scan can see
   bool isCapped(int count) => count >= SeenState.lookback;
@@ -46,7 +52,9 @@ class UnreadScan extends ChangeNotifier {
   int get total {
     final counted = <String>{};
     var unopened = 0;
-    for (final images in _recent.values) {
+    for (final entry in _recent.entries) {
+      if (_muted.contains(entry.key)) continue;
+      final images = entry.value;
       for (final image in images) {
         if (!counted.add(image.identity)) continue;
         if (SeenState.instance.isImageNew(image.identity, image.uploadedAt)) {
@@ -68,6 +76,7 @@ class UnreadScan extends ChangeNotifier {
   }
 
   Future<void> _scan(List<Group>? known) async {
+    await reloadMuted(notify: false);
     final groups = known ?? await _listGroups();
     final readings =
         <String, List<({String identity, DateTime? uploadedAt})>>{};
@@ -99,9 +108,18 @@ class UnreadScan extends ChangeNotifier {
     ];
   }
 
+  Future<void> reloadMuted({bool notify = true}) async {
+    final muted = await UserPreferences.getMutedGroups();
+    _muted
+      ..clear()
+      ..addAll(muted);
+    if (notify) notifyListeners();
+  }
+
   /// Forget everything. Called on logout.
   void clear() {
     _recent.clear();
+    _muted.clear();
     _scannedAt = null;
     notifyListeners();
   }

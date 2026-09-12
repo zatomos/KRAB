@@ -10,7 +10,7 @@ void main() {
     await UserPreferences().initPrefs();
   });
 
-  test('a favourite is remembered per instance', () async {
+  test('a favorite is remembered per instance', () async {
     await UserPreferences.addFavoriteGroup('inst_1', 'g1');
 
     expect(await UserPreferences.isGroupFavorite('inst_1', 'g1'), isTrue);
@@ -18,7 +18,7 @@ void main() {
         reason: 'the same group id on another server is a different group');
   });
 
-  test('favouritesOn returns bare ids the picker can match', () async {
+  test('favoritesOn returns bare ids the picker can match', () async {
     await UserPreferences.addFavoriteGroup('inst_1', 'g1');
     await UserPreferences.addFavoriteGroup('inst_2', 'g2');
 

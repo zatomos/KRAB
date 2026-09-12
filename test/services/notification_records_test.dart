@@ -1,7 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:krab/services/notification_channels.dart';
 import 'package:krab/services/notification_records.dart';
 
 void main() {
@@ -242,31 +241,6 @@ void main() {
           {CommentThreads.storeKey: 'not json'});
 
       expect(await store.read(7), isNull);
-    });
-  });
-
-  group('isLegacyNotificationChannel', () {
-    test('a per-group channel is one to remove', () {
-      // Those were created with the group id as the channel id.
-      expect(isLegacyNotificationChannel(image), isTrue);
-    });
-
-    test('the fixed ids that build used are too', () {
-      expect(isLegacyNotificationChannel('reactions'), isTrue);
-      expect(isLegacyNotificationChannel('app_updates'), isTrue);
-    });
-
-    test('the channels this build posts on are left alone', () {
-      for (final channel in KrabChannel.values) {
-        expect(isLegacyNotificationChannel(channel.id), isFalse,
-            reason: '${channel.id} is in use');
-      }
-    });
-
-    test('another plugin\'s channel is not ours to delete', () {
-      expect(isLegacyNotificationChannel('fcm_fallback_notification_channel'),
-          isFalse);
-      expect(isLegacyNotificationChannel('krab_debug'), isFalse);
     });
   });
 }

@@ -545,5 +545,39 @@
   },
   "notifications_section": "Notifications",
   "unread_badges": "Unread badges",
-  "unread_badges_description": "Mark images, comments and reactions you haven't opened yet."
+  "unread_badges_description": "Mark images, comments and reactions you haven't opened yet.",
+  "favorite_group": "Add to favorites",
+  "unfavorite_group": "Remove from favorites",
+  "leave_group_confirmation": "You will need a new invitation to come back.",
+  "favorites_section": "Favorites",
+  "all_groups_section": "All groups",
+  "select_all": "Select all",
+  "mark_as_read": "Mark as read",
+  "mark_as_read_confirmation": "{count, plural, =1{Mark 1 image as read?} other{Mark {count} images as read?}}",
+  "@mark_as_read_confirmation": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "marked_as_read": "{count, plural, =1{1 image marked as read} other{{count} images marked as read}}",
+  "@marked_as_read": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "x_selected": "{count} selected",
+  "@x_selected": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "deselect_all": "Deselect all",
+  "mute_group": "Mute notifications",
+  "unmute_group": "Unmute notifications"
 }

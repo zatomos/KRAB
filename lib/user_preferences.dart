@@ -65,7 +65,7 @@ class UserPreferences {
     autoImageSave = value;
   }
 
-  /// How a group is named in the favourite and muted lists.
+  /// How a group is named in the favorite and muted lists.
   ///
   /// Scoped to its instance: a group id only means something on the server that
   /// issued it, so two instances must not be able to mute each other's groups.

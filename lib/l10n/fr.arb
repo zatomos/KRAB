@@ -503,5 +503,18 @@
   "x_new_images": "{count}",
   "notifications_section": "Notifications",
   "unread_badges": "Pastilles de nouveautés",
-  "unread_badges_description": "Marquer les images, les commentaires et les réactions non ouverts."
+  "unread_badges_description": "Marquer les images, les commentaires et les réactions non ouverts.",
+  "favorite_group": "Ajouter aux favoris",
+  "unfavorite_group": "Retirer des favoris",
+  "leave_group_confirmation": "Il vous faudra une nouvelle invitation pour rejoindre de nouveau.",
+  "favorites_section": "Favoris",
+  "all_groups_section": "Tous les groupes",
+  "select_all": "Tout sélectionner",
+  "mark_as_read": "Marquer comme lu",
+  "mark_as_read_confirmation": "{count, plural, =1{Marquer 1 image comme lue ?} other{Marquer {count} images comme lues ?}}",
+  "marked_as_read": "{count, plural, =1{1 image marquée comme lue} other{{count} images marquées comme lues}}",
+  "x_selected": "{count} sélectionnée(s)",
+  "deselect_all": "Tout désélectionner",
+  "mute_group": "Mettre en sourdine",
+  "unmute_group": "Désactiver la sourdine"
 }

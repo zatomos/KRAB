@@ -20,6 +20,8 @@ import 'package:krab/pages/groups_page.dart';
 import 'package:krab/pages/viewer/image_viewer_page.dart';
 import 'package:krab/services/cache/feed_image_cache.dart';
 import 'package:krab/widgets/avatars/user_avatar.dart';
+import 'package:krab/widgets/floating_snack_bar.dart';
+import 'package:krab/widgets/dialogs/dialogs.dart';
 import 'package:krab/widgets/instance_status_footer.dart';
 import 'package:krab/services/instance/instances.dart';
 import 'package:krab/services/instance/instance_registry.dart';
@@ -97,6 +99,10 @@ class ImageFeedPageState extends State<ImageFeedPage> {
   String? _error;
   String? _heroImageIdentity;
 
+  final Set<String> _selected = {};
+
+  bool get _selecting => _selected.isNotEmpty;
+
   /// True once a `new_image` push lands for this feed while it's open
   bool _hasNewimages = false;
   StreamSubscription<NewImageEvent>? _newImageSub;
@@ -139,6 +145,66 @@ class ImageFeedPageState extends State<ImageFeedPage> {
     }
 
     _bootstrap();
+  }
+
+  void _toggleSelected(SharedImage image) {
+    setState(() {
+      if (!_selected.remove(image.identity)) _selected.add(image.identity);
+    });
+  }
+
+  bool get _allSelected =>
+      _images.isNotEmpty && _selected.length >= _images.length;
+
+  void _toggleSelectAll() => setState(() {
+        if (_allSelected) {
+          final first = _images.first.identity;
+          _selected
+            ..clear()
+            ..add(first);
+          return;
+        }
+        _selected.addAll(_images.map((i) => i.identity));
+      });
+
+  void _clearSelection() => setState(_selected.clear);
+
+  Future<void> _markSelectedRead() async {
+    final count = _selected.length;
+    final confirmed = await showConfirmDialog(
+      context,
+      title: context.l10n.mark_as_read,
+      message: context.l10n.mark_as_read_confirmation(count),
+      confirmLabel: context.l10n.mark_as_read,
+    );
+    if (!confirmed || !mounted) return;
+
+    for (final image in _images) {
+      if (!_selected.contains(image.identity)) continue;
+      _markRead(image);
+    }
+    if (!mounted) return;
+    _clearSelection();
+    showSnackBar(context.l10n.marked_as_read(count), tone: SnackTone.success);
+  }
+
+  /// Everything an image contains marked read at once.
+  void _markRead(SharedImage image) {
+    final seen = SeenState.instance;
+    seen.markImageSeen(image.identity, image.uploadedAt);
+    seen.markReactionsSeen(
+        image.identity, SharedImageApi(image).cachedReactionTally());
+
+    final count = _cache.commentCount(image);
+    final latestAt = _cache.commentsLatestAt(image);
+    final groupId = _groupId;
+    final instance = _instance;
+    if (groupId != null && instance != null) {
+      seen.markCommentsSeen(instance.id, groupId, image.identity, count,
+          latestAt: latestAt);
+    } else {
+      seen.markAllCommentsSeen(image.identity, count, latestAt: latestAt);
+    }
   }
 
   void _onSeenChanged() {
@@ -586,17 +652,41 @@ class ImageFeedPageState extends State<ImageFeedPage> {
     final source = _instance;
     return Scaffold(
       appBar: AppBar(
-        title: widget.group != null
-            ? Text(widget.group!.name)
-            : Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Symbols.photo_library, fill: 1, size: 22),
-                  const SizedBox(width: 10),
-                  Flexible(child: Text(context.l10n.recent_images)),
-                ],
-              ),
+        leading: _selecting
+            ? IconButton(
+                icon: const Icon(Symbols.close_rounded),
+                onPressed: _clearSelection,
+              )
+            : null,
+        title: _selecting
+            ? Text(context.l10n.x_selected(_selected.length))
+            : widget.group != null
+                ? Text(widget.group!.name)
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Symbols.photo_library, fill: 1, size: 22),
+                      const SizedBox(width: 10),
+                      Flexible(child: Text(context.l10n.recent_images)),
+                    ],
+                  ),
         actions: [
+          if (_selecting) ...[
+            IconButton(
+              icon: Icon(_allSelected
+                  ? Symbols.deselect_rounded
+                  : Symbols.select_all_rounded),
+              tooltip: _allSelected
+                  ? context.l10n.deselect_all
+                  : context.l10n.select_all,
+              onPressed: _toggleSelectAll,
+            ),
+            IconButton(
+              icon: const Icon(Symbols.mark_email_read_rounded),
+              tooltip: context.l10n.mark_as_read,
+              onPressed: _markSelectedRead,
+            ),
+          ],
           if (widget.group != null && source != null)
             IconButton(
               icon: const Icon(Symbols.settings_rounded, fill: 1),
@@ -792,87 +882,139 @@ class ImageFeedPageState extends State<ImageFeedPage> {
 
         return stage(GestureDetector(
           key: const ValueKey('loaded'),
+          onLongPress: () => _toggleSelected(image),
           onTap: () {
+            if (_selecting) {
+              _toggleSelected(image);
+              return;
+            }
             _cache.fullResBytes(image);
             _openViewer(images: _images, index: index, data: imageData);
           },
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(10),
+          child: AnimatedScale(
+            scale: _selected.contains(image.identity) ? 0.92 : 1,
+            duration: const Duration(milliseconds: 150),
+            curve: Curves.easeOut,
             child: Stack(
               fit: StackFit.expand,
               children: [
-                Hero(
-                  tag: "image_${image.identity}",
-                  child: Image.memory(
-                    imageData.imageBytes,
-                    fit: BoxFit.cover,
-                    gaplessPlayback: true,
-                    filterQuality: FilterQuality.low,
-                  ),
-                ),
-                Positioned(
-                  bottom: hasDescription ? 12 : 8,
-                  right: hasDescription ? 12 : 8,
-                  child: _heroFade(
-                    hidden: heroOpen,
-                    child: UserAvatar(uploader, radius: 20),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      Hero(
+                        tag: "image_${image.identity}",
+                        child: Image.memory(
+                          imageData.imageBytes,
+                          fit: BoxFit.cover,
+                          gaplessPlayback: true,
+                          filterQuality: FilterQuality.low,
+                        ),
+                      ),
+                      Positioned(
+                        bottom: hasDescription ? 12 : 8,
+                        right: hasDescription ? 12 : 8,
+                        child: _heroFade(
+                          hidden: heroOpen,
+                          child: UserAvatar(uploader, radius: 20),
+                        ),
+                      ),
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: AnimatedOpacity(
+                            opacity: _selected.contains(image.identity) ? 1 : 0,
+                            duration: const Duration(milliseconds: 150),
+                            curve: Curves.easeOut,
+                            child: ColoredBox(
+                              color: Colors.black.withValues(alpha: 0.35),
+                              child: Align(
+                                alignment: Alignment.topRight,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(6),
+                                  child: Icon(
+                                    Symbols.check_circle_rounded,
+                                    fill: 1,
+                                    size: 26,
+                                    color:
+                                        Theme.of(context).colorScheme.primary,
+                                    shadows: const [
+                                      Shadow(
+                                          blurRadius: 4, color: Colors.black54)
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      if (reactions > 0 || comments > 0)
+                        Positioned(
+                          top: 8,
+                          right: 8,
+                          child: _heroFade(
+                            hidden: heroOpen,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              spacing: 4,
+                              children: [
+                                if (reactions > 0)
+                                  _countBadge(
+                                    Symbols.emoji_emotions_rounded,
+                                    reactions,
+                                    borderColor: const Color(0xFFFFC107)
+                                        .withValues(alpha: 0.8),
+                                    unread: newReactions,
+                                  ),
+                                if (comments > 0)
+                                  _countBadge(
+                                    Symbols.comment_rounded,
+                                    comments,
+                                    borderColor: const Color(0xFF42A5F5)
+                                        .withValues(alpha: 0.8),
+                                    unread: newComments,
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      if (hasDescription)
+                        Positioned(
+                          bottom: 6,
+                          right: 6,
+                          child: _heroFade(
+                            hidden: heroOpen,
+                            child: Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.6),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Icon(
+                                Symbols.notes_rounded,
+                                size: 12,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
                 if (newImage)
-                  Positioned(
-                    top: 8,
-                    left: 8,
-                    child: _heroFade(
-                      hidden: heroOpen,
-                      child: _unreadDot(context, size: 14),
-                    ),
-                  ),
-                if (reactions > 0 || comments > 0)
-                  Positioned(
-                    top: 8,
-                    right: 8,
-                    child: _heroFade(
-                      hidden: heroOpen,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        spacing: 4,
-                        children: [
-                          if (reactions > 0)
-                            _countBadge(
-                              Symbols.emoji_emotions_rounded,
-                              reactions,
-                              borderColor: const Color(0xFFFFC107)
-                                  .withValues(alpha: 0.8),
-                              unread: newReactions,
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: _heroFade(
+                        hidden: heroOpen,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: Theme.of(context).colorScheme.primary,
+                              width: 2.5,
                             ),
-                          if (comments > 0)
-                            _countBadge(
-                              Symbols.comment_rounded,
-                              comments,
-                              borderColor: const Color(0xFF42A5F5)
-                                  .withValues(alpha: 0.8),
-                              unread: newComments,
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                if (hasDescription)
-                  Positioned(
-                    bottom: 6,
-                    right: 6,
-                    child: _heroFade(
-                      hidden: heroOpen,
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.6),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(
-                          Symbols.notes_rounded,
-                          size: 12,
-                          color: Colors.white,
+                          ),
                         ),
                       ),
                     ),

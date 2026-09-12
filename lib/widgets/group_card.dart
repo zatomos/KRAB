@@ -8,6 +8,7 @@ import 'package:krab/pages/image_feed_page.dart';
 import 'package:krab/models/group.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/widgets/avatars/group_avatar.dart';
+import 'package:krab/widgets/dialogs/group_actions_sheet.dart';
 import 'package:krab/widgets/member_count_label.dart';
 import 'package:krab/widgets/server_label.dart';
 import 'package:krab/user_preferences.dart';
@@ -50,6 +51,11 @@ class GroupCard extends StatefulWidget {
   final Group group;
   final VoidCallback? onReturn;
 
+  /// Starring only moves the card between sections, so the page is told about
+  /// it separately: reloading the groups for that would empty the list and
+  /// flash "no groups" while the servers answer again.
+  final VoidCallback? onFavoriteChanged;
+
   /// Member count resolved by the caller. When provided the card shows it
   /// directly instead of fetching its own.
   final int? memberCount;
@@ -62,6 +68,7 @@ class GroupCard extends StatefulWidget {
     super.key,
     required this.group,
     this.onReturn,
+    this.onFavoriteChanged,
     this.memberCount,
     this.showOrigin = false,
   });
@@ -80,18 +87,10 @@ class _GroupCardState extends State<GroupCard> {
   bool isFavorite = false;
   int _unopened = 0;
   bool _muted = false;
+  Offset? _pressAt;
+  bool _highlighted = false;
 
   StreamSubscription<NewImageEvent>? _newImageSub;
-
-  /// Star animation
-  static const Duration _popDuration = Duration(milliseconds: 120);
-  double _starScale = 1;
-
-  Future<void> _popStar() async {
-    setState(() => _starScale = 1.35);
-    await Future.delayed(_popDuration);
-    if (mounted) setState(() => _starScale = 1);
-  }
 
   @override
   void initState() {
@@ -147,6 +146,80 @@ class _GroupCardState extends State<GroupCard> {
     }
   }
 
+  Future<void> _openActions() async {
+    final instance = _instance;
+    if (instance == null) return;
+    final role = _group.role;
+
+    final at = _pressAt ?? Offset.zero;
+    final action = await showGroupActions(
+      context,
+      group: _group,
+      isFavorite: isFavorite,
+      isMuted: _muted,
+      canRename: role == 'owner' || role == 'admin',
+      canDelete: role == 'owner',
+      anchor: Rect.fromLTWH(at.dx, at.dy, 0, 0),
+    );
+    if (!mounted) return;
+    setState(() => _highlighted = false);
+    if (action == null) return;
+
+    switch (action) {
+      case GroupAction.favorite:
+        await _toggleFavorite();
+      case GroupAction.mute:
+        await _toggleMuted();
+      case GroupAction.rename:
+        await _rename(instance);
+      case GroupAction.leave:
+        await _leave(instance);
+      case GroupAction.delete:
+        await _delete(instance);
+    }
+  }
+
+  Future<void> _toggleFavorite() async {
+    final l10n = context.l10n;
+    if (isFavorite) {
+      await UserPreferences.removeFavoriteGroup(_group.instanceId, _group.id);
+      showSnackBar(l10n.removed_group_favorites(_group.name));
+    } else {
+      await UserPreferences.addFavoriteGroup(_group.instanceId, _group.id);
+      showSnackBar(l10n.added_group_favorites(_group.name));
+    }
+    if (!mounted) return;
+    setState(() => isFavorite = !isFavorite);
+    widget.onFavoriteChanged?.call();
+  }
+
+  Future<void> _toggleMuted() async {
+    final muted = !_muted;
+    await UserPreferences.setGroupMuted(_group.instanceId, _group.id, muted);
+    await UnreadScan.instance.reloadMuted();
+    if (!mounted) return;
+    setState(() => _muted = muted);
+  }
+
+  Future<void> _rename(KrabInstance instance) async {
+    final newName = await GroupActions(context, instance, _group).rename();
+    if (newName == null || !mounted) return;
+    setState(() => _group = _group.copyWith(name: newName));
+    widget.onReturn?.call();
+  }
+
+  Future<void> _leave(KrabInstance instance) async {
+    if (await GroupActions(context, instance, _group).leave()) {
+      widget.onReturn?.call();
+    }
+  }
+
+  Future<void> _delete(KrabInstance instance) async {
+    if (await GroupActions(context, instance, _group).delete()) {
+      widget.onReturn?.call();
+    }
+  }
+
   /// Count the recent images in this group the user has not opened.
   void _recount() {
     if (!mounted) return;
@@ -178,8 +251,13 @@ class _GroupCardState extends State<GroupCard> {
 
   @override
   Widget build(BuildContext context) {
-    final unfilledStar = Theme.of(context).colorScheme.muted;
     return GestureDetector(
+      onLongPressDown: (details) {
+        _pressAt = details.globalPosition;
+        setState(() => _highlighted = true);
+      },
+      onLongPressCancel: () => setState(() => _highlighted = false),
+      onLongPress: _openActions,
       onTap: () async {
         await Navigator.push<Group>(
           context,
@@ -193,13 +271,19 @@ class _GroupCardState extends State<GroupCard> {
       child: Card(
           margin: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
           elevation: 0,
+          color: _highlighted
+              ? Color.alphaBlend(
+                  Theme.of(context)
+                      .colorScheme
+                      .onSurface
+                      .withValues(alpha: 0.08),
+                  Theme.of(context).colorScheme.surfaceContainer)
+              : null,
           child: ListTile(
-            contentPadding: const EdgeInsets.fromLTRB(15, 2, 5, 2),
+            contentPadding: const EdgeInsets.fromLTRB(15, 2, 15, 2),
             minVerticalPadding: 0,
             visualDensity: VisualDensity.compact,
-
             leading: GroupAvatar(_group, radius: 25),
-
             title: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -227,7 +311,6 @@ class _GroupCardState extends State<GroupCard> {
                   ),
               ],
             ),
-
             subtitle: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
@@ -273,49 +356,6 @@ class _GroupCardState extends State<GroupCard> {
                   ServerLabel(_instance,
                       color: Theme.of(context).colorScheme.muted),
               ],
-            ),
-
-            // Star favorite button
-            trailing: Padding(
-              padding: EdgeInsets.zero,
-              child: IconButton(
-                constraints: const BoxConstraints(),
-                padding: EdgeInsets.zero,
-                icon: AnimatedScale(
-                  scale: _starScale,
-                  duration: _popDuration,
-                  curve: Curves.easeOut,
-                  child: TweenAnimationBuilder<double>(
-                    tween: Tween(end: isFavorite ? 1 : 0),
-                    duration: _popDuration * 2,
-                    curve: Curves.easeOut,
-                    builder: (context, fill, _) => Icon(
-                      Symbols.star_rounded,
-                      color: Color.lerp(unfilledStar, Colors.amber, fill),
-                      fill: fill,
-                      size: 28,
-                    ),
-                  ),
-                ),
-                onLongPress: () {
-                  showSnackBar(context.l10n.starred_groups_long_press);
-                },
-                onPressed: () async {
-                  final l10n = context.l10n;
-                  _popStar();
-                  if (isFavorite) {
-                    await UserPreferences.removeFavoriteGroup(
-                        _group.instanceId, _group.id);
-                    showSnackBar(l10n.removed_group_favorites(_group.name));
-                  } else {
-                    await UserPreferences.addFavoriteGroup(
-                        _group.instanceId, _group.id);
-                    showSnackBar(l10n.added_group_favorites(_group.name));
-                  }
-                  if (!mounted) return;
-                  setState(() => isFavorite = !isFavorite);
-                },
-              ),
             ),
           )),
     );

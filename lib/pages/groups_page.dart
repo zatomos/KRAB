@@ -37,6 +37,12 @@ class GroupsPageState extends State<GroupsPage> {
   /// Every server's groups, added to as each server answers.
   final List<Group> _groups = [];
 
+  /// What each server last said it had.
+  final Map<String, List<Group>> _groupsByInstance = {};
+
+  /// Which groups are starred.
+  final Set<String> _favorites = {};
+
   /// Member counts, fetched before a server's cards are shown so they arrive
   /// complete.
   final Map<String, int> _counts = {};
@@ -64,12 +70,14 @@ class GroupsPageState extends State<GroupsPage> {
   @override
   void initState() {
     super.initState();
+    _loadFavorites();
     _loadGroups();
   }
 
   void _refreshData() {
     setState(() {
       _groups.clear();
+      _groupsByInstance.clear();
       _counts.clear();
       _unavailable = const [];
       _pending = const [];
@@ -81,6 +89,15 @@ class GroupsPageState extends State<GroupsPage> {
 
   /// Ask every signed-in server for the user's groups, showing each server's as
   /// it answers.
+  void _rebuildGroups() {
+    final live = {for (final i in InstanceRegistry.instance.all) i.id};
+    _groupsByInstance.removeWhere((id, _) => !live.contains(id));
+    _groups
+      ..clear()
+      ..addAll([for (final groups in _groupsByInstance.values) ...groups]);
+    _sortGroups();
+  }
+
   Future<void> _loadGroups() async {
     final load = ++_load;
     final sources = InstanceRegistry.instance.all;
@@ -116,8 +133,8 @@ class GroupsPageState extends State<GroupsPage> {
 
       waiting.remove(instance);
       setState(() {
-        _groups.addAll(response.data!);
-        _sortGroups();
+        _groupsByInstance[instance.id] = response.data!;
+        _rebuildGroups();
         _pending = List.of(waiting);
         _loading = false;
       });
@@ -181,17 +198,79 @@ class GroupsPageState extends State<GroupsPage> {
     final counts = _counts;
     final showOrigin = InstanceRegistry.instance.all.length > 1;
 
-    return ListView.builder(
-      itemCount: groups.length,
-      itemBuilder: (context, index) {
-        final group = groups[index];
-        return GroupCard(
+    final favorites = [
+      for (final group in groups)
+        if (_favorites
+            .contains(UserPreferences.groupKey(group.instanceId, group.id)))
+          group
+    ];
+    final rest = [
+      for (final group in groups)
+        if (!favorites.contains(group)) group
+    ];
+
+    Widget card(Group group) => GroupCard(
           group: group,
           memberCount: counts['${group.instanceId}/${group.id}'],
           showOrigin: showOrigin,
+          onReturn: _onGroupChanged,
+          onFavoriteChanged: _loadFavorites,
         );
-      },
+
+    return ListView(
+      children: [
+        if (favorites.isNotEmpty) ...[
+          GestureDetector(
+            onLongPress: () =>
+                showSnackBar(context.l10n.starred_groups_long_press),
+            child: _sectionHeading(
+                context, context.l10n.favorites_section, Symbols.star_rounded),
+          ),
+          ...favorites.map(card),
+          if (rest.isNotEmpty)
+            _sectionHeading(context, context.l10n.all_groups_section,
+                Symbols.group_rounded),
+        ],
+        ...rest.map(card),
+      ],
     );
+  }
+
+  Widget _sectionHeading(BuildContext context, String label, IconData icon) {
+    final muted = Theme.of(context).colorScheme.muted;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: muted, fill: 1),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: muted,
+              letterSpacing: GlobalThemeData.mediumTracking,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _onGroupChanged() {
+    _loadFavorites();
+    _loadGroups();
+  }
+
+  Future<void> _loadFavorites() async {
+    final favorites = await UserPreferences.getFavoriteGroups();
+    if (!mounted) return;
+    setState(() {
+      _favorites
+        ..clear()
+        ..addAll(favorites);
+    });
   }
 
   @override

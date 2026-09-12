@@ -89,7 +89,7 @@ void main() {
               'would only rot');
     });
 
-    test('scopes the favourite and muted lists to the instance', () async {
+    test('scopes the favorite and muted lists to the instance', () async {
       SharedPreferences.setMockInitialValues({
         'supabaseUrl': 'https://one.example',
         'supabaseAnonKey': 'anon-key',

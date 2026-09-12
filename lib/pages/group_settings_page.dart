@@ -20,6 +20,7 @@ import 'package:krab/widgets/settings_section.dart';
 import 'package:krab/models/group.dart';
 import 'package:krab/models/group_member.dart';
 import 'package:krab/pages/group_invites_page.dart';
+import 'package:krab/services/cache/unread_scan.dart';
 import 'package:krab/user_preferences.dart';
 import 'package:krab/l10n/l10n.dart';
 import 'package:krab/services/instance/instances.dart';
@@ -68,6 +69,8 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
   Future<void> _toggleMuted(bool muted) async {
     setState(() => _muted = muted);
     await UserPreferences.setGroupMuted(_group.instanceId, _group.id, muted);
+    // The badges read muting too, so they are told wherever it is changed.
+    await UnreadScan.instance.reloadMuted();
   }
 
   String _getCurrentUserRole(List<GroupMember> members) {
