@@ -15,7 +15,6 @@ import 'package:krab/services/notification_summaries.dart';
 import 'package:krab/services/shown_image_notifications.dart';
 import 'package:krab/user_preferences.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 export 'package:krab/services/notification_ids.dart';
 
@@ -122,8 +121,6 @@ Future<void> _ensureChannels() async {
   }
   _channelsCreated = true;
 }
-
-const String _channelMigrationKey = 'krab_notification_channels_collapsed';
 
 /// Bring up notifications and, in the app, tidy up after older builds.
 Future<void> initNotifications({

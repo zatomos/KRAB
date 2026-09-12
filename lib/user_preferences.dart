@@ -3,10 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:krab/services/file_saver.dart';
 
-/// Device-wide settings that belong to the person, not to any one backend.
-///
-/// Anything specific to a server — its URL, its anon key, its published config
-/// — lives on that instance in `InstanceRegistry`, not here.
+/// Device-wide settings.
 class UserPreferences {
   static SharedPreferences? _preferences;
 
