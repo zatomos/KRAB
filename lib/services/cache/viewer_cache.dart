@@ -20,8 +20,9 @@ class ViewerCache {
 
     return _inFlight.putIfAbsent(
       imageId,
-      () => _fetchPostedInGroups(imageId)
-          .whenComplete(() => _inFlight.remove(imageId)),
+      () => _fetchPostedInGroups(imageId).whenComplete(() {
+        _inFlight.remove(imageId);
+      }),
     );
   }
 
