@@ -123,44 +123,7 @@ Future<void> _ensureChannels() async {
   _channelsCreated = true;
 }
 
-/// Whether a channel id belongs to a build that gave every group one.
-/// TODO: remove
-bool isLegacyNotificationChannel(String id) {
-  if (id == 'reactions' || id == 'app_updates') return true;
-  return RegExp(
-    r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
-    caseSensitive: false,
-  ).hasMatch(id);
-}
-
 const String _channelMigrationKey = 'krab_notification_channels_collapsed';
-
-/// Remove the per-group channels an older build created.
-///  TODO: remove
-Future<void> pruneLegacyNotificationChannels() async {
-  final prefs = await SharedPreferences.getInstance();
-  await prefs.reload();
-  if (prefs.getBool(_channelMigrationKey) == true) return;
-
-  await _ensureChannels();
-  final plugin = _android;
-  if (plugin == null) return;
-
-  try {
-    final channels = await plugin.getNotificationChannels() ?? const [];
-    var deleted = 0;
-    for (final channel in channels) {
-      if (!isLegacyNotificationChannel(channel.id)) continue;
-      await plugin.deleteNotificationChannel(channelId: channel.id);
-      deleted++;
-    }
-    await prefs.setBool(_channelMigrationKey, true);
-    debugPrint('notif: removed $deleted per-group channel(s)');
-  } catch (e) {
-    // Leave the flag unset so the next launch tries again.
-    debugPrint('notif: could not prune the old channels: $e');
-  }
-}
 
 /// Bring up notifications and, in the app, tidy up after older builds.
 Future<void> initNotifications({
@@ -168,7 +131,6 @@ Future<void> initNotifications({
 }) async {
   if (onTap != null) _notificationTapHandler = onTap;
   await _ensureChannels();
-  await pruneLegacyNotificationChannels();
 }
 
 Future<bool> requestNotificationPermission() async {
@@ -204,8 +166,7 @@ Future<void> _pruneOldNotifImages(Directory dir,
         if ((await entity.stat()).modified.isBefore(cutoff)) {
           await entity.delete();
         }
-      } catch (_) {
-      }
+      } catch (_) {}
     }
   } catch (e) {
     debugPrint('notif: prune failed: $e');

@@ -19,6 +19,7 @@ import 'package:krab/widgets/dialogs/dialogs.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/services/time_formatting.dart';
 import 'package:krab/models/shared_image.dart';
+import 'package:krab/services/cache/seen_state.dart';
 import 'package:krab/services/instance/instances.dart';
 import 'package:krab/services/notification_channels.dart';
 import 'package:krab/services/shared_image_api.dart';
@@ -116,6 +117,20 @@ class _GroupCommentSection {
 
   /// Identifies the section across every server in play.
   String get key => '${instance.id}/${group.id}';
+
+  /// When the newest comment in this section was written.
+  DateTime? get newestAt {
+    DateTime? newest;
+    void visit(Comment comment) {
+      if (newest == null || comment.createdAt.isAfter(newest!)) {
+        newest = comment.createdAt;
+      }
+      comment.replies.forEach(visit);
+    }
+
+    rootComments.forEach(visit);
+    return newest;
+  }
 }
 
 /// What the composer is pointed at right now.
@@ -395,6 +410,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
       // Make sure the thread the comment landed in is visible
       _expandedKeys.add(target.key);
       await _refreshAndReportCount();
+      _dismissSectionNotification(target.key);
       if (mounted) {
         setState(() => _isSending = false);
         showSnackBar(context.l10n.comment_added_success,
@@ -543,6 +559,9 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
       section.imageId,
       groupId: section.groupId,
     ));
+    SeenState.instance.markCommentsSeen(section.instance.id, section.groupId,
+        widget.image.identity, section.commentCount,
+        latestAt: section.newestAt);
   }
 
   /// The key an author is cached under.

@@ -704,6 +704,7 @@ CREATE FUNCTION public.get_comment_count(group_id uuid, image_id uuid) RETURNS j
     AS $$DECLARE
     current_user_id UUID;
     comment_count INTEGER;
+    latest_comment_at TIMESTAMPTZ;
 BEGIN
     current_user_id := auth.uid();
 
@@ -739,15 +740,17 @@ BEGIN
         );
     END IF;
 
-    -- Count comments for the image in the specified group
-    SELECT COUNT(*) INTO comment_count
+    -- Count comments for the image in the specified group, and say when the
+    -- newest of them arrived
+    SELECT COUNT(*), MAX(c.created_at) INTO comment_count, latest_comment_at
     FROM "Comments" c
     WHERE c.image_id = get_comment_count.image_id
       AND c.group_id = get_comment_count.group_id;
 
     RETURN jsonb_build_object(
         'success', true,
-        'count', comment_count
+        'count', comment_count,
+        'latest_comment_at', latest_comment_at
     );
 EXCEPTION
     WHEN OTHERS THEN
@@ -1073,14 +1076,15 @@ CREATE FUNCTION public.get_image_comment_count(p_image_id uuid) RETURNS jsonb
     AS $$DECLARE
   current_user_id uuid;
   comment_count integer;
+  latest_comment_at timestamptz;
 BEGIN
   current_user_id := auth.uid();
   IF current_user_id IS NULL THEN
     RETURN jsonb_build_object('success', false, 'error', 'User not authenticated');
   END IF;
 
-  SELECT COUNT(*)
-  INTO comment_count
+  SELECT COUNT(*), MAX(c.created_at)
+  INTO comment_count, latest_comment_at
   FROM "Comments" c
   WHERE c.image_id = p_image_id
     AND EXISTS (
@@ -1090,7 +1094,8 @@ BEGIN
         AND m.role != 'banned'
     );
 
-  RETURN jsonb_build_object('success', true, 'count', comment_count);
+  RETURN jsonb_build_object('success', true, 'count', comment_count,
+                            'latest_comment_at', latest_comment_at);
 EXCEPTION
   WHEN OTHERS THEN
     RETURN jsonb_build_object('success', false, 'error', SQLERRM);

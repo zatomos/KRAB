@@ -25,7 +25,6 @@ class ZoomableImage extends StatefulWidget {
 
 class _ZoomableImageState extends State<ZoomableImage>
     with SingleTickerProviderStateMixin {
-
   static const Duration _moveDuration = Duration(milliseconds: 200);
   static const double _minScale = 1.0;
   static const double _maxScale = 5.0;

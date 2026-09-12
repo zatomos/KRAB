@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 class CrossFade extends StatelessWidget {
   final Object? token;
   final Widget child;

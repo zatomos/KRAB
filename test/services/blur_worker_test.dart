@@ -6,7 +6,11 @@ import 'package:krab/services/blur_worker.dart';
 
 Uint8List _image({int width = 400, int height = 300}) {
   final image = img.Image(width: width, height: height);
-  img.fillRect(image, x1: 0, y1: 0, x2: width ~/ 2, y2: height,
+  img.fillRect(image,
+      x1: 0,
+      y1: 0,
+      x2: width ~/ 2,
+      y2: height,
       color: img.ColorRgb8(255, 0, 0));
   return Uint8List.fromList(img.encodeJpg(image));
 }

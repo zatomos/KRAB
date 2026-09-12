@@ -25,8 +25,12 @@ import 'image_feed_page.dart';
 import 'package:krab/models/shared_image.dart';
 import 'package:krab/services/instance/instances.dart';
 import 'package:krab/services/instance/instance_registry.dart';
+import 'package:krab/services/cache/seen_state.dart';
+import 'package:krab/services/cache/unread_scan.dart';
+import 'package:krab/services/feed_events.dart';
 import 'package:krab/services/shared_image_api.dart';
 import 'package:krab/services/upload_outbox.dart';
+import 'package:krab/user_preferences.dart';
 
 class CameraPage extends StatefulWidget {
   const CameraPage({super.key});
@@ -92,6 +96,12 @@ class CameraPageState extends State<CameraPage>
     _allowAllOrientations();
     _initializeCamera();
     _loadCurrentUser();
+    _checkForUnopened();
+    SeenState.instance.addListener(_checkForUnopened);
+    UnreadScan.instance.addListener(_checkForUnopened);
+    UnreadScan.instance.refresh();
+    _newImageSub = FeedEvents.instance.newImages
+        .listen((_) => UnreadScan.instance.refresh(force: true));
     _authSubscription =
         InstanceRegistry.instance.authEvents.listen((_) => _loadCurrentUser());
     _orderSubscription =
@@ -159,6 +169,9 @@ class CameraPageState extends State<CameraPage>
     routeObserver.unsubscribe(this);
     _authSubscription?.cancel();
     _orderSubscription?.cancel();
+    _newImageSub?.cancel();
+    SeenState.instance.removeListener(_checkForUnopened);
+    UnreadScan.instance.removeListener(_checkForUnopened);
     _lockPortrait();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     _zoomNotifier.dispose();
@@ -566,8 +579,7 @@ class CameraPageState extends State<CameraPage>
                     ),
                     SnackAction(
                       label: l10n.undo,
-                      onPressed: () =>
-                          _undoSend(image, removedMsg, failedMsg),
+                      onPressed: () => _undoSend(image, removedMsg, failedMsg),
                     ),
                   ],
           );
@@ -806,9 +818,43 @@ class CameraPageState extends State<CameraPage>
     );
   }
 
-  Widget _groupsButton() => IconButton(
-        icon: const Icon(Symbols.group_rounded, color: Colors.white, size: 30),
-        onPressed: () => _navigateWithCameraDispose(const GroupsPage()),
+  bool _hasUnopened = false;
+  StreamSubscription<NewImageEvent>? _newImageSub;
+
+  /// Ask every server for its recent images and see whether any is unopened.
+  void _checkForUnopened() {
+    if (!mounted) return;
+    final unopened =
+        UserPreferences.unreadBadges && UnreadScan.instance.anyUnread;
+    if (unopened != _hasUnopened) setState(() => _hasUnopened = unopened);
+  }
+
+  Widget _groupsButton() => Stack(
+        clipBehavior: Clip.none,
+        children: [
+          IconButton(
+            icon: const Icon(Symbols.group_rounded,
+                color: Colors.white, size: 30),
+            onPressed: () async {
+              await _navigateWithCameraDispose(const GroupsPage());
+              if (mounted) _checkForUnopened();
+            },
+          ),
+          if (_hasUnopened)
+            Positioned(
+              top: -1,
+              right: -1,
+              child: Container(
+                width: 11,
+                height: 11,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Theme.of(context).colorScheme.primary,
+                  border: Border.all(color: Colors.black54),
+                ),
+              ),
+            ),
+        ],
       );
 
   Widget _uploadButton() => IconButton(

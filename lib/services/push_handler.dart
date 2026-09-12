@@ -169,8 +169,21 @@ Future<void> handlePushPayload(
     } else if (type == 'new_reaction' || type == 'group_reaction') {
       // Non-null: the guard above returned for every other value of type.
       await dispatchReactionNotification(instance, data, type!);
+      if (!background) {
+        FeedEvents.instance.notifyNewReaction(NewReactionEvent(
+          instanceId: instance.id,
+          imageId: data['image_id'] ?? '',
+        ));
+      }
     } else {
       await dispatchCommentNotification(instance, data, type!);
+      if (!background) {
+        FeedEvents.instance.notifyNewComment(NewCommentEvent(
+          instanceId: instance.id,
+          imageId: data['image_id'] ?? '',
+          groupId: data['group_id'],
+        ));
+      }
     }
 
     debugPrint('Push message processed successfully');

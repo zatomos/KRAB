@@ -90,13 +90,31 @@ class SharedImageApi {
     return (tally: merged, mineByInstance: mine);
   }
 
-  Future<void> warmReactions() async {
-    final cache =
-        InstanceRegistry.instance.byId(image.primary.instanceId)?.reactions;
-    if (cache == null) return;
+  Future<void> warmReactions() => warmedReactionCount();
+
+  Map<String, int> cachedReactionTally() {
+    final perCopy = <List<ReactionSummary>>[];
+    var anyCached = false;
+    for (final copy in image.copies) {
+      final cache = InstanceRegistry.instance.byId(copy.instanceId)?.reactions;
+      if (cache == null || cache.cachedTotal(copy.id) == null) continue;
+      anyCached = true;
+      perCopy.add(cache.cached(copy.id));
+    }
+
+    final merged = mergeTallies(perCopy, anyAnswered: anyCached);
+    if (merged == null) return const {};
+    return {for (final r in merged) r.emoji: r.count};
+  }
+
+  Future<int> warmedReactionCount() async {
     final result = await reactions();
-    if (result == null) return;
-    cache.put(image.primary.id, result.tally);
+    if (result == null) return 0;
+    InstanceRegistry.instance
+        .byId(image.primary.instanceId)
+        ?.reactions
+        .put(image.primary.id, result.tally);
+    return result.tally.fold<int>(0, (sum, r) => sum + r.count);
   }
 
   /// Which copies a write has to touch to leave the viewer's reaction [on].
@@ -243,11 +261,12 @@ class SharedImageApi {
   // ---------------------------------------------------------------------------
 
   /// Total comments on the image, across every copy.
-  Future<int> commentCount() async {
+  Future<CommentTally> commentCount() async {
     final present = _present;
     final results = await Future.wait(present
         .map((pair) => pair.instance.api.getImageCommentCount(pair.copy.id)));
     var total = 0;
+    DateTime? latest;
     for (var i = 0; i < results.length; i++) {
       final response = results[i];
       if (!response.success) {
@@ -255,9 +274,10 @@ class SharedImageApi {
             'unavailable (${response.error}); total will be short');
         continue;
       }
-      total += response.data ?? 0;
+      total += response.data?.count ?? 0;
+      latest = CommentTally.newest(latest, response.data?.latestAt);
     }
-    return total;
+    return CommentTally(count: total, latestAt: latest);
   }
 
   /// Each copy's comments, grouped by the group they were left in.

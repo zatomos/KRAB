@@ -24,9 +24,8 @@ void main() {
   int idFor(String groupId, {String imageId = image}) =>
       commentThreadNotificationId(groupId: groupId, imageId: imageId);
 
-  Future<void> record(String groupId, {String imageId = image}) =>
-      store.record(idFor(groupId, imageId: imageId),
-          threadIn(groupId, imageId: imageId));
+  Future<void> record(String groupId, {String imageId = image}) => store.record(
+      idFor(groupId, imageId: imageId), threadIn(groupId, imageId: imageId));
 
   test('opened inside a group, only that group\'s thread is dismissed',
       () async {

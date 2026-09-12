@@ -534,5 +534,16 @@
         "type": "int"
       }
     }
-  }
+  },
+  "x_new_images": "{count}",
+  "@x_new_images": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "notifications_section": "Notifications",
+  "unread_badges": "Unread badges",
+  "unread_badges_description": "Mark images, comments and reactions you haven't opened yet."
 }

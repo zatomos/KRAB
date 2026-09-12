@@ -11,6 +11,7 @@ import 'package:krab/models/image_data.dart';
 import 'package:krab/models/group.dart';
 import 'package:krab/models/image_ref.dart';
 import 'package:krab/models/shared_image.dart';
+import 'package:krab/services/cache/seen_state.dart';
 import 'package:krab/services/blur_worker.dart';
 import 'package:krab/services/shared_image_api.dart';
 import 'package:krab/pages/viewer/posted_in_badge.dart';
@@ -244,11 +245,14 @@ class _ImageViewerPageState extends State<ImageViewerPage>
     _evictDistantPages();
   }
 
-  /// Dismiss image notif
+  /// Dismiss image notif, and stop counting the image as unread.
   void _dismissNotificationsFor(int index) {
     if (index < 0 || index >= widget.images.length) return;
-    unawaited(
-        SharedImageApi(widget.images[index]).dismissOpenedImageNotifications());
+    final image = widget.images[index];
+    unawaited(SharedImageApi(image).dismissOpenedImageNotifications());
+    SeenState.instance.markImageSeen(image.identity, image.uploadedAt);
+    SeenState.instance.markReactionsSeen(
+        image.identity, SharedImageApi(image).cachedReactionTally());
   }
 
   /// Warm the page on screen and the ones on either side of it.
@@ -492,6 +496,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
                 imageData: data,
                 uploader: uploader,
                 commentCount: widget.cache.commentCount(image),
+                commentsLatestAt: widget.cache.commentsLatestAt(image),
                 openComments: _pendingComments,
                 progress: t,
                 uploadedAt: widget.images[_currentIndex].uploadedAt,

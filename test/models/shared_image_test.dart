@@ -158,10 +158,10 @@ void main() {
 
   group('sortImagesNewestFirst', () {
     test('orders newest first and breaks ties stably on identity', () {
-      final older = SharedImage(
-          [ref('a', 'old', uploadedAt: DateTime.utc(2026, 7, 1))]);
-      final newer = SharedImage(
-          [ref('a', 'new', uploadedAt: DateTime.utc(2026, 7, 29))]);
+      final older =
+          SharedImage([ref('a', 'old', uploadedAt: DateTime.utc(2026, 7, 1))]);
+      final newer =
+          SharedImage([ref('a', 'new', uploadedAt: DateTime.utc(2026, 7, 29))]);
       final undated = SharedImage([ref('a', 'undated')]);
 
       final images = [older, undated, newer];

@@ -499,5 +499,9 @@
   "servers_token_copied": "Jeton de connexion copié. Toute personne à qui vous l'envoyez pourra se connecter à ce serveur.",
   "servers_subtitle_ordered": "KRAB réunit les photos de tous les serveurs auxquels vous êtes connecté.\n Le premier serveur disponible est utilisé par défaut dans le reste de l'application.",
   "servers_share_subject": "Rejoignez-moi sur ce serveur KRAB :",
-  "server_label_count": "Serveurs · {count}"
+  "server_label_count": "Serveurs · {count}",
+  "x_new_images": "{count}",
+  "notifications_section": "Notifications",
+  "unread_badges": "Pastilles de nouveautés",
+  "unread_badges_description": "Marquer les images, les commentaires et les réactions non ouverts."
 }

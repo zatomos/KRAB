@@ -65,6 +65,7 @@ class AccountPageState extends State<AccountPage> {
   bool receiveAllGroupReactions = false;
   bool debugNotificationsEnabled = false;
   bool updateNotificationsEnabled = true;
+  bool _unreadBadges = true;
   bool _isCheckingForUpdates = false;
   bool _developerOptionsUnlocked = false;
   int _widgetRefreshInterval = 30;
@@ -125,6 +126,7 @@ class AccountPageState extends State<AccountPage> {
     autoImageSave = await UserPreferences.getAutoImageSave();
     debugNotificationsEnabled = await UserPreferences.getDebugNotifications();
     updateNotificationsEnabled = UserPreferences.updateNotifications;
+    _unreadBadges = UserPreferences.unreadBadges;
     _developerOptionsUnlocked =
         await UserPreferences.getDeveloperOptionsUnlocked();
     final interval = await UserPreferences.getWidgetRefreshInterval();
@@ -467,6 +469,8 @@ class AccountPageState extends State<AccountPage> {
                         _accountSection(context),
                         const SectionDivider(),
                         _settingsSection(context),
+                        const SectionDivider(),
+                        _notificationsSection(context),
                         if (_developerOptionsUnlocked) ...[
                           const SectionDivider(),
                           _developerSection(context),
@@ -588,34 +592,12 @@ class AccountPageState extends State<AccountPage> {
     );
   }
 
-  Widget _settingsSection(BuildContext context) {
+  Widget _notificationsSection(BuildContext context) {
     return SettingsSection(
-      title: context.l10n.settings,
+      title: context.l10n.notifications_section,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text(context.l10n.appearance),
-            subtitle: Text(context.l10n.appearance_description),
-            trailing: ValueListenableBuilder<ThemeMode>(
-              valueListenable: UserPreferences.themeMode,
-              builder: (context, mode, _) => DropdownButton<ThemeMode>(
-                value: mode,
-                underline: const SizedBox.shrink(),
-                items: [
-                  for (final option in ThemeMode.values)
-                    DropdownMenuItem(
-                      value: option,
-                      child: Text(_themeModeLabel(context, option)),
-                    ),
-                ],
-                onChanged: (value) {
-                  if (value != null) UserPreferences.setThemeMode(value);
-                },
-              ),
-            ),
-          ),
           ListTile(
             contentPadding: EdgeInsets.zero,
             title: Text(context.l10n.group_activity_notifications),
@@ -652,16 +634,6 @@ class AccountPageState extends State<AccountPage> {
               ),
             ),
           ),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text(context.l10n.auto_save_imgs),
-            subtitle: Text(context.l10n.auto_save_imgs_description),
-            value: autoImageSave,
-            onChanged: (value) {
-              UserPreferences.setAutoImageSave(value);
-              setState(() => autoImageSave = value);
-            },
-          ),
           if (_updateService.isEnabled)
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
@@ -673,6 +645,59 @@ class AccountPageState extends State<AccountPage> {
                 setState(() => updateNotificationsEnabled = value);
               },
             ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(context.l10n.unread_badges),
+            subtitle: Text(context.l10n.unread_badges_description),
+            value: _unreadBadges,
+            onChanged: (value) async {
+              await UserPreferences.setUnreadBadges(value);
+              setState(() => _unreadBadges = value);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _settingsSection(BuildContext context) {
+    return SettingsSection(
+      title: context.l10n.settings,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(context.l10n.appearance),
+            subtitle: Text(context.l10n.appearance_description),
+            trailing: ValueListenableBuilder<ThemeMode>(
+              valueListenable: UserPreferences.themeMode,
+              builder: (context, mode, _) => DropdownButton<ThemeMode>(
+                value: mode,
+                underline: const SizedBox.shrink(),
+                items: [
+                  for (final option in ThemeMode.values)
+                    DropdownMenuItem(
+                      value: option,
+                      child: Text(_themeModeLabel(context, option)),
+                    ),
+                ],
+                onChanged: (value) {
+                  if (value != null) UserPreferences.setThemeMode(value);
+                },
+              ),
+            ),
+          ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(context.l10n.auto_save_imgs),
+            subtitle: Text(context.l10n.auto_save_imgs_description),
+            value: autoImageSave,
+            onChanged: (value) {
+              UserPreferences.setAutoImageSave(value);
+              setState(() => autoImageSave = value);
+            },
+          ),
           ListTile(
             contentPadding: EdgeInsets.zero,
             title: Text(context.l10n.widget_refresh_interval),

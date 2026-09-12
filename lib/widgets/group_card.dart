@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
@@ -9,10 +11,40 @@ import 'package:krab/widgets/avatars/group_avatar.dart';
 import 'package:krab/widgets/member_count_label.dart';
 import 'package:krab/widgets/server_label.dart';
 import 'package:krab/user_preferences.dart';
+import 'package:krab/services/cache/seen_state.dart';
+import 'package:krab/services/cache/unread_scan.dart';
+import 'package:krab/services/feed_events.dart';
 import 'package:krab/services/time_formatting.dart';
 import 'package:krab/services/instance/instances.dart';
 import 'package:krab/services/instance/instance_registry.dart';
 import 'package:krab/themes/global_theme_data.dart';
+
+class UnopenedBadge extends StatelessWidget {
+  const UnopenedBadge({super.key, required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
+      decoration: BoxDecoration(
+        color: scheme.primary,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        UnreadScan.instance.isCapped(count) ? '$count+' : '$count',
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
+          color: scheme.onPrimary,
+          letterSpacing: GlobalThemeData.mediumTracking,
+        ),
+      ),
+    );
+  }
+}
 
 class GroupCard extends StatefulWidget {
   final Group group;
@@ -46,6 +78,10 @@ class _GroupCardState extends State<GroupCard> {
       InstanceRegistry.instance.byId(_group.instanceId);
   Future<int>? _memberCountFuture;
   bool isFavorite = false;
+  int _unopened = 0;
+  bool _muted = false;
+
+  StreamSubscription<NewImageEvent>? _newImageSub;
 
   /// Star animation
   static const Duration _popDuration = Duration(milliseconds: 120);
@@ -64,6 +100,22 @@ class _GroupCardState extends State<GroupCard> {
     if (widget.memberCount == null) {
       _memberCountFuture = _fetchGroupMemberCount(_group.id);
     }
+    _recount();
+    UnreadScan.instance.addListener(_recount);
+    SeenState.instance.addListener(_recount);
+    _newImageSub = FeedEvents.instance.newImages.listen((event) {
+      if (event.groupId == null || event.groupId == _group.id) {
+        UnreadScan.instance.refresh(force: true);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    SeenState.instance.removeListener(_recount);
+    UnreadScan.instance.removeListener(_recount);
+    _newImageSub?.cancel();
+    super.dispose();
   }
 
   @override
@@ -85,9 +137,23 @@ class _GroupCardState extends State<GroupCard> {
   Future<void> _loadFavoriteStatus() async {
     bool favorite =
         await UserPreferences.isGroupFavorite(_group.instanceId, _group.id);
+    final muted =
+        await UserPreferences.isGroupMuted(_group.instanceId, _group.id);
     if (mounted) {
-      setState(() => isFavorite = favorite);
+      setState(() {
+        isFavorite = favorite;
+        _muted = muted;
+      });
     }
+  }
+
+  /// Count the recent images in this group the user has not opened.
+  void _recount() {
+    if (!mounted) return;
+    final count = UserPreferences.unreadBadges
+        ? UnreadScan.instance.countFor(_group.instanceId, _group.id)
+        : 0;
+    if (count != _unopened) setState(() => _unopened = count);
   }
 
   Future<int> _fetchGroupMemberCount(String groupId) async {
@@ -166,22 +232,43 @@ class _GroupCardState extends State<GroupCard> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                widget.memberCount != null
-                    ? _memberCountLabel(context, widget.memberCount!)
-                    : FutureBuilder<int>(
-                        future: _memberCountFuture,
-                        builder: (context, snapshot) {
-                          if (snapshot.connectionState ==
-                              ConnectionState.waiting) {
-                            return const Text(" ");
-                          } else if (snapshot.hasError) {
-                            return Text(context.l10n.error_loading_members);
-                          } else {
-                            return _memberCountLabel(
-                                context, snapshot.data ?? 0);
-                          }
-                        },
+                Row(
+                  children: [
+                    Expanded(
+                      child: widget.memberCount != null
+                          ? _memberCountLabel(context, widget.memberCount!)
+                          : FutureBuilder<int>(
+                              future: _memberCountFuture,
+                              builder: (context, snapshot) {
+                                if (snapshot.connectionState ==
+                                    ConnectionState.waiting) {
+                                  return const Text(" ");
+                                } else if (snapshot.hasError) {
+                                  return Text(
+                                      context.l10n.error_loading_members);
+                                } else {
+                                  return _memberCountLabel(
+                                      context, snapshot.data ?? 0);
+                                }
+                              },
+                            ),
+                    ),
+                    if (_muted)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 6),
+                        child: Icon(
+                          Symbols.notifications_off_rounded,
+                          size: 15,
+                          color: Theme.of(context).colorScheme.muted,
+                        ),
                       ),
+                    if (_unopened > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 6),
+                        child: UnopenedBadge(count: _unopened),
+                      ),
+                  ],
+                ),
                 if (widget.showOrigin)
                   ServerLabel(_instance,
                       color: Theme.of(context).colorScheme.muted),

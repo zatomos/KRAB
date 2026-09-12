@@ -2,6 +2,29 @@ part of 'krab_api.dart';
 
 /// ------------------ COMMENT FUNCTIONS ------------------
 
+/// How many comments an image has, and when the newest of them arrived.
+class CommentTally {
+  const CommentTally({required this.count, this.latestAt});
+
+  final int count;
+  final DateTime? latestAt;
+
+  static CommentTally fromJson(dynamic raw) {
+    final map = raw is Map ? raw : const {};
+    return CommentTally(
+      count: (map['count'] as num?)?.toInt() ?? 0,
+      latestAt: DateTime.tryParse(map['latest_comment_at']?.toString() ?? ''),
+    );
+  }
+
+  /// The newest of two tallies' times, for a count merged across servers.
+  static DateTime? newest(DateTime? a, DateTime? b) {
+    if (a == null) return b;
+    if (b == null) return a;
+    return a.isAfter(b) ? a : b;
+  }
+}
+
 extension KrabApiComments on KrabApi {
   Future<SupabaseResponse<void>> postComment(
           String imageId, String groupId, String comment,
@@ -43,20 +66,20 @@ extension KrabApiComments on KrabApi {
           errorContext: "loading comments",
           parse: (r) => (r['comments'] as List?) ?? []);
 
-  Future<SupabaseResponse<int>> getCommentCount(
+  Future<SupabaseResponse<CommentTally>> getCommentCount(
           String imageId, String groupId) =>
       _rpc("get_comment_count",
           params: {"image_id": imageId, "group_id": groupId},
           errorContext: "loading comment count",
-          parse: (r) => r['count'] as int);
+          parse: CommentTally.fromJson);
 
   /// Total number of comments an image received across every group the current
   /// user is a member of
-  Future<SupabaseResponse<int>> getImageCommentCount(String imageId) =>
+  Future<SupabaseResponse<CommentTally>> getImageCommentCount(String imageId) =>
       _rpc("get_image_comment_count",
           params: {"p_image_id": imageId},
           errorContext: "loading comment count",
-          parse: (r) => r['count'] as int);
+          parse: CommentTally.fromJson);
 
   /// Every group the current user shares an image with
   Future<SupabaseResponse<List<dynamic>>> getImageGroups(String imageId) =>

@@ -170,7 +170,8 @@ void main() {
     expect(await UploadOutbox.instance.pendingCount(), 1);
   });
 
-  test('an image queued offline goes out once the connection is back', () async {
+  test('an image queued offline goes out once the connection is back',
+      () async {
     sender.responses = [_offline()];
     await UploadOutbox.instance
         .enqueue('inst_1', await image('e.jpg'), ['g1'], 'later');

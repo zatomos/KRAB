@@ -29,6 +29,9 @@ import 'package:krab/widgets/reactions_bar.dart';
 import 'package:krab/widgets/avatars/user_avatar.dart';
 import 'package:krab/models/image_ref.dart';
 import 'package:krab/models/shared_image.dart';
+import 'package:krab/services/cache/seen_state.dart';
+import 'package:krab/services/feed_events.dart';
+import 'package:krab/user_preferences.dart';
 import 'package:krab/services/instance/instances.dart';
 import 'package:krab/services/instance/instance_registry.dart';
 import 'package:krab/services/shared_image_api.dart';
@@ -46,6 +49,8 @@ class ViewerOverlay extends StatefulWidget {
   final ImageData imageData;
   final krab_user.User uploader;
   final int commentCount;
+  final DateTime? commentsLatestAt;
+
   final bool openComments;
 
   /// When this image was posted to the group it was opened from.
@@ -79,6 +84,7 @@ class ViewerOverlay extends StatefulWidget {
     required this.imageData,
     required this.uploader,
     required this.commentCount,
+    this.commentsLatestAt,
     this.openComments = false,
     required this.loadBestBytesForSave,
     required this.progress,
@@ -120,18 +126,34 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
   String get _description =>
       _editedDescription ?? widget.imageData.description ?? '';
 
+  /// Live arrivals while the image is on screen
+  StreamSubscription<NewCommentEvent>? _commentSub;
+
   @override
   void initState() {
     super.initState();
     _commentCount = widget.commentCount;
+    _commentsLatestAt = widget.commentsLatestAt;
     _initPostedInGroups();
+    _commentSub = FeedEvents.instance.newComments.listen(_onCommentArrived);
     if (widget.openComments) _openCommentsOnceLanded();
   }
 
   @override
   void dispose() {
     _clearLandingListener();
+    _commentSub?.cancel();
     super.dispose();
+  }
+
+  void _onCommentArrived(NewCommentEvent event) {
+    final onThisImage = widget.image.copies
+        .any((c) => c.instanceId == event.instanceId && c.id == event.imageId);
+    if (!onThisImage || !mounted) return;
+    setState(() {
+      _commentCount += 1;
+      _commentsLatestAt = DateTime.now();
+    });
   }
 
   /// The route animation being waited on before the comments sheet goes up,
@@ -205,6 +227,7 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
     // the underlying image changes.
     if (oldWidget.image.identity != widget.image.identity) {
       _commentCount = widget.commentCount;
+      _commentsLatestAt = widget.commentsLatestAt;
       _editedDescription = null;
       _initPostedInGroups();
     }
@@ -234,6 +257,33 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
     setState(() => _postedInGroups = _displayGroups(groups));
   }
 
+  DateTime? _commentsLatestAt;
+  bool get _hasUnreadComments {
+    if (!UserPreferences.unreadBadges) return false;
+    final group = widget.group;
+    if (group == null) {
+      return SeenState.instance.hasNewCommentsAnywhere(
+          widget.image.identity, _commentCount,
+          latestAt: _commentsLatestAt);
+    }
+    return SeenState.instance.hasNewComments(
+        group.instanceId, group.id, widget.image.identity, _commentCount,
+        latestAt: _commentsLatestAt);
+  }
+
+  void _markCommentsRead() {
+    final group = widget.group;
+    if (group == null) {
+      SeenState.instance.markAllCommentsSeen(
+          widget.image.identity, _commentCount,
+          latestAt: _commentsLatestAt);
+      return;
+    }
+    SeenState.instance.markCommentsSeen(
+        group.instanceId, group.id, widget.image.identity, _commentCount,
+        latestAt: _commentsLatestAt);
+  }
+
   /// Apply per-view filtering and ordering to the cached raw group list: hide
   /// the pill unless the image spans multiple groups, and surface the
   /// currently-viewed group first so it leads the pill and can be highlighted.
@@ -249,6 +299,7 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
 
   Future<void> _openComments() async {
     unawaited(_api.dismissOpenedCommentNotifications(group: widget.group));
+    _markCommentsRead();
 
     final screenHeight = MediaQuery.sizeOf(context).height;
     await showModalBottomSheet<void>(
@@ -727,16 +778,40 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
                     ),
                     const SizedBox(width: 10),
                     // Comments button
-                    SoftButton(
-                      onPressed: _openComments,
-                      label: _commentCount.toString(),
-                      icon: Symbols.comment_rounded,
-                      color: frostedAccent,
-                      opacity: 0.3,
-                      height: 48,
-                      minLabelWidth: 10,
-                      blurBackground: true,
-                      progress: t,
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        SoftButton(
+                          onPressed: _openComments,
+                          label: _commentCount.toString(),
+                          icon: Symbols.comment_rounded,
+                          color: frostedAccent,
+                          opacity: 0.3,
+                          height: 48,
+                          minLabelWidth: 10,
+                          blurBackground: true,
+                          progress: t,
+                        ),
+                        if (_hasUnreadComments)
+                          Positioned(
+                            top: -1,
+                            right: -1,
+                            child: Opacity(
+                              opacity: t,
+                              child: Container(
+                                width: 11,
+                                height: 11,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: frostedAccent,
+                                  border: Border.all(
+                                      color:
+                                          Colors.black.withValues(alpha: 0.45)),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ],
                 ),

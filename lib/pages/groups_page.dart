@@ -13,6 +13,10 @@ import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/widgets/group_card.dart';
 import 'package:krab/widgets/instance_status_footer.dart';
 import 'package:krab/pages/image_feed_page.dart';
+import 'package:krab/user_preferences.dart';
+import 'package:krab/services/cache/seen_state.dart';
+import 'package:krab/services/cache/unread_scan.dart';
+import 'package:krab/services/feed_events.dart';
 import 'package:krab/models/group.dart';
 import 'package:krab/services/instance/instances.dart';
 import 'package:krab/services/invite_token.dart';
@@ -130,6 +134,7 @@ class GroupsPageState extends State<GroupsPage> {
       if (bAt == null) return -1;
       return bAt.compareTo(aAt);
     });
+    unawaited(UnreadScan.instance.refresh(groups: _groups, force: true));
   }
 
   Future<void> _loadCounts(
@@ -264,7 +269,41 @@ class _GroupsSkeleton extends StatelessWidget {
 }
 
 /// Pinned card opening the cross-group gallery of recent images
-class _RecentimagesCard extends StatelessWidget {
+class _RecentimagesCard extends StatefulWidget {
+  @override
+  State<_RecentimagesCard> createState() => _RecentimagesCardState();
+}
+
+class _RecentimagesCardState extends State<_RecentimagesCard> {
+  int _unopened = 0;
+
+  StreamSubscription<NewImageEvent>? _newImageSub;
+
+  @override
+  void initState() {
+    super.initState();
+    _countUnopened();
+    SeenState.instance.addListener(_countUnopened);
+    UnreadScan.instance.addListener(_countUnopened);
+    _newImageSub = FeedEvents.instance.newImages
+        .listen((_) => UnreadScan.instance.refresh(force: true));
+  }
+
+  @override
+  void dispose() {
+    SeenState.instance.removeListener(_countUnopened);
+    UnreadScan.instance.removeListener(_countUnopened);
+    _newImageSub?.cancel();
+    super.dispose();
+  }
+
+  /// Everything unopened across every group
+  void _countUnopened() {
+    if (!mounted) return;
+    final count = UserPreferences.unreadBadges ? UnreadScan.instance.total : 0;
+    if (count != _unopened) setState(() => _unopened = count);
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -293,11 +332,24 @@ class _RecentimagesCard extends StatelessWidget {
           context.l10n.recent_images_subtitle,
           style: TextStyle(fontSize: 14, color: scheme.muted),
         ),
-        trailing: const Icon(Symbols.chevron_right_rounded),
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const ImageFeedPage()),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_unopened > 0)
+              Padding(
+                padding: const EdgeInsets.only(right: 4),
+                child: UnopenedBadge(count: _unopened),
+              ),
+            const Icon(Symbols.chevron_right_rounded),
+          ],
         ),
+        onTap: () async {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const ImageFeedPage()),
+          );
+          if (mounted) _countUnopened();
+        },
       ),
     );
   }

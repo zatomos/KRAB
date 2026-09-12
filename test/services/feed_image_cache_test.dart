@@ -5,6 +5,7 @@ import 'package:krab/models/image_details.dart';
 import 'package:krab/models/image_ref.dart';
 import 'package:krab/models/shared_image.dart';
 import 'package:krab/models/user.dart' as krab_user;
+import 'package:krab/services/api/krab_api.dart';
 import 'package:krab/services/cache/feed_image_cache.dart';
 
 SharedImage _image(String id, {String instanceId = 'inst_1'}) =>
@@ -32,6 +33,7 @@ class _FakeFetchers implements ImageFetchers {
 
   /// The groupId the last comment count was asked for.
   String? lastCommentGroupId;
+  DateTime? commentsLatestAt;
 
   int reactionTotal = 0;
 
@@ -78,10 +80,10 @@ class _FakeFetchers implements ImageFetchers {
   }
 
   @override
-  Future<int> commentCount(SharedImage image, String? groupId) async {
+  Future<CommentTally> commentCount(SharedImage image, String? groupId) async {
     commentCountFetches.add(image.primary.id);
     lastCommentGroupId = groupId;
-    return 3;
+    return CommentTally(count: 3, latestAt: commentsLatestAt);
   }
 
   @override
@@ -305,12 +307,11 @@ void main() {
   group('whose name an image is shown under', () {
     // The same person holds a different account on each server, so an image on
     // two of them has two uploaders and only one can be shown.
-    final onBoth =
-        _shared('share-1', {'inst_1': 'copy-a', 'inst_2': 'copy-b'});
+    final onBoth = _shared('share-1', {'inst_1': 'copy-a', 'inst_2': 'copy-b'});
 
     test('a gallery asks the server whose group it is showing', () async {
-      final gallery = FeedImageCache(
-          groupId: 'g1', instanceId: 'inst_2', fetchers: fake);
+      final gallery =
+          FeedImageCache(groupId: 'g1', instanceId: 'inst_2', fetchers: fake);
 
       final data = await gallery.imageData(onBoth);
 
@@ -331,8 +332,8 @@ void main() {
     });
 
     test('the uploader is looked up on the server the id came from', () async {
-      final gallery = FeedImageCache(
-          groupId: 'g1', instanceId: 'inst_2', fetchers: fake);
+      final gallery =
+          FeedImageCache(groupId: 'g1', instanceId: 'inst_2', fetchers: fake);
 
       await gallery.imageData(onBoth);
 

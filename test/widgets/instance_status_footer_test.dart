@@ -38,7 +38,8 @@ const _past = Duration(milliseconds: 2);
 
 void main() {
   group('InstanceStatusFooter', () {
-    testWidgets('says nothing while a load is still within the delay', (tester) async {
+    testWidgets('says nothing while a load is still within the delay',
+        (tester) async {
       await _pumpFooter(tester, pending: [_instance('a')], unavailable: []);
 
       await tester.pump(_almost);
@@ -75,7 +76,8 @@ void main() {
       expect(find.textContaining('a.example'), findsOneWidget);
     });
 
-    testWidgets('turning from pending to failed keeps it up, without a second '
+    testWidgets(
+        'turning from pending to failed keeps it up, without a second '
         'delay', (tester) async {
       await _pumpFooter(tester, pending: [_instance('a')], unavailable: []);
       await tester.pump(_almost + _past);

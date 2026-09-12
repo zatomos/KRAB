@@ -11,6 +11,8 @@ import 'package:krab/models/image_data.dart';
 import 'package:krab/models/image_ref.dart';
 import 'package:krab/models/reaction.dart';
 import 'package:krab/models/shared_image.dart';
+import 'package:krab/user_preferences.dart';
+import 'package:krab/services/cache/seen_state.dart';
 import 'package:krab/services/image_size.dart';
 import 'package:krab/services/shared_image_api.dart';
 import 'package:krab/pages/group_settings_page.dart';
@@ -98,6 +100,8 @@ class ImageFeedPageState extends State<ImageFeedPage> {
   /// True once a `new_image` push lands for this feed while it's open
   bool _hasNewimages = false;
   StreamSubscription<NewImageEvent>? _newImageSub;
+  StreamSubscription<NewCommentEvent>? _commentSub;
+  StreamSubscription<NewReactionEvent>? _reactionSub;
   StreamSubscription<String>? _removalSub;
 
   /// The bytes, uploaders and tallies for the images on screen. Shared with the
@@ -122,6 +126,9 @@ class ImageFeedPageState extends State<ImageFeedPage> {
     super.initState();
     _scrollController.addListener(_onScroll);
     _newImageSub = FeedEvents.instance.newImages.listen(_onNewImage);
+    _commentSub = FeedEvents.instance.newComments.listen(_onCommentArrived);
+    _reactionSub = FeedEvents.instance.newReactions.listen(_onReactionArrived);
+    SeenState.instance.addListener(_onSeenChanged);
 
     // A group gallery has nothing left to show once its server is disconnected.
     final source = _instance;
@@ -132,6 +139,36 @@ class ImageFeedPageState extends State<ImageFeedPage> {
     }
 
     _bootstrap();
+  }
+
+  void _onSeenChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void _onCommentArrived(NewCommentEvent event) {
+    final image = _imageFor(event.instanceId, event.imageId);
+    if (image == null) return;
+    _cache.addToCommentCount(image, 1);
+    if (mounted) setState(() {});
+  }
+
+  void _onReactionArrived(NewReactionEvent event) {
+    final image = _imageFor(event.instanceId, event.imageId);
+    if (image == null) return;
+    SharedImageApi(image).warmReactions().then((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  /// The image on screen holding this copy, if it is one of them.
+  SharedImage? _imageFor(String instanceId, String imageId) {
+    if (imageId.isEmpty) return null;
+    for (final image in _images) {
+      for (final copy in image.copies) {
+        if (copy.instanceId == instanceId && copy.id == imageId) return image;
+      }
+    }
+    return null;
   }
 
   /// Surface the new images pill when an incoming image belongs to this feed
@@ -476,6 +513,9 @@ class ImageFeedPageState extends State<ImageFeedPage> {
   @override
   void dispose() {
     _newImageSub?.cancel();
+    _commentSub?.cancel();
+    _reactionSub?.cancel();
+    SeenState.instance.removeListener(_onSeenChanged);
     _removalSub?.cancel();
     _scrollController.dispose();
     _cache.clear();
@@ -731,6 +771,23 @@ class ImageFeedPageState extends State<ImageFeedPage> {
         final hasDescription = imageData.description?.isNotEmpty ?? false;
         final reactions = _reactionCountFor(image);
         final comments = _cache.commentCount(image);
+        final seen = SeenState.instance;
+        final groupId = _groupId;
+        final instance = _instance;
+        final commentsAt = _cache.commentsLatestAt(image);
+        final newComments = UserPreferences.unreadBadges &&
+            (groupId != null && instance != null
+                ? seen.hasNewComments(
+                    instance.id, groupId, image.identity, comments,
+                    latestAt: commentsAt)
+                : seen.hasNewCommentsAnywhere(image.identity, comments,
+                    latestAt: commentsAt));
+        final newReactions = UserPreferences.unreadBadges &&
+            seen.hasNewReactions(
+                image.identity, SharedImageApi(image).cachedReactionTally(),
+                uploadedAt: image.uploadedAt);
+        final newImage = UserPreferences.unreadBadges &&
+            seen.isImageNew(image.identity, image.uploadedAt);
         final heroOpen = _heroImageIdentity == image.identity;
 
         return stage(GestureDetector(
@@ -761,6 +818,15 @@ class ImageFeedPageState extends State<ImageFeedPage> {
                     child: UserAvatar(uploader, radius: 20),
                   ),
                 ),
+                if (newImage)
+                  Positioned(
+                    top: 8,
+                    left: 8,
+                    child: _heroFade(
+                      hidden: heroOpen,
+                      child: _unreadDot(context, size: 14),
+                    ),
+                  ),
                 if (reactions > 0 || comments > 0)
                   Positioned(
                     top: 8,
@@ -777,6 +843,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
                               reactions,
                               borderColor: const Color(0xFFFFC107)
                                   .withValues(alpha: 0.8),
+                              unread: newReactions,
                             ),
                           if (comments > 0)
                             _countBadge(
@@ -784,6 +851,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
                               comments,
                               borderColor: const Color(0xFF42A5F5)
                                   .withValues(alpha: 0.8),
+                              unread: newComments,
                             ),
                         ],
                       ),
@@ -845,8 +913,9 @@ class ImageFeedPageState extends State<ImageFeedPage> {
   }
 
   /// A small frosted count badge for the grid tile corner.
-  Widget _countBadge(IconData icon, int count, {Color? borderColor}) {
-    return Container(
+  Widget _countBadge(IconData icon, int count,
+      {Color? borderColor, bool unread = false}) {
+    final badge = Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.6),
@@ -871,7 +940,26 @@ class ImageFeedPageState extends State<ImageFeedPage> {
         ],
       ),
     );
+    if (!unread) return badge;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        badge,
+        Positioned(top: -2, right: -2, child: _unreadDot(context)),
+      ],
+    );
   }
+
+  static Widget _unreadDot(BuildContext context, {double size = 9}) =>
+      Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: Theme.of(context).colorScheme.primary,
+          border: Border.all(color: Colors.black.withValues(alpha: 0.6)),
+        ),
+      );
 }
 
 PageRoute<void> _viewerRoute(Widget page) => PageRouteBuilder<void>(

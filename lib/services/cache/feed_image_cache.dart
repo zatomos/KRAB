@@ -26,7 +26,7 @@ abstract class ImageFetchers {
 
   /// Comments across every copy: within one group, or across every group the
   /// user shares the image with when groupId is null.
-  Future<int> commentCount(SharedImage image, String? groupId);
+  Future<CommentTally> commentCount(SharedImage image, String? groupId);
 
   /// Reactions across every copy.
   Future<int> reactionCount(SharedImage image);
@@ -80,24 +80,23 @@ class RegistryImageFetchers implements ImageFetchers {
   }
 
   @override
-  Future<int> commentCount(SharedImage image, String? groupId) async {
+  Future<CommentTally> commentCount(SharedImage image, String? groupId) async {
     if (groupId == null) return SharedImageApi(image).commentCount();
 
     for (final copy in image.copies) {
       final instance = InstanceRegistry.instance.byId(copy.instanceId);
       if (instance == null) continue;
       final response = await instance.api.getCommentCount(copy.id, groupId);
-      if (response.success) return response.data ?? 0;
+      if (response.success) {
+        return response.data ?? const CommentTally(count: 0);
+      }
     }
-    return 0;
+    return const CommentTally(count: 0);
   }
 
   @override
-  Future<int> reactionCount(SharedImage image) async {
-    final reactions = await SharedImageApi(image).reactions();
-    if (reactions == null) return 0;
-    return reactions.tally.fold<int>(0, (sum, r) => sum + r.count);
-  }
+  Future<int> reactionCount(SharedImage image) =>
+      SharedImageApi(image).warmedReactionCount();
 }
 
 /// Everything one gallery holds in memory for the images it is showing: the
@@ -136,6 +135,9 @@ class FeedImageCache {
   final Map<String, Future<ImageData>> _imageDataFutures = {};
   final BoundedCache<krab_user.User> _users = BoundedCache(maxTallies);
   final BoundedCache<int> _commentCounts = BoundedCache(maxTallies);
+
+  /// When each image's newest comment landed, as epoch millis.
+  final BoundedCache<int> _commentLatest = BoundedCache(maxTallies);
   final BoundedCache<int> _reactionCounts = BoundedCache(maxTallies);
 
   final List<String> _lru = [];
@@ -147,6 +149,12 @@ class FeedImageCache {
   krab_user.User? user(SharedImage image) => _users[image.identity];
 
   int commentCount(SharedImage image) => _commentCounts[image.identity] ?? 0;
+
+  /// When the newest comment on an image landed.
+  DateTime? commentsLatestAt(SharedImage image) {
+    final millis = _commentLatest[image.identity];
+    return millis == null ? null : DateTime.fromMillisecondsSinceEpoch(millis);
+  }
 
   int reactionCount(SharedImage image) => _reactionCounts[image.identity] ?? 0;
 
@@ -231,7 +239,14 @@ class FeedImageCache {
           );
     }
 
-    if (countFuture != null) _commentCounts[identity] = await countFuture;
+    if (countFuture != null) {
+      final tally = await countFuture;
+      _commentCounts[identity] = tally.count;
+      final latest = tally.latestAt;
+      if (latest != null) {
+        _commentLatest[identity] = latest.millisecondsSinceEpoch;
+      }
+    }
     if (reactionsFuture != null) {
       _reactionCounts[identity] = await reactionsFuture;
     }
@@ -284,6 +299,7 @@ class FeedImageCache {
   void evict(SharedImage image) {
     _drop(image.identity);
     _commentCounts.remove(image.identity);
+    _commentLatest.remove(image.identity);
     _reactionCounts.remove(image.identity);
     _users.remove(image.identity);
   }
@@ -295,6 +311,7 @@ class FeedImageCache {
     _imageDataFutures.clear();
     _users.clear();
     _commentCounts.clear();
+    _commentLatest.clear();
     _reactionCounts.clear();
     _lru.clear();
     _fullResLru.clear();

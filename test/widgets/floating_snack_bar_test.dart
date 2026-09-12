@@ -127,8 +127,8 @@ void main() {
       }
       // and they don't squeeze the message into a column of single letters
       // either.
-      expect(tester.getSize(find.text(message)).width,
-          greaterThan(width * 0.25));
+      expect(
+          tester.getSize(find.text(message)).width, greaterThan(width * 0.25));
       await _waitOut(tester);
     });
   });

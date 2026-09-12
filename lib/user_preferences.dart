@@ -17,6 +17,7 @@ class UserPreferences {
   static late bool developerOptionsUnlocked;
   static late int widgetRefreshIntervalMinutes;
   static late bool updateNotifications;
+  static late bool unreadBadges;
 
   static final ValueNotifier<ThemeMode> themeMode =
       ValueNotifier(ThemeMode.dark);
@@ -35,6 +36,7 @@ class UserPreferences {
     widgetRefreshIntervalMinutes =
         _preferences?.getInt('widgetRefreshIntervalMinutes') ?? 30;
     updateNotifications = _preferences?.getBool('updateNotifications') ?? true;
+    unreadBadges = _preferences?.getBool('unreadBadges') ?? true;
   }
 
   static ThemeMode _themeModeFromName(String? name) => ThemeMode.values
@@ -43,6 +45,11 @@ class UserPreferences {
   static Future<void> setThemeMode(ThemeMode mode) async {
     await _preferences?.setString('themeMode', mode.name);
     themeMode.value = mode;
+  }
+
+  static Future<void> setUnreadBadges(bool value) async {
+    await _preferences?.setBool('unreadBadges', value);
+    unreadBadges = value;
   }
 
   static Future<bool> getAutoImageSave() async {

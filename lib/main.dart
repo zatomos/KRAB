@@ -19,6 +19,7 @@ import 'package:krab/services/instance/instance_bootstrap.dart';
 import 'package:krab/services/instance/instance_registry.dart';
 import 'package:krab/services/upload_outbox.dart';
 import 'package:krab/pages/servers_page.dart';
+import 'package:krab/services/cache/seen_state.dart';
 import 'package:krab/user_preferences.dart';
 
 /// Entry point for both the app and a push delivery.
@@ -26,6 +27,7 @@ void main(List<String> args) async {
   try {
     WidgetsFlutterBinding.ensureInitialized();
     await UserPreferences().initPrefs();
+    await SeenState.instance.load();
     await DebugNotifier.instance.initialize();
     await LaunchRouter.instance.initialize();
 

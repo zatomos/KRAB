@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:krab/services/cache/seen_state.dart';
+import 'package:krab/services/cache/unread_scan.dart';
 import 'package:krab/services/api/krab_api.dart';
 import 'package:krab/services/auth/app_auth.dart';
 import 'package:krab/services/cache/image_disk_cache.dart';
@@ -89,6 +91,8 @@ class KrabInstance {
     await imageCache.clear();
     reactions.clear();
     viewer.clear();
+    await SeenState.instance.clear();
+    UnreadScan.instance.clear();
   }
 
   /// Release the client and the auth event stream. Called when an instance is
