@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:skeletonizer/skeletonizer.dart';
 import 'package:flutter/services.dart';
 
 import 'package:krab/app_globals.dart';
@@ -123,7 +124,12 @@ class MyAppState extends State<MyApp> with WidgetsBindingObserver {
         supportedLocales: AppLocalizations.supportedLocales,
         builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
           value: systemBarsFor(Theme.of(context).brightness),
-          child: SafeArea(top: false, child: child!),
+          child: SkeletonizerConfig(
+            data: SkeletonizerConfigData(
+              brightness: Theme.of(context).brightness,
+            ),
+            child: SafeArea(top: false, child: child!),
+          ),
         ),
         home: FutureBuilder(
           future: _homePageFuture,
