@@ -10,6 +10,7 @@ import 'package:krab/models/shared_image.dart';
 import 'package:krab/services/api/krab_api.dart';
 import 'package:krab/services/instance/instance_registry.dart';
 import 'package:krab/services/instance/krab_instance.dart';
+import 'package:krab/services/notification_channels.dart';
 import 'package:krab/services/share_id.dart';
 import 'package:krab/services/upload_outbox.dart';
 
@@ -284,6 +285,33 @@ class SharedImageApi {
       }
     }
     return sections;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Notifications
+  // ---------------------------------------------------------------------------
+
+  /// Dismiss this image and reactions notifications
+  Future<void> dismissOpenedImageNotifications() async {
+    for (final pair in _present) {
+      await dismissImageNotificationsOnOpen(
+        pair.instance,
+        pair.copy.id,
+        shareId: pair.copy.shareId,
+      );
+    }
+  }
+
+  /// Dismiss this image comment notifications for this group
+  Future<void> dismissOpenedCommentNotifications({Group? group}) async {
+    for (final pair in _present) {
+      if (group != null && pair.instance.id != group.instanceId) continue;
+      await dismissCommentNotificationsOnOpen(
+        pair.instance,
+        pair.copy.id,
+        groupId: group?.id,
+      );
+    }
   }
 
   // ---------------------------------------------------------------------------

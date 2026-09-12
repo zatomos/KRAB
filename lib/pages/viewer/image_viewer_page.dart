@@ -163,6 +163,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
       _childSizes[widget.initialIndex] = widget.initialImageSize!;
     }
     _touch(widget.initialIndex);
+    _dismissNotificationsFor(widget.initialIndex);
 
     _controlsAnim = AnimationController(
       vsync: this,
@@ -236,10 +237,18 @@ class _ImageViewerPageState extends State<ImageViewerPage>
       // A freshly settled page always starts fitted to the screen
       _isZoomed = false;
     });
+    _dismissNotificationsFor(index);
     widget.onImageChanged?.call(index);
     _maybeLoadMore();
     _prefetchAround(index);
     _evictDistantPages();
+  }
+
+  /// Dismiss image notif
+  void _dismissNotificationsFor(int index) {
+    if (index < 0 || index >= widget.images.length) return;
+    unawaited(
+        SharedImageApi(widget.images[index]).dismissOpenedImageNotifications());
   }
 
   /// Warm the page on screen and the ones on either side of it.

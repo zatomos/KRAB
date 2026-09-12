@@ -240,6 +240,51 @@ Future<void> _showCommentNotification({
   await _refreshCommentBundle(instance, alsoLive: {id});
 }
 
+/// Take an image's comment notifications off the screen because the user has
+/// opened its comments.
+///
+/// [groupId] confines this to the one group's thread, which is all a gallery
+/// opened inside that group shows; the threads the same image has under other
+/// groups stay, since the user has not seen those. Left null -- the cross-group
+/// feed, whose sheet gathers every group's comments -- every thread about the
+/// image goes.
+Future<void> dismissCommentNotificationsOnOpen(
+  KrabInstance instance,
+  String imageId, {
+  String? groupId,
+}) async {
+  if (imageId.isEmpty) return;
+  await _ensureChannels();
+
+  final ids = await commentNotificationIdsToDismiss(imageId, groupId: groupId);
+  if (ids.isEmpty) return;
+
+  for (final id in ids) {
+    await _flnp.cancel(id: id);
+  }
+  await CommentThreads.instance.forget(ids);
+
+  await _refreshCommentBundle(instance);
+}
+
+/// Which comment notifications an opened comments sheet accounts for.
+///
+/// Named a group, that is the one thread for this image in that group, and
+/// nothing else: the image's threads under other groups have not been read.
+/// Named none, it is every thread about the image, which is what the
+/// cross-group sheet puts in front of the user.
+@visibleForTesting
+Future<List<int>> commentNotificationIdsToDismiss(
+  String imageId, {
+  String? groupId,
+}) async {
+  if (imageId.isEmpty) return const [];
+  if (groupId != null && groupId.isNotEmpty) {
+    return [commentThreadNotificationId(groupId: groupId, imageId: imageId)];
+  }
+  return CommentThreads.instance.idsForImage(imageId);
+}
+
 /// The thread under this id, or null when nothing of it is on screen any more.
 Future<CommentThread?> _liveCommentThread(int id) async {
   final recorded = await CommentThreads.instance.read(id);

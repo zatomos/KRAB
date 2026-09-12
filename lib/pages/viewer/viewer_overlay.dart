@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -246,6 +248,8 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
   }
 
   Future<void> _openComments() async {
+    unawaited(_api.dismissOpenedCommentNotifications(group: widget.group));
+
     final screenHeight = MediaQuery.sizeOf(context).height;
     await showModalBottomSheet<void>(
       context: context,

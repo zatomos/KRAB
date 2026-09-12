@@ -28,11 +28,19 @@ void main() {
       expect(summary.isWorthPosting, isFalse);
     });
 
-    test('one notification heads nothing', () {
-      // A summary above a single notification would only say what it already
-      // says.
-      expect(
-          summarizeBundle([child(BundleKind.image)]).isWorthPosting, isFalse);
+    test('one notification keeps its summary', () {
+      expect(summarizeBundle([child(BundleKind.image)]).isWorthPosting, isTrue);
+    });
+
+    test('a summary only comes down once nothing is under it', () {
+      for (var n = 1; n <= 4; n++) {
+        final children = [
+          for (var i = 0; i < n; i++) child(BundleKind.comment, id: i)
+        ];
+        expect(summarizeBundle(children).isWorthPosting, isTrue,
+            reason: '$n children still need their header');
+      }
+      expect(summarizeBundle(const []).isWorthPosting, isFalse);
     });
 
     test('two notifications are worth collapsing', () {

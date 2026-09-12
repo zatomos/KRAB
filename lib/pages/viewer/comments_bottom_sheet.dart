@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'package:material_symbols_icons/symbols.dart';
@@ -18,6 +20,7 @@ import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/services/time_formatting.dart';
 import 'package:krab/models/shared_image.dart';
 import 'package:krab/services/instance/instances.dart';
+import 'package:krab/services/notification_channels.dart';
 import 'package:krab/services/shared_image_api.dart';
 import 'package:krab/themes/global_theme_data.dart';
 
@@ -521,11 +524,25 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
   }
 
   void _toggleExpanded(String key) {
+    final expanding = !_expandedKeys.contains(key);
     setState(() {
-      if (!_expandedKeys.remove(key)) {
+      if (expanding) {
         _expandedKeys.add(key);
+      } else {
+        _expandedKeys.remove(key);
       }
     });
+    if (expanding) _dismissSectionNotification(key);
+  }
+
+  void _dismissSectionNotification(String key) {
+    final section = _sectionFor(key);
+    if (section == null) return;
+    unawaited(dismissCommentNotificationsOnOpen(
+      section.instance,
+      section.imageId,
+      groupId: section.groupId,
+    ));
   }
 
   /// The key an author is cached under.

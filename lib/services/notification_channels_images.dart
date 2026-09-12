@@ -326,12 +326,7 @@ Future<void> updateImageNotificationDescription(
   if (imageId.isEmpty) return;
   await _ensureChannels();
 
-  final candidates = <int>{
-    imageNotificationId(imageId),
-    if (shareId != null && shareId.isNotEmpty)
-      imageNotificationId(imageId, shareId: shareId),
-    ...await ShownImageNotifications.instance.idsCovering(imageId),
-  };
+  final candidates = await _imageNotificationIds(imageId, shareId);
 
   final live = await _activeNotificationIds();
   if (live == null) {
@@ -418,6 +413,35 @@ Future<ShownImageNotification?> _shownImageNotification(int id) async {
   return recorded;
 }
 
+Future<Set<int>> _imageNotificationIds(String imageId, String? shareId) async =>
+    {
+      imageNotificationId(imageId),
+      if (shareId != null && shareId.isNotEmpty)
+        imageNotificationId(imageId, shareId: shareId),
+      ...await ShownImageNotifications.instance.idsCovering(imageId),
+    };
+
+Future<void> dismissImageNotificationsOnOpen(
+  KrabInstance instance,
+  String imageId, {
+  String? shareId,
+}) async {
+  if (imageId.isEmpty) return;
+  await _ensureChannels();
+
+  final imageIds = await _imageNotificationIds(imageId, shareId);
+  final reactionId = reactionNotificationId(imageId);
+
+  for (final id in {...imageIds, reactionId}) {
+    await _flnp.cancel(id: id);
+  }
+  await ShownImageNotifications.instance.forget(imageIds);
+  await ReactionTallies.instance.forget([reactionId]);
+
+  await _refreshImageBundle(instance);
+  await _refreshReactionsBundle(instance);
+}
+
 /// Dismiss a deleted image's notifications and drop its cached big-picture file.
 Future<void> cancelImageNotification(
   KrabInstance instance,
@@ -426,12 +450,7 @@ Future<void> cancelImageNotification(
 }) async {
   await _ensureChannels();
 
-  final imageIds = <int>{
-    imageNotificationId(imageId),
-    if (shareId != null && shareId.isNotEmpty)
-      imageNotificationId(imageId, shareId: shareId),
-    ...await ShownImageNotifications.instance.idsCovering(imageId),
-  };
+  final imageIds = await _imageNotificationIds(imageId, shareId);
   final threadIds = await CommentThreads.instance.idsForImage(imageId);
   final reactionId = reactionNotificationId(imageId);
 

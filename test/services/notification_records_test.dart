@@ -8,7 +8,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   const image = '11111111-1111-1111-1111-111111111111';
-  final now = DateTime(2026, 8, 17, 12);
+  final now = DateTime.now().subtract(const Duration(minutes: 5));
 
   setUp(() => SharedPreferences.setMockInitialValues({}));
 

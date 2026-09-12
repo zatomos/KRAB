@@ -34,7 +34,7 @@ class BundleSummary {
   final int reactions;
 
   int get total => images + comments + reactions;
-  bool get isWorthPosting => children >= 2;
+  bool get isWorthPosting => children >= 1;
 }
 
 BundleSummary summarizeBundle(Iterable<BundleChild> children) {
