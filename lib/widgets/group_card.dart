@@ -271,91 +271,94 @@ class _GroupCardState extends State<GroupCard> {
       child: Card(
           margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
           elevation: 0,
-          color: _highlighted
-              ? Color.alphaBlend(
-                  Theme.of(context)
-                      .colorScheme
-                      .onSurface
-                      .withValues(alpha: 0.08),
-                  Theme.of(context).colorScheme.surfaceContainer)
-              : null,
-          child: ListTile(
-            contentPadding: const EdgeInsets.fromLTRB(15, 2, 15, 2),
-            minVerticalPadding: 0,
-            visualDensity: VisualDensity.compact,
-            leading: GroupAvatar(_group, radius: 25),
-            title: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                // Group name
-                Expanded(
-                  child: Text(
-                    _group.name,
-                    style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                        letterSpacing: GlobalThemeData.mediumTracking),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-
-                const SizedBox(width: 8),
-
-                // Last image time
-                if (widget.group.latestImageAt != null)
-                  Text(
-                    timeAgoShort(context, widget.group.latestImageAt!),
-                    style: TextStyle(
-                        fontSize: 12,
-                        color: Theme.of(context).colorScheme.muted),
-                  ),
-              ],
-            ),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: widget.memberCount != null
-                          ? _memberCountLabel(context, widget.memberCount!)
-                          : FutureBuilder<int>(
-                              future: _memberCountFuture,
-                              builder: (context, snapshot) {
-                                if (snapshot.connectionState ==
-                                    ConnectionState.waiting) {
-                                  return const Text(" ");
-                                } else if (snapshot.hasError) {
-                                  return Text(
-                                      context.l10n.error_loading_members);
-                                } else {
-                                  return _memberCountLabel(
-                                      context, snapshot.data ?? 0);
-                                }
-                              },
-                            ),
+          clipBehavior: Clip.antiAlias,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            curve: Curves.easeOut,
+            color: _highlighted
+                ? Theme.of(context)
+                    .colorScheme
+                    .onSurface
+                    .withValues(alpha: 0.08)
+                : Colors.transparent,
+            child: ListTile(
+              contentPadding: const EdgeInsets.fromLTRB(15, 2, 15, 2),
+              minVerticalPadding: 0,
+              visualDensity: VisualDensity.compact,
+              leading: GroupAvatar(_group, radius: 25),
+              title: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  // Group name
+                  Expanded(
+                    child: Text(
+                      _group.name,
+                      style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                          letterSpacing: GlobalThemeData.mediumTracking),
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    if (_muted)
-                      Padding(
-                        padding: const EdgeInsets.only(left: 6),
-                        child: Icon(
-                          Symbols.notifications_off_rounded,
-                          size: 15,
-                          color: Theme.of(context).colorScheme.muted,
+                  ),
+
+                  const SizedBox(width: 8),
+
+                  // Last image time
+                  if (widget.group.latestImageAt != null)
+                    Text(
+                      timeAgoShort(context, widget.group.latestImageAt!),
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.muted),
+                    ),
+                ],
+              ),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: widget.memberCount != null
+                            ? _memberCountLabel(context, widget.memberCount!)
+                            : FutureBuilder<int>(
+                                future: _memberCountFuture,
+                                builder: (context, snapshot) {
+                                  if (snapshot.connectionState ==
+                                      ConnectionState.waiting) {
+                                    return const Text(" ");
+                                  } else if (snapshot.hasError) {
+                                    return Text(
+                                        context.l10n.error_loading_members);
+                                  } else {
+                                    return _memberCountLabel(
+                                        context, snapshot.data ?? 0);
+                                  }
+                                },
+                              ),
+                      ),
+                      if (_muted)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 6),
+                          child: Icon(
+                            Symbols.notifications_off_rounded,
+                            size: 15,
+                            color: Theme.of(context).colorScheme.muted,
+                          ),
                         ),
-                      ),
-                    if (_unopened > 0)
-                      Padding(
-                        padding: const EdgeInsets.only(left: 6),
-                        child: UnopenedBadge(count: _unopened),
-                      ),
-                  ],
-                ),
-                if (widget.showOrigin)
-                  ServerLabel(_instance,
-                      color: Theme.of(context).colorScheme.muted),
-              ],
+                      if (_unopened > 0)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 6),
+                          child: UnopenedBadge(count: _unopened),
+                        ),
+                    ],
+                  ),
+                  if (widget.showOrigin)
+                    ServerLabel(_instance,
+                        color: Theme.of(context).colorScheme.muted),
+                ],
+              ),
             ),
           )),
     );
