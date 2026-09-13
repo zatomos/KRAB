@@ -330,7 +330,7 @@ class _GroupsSkeleton extends StatelessWidget {
         children: List.generate(
           _rowCount,
           (_) => const Card(
-            margin: EdgeInsets.symmetric(horizontal: 0, vertical: 8),
+            margin: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
             elevation: 0,
             child: ListTile(
               contentPadding: EdgeInsets.fromLTRB(15, 2, 5, 2),

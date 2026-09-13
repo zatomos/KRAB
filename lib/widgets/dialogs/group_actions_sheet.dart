@@ -47,7 +47,7 @@ Future<GroupAction?> showGroupActions(
         Symbols.star_rounded,
         isFavorite ? l10n.unfavorite_group : l10n.favorite_group,
         GroupAction.favorite,
-        color: isFavorite ? Colors.amber : null,
+        color: Colors.amber,
       ),
       item(
         isMuted

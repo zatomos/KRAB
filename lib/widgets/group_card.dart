@@ -269,7 +269,7 @@ class _GroupCardState extends State<GroupCard> {
         widget.onReturn?.call();
       },
       child: Card(
-          margin: const EdgeInsets.symmetric(horizontal: 0, vertical: 8),
+          margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
           elevation: 0,
           color: _highlighted
               ? Color.alphaBlend(
