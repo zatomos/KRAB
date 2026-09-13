@@ -299,7 +299,7 @@ class GroupsPageState extends State<GroupsPage> {
           Expanded(
             child: DelayedLoading(
               loading: _loading,
-              placeholder: const _GroupsSkeleton(),
+              placeholder: _GroupsSkeleton(withHeading: _favorites.isNotEmpty),
               child: _buildGroupsContent(context),
             ),
           ),
@@ -319,7 +319,9 @@ class GroupsPageState extends State<GroupsPage> {
 
 /// Bone placeholders
 class _GroupsSkeleton extends StatelessWidget {
-  const _GroupsSkeleton();
+  const _GroupsSkeleton({this.withHeading = false});
+
+  final bool withHeading;
 
   static const int _rowCount = 5;
 
@@ -327,21 +329,32 @@ class _GroupsSkeleton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Skeletonizer.zone(
       child: ListView(
-        children: List.generate(
-          _rowCount,
-          (_) => const Card(
-            margin: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-            elevation: 0,
-            child: ListTile(
-              contentPadding: EdgeInsets.fromLTRB(15, 2, 5, 2),
-              minVerticalPadding: 0,
-              visualDensity: VisualDensity.compact,
-              leading: Bone.circle(size: 50),
-              title: Bone.text(width: 140),
-              subtitle: Bone.text(width: 80),
+        children: [
+          if (withHeading)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 12, 20, 4),
+              child: Row(
+                children: [
+                  Bone.circle(size: 16),
+                  SizedBox(width: 6),
+                  Bone.text(fontSize: 13, width: 70),
+                ],
+              ),
             ),
-          ),
-        ),
+          for (var i = 0; i < _rowCount; i++)
+            const Card(
+              margin: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              elevation: 0,
+              child: ListTile(
+                contentPadding: EdgeInsets.fromLTRB(15, 2, 5, 2),
+                minVerticalPadding: 0,
+                visualDensity: VisualDensity.compact,
+                leading: Bone.circle(size: 50),
+                title: Bone.text(width: 140),
+                subtitle: Bone.text(width: 80),
+              ),
+            ),
+        ],
       ),
     );
   }
