@@ -634,6 +634,16 @@ class AccountPageState extends State<AccountPage> {
               ),
             ),
           ),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(context.l10n.unread_badges),
+            subtitle: Text(context.l10n.unread_badges_description),
+            value: _unreadBadges,
+            onChanged: (value) async {
+              await UserPreferences.setUnreadBadges(value);
+              setState(() => _unreadBadges = value);
+            },
+          ),
           if (_updateService.isEnabled)
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
@@ -645,16 +655,6 @@ class AccountPageState extends State<AccountPage> {
                 setState(() => updateNotificationsEnabled = value);
               },
             ),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text(context.l10n.unread_badges),
-            subtitle: Text(context.l10n.unread_badges_description),
-            value: _unreadBadges,
-            onChanged: (value) async {
-              await UserPreferences.setUnreadBadges(value);
-              setState(() => _unreadBadges = value);
-            },
-          ),
         ],
       ),
     );
