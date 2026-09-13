@@ -32,7 +32,7 @@ class _ZoomableImageState extends State<ZoomableImage>
   static const double _zoomedSlop = 1.01;
   static const double _settleSlop = 0.5;
   static const Duration _stillFor = Duration(milliseconds: 32);
-  static const double _flingFriction = 1e-30;
+  static const double _flingFriction = 1e-10;
 
   final _view = TransformationController();
 
