@@ -79,10 +79,14 @@ class _FakeFetchers implements ImageFetchers {
     );
   }
 
+  /// When set, no copy would answer and the tally is unknown.
+  bool commentCountUnavailable = false;
+
   @override
-  Future<CommentTally> commentCount(SharedImage image, String? groupId) async {
+  Future<CommentTally?> commentCount(SharedImage image, String? groupId) async {
     commentCountFetches.add(image.primary.id);
     lastCommentGroupId = groupId;
+    if (commentCountUnavailable) return null;
     return CommentTally(count: 3, latestAt: commentsLatestAt);
   }
 
@@ -366,6 +370,36 @@ void main() {
       expect(fake.detailFetches, isEmpty);
       expect((await cache.imageData(_image('a'))).description, 'about a');
     });
+  });
+
+  test('a comment removed from a tally that never loaded holds at zero', () {
+    cache.addToCommentCount(_image('never-loaded'), -1);
+
+    expect(cache.commentCount(_image('never-loaded')), 0);
+  });
+
+  test('a tally nobody would answer is not recorded as none', () async {
+    fake.commentCountUnavailable = true;
+    await cache.imageData(_image('a'));
+    expect(cache.commentCount(_image('a')), 0, reason: 'nothing to show yet');
+
+    fake.commentCountUnavailable = false;
+    cache.clear();
+    await cache.imageData(_image('a'));
+
+    expect(cache.commentCount(_image('a')), 3, reason: 'asked again');
+  });
+
+  test('setCommentTally takes both halves as given', () {
+    cache.setCommentTally(
+        _image('a'), CommentTally(count: 2, latestAt: DateTime(2026, 9, 1)));
+    expect(cache.commentCount(_image('a')), 2);
+    expect(cache.commentsLatestAt(_image('a')), DateTime(2026, 9, 1));
+
+    // The last comment deleted takes the newest time with it.
+    cache.setCommentTally(_image('a'), const CommentTally(count: 0));
+    expect(cache.commentCount(_image('a')), 0);
+    expect(cache.commentsLatestAt(_image('a')), isNull);
   });
 
   test('addToCommentCount moves the tally in both directions', () {

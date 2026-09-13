@@ -602,8 +602,8 @@ class ImageFeedPageState extends State<ImageFeedPage> {
     setState(() => _images.removeWhere((p) => p.identity == image.identity));
   }
 
-  void _onCommentCountChanged(SharedImage image, int delta) {
-    setState(() => _cache.addToCommentCount(image, delta));
+  void _onCommentCountChanged(SharedImage image, CommentTally tally) {
+    setState(() => _cache.setCommentTally(image, tally));
   }
 
   void _onDescriptionChanged(SharedImage image, String description) {

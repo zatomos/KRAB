@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:extended_image/extended_image.dart';
 
 import 'package:krab/models/user.dart' as krab_user;
+import 'package:krab/services/api/krab_api.dart';
 import 'package:krab/models/image_data.dart';
 import 'package:krab/models/group.dart';
 import 'package:krab/models/image_ref.dart';
@@ -65,7 +66,8 @@ class ImageViewerPage extends StatefulWidget {
   /// The gallery's cache, shared with the feed underneath so swiping between
   /// images and closing back to the grid never re-downloads what is loaded.
   final FeedImageCache cache;
-  final void Function(SharedImage image, int delta)? onCommentCountChanged;
+  final void Function(SharedImage image, CommentTally tally)?
+      onCommentCountChanged;
   final void Function(SharedImage image)? onImageDeleted;
 
   /// An image was changed by its uploader, so the gallery underneath can show
@@ -502,8 +504,8 @@ class _ImageViewerPageState extends State<ImageViewerPage>
                 uploadedAt: widget.images[_currentIndex].uploadedAt,
                 flingToCommentsEnabled: !_isZoomed,
                 loadBestBytesForSave: () => widget.cache.bestBytes(image),
-                onCommentCountChanged: (delta) =>
-                    widget.onCommentCountChanged?.call(image, delta),
+                onCommentCountChanged: (tally) =>
+                    widget.onCommentCountChanged?.call(image, tally),
                 onDescriptionChanged: (description) =>
                     _onDescriptionChanged(image, description),
                 onImageDeleted: widget.onImageDeleted,

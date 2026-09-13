@@ -26,7 +26,7 @@ abstract class ImageFetchers {
 
   /// Comments across every copy: within one group, or across every group the
   /// user shares the image with when groupId is null.
-  Future<CommentTally> commentCount(SharedImage image, String? groupId);
+  Future<CommentTally?> commentCount(SharedImage image, String? groupId);
 
   /// Reactions across every copy.
   Future<int> reactionCount(SharedImage image);
@@ -80,9 +80,10 @@ class RegistryImageFetchers implements ImageFetchers {
   }
 
   @override
-  Future<CommentTally> commentCount(SharedImage image, String? groupId) async {
+  Future<CommentTally?> commentCount(SharedImage image, String? groupId) async {
     if (groupId == null) return SharedImageApi(image).commentCount();
 
+    final refusals = <String>[];
     for (final copy in image.copies) {
       final instance = InstanceRegistry.instance.byId(copy.instanceId);
       if (instance == null) continue;
@@ -90,8 +91,11 @@ class RegistryImageFetchers implements ImageFetchers {
       if (response.success) {
         return response.data ?? const CommentTally(count: 0);
       }
+      refusals.add('${instance.id}: ${response.error}');
     }
-    return const CommentTally(count: 0);
+    debugPrint('Comments: no count for an image in group $groupId '
+        '(${refusals.isEmpty ? 'no reachable copy' : refusals.join('; ')})');
+    return null;
   }
 
   @override
@@ -158,8 +162,21 @@ class FeedImageCache {
 
   int reactionCount(SharedImage image) => _reactionCounts[image.identity] ?? 0;
 
-  void addToCommentCount(SharedImage image, int delta) {
-    _commentCounts[image.identity] = commentCount(image) + delta;
+  void addToCommentCount(SharedImage image, int delta) =>
+      setCommentCount(image, commentCount(image) + delta);
+
+  void setCommentCount(SharedImage image, int count) {
+    _commentCounts[image.identity] = count < 0 ? 0 : count;
+  }
+
+  void setCommentTally(SharedImage image, CommentTally tally) {
+    setCommentCount(image, tally.count);
+    final latest = tally.latestAt;
+    if (latest == null) {
+      _commentLatest.remove(image.identity);
+    } else {
+      _commentLatest[image.identity] = latest.millisecondsSinceEpoch;
+    }
   }
 
   /// An image's thumbnail, details and tallies, fetched once and memoized so
@@ -241,11 +258,7 @@ class FeedImageCache {
 
     if (countFuture != null) {
       final tally = await countFuture;
-      _commentCounts[identity] = tally.count;
-      final latest = tally.latestAt;
-      if (latest != null) {
-        _commentLatest[identity] = latest.millisecondsSinceEpoch;
-      }
+      if (tally != null) setCommentTally(image, tally);
     }
     if (reactionsFuture != null) {
       _reactionCounts[identity] = await reactionsFuture;

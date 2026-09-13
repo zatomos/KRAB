@@ -123,10 +123,21 @@ class SeenState extends ChangeNotifier {
       _hasNewComments(allCommentsKey(identity), totalCount, latestAt);
 
   bool _hasNewComments(String key, int count, DateTime? latestAt) {
-    if (latestAt == null) return count > (_comments[key] ?? 0);
+    if (latestAt == null) {
+      final seen = _comments[key] ?? 0;
+      if (count < seen) _lowerCommentBaseline(key, count);
+      return count > seen;
+    }
     final seenAt = _commentsAt[key];
     if (seenAt == null) return latestAt.isAfter(_floor);
     return latestAt.millisecondsSinceEpoch > seenAt;
+  }
+
+  /// Take the baseline down to what is actually there.
+  void _lowerCommentBaseline(String key, int count) {
+    _comments[key] = count;
+    _touched[key] = DateTime.now().millisecondsSinceEpoch;
+    _scheduleSave();
   }
 
   void markAllCommentsSeen(String identity, int totalCount,

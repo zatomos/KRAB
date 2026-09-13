@@ -70,7 +70,7 @@ class ViewerOverlay extends StatefulWidget {
   /// while the image is zoomed so panning doesn't get mistaken for the gesture.
   final bool flingToCommentsEnabled;
 
-  final void Function(int delta)? onCommentCountChanged;
+  final void Function(CommentTally tally)? onCommentCountChanged;
   final void Function(SharedImage image)? onImageDeleted;
   final void Function(String description)? onDescriptionChanged;
 
@@ -316,9 +316,13 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
         uploaderId: widget.imageData.uploadedBy,
         primaryGroup: widget.group,
         initialCommentCount: _commentCount,
-        onCommentCountChanged: (delta) {
-          setState(() => _commentCount += delta);
-          widget.onCommentCountChanged?.call(delta);
+        onCommentCountChanged: (tally) {
+          setState(() {
+            _commentCount = tally.count;
+            _commentsLatestAt = tally.latestAt;
+          });
+          _markCommentsRead();
+          widget.onCommentCountChanged?.call(tally);
         },
       ),
     );

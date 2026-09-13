@@ -120,6 +120,20 @@ void main() {
       expect(seen.hasNewComments(inst, family, imageA, 4), isFalse);
     });
 
+    test('a comment after a deleted one is still new', () {
+      seen.markCommentsSeen(inst, family, imageA, 3);
+
+      expect(seen.hasNewComments(inst, family, imageA, 2), isFalse);
+      expect(seen.hasNewComments(inst, family, imageA, 3), isTrue);
+    });
+
+    test('a comment blanked in place leaves the baseline alone', () {
+      seen.markCommentsSeen(inst, family, imageA, 3);
+
+      expect(seen.hasNewComments(inst, family, imageA, 3), isFalse);
+      expect(seen.hasNewComments(inst, family, imageA, 4), isTrue);
+    });
+
     test('each group is counted on its own', () {
       // The image is in both groups; reading it in one leaves the other.
       seen.markCommentsSeen(inst, family, imageA, 1);

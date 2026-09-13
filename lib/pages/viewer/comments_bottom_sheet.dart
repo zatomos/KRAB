@@ -172,7 +172,9 @@ class CommentsBottomSheet extends StatefulWidget {
   /// are shown together, grouped by group.
   final Group? primaryGroup;
   final String uploaderId;
-  final void Function(int delta)? onCommentCountChanged;
+
+  /// The image's comments, as the sheet now counts them.
+  final void Function(CommentTally tally)? onCommentCountChanged;
 
   /// The comment total the gallery badge is showing, used to size the loading
   /// skeleton. Null when unknown.
@@ -280,20 +282,29 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
     return null;
   }
 
-  /// The comment total the gallery's badge is showing, as the server last
-  /// reported it. In all-groups mode the badge counts every group; otherwise it
-  /// tracks only the group the image was opened from.
-  int _trackedCount() => _sections
-      .where((s) => _isAllGroupsMode || s.groupId == _primaryGroupId)
-      .fold<int>(0, (sum, s) => sum + s.commentCount);
+  /// The sections the gallery's badge is counting.
+  Iterable<_GroupCommentSection> get _trackedSections =>
+      _sections.where((s) => _isAllGroupsMode || s.groupId == _primaryGroupId);
 
-  /// Refresh, and tell the gallery how much its badge actually moved.
+  CommentTally _trackedTally() {
+    var count = 0;
+    DateTime? newest;
+    for (final section in _trackedSections) {
+      count += section.commentCount;
+      newest = CommentTally.newest(newest, section.newestAt);
+    }
+    return CommentTally(count: count, latestAt: newest);
+  }
+
+  /// Refresh, and hand the gallery the tally the sheet just counted.
   Future<void> _refreshAndReportCount() async {
-    final before = _trackedCount();
+    final before = _trackedTally();
     await _fetchComments();
     if (!mounted) return;
-    final delta = _trackedCount() - before;
-    if (delta != 0) widget.onCommentCountChanged?.call(delta);
+    final now = _trackedTally();
+    if (now.count != before.count || now.latestAt != before.latestAt) {
+      widget.onCommentCountChanged?.call(now);
+    }
   }
 
   Future<void> _fetchComments() async {
@@ -480,6 +491,7 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
       }
       await _refreshAndReportCount();
       if (!mounted) return;
+      _dismissSectionNotification(section.key);
       showSnackBar(context.l10n.comment_deleted_success,
           tone: SnackTone.success);
     } else {
