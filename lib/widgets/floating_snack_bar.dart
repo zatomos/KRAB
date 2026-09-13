@@ -25,55 +25,143 @@ class SnackAction {
   final bool prominent;
 }
 
+FloatingSnackBarState? _current;
+
 void showSnackBar(
   String message, {
   SnackTone tone = SnackTone.neutral,
   List<SnackAction> actions = const [],
   Duration? duration,
 }) {
-  final scaffoldMessenger = scaffoldMessengerKey.currentState;
+  final overlay = navigatorKey.currentState?.overlay;
+  if (overlay == null) {
+    debugPrint("showSnackBar called but no valid Overlay found.");
+    return;
+  }
 
-  if (scaffoldMessenger != null) {
-    final background = switch (tone) {
-      SnackTone.neutral =>
-        Theme.of(scaffoldMessenger.context).colorScheme.secondary,
-      SnackTone.success => GlobalThemeData.success,
-      SnackTone.failure => Colors.red,
-      SnackTone.warning => Colors.orangeAccent,
-    };
-    final visibleFor = duration ?? const Duration(seconds: 4);
-    // Don't stack on top of a previous snackbar
-    scaffoldMessenger.hideCurrentSnackBar();
-    final controller = scaffoldMessenger.showSnackBar(
-      SnackBar(
-        content: _content(message, actions, background),
-        elevation: 4,
-        behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.all(16),
-        backgroundColor: background,
-        duration: visibleFor,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
+  // Don't stack on top of a previous snackbar
+  hideSnackBar();
+
+  late final OverlayEntry entry;
+  entry = OverlayEntry(
+    builder: (_) => FloatingSnackBar(
+      message: message,
+      tone: tone,
+      actions: actions,
+      duration: duration ?? const Duration(seconds: 4),
+      onDismissed: entry.remove,
+    ),
+  );
+  overlay.insert(entry);
+}
+
+/// Close the snackbar on screen, if there is one.
+void hideSnackBar() => _current?.close();
+
+/// The floating message itself, living in the overlay.
+class FloatingSnackBar extends StatefulWidget {
+  const FloatingSnackBar({
+    super.key,
+    required this.message,
+    required this.tone,
+    required this.actions,
+    required this.duration,
+    required this.onDismissed,
+  });
+
+  final String message;
+  final SnackTone tone;
+  final List<SnackAction> actions;
+  final Duration duration;
+  final VoidCallback onDismissed;
+
+  @override
+  State<FloatingSnackBar> createState() => FloatingSnackBarState();
+}
+
+class FloatingSnackBarState extends State<FloatingSnackBar>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 250),
+    reverseDuration: const Duration(milliseconds: 200),
+  );
+
+  Timer? _timer;
+  bool _closing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _current = this;
+    _controller.forward();
+    _timer = Timer(widget.duration, close);
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _controller.dispose();
+    if (_current == this) _current = null;
+    super.dispose();
+  }
+
+  /// Slide back out, then take the entry out of the overlay.
+  Future<void> close() async {
+    if (_closing) return;
+    _closing = true;
+    _timer?.cancel();
+    if (_current == this) _current = null;
+    await _controller.reverse();
+    if (mounted) widget.onDismissed();
+  }
+
+  Color get _background => switch (widget.tone) {
+        SnackTone.neutral => Theme.of(context).colorScheme.secondary,
+        SnackTone.success => GlobalThemeData.success,
+        SnackTone.failure => Colors.red,
+        SnackTone.warning => Colors.orangeAccent,
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final background = _background;
+    final curve = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
+
+    return Positioned(
+      left: 16,
+      right: 16,
+      bottom: 16 + MediaQuery.viewInsetsOf(context).bottom,
+      child: SlideTransition(
+        position:
+            Tween(begin: const Offset(0, 1), end: Offset.zero).animate(curve),
+        child: FadeTransition(
+          opacity: curve,
+          child: Dismissible(
+            key: const ValueKey('floating-snack-bar'),
+            direction: DismissDirection.horizontal,
+            onDismissed: (_) {
+              _closing = true;
+              _timer?.cancel();
+              if (_current == this) _current = null;
+              widget.onDismissed();
+            },
+            child: Material(
+              color: background,
+              elevation: 4,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: widget.actions.isEmpty
+                    ? const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: _contentPadding)
+                    : const EdgeInsetsDirectional.only(start: 16, end: 8),
+                child: _content(widget.message, widget.actions, background),
+              ),
+            ),
+          ),
         ),
-        padding: actions.length > 1
-            ? const EdgeInsetsDirectional.only(start: 16, end: 8)
-            : null,
-        action: actions.length == 1
-            ? SnackBarAction(
-                label: actions.first.label,
-                textColor: Colors.white,
-                onPressed: actions.first.onPressed,
-              )
-            : null,
       ),
     );
-
-    if (actions.isNotEmpty) {
-      final timer = Timer(visibleFor, controller.close);
-      controller.closed.whenComplete(timer.cancel);
-    }
-  } else {
-    debugPrint("showSnackBar called but no valid ScaffoldMessenger found.");
   }
 }
 
@@ -81,7 +169,7 @@ const double _contentPadding = 14;
 
 Widget _content(String message, List<SnackAction> actions, Color background) {
   final text = Text(message, style: const TextStyle(color: Colors.white));
-  if (actions.length < 2) return text;
+  if (actions.isEmpty) return text;
 
   final buttons = [
     for (final action in actions) _actionButton(action, background)
@@ -122,8 +210,7 @@ Widget _actionButton(SnackAction action, Color background) {
       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
     ),
     onPressed: () {
-      scaffoldMessengerKey.currentState
-          ?.hideCurrentSnackBar(reason: SnackBarClosedReason.action);
+      hideSnackBar();
       action.onPressed();
     },
     child: Text(

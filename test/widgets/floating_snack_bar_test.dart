@@ -4,15 +4,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:krab/app_globals.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
 
-/// Mounts a messenger the global helper can post to, on a screen of the given
-/// width.
+/// Mounts an app whose overlay the global helper can post to, on a screen of
+/// the given width.
 Future<void> _pumpMessenger(WidgetTester tester, {double width = 360}) async {
   tester.view.physicalSize = Size(width, 640);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
 
   await tester.pumpWidget(MaterialApp(
-    scaffoldMessengerKey: scaffoldMessengerKey,
+    navigatorKey: navigatorKey,
     home: const Scaffold(body: SizedBox.shrink()),
   ));
 }
@@ -31,7 +31,7 @@ Future<void> _waitOut(WidgetTester tester) async {
 
 void main() {
   group('showSnackBar', () {
-    testWidgets('one action uses the built-in action slot', (tester) async {
+    testWidgets('one action shows and is tappable', (tester) async {
       await _pumpMessenger(tester);
 
       var tapped = false;
@@ -40,7 +40,7 @@ void main() {
       ]);
       await tester.pumpAndSettle();
 
-      expect(find.byType(SnackBarAction), findsOneWidget);
+      expect(find.text('Undo'), findsOneWidget);
 
       await tester.tap(find.text('Undo'));
       expect(tapped, isTrue);
@@ -97,13 +97,13 @@ void main() {
 
       showSnackBar('Sent');
       await tester.pumpAndSettle();
-      final plain = tester.getSize(find.byType(SnackBar)).height;
+      final plain = tester.getSize(find.byType(FloatingSnackBar)).height;
       await _waitOut(tester);
 
       showSnackBar('Sent', actions: _viewAndUndo());
       await tester.pumpAndSettle();
 
-      expect(tester.getSize(find.byType(SnackBar)).height, plain);
+      expect(tester.getSize(find.byType(FloatingSnackBar)).height, plain);
       await _waitOut(tester);
     });
 
