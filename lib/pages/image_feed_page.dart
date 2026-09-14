@@ -17,6 +17,8 @@ import 'package:krab/services/image_size.dart';
 import 'package:krab/services/shared_image_api.dart';
 import 'package:krab/pages/group_settings_page.dart';
 import 'package:krab/pages/groups_page.dart';
+import 'package:krab/pages/viewer/frosted.dart';
+import 'package:krab/themes/frosted_palette.dart';
 import 'package:krab/pages/viewer/image_viewer_page.dart';
 import 'package:krab/services/cache/feed_image_cache.dart';
 import 'package:krab/widgets/avatars/user_avatar.dart';
@@ -1041,29 +1043,28 @@ class ImageFeedPageState extends State<ImageFeedPage> {
   /// A small frosted count badge for the grid tile corner.
   Widget _countBadge(IconData icon, int count,
       {Color? borderColor, bool unread = false}) {
-    final badge = Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.6),
-        borderRadius: BorderRadius.circular(10),
-        border: borderColor != null
-            ? Border.all(color: borderColor, width: 1)
-            : null,
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 12, color: Colors.white),
-          const SizedBox(width: 3),
-          Text(
-            count.toString(),
-            style: const TextStyle(
-              fontSize: 12,
-              color: Colors.white,
-              fontWeight: FontWeight.w400,
+    final badge = FrostedSurface(
+      borderRadius: BorderRadius.circular(10),
+      tint: context.frostedTint,
+      borderColor: borderColor,
+      sigma: 6,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 12, color: frostedOn),
+            const SizedBox(width: 3),
+            Text(
+              count.toString(),
+              style: const TextStyle(
+                fontSize: 12,
+                color: frostedOn,
+                fontWeight: FontWeight.w400,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
     if (!unread) return badge;
