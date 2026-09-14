@@ -651,26 +651,24 @@ class _ViewerOverlayState extends State<ViewerOverlay> {
   @override
   Widget build(BuildContext context) {
     final t = widget.progress;
-    // Groups every frosted pill so they share one backdrop blur pass per frame
-    // instead of each sampling the image behind them independently.
     return BackdropGroup(
       child: Stack(
         children: [
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            height: MediaQuery.sizeOf(context).height * 0.2,
-            child: GestureDetector(
-              behavior: HitTestBehavior.translucent,
-              onVerticalDragEnd: (details) {
-                if (widget.flingToCommentsEnabled &&
-                    details.velocity.pixelsPerSecond.dy < -600) {
-                  _openComments();
-                }
-              },
+          if (widget.flingToCommentsEnabled)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: MediaQuery.sizeOf(context).height * 0.2,
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onVerticalDragEnd: (details) {
+                  if (details.velocity.pixelsPerSecond.dy < -600) {
+                    _openComments();
+                  }
+                },
+              ),
             ),
-          ),
 
           // Top Buttons
           Positioned(

@@ -518,64 +518,69 @@ class _ImageViewerPageState extends State<ImageViewerPage>
     );
   }
 
+
+  MediaQueryData _pagingMedia(MediaQueryData media) => media.copyWith(
+        gestureSettings: const DeviceGestureSettings(
+          touchSlop: kPagingTouchSlop,
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
     final viewport = MediaQuery.sizeOf(context);
+    final media = MediaQuery.of(context);
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: systemBarsFor(Brightness.dark),
       child: Scaffold(
         backgroundColor: Colors.black,
         resizeToAvoidBottomInset: false,
-        body: GestureDetector(
-          onTap: _toggleChrome,
-          child: Stack(
-            children: [
-              Positioned.fill(child: _buildBackground()),
-              Positioned.fill(
-                child: ColoredBox(color: context.frostedVeil),
-              ),
-              Positioned.fill(
-                child: MediaQuery(
-                  data: MediaQuery.of(context).copyWith(
-                    gestureSettings: const DeviceGestureSettings(
-                      touchSlop: kPagingTouchSlop,
-                    ),
-                  ),
-                  child: PageView.builder(
-                    controller: _pageController,
-                    itemCount: widget.images.length,
-                    onPageChanged: _onPageChanged,
-                    physics: _isZoomed
-                        ? const NeverScrollableScrollPhysics()
-                        : const _SnappyPageScrollPhysics(),
-                    itemBuilder: (context, index) {
-                      _touch(index);
-                      final pageimage = widget.images[index];
-                      return RepaintBoundary(
-                        child: ViewerImage(
-                          key: ValueKey(pageimage.identity),
-                          imageCacheName: viewerImageCacheName,
-                          displaySize: _displaySizeFor(index, viewport),
-                          heroTag: index == _heroIndex
-                              ? "image_${pageimage.identity}"
-                              : null,
-                          initialBytes: _pageBytes[index],
-                          imageDataFuture: _imageDataFor(index),
-                          fullFuture: widget.cache.fullResBytes(pageimage),
-                          onLowBytes: (bytes) => _cachePageBytes(index, bytes),
-                          onNaturalSize: (size) => _setChildSize(index, size),
-                          onZoomChanged: _onPageZoomChanged,
-                          onTap: _toggleChrome,
-                          settled: _settled,
-                        ),
-                      );
-                    },
-                  ),
+        body: Stack(
+          children: [
+            Positioned.fill(child: _buildBackground()),
+            Positioned.fill(
+              child: ColoredBox(color: context.frostedVeil),
+            ),
+            Positioned.fill(
+              child: MediaQuery(
+                data: _pagingMedia(media),
+                child: PageView.builder(
+                  controller: _pageController,
+                  itemCount: widget.images.length,
+                  onPageChanged: _onPageChanged,
+                  physics: _isZoomed
+                      ? const NeverScrollableScrollPhysics()
+                      : const _SnappyPageScrollPhysics(),
+                  itemBuilder: (context, index) {
+                    _touch(index);
+                    final pageimage = widget.images[index];
+                    final page = ViewerImage(
+                      key: ValueKey(pageimage.identity),
+                      imageCacheName: viewerImageCacheName,
+                      displaySize: _displaySizeFor(index, viewport),
+                      heroTag: index == _heroIndex
+                          ? "image_${pageimage.identity}"
+                          : null,
+                      initialBytes: _pageBytes[index],
+                      imageDataFuture: _imageDataFor(index),
+                      fullFuture: widget.cache.fullResBytes(pageimage),
+                      onLowBytes: (bytes) => _cachePageBytes(index, bytes),
+                      onNaturalSize: (size) => _setChildSize(index, size),
+                      onZoomChanged: _onPageZoomChanged,
+                      onTap: _toggleChrome,
+                      settled: _settled,
+                    );
+                    return RepaintBoundary(
+                      child: MediaQuery(
+                        data: _isZoomed ? media : _pagingMedia(media),
+                        child: page,
+                      ),
+                    );
+                  },
                 ),
               ),
-              Positioned.fill(child: _buildOverlay()),
-            ],
-          ),
+            ),
+            Positioned.fill(child: _buildOverlay()),
+          ],
         ),
       ),
     );

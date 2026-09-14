@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 /// A image the user can pinch, pan and double tap.
@@ -39,9 +40,6 @@ class _ZoomableImageState extends State<ZoomableImage>
   /// The image's pixel size, which fixes the shape of the rect it fills.
   Size? _imageSize;
 
-  /// Where a double tap last landed, in this widget's coordinates.
-  Offset? _tappedAt;
-
   late final AnimationController _mover;
   Matrix4? _moveFrom;
   Matrix4? _moveTo;
@@ -49,6 +47,11 @@ class _ZoomableImageState extends State<ZoomableImage>
   bool _zoomed = false;
   bool _interacting = false;
   Timer? _settleTimer;
+  int _pointers = 0;
+  Offset? _downAt;
+  bool _stillATap = false;
+  Offset? _firstTapAt;
+  Timer? _tapTimer;
 
   @override
   void initState() {
@@ -68,6 +71,7 @@ class _ZoomableImageState extends State<ZoomableImage>
   @override
   void dispose() {
     _settleTimer?.cancel();
+    _tapTimer?.cancel();
     _view.removeListener(_onViewChanged);
     _mover.dispose();
     _view.dispose();
@@ -146,7 +150,7 @@ class _ZoomableImageState extends State<ZoomableImage>
 
   /// Eases the image back over the screen.
   void _settle() {
-    if (!mounted || _interacting) return;
+    if (!mounted || _interacting || _mover.isAnimating) return;
     final scale = _scale;
     final offset = _offset;
     final home = _homeFor(offset, scale);
@@ -154,10 +158,64 @@ class _ZoomableImageState extends State<ZoomableImage>
     _animateTo(_matrixOf(scale, home));
   }
 
-  void _onDoubleTapDown(TapDownDetails details) =>
-      _tappedAt = details.localPosition;
+  void _onPointerDown(PointerDownEvent event) {
+    _pointers++;
+    _interacting = true;
+    _settleTimer?.cancel();
+    _stopMove();
+    if (_pointers > 1) {
+      _stillATap = false;
+      return;
+    }
+    _downAt = event.localPosition;
+    _stillATap = true;
+  }
 
-  void _onDoubleTap() {
+  void _onPointerMove(PointerMoveEvent event) {
+    final down = _downAt;
+    if (!_stillATap || down == null) return;
+    if ((event.localPosition - down).distance > kTouchSlop) _stillATap = false;
+  }
+
+  void _onPointerDone({required bool cancelled}) {
+    _pointers = math.max(0, _pointers - 1);
+    if (cancelled) _stillATap = false;
+    if (_pointers > 0) return;
+
+    _interacting = false;
+    _settleTimer?.cancel();
+    _settleTimer = Timer(_stillFor, _settle);
+    _endTap();
+    _stillATap = false;
+  }
+
+  /// Folds a finished interaction into a tap, a double tap, or neither.
+  void _endTap() {
+    final at = _downAt;
+    if (!_stillATap || at == null) {
+      _firstTapAt = null;
+      _tapTimer?.cancel();
+      return;
+    }
+
+    final first = _firstTapAt;
+    if (first != null && (at - first).distance <= kDoubleTapSlop) {
+      _tapTimer?.cancel();
+      _firstTapAt = null;
+      _onDoubleTap(at);
+      return;
+    }
+
+    _firstTapAt = at;
+    _tapTimer?.cancel();
+    _tapTimer = Timer(kDoubleTapTimeout, () {
+      _firstTapAt = null;
+      if (mounted) widget.onTap?.call();
+    });
+  }
+
+  /// Zooms to tap, or back out if already zoomed in.
+  void _onDoubleTap(Offset tap) {
     final box = context.size;
     if (box == null) return;
 
@@ -165,7 +223,6 @@ class _ZoomableImageState extends State<ZoomableImage>
     final zoomedIn = from > _zoomedSlop;
     final to = zoomedIn ? _minScale : _doubleTapScale;
 
-    final tap = _tappedAt ?? box.center(Offset.zero);
     final onimage = (tap - _offset) / from;
     final offset = tap - onimage * to;
 
@@ -176,6 +233,13 @@ class _ZoomableImageState extends State<ZoomableImage>
     _moveFrom = _view.value.clone();
     _moveTo = target;
     _mover.forward(from: 0.0);
+  }
+
+  void _stopMove() {
+    if (!_mover.isAnimating) return;
+    _mover.stop();
+    _moveFrom = null;
+    _moveTo = null;
   }
 
   void _onMoveTick() {
@@ -197,41 +261,25 @@ class _ZoomableImageState extends State<ZoomableImage>
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        InteractiveViewer(
-          transformationController: _view,
-          minScale: _minScale,
-          maxScale: _maxScale,
-          boundaryMargin: const EdgeInsets.all(double.infinity),
-          interactionEndFrictionCoefficient: _flingFriction,
-          clipBehavior: Clip.none,
-          onInteractionStart: (_) {
-            _interacting = true;
-            _settleTimer?.cancel();
-          },
-          onInteractionEnd: (_) {
-            _interacting = false;
-            _settleTimer?.cancel();
-            _settleTimer = Timer(_stillFor, _settle);
-          },
-          child: Image(
-            image: widget.image,
-            fit: BoxFit.contain,
-            gaplessPlayback: true,
-            filterQuality: FilterQuality.medium,
-          ),
+    return Listener(
+      onPointerDown: _onPointerDown,
+      onPointerMove: _onPointerMove,
+      onPointerUp: (_) => _onPointerDone(cancelled: false),
+      onPointerCancel: (_) => _onPointerDone(cancelled: true),
+      child: InteractiveViewer(
+        transformationController: _view,
+        minScale: _minScale,
+        maxScale: _maxScale,
+        boundaryMargin: const EdgeInsets.all(double.infinity),
+        interactionEndFrictionCoefficient: _flingFriction,
+        clipBehavior: Clip.none,
+        child: Image(
+          image: widget.image,
+          fit: BoxFit.contain,
+          gaplessPlayback: true,
+          filterQuality: FilterQuality.medium,
         ),
-        Positioned.fill(
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onTap: widget.onTap,
-            onDoubleTapDown: _onDoubleTapDown,
-            onDoubleTap: _onDoubleTap,
-          ),
-        ),
-      ],
+      ),
     );
   }
 }
