@@ -136,6 +136,7 @@
   "error_adding_comment": "Error adding comment: {errorMsg}",
   "comment_updated_success": "Comment updated successfully.",
   "error_updating_comment": "Error updating comment: {errorMsg}",
+  "comment_deleted": "[deleted]",
   "comment_deleted_success": "Comment deleted successfully.",
   "error_deleting_comment": "Error deleting comment: {errorMsg}",
   "no_comments": "No comments yet.",

@@ -489,13 +489,14 @@ BEGIN
   INTO has_children;
 
   IF has_children THEN
-    -- Soft delete: replace content
     UPDATE "Comments" c
-    SET text = '[deleted by user]'
+    SET text = NULL,
+        deleted_at = now()
     WHERE id = delete_comment.comment_id
       AND c.image_id = delete_comment.image_id
       AND c.group_id = delete_comment.group_id
-      AND c.user_id = current_user_id;
+      AND c.user_id = current_user_id
+      AND c.deleted_at IS NULL;
 
   ELSE
     -- Hard delete
@@ -511,7 +512,7 @@ BEGIN
       'success', true,
       'message',
       CASE
-        WHEN has_children THEN 'Comment replaced by deletion marker'
+        WHEN has_children THEN 'Comment deleted, its replies kept'
         ELSE 'Comment deleted successfully'
       END
     );
@@ -868,7 +869,8 @@ BEGIN
         'user_id', c.user_id,
         'text', c.text,
         'created_at', c.created_at,
-        'parent_id', c.parent_id
+        'parent_id', c.parent_id,
+        'deleted_at', c.deleted_at
       )
       ORDER BY c.created_at ASC
     ),
@@ -1138,7 +1140,8 @@ BEGIN
               'user_id', c.user_id,
               'text', c.text,
               'created_at', c.created_at,
-              'parent_id', c.parent_id
+              'parent_id', c.parent_id,
+              'deleted_at', c.deleted_at
             ) ORDER BY c.created_at ASC
           )
           FROM "Comments" c
@@ -2606,7 +2609,8 @@ BEGIN
   WHERE c.id = update_comment.comment_id
     AND c.image_id = update_comment.image_id
     AND c.group_id = update_comment.group_id
-    AND c.user_id = current_user_id;
+    AND c.user_id = current_user_id
+    AND c.deleted_at IS NULL;
   IF FOUND THEN
     RETURN jsonb_build_object('success', true, 'message', 'Comment updated successfully');
   ELSE
@@ -3631,6 +3635,7 @@ CREATE TABLE public."Comments" (
     text text,
     group_id uuid NOT NULL,
     parent_id uuid,
+    deleted_at timestamp with time zone,
     CONSTRAINT "Comments_text_check" CHECK ((length(text) < 200))
 );
 

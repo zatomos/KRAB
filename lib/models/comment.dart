@@ -5,6 +5,7 @@ class Comment {
   final DateTime createdAt;
   final String? parentId;
   final List<Comment> replies;
+  final DateTime? deletedAt;
 
   Comment({
     required this.id,
@@ -12,12 +13,15 @@ class Comment {
     required this.text,
     required this.createdAt,
     this.parentId,
+    this.deletedAt,
     List<Comment>? replies,
   }) : replies = replies ?? [];
 
+  bool get isDeleted => deletedAt != null;
+
   @override
   String toString() {
-    return 'Comment(id: $id, userId: $userId, text: $text, createdAt: $createdAt, parentId: $parentId, replies: ${replies.length})';
+    return 'Comment(id: $id, userId: $userId, text: $text, createdAt: $createdAt, parentId: $parentId, deletedAt: $deletedAt, replies: ${replies.length})';
   }
 }
 

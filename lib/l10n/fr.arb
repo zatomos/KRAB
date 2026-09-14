@@ -129,6 +129,7 @@
   "error_adding_comment": "Erreur lors de l'ajout du commentaire: {errorMsg}",
   "comment_updated_success": "Commentaire mis à jour avec succès.",
   "error_updating_comment": "Erreur lors de la mise à jour du commentaire: {errorMsg}",
+  "comment_deleted": "[supprimé]",
   "comment_deleted_success": "Commentaire supprimé avec succès.",
   "error_deleting_comment": "Erreur lors de la suppression du commentaire: {errorMsg}",
   "no_comments": "Aucun commentaire pour l'instant.",

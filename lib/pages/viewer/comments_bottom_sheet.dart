@@ -326,6 +326,8 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
                 ? DateTime.parse(commentData['created_at'])
                 : DateTime.now(),
             parentId: commentData['parent_id']?.toString(),
+            deletedAt:
+                DateTime.tryParse(commentData['deleted_at']?.toString() ?? ''),
           );
         }).toList();
         final iconUrl = await instance.api.resolveGroupIconUrl(groupId);
@@ -470,7 +472,8 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
   }
 
   Future<void> _deleteComment(
-      String commentId, _GroupCommentSection section) async {
+      Comment comment, _GroupCommentSection section) async {
+    final commentId = comment.id;
     final confirmed = await showConfirmDialog(context,
         title: context.l10n.confirm_delete_comment,
         confirmLabel: context.l10n.confirm,
@@ -627,13 +630,13 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
             onTap: () => _startReply(comment, username, section),
             child: Icon(Symbols.chat_rounded, size: 20, color: muted),
           ),
-          if (isCurrentUser) ...[
+          if (isCurrentUser && !comment.isDeleted) ...[
             GestureDetector(
               onTap: () => _startEdit(comment, section),
               child: Icon(Symbols.edit_rounded, size: 20, color: muted),
             ),
             GestureDetector(
-              onTap: () => _deleteComment(comment.id, section),
+              onTap: () => _deleteComment(comment, section),
               child: Icon(Symbols.delete_rounded,
                   size: 20, color: Theme.of(context).colorScheme.error),
             ),
@@ -705,7 +708,18 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
                           ),
                           const SizedBox(height: 4),
                           // Comment text
-                          Text(comment.text),
+                          if (comment.isDeleted)
+                            Text(
+                              context.l10n.comment_deleted,
+                              style: TextStyle(
+                                fontStyle: FontStyle.italic,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                              ),
+                            )
+                          else
+                            Text(comment.text),
                           _commentActions(
                               comment, username, isCurrentUser, section),
                         ],
