@@ -652,13 +652,15 @@ class _MemberTileState extends State<_MemberTile> {
     final targetRole = widget.member.role;
     final currentRole = widget.currentRole;
     final overlay = Overlay.of(context).context.findRenderObject() as RenderBox;
+    final scheme = Theme.of(context).colorScheme;
 
-    PopupMenuItem<void> item(IconData icon, String label, VoidCallback onTap) =>
+    PopupMenuItem<void> item(IconData icon, String label, VoidCallback onTap,
+            {Color? color}) =>
         PopupMenuItem(
           child: ListTile(
-            leading: Icon(icon),
+            leading: Icon(icon, color: color),
             title: Text(label,
-                style: const TextStyle(fontWeight: FontWeight.w400)),
+                style: TextStyle(fontWeight: FontWeight.w400, color: color)),
             onTap: () {
               Navigator.pop(context);
               onTap();
@@ -668,7 +670,7 @@ class _MemberTileState extends State<_MemberTile> {
 
     await showMenu<void>(
       context: context,
-      color: Theme.of(context).colorScheme.surfaceContainer,
+      color: scheme.surfaceContainer,
       position: RelativeRect.fromRect(
         _anchorRect(overlay),
         Offset.zero & overlay.size,
@@ -683,16 +685,19 @@ class _MemberTileState extends State<_MemberTile> {
         if (targetRole != 'banned' &&
             (currentRole == 'owner' ||
                 (currentRole == 'admin' && targetRole == 'member')))
-          item(Symbols.person_off_rounded, context.l10n.ban_user, widget.onBan),
+          item(Symbols.person_off_rounded, context.l10n.ban_user, widget.onBan,
+              color: scheme.error),
         if (targetRole == 'banned' &&
             (currentRole == 'owner' || currentRole == 'admin'))
           item(Symbols.person_check_rounded, context.l10n.unban_user,
-              widget.onUnban),
+              widget.onUnban,
+              color: GlobalThemeData.success),
         if (currentRole == 'owner' &&
             targetRole != 'owner' &&
             targetRole != 'banned')
           item(Symbols.crown_rounded, context.l10n.transfer_ownership,
-              () => widget.onRoleAction('transfer_ownership')),
+              () => widget.onRoleAction('transfer_ownership'),
+              color: Colors.amber),
       ],
     );
     _pressPosition = null;
