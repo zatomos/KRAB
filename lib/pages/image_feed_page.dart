@@ -31,16 +31,11 @@ import 'package:krab/services/instance/instance_registry.dart';
 const int _kPageSize = 30;
 
 /// When deep-linking to a specific image, how many pages to load while
-/// searching for it before giving up. The target should be recent,
-/// so it lands in the first page or two.
+/// searching for it before giving up.
 const int _kDeepLinkMaxPages = 10;
 
-/// Paginated grid of a group's images. Owns the image list, caches and
-/// pagination, and opens the full-screen [ImageViewerPage] when an image
-/// is tapped.
+/// Paginated grid of a group's images.
 class ImageFeedPage extends StatefulWidget {
-  /// The group to show images for, or null for the cross-group "recent images"
-  /// view that aggregates the latest images from every group the user is in.
   final Group? group;
   final String? imageId;
 
@@ -67,21 +62,11 @@ class ImageFeedPageState extends State<ImageFeedPage> {
   final List<SharedImage> _images = [];
 
   /// Every copy loaded so far, across every page.
-  ///
-  /// Merging runs over all of it rather than over one page, because two copies
-  /// of one image can land on different pages: they are uploaded seconds apart
-  /// and ordered by time, so a page boundary can fall between them. Merged per
-  /// page, the second copy would arrive as an image the list already holds and
-  /// be discarded, taking its comments with it.
   final List<ImageRef> _refs = [];
-
-  /// `instanceId/id` of everything in _refs, so a copy that arrives twice
-  /// is only held once.
   final Set<String> _refKeys = {};
 
   /// Where each instance's paging got to, so the next page can be asked of
-  /// every server independently. They run at their own pace, and merging puts
-  /// the combined result back in order.
+  /// every server independently.
   final Map<String, ImageRef> _cursors = {};
 
   /// Signed-in instances whose last page failed.
@@ -112,7 +97,6 @@ class ImageFeedPageState extends State<ImageFeedPage> {
 
   /// The bytes, uploaders and tallies for the images on screen. Shared with the
   /// viewer this page opens.
-  /// The server a group gallery reads from. Null in the cross-group feed.
   late final KrabInstance? _instance = widget.group == null
       ? null
       : InstanceRegistry.instance.byId(widget.group!.instanceId);
@@ -929,7 +913,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
                             child: ColoredBox(
                               color: Colors.black.withValues(alpha: 0.35),
                               child: Align(
-                                alignment: Alignment.topRight,
+                                alignment: Alignment.topLeft,
                                 child: Padding(
                                   padding: const EdgeInsets.all(6),
                                   child: Icon(
