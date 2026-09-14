@@ -1,14 +1,18 @@
 part of 'notification_channels.dart';
 
-Future<void> dispatchCommentNotification(
+typedef CommentTarget = ({String imageId, String groupId});
+
+/// Shows the notification for a comment push, unless its thread is already on
+/// screen, and reports what the comment was about so the open app can update.
+Future<CommentTarget?> dispatchCommentNotification(
     KrabInstance instance, Map<String, dynamic> data, String type) async {
   final commentId = data['comment_id'] ?? '';
-  if (commentId.isEmpty) return;
+  if (commentId.isEmpty) return null;
 
   // The push carries only the id: everything shown is read back from the
   // instance, so the payload itself never holds anyone's words.
   final ctx = await instance.api.getCommentNotificationContext(commentId);
-  if (!ctx.success || ctx.data == null) return;
+  if (!ctx.success || ctx.data == null) return null;
   final d = ctx.data!;
 
   final groupId = (d['group_id'] as String?) ?? '';
@@ -30,8 +34,20 @@ Future<void> dispatchCommentNotification(
       parentAuthorId.isNotEmpty && parentAuthorId == uploaderId;
   final parentAuthorUsername = (d['parent_author_username'] as String?) ?? '';
 
-  if (groupId.isEmpty || groupName.isEmpty) return;
-  if (await UserPreferences.isGroupMuted(instance.id, groupId)) return;
+  if (groupId.isEmpty || groupName.isEmpty) return null;
+
+  // Everything below only decides whether to raise a notification.
+  final target = (imageId: imageId, groupId: groupId);
+
+  if (await UserPreferences.isGroupMuted(instance.id, groupId)) return target;
+
+  // The comments sheet is open on this very thread
+  if (ViewingState.instance.isShowingComments(
+      instanceId: instance.id, imageId: imageId, groupId: groupId)) {
+    debugPrint('Push: comment thread is on screen, not notifying');
+    return target;
+  }
+
   if (commenterUsername.isEmpty) commenterUsername = 'Someone';
 
   final media = await _notificationMedia(instance, commenterId, imageId);
@@ -55,6 +71,7 @@ Future<void> dispatchCommentNotification(
     parentAuthorIsUploader: parentAuthorIsUploader,
     imageBytes: media.image,
   );
+  return target;
 }
 
 String commentThreadTitle({

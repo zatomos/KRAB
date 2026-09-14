@@ -5,6 +5,7 @@ import 'package:workmanager/workmanager.dart';
 
 import 'package:krab/services/debug_notifier.dart';
 import 'package:krab/services/feed_events.dart';
+import 'package:krab/services/viewing_state.dart';
 import 'package:krab/services/home_widget_updater.dart';
 import 'package:krab/services/instance/instance_bootstrap.dart';
 import 'package:krab/services/instance/instance_registry.dart';
@@ -167,21 +168,28 @@ Future<void> handlePushPayload(
       );
       await updateHomeWidget(updatedDescriptions: true);
     } else if (type == 'new_reaction' || type == 'group_reaction') {
-      // Non-null: the guard above returned for every other value of type.
-      await dispatchReactionNotification(instance, data, type!);
+      final imageId = data['image_id'] ?? '';
+      // Already looking at the image
+      final onScreen = ViewingState.instance
+          .isViewingImage(instanceId: instance.id, imageId: imageId);
+      if (onScreen) {
+        debugPrint('Push: image is on screen, not notifying about a reaction');
+      } else {
+        await dispatchReactionNotification(instance, data, type!);
+      }
       if (!background) {
         FeedEvents.instance.notifyNewReaction(NewReactionEvent(
           instanceId: instance.id,
-          imageId: data['image_id'] ?? '',
+          imageId: imageId,
         ));
       }
     } else {
-      await dispatchCommentNotification(instance, data, type!);
-      if (!background) {
+      final target = await dispatchCommentNotification(instance, data, type!);
+      if (!background && target != null) {
         FeedEvents.instance.notifyNewComment(NewCommentEvent(
           instanceId: instance.id,
-          imageId: data['image_id'] ?? '',
-          groupId: data['group_id'],
+          imageId: target.imageId,
+          groupId: target.groupId,
         ));
       }
     }

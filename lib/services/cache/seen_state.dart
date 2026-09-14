@@ -4,6 +4,13 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+typedef CommentThread = ({
+  String instanceId,
+  String groupId,
+  int count,
+  DateTime? latestAt,
+});
+
 /// What this device has already shown the user.
 class SeenState extends ChangeNotifier {
   SeenState._();
@@ -184,6 +191,31 @@ class SeenState extends ChangeNotifier {
     _markComments(commentsKey(instanceId, groupId, identity), count, latestAt);
   }
 
+  /// Settle the across-all-groups tally, but only when no group is still
+  /// unread.
+  ///
+  /// An image carries two tallies: one per group, for a single group's feed,
+  /// and one across every group, for the feed that mixes them. Reading a
+  /// thread settles only its own group, which used to leave the cross-group
+  /// badge lit after the comments had plainly been read. Switching between the
+  /// two feeds then showed a badge that reading could not clear.
+  void markAllCommentsSeenIfCaughtUp(
+      String identity, Iterable<CommentThread> threads) {
+    var total = 0;
+    DateTime? newest;
+    for (final thread in threads) {
+      if (hasNewComments(
+          thread.instanceId, thread.groupId, identity, thread.count,
+          latestAt: thread.latestAt)) {
+        return;
+      }
+      total += thread.count;
+      final at = thread.latestAt;
+      if (at != null && (newest == null || at.isAfter(newest))) newest = at;
+    }
+    markAllCommentsSeen(identity, total, latestAt: newest);
+  }
+
   void markReactionsSeen(String identity, Map<String, int> tally) {
     final seen = _reactions[identity];
     if (seen != null && mapEquals(seen, tally)) return;
@@ -289,6 +321,9 @@ class SeenState extends ChangeNotifier {
     _loaded = false;
     _images.clear();
     _comments.clear();
+    // Left behind, this outlives the reset and answers for comments the next
+    // test never marked.
+    _commentsAt.clear();
     _reactions.clear();
     _touched.clear();
     _trackingSince = trackingSince;

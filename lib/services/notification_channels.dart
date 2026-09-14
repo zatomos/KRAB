@@ -13,6 +13,7 @@ import 'package:krab/services/notification_ids.dart';
 import 'package:krab/services/notification_records.dart';
 import 'package:krab/services/notification_summaries.dart';
 import 'package:krab/services/shown_image_notifications.dart';
+import 'package:krab/services/viewing_state.dart';
 import 'package:krab/user_preferences.dart';
 import 'package:path_provider/path_provider.dart';
 

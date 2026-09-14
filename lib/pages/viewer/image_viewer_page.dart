@@ -13,6 +13,7 @@ import 'package:krab/models/group.dart';
 import 'package:krab/models/image_ref.dart';
 import 'package:krab/models/shared_image.dart';
 import 'package:krab/services/cache/seen_state.dart';
+import 'package:krab/services/viewing_state.dart';
 import 'package:krab/services/blur_worker.dart';
 import 'package:krab/services/shared_image_api.dart';
 import 'package:krab/pages/viewer/posted_in_badge.dart';
@@ -167,6 +168,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
     }
     _touch(widget.initialIndex);
     _dismissNotificationsFor(widget.initialIndex);
+    ViewingState.instance.openImage(_currentImage);
 
     _controlsAnim = AnimationController(
       vsync: this,
@@ -213,6 +215,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
 
   @override
   void dispose() {
+    ViewingState.instance.closeImage();
     _route?.animation?.removeStatusListener(_onRouteStatus);
     _pageController.removeListener(_onScroll);
     _pageController.dispose();
@@ -241,6 +244,7 @@ class _ImageViewerPageState extends State<ImageViewerPage>
       _isZoomed = false;
     });
     _dismissNotificationsFor(index);
+    ViewingState.instance.openImage(_currentImage);
     widget.onImageChanged?.call(index);
     _maybeLoadMore();
     _prefetchAround(index);

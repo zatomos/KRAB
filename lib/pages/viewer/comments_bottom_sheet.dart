@@ -20,6 +20,8 @@ import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/services/time_formatting.dart';
 import 'package:krab/models/shared_image.dart';
 import 'package:krab/services/cache/seen_state.dart';
+import 'package:krab/services/feed_events.dart';
+import 'package:krab/services/viewing_state.dart';
 import 'package:krab/services/instance/instances.dart';
 import 'package:krab/services/notification_channels.dart';
 import 'package:krab/services/shared_image_api.dart';
@@ -217,9 +219,12 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
 
   OverlayEntry? _inputOverlay;
 
+  StreamSubscription<NewCommentEvent>? _commentSub;
+
   @override
   void initState() {
     super.initState();
+    _commentSub = FeedEvents.instance.newComments.listen(_onCommentArrived);
     // Rebuild when the input gains/loses focus so that we can fade in/out.
     _inputFocusNode.addListener(_onFocusChange);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -232,6 +237,13 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
 
   void _onFocusChange() {
     if (mounted) setState(() {});
+  }
+
+  void _onCommentArrived(NewCommentEvent event) {
+    final onThisImage = widget.image.copies
+        .any((c) => c.instanceId == event.instanceId && c.id == event.imageId);
+    if (!onThisImage || !mounted) return;
+    unawaited(_refreshAndReportCount());
   }
 
   // The sheet's present/dismiss animation, so the overlaid input row can slide
@@ -261,6 +273,8 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
 
   @override
   void dispose() {
+    _commentSub?.cancel();
+    ViewingState.instance.closeComments();
     _sheetAnim?.removeListener(_onSheetAnim);
     _inputOverlay?.remove();
     _inputOverlay = null;
@@ -351,8 +365,16 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
       await _prefetchAuthors(sections);
 
       if (!mounted) return;
+      ViewingState.instance.openComments({
+        for (final section in sections)
+          section.instance.id: {
+            for (final s in sections)
+              if (s.instance.id == section.instance.id) s.groupId,
+          },
+      });
+      final firstLoad = _sections.isEmpty;
+      final opened = <String>[];
       setState(() {
-        final firstLoad = _sections.isEmpty;
         _sections = sections;
         // Keep the chosen group across refreshes; only fall back to the
         // default when it's gone or nothing was chosen.
@@ -369,11 +391,17 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
             if ((section.isPrimary || _isAllGroupsMode) &&
                 section.rootComments.isNotEmpty) {
               _expandedKeys.add(section.key);
+              opened.add(section.key);
             }
           }
         }
         _loading = false;
       });
+
+      final onScreen = firstLoad ? opened : _expandedKeys.toList();
+      for (final key in onScreen) {
+        _dismissSectionNotification(key);
+      }
     } catch (e) {
       debugPrint("Error fetching comments: $e");
       if (!mounted) return;
@@ -577,6 +605,18 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
     SeenState.instance.markCommentsSeen(section.instance.id, section.groupId,
         widget.image.identity, section.commentCount,
         latestAt: section.newestAt);
+    SeenState.instance.markAllCommentsSeenIfCaughtUp(
+      widget.image.identity,
+      [
+        for (final s in _sections)
+          (
+            instanceId: s.instance.id,
+            groupId: s.groupId,
+            count: s.commentCount,
+            latestAt: s.newestAt,
+          ),
+      ],
+    );
   }
 
   /// The key an author is cached under.

@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:krab/l10n/l10n.dart';
+import 'package:krab/services/feed_events.dart';
 import 'package:krab/models/reaction.dart';
 import 'package:krab/themes/frosted_palette.dart';
 import 'package:krab/widgets/emoji_picker_sheet.dart';
@@ -55,11 +57,26 @@ class ReactionsBarState extends State<ReactionsBar> {
 
   String get _cacheKey => widget.image.primary.id;
 
+  StreamSubscription<NewReactionEvent>? _reactionSub;
+
   @override
   void initState() {
     super.initState();
     _reactions = _cache?.cached(_cacheKey) ?? const [];
     _refresh();
+    _reactionSub = FeedEvents.instance.newReactions.listen(_onReactionArrived);
+  }
+
+  @override
+  void dispose() {
+    _reactionSub?.cancel();
+    super.dispose();
+  }
+
+  void _onReactionArrived(NewReactionEvent event) {
+    final onThisImage = widget.image.copies
+        .any((c) => c.instanceId == event.instanceId && c.id == event.imageId);
+    if (onThisImage && mounted) _refresh();
   }
 
   @override
