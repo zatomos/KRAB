@@ -5,15 +5,13 @@ import 'package:skeletonizer/skeletonizer.dart';
 
 import 'package:krab/widgets/delayed_loading.dart';
 
-import 'package:krab/services/home_widget_updater.dart';
 import 'package:krab/widgets/avatars/group_avatar.dart';
 import 'package:krab/widgets/server_label.dart';
 import 'package:krab/widgets/avatars/user_avatar.dart';
 import 'package:krab/widgets/dialogs/dialogs.dart';
 import 'package:krab/widgets/dialogs/member_roles_dialog.dart';
 import 'package:krab/widgets/dialogs/edit_avatar_dialog.dart';
-import 'package:krab/widgets/dialogs/rename_dialog.dart';
-import 'package:krab/widgets/dialogs/type_to_confirm_dialog.dart';
+import 'package:krab/widgets/dialogs/group_actions_sheet.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/widgets/rectangle_button.dart';
 import 'package:krab/widgets/settings_section.dart';
@@ -84,44 +82,17 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
     return me.role;
   }
 
+  GroupActions get _actions => GroupActions(context, _instance, _group);
+
   Future<void> _leaveGroup() async {
-    final response = await _instance.api.leaveGroup(widget.group.id);
-    if (!mounted) return;
-    if (response.success) {
-      // Only once the server agrees we've left.
-      await UserPreferences.removeFavoriteGroup(
-          widget.group.instanceId, widget.group.id);
-      if (!mounted) return;
-      cacheUserGroupsForWidget();
-      showSnackBar(context.l10n.left_group_success, tone: SnackTone.success);
-      Navigator.of(context).popUntil((route) => route.isFirst);
-    } else {
-      showSnackBar(
-          context.l10n.error_leaving_group(context.errorText(response.error)),
-          tone: SnackTone.failure);
-    }
+    if (!await _actions.leave() || !mounted) return;
+    Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
   Future<void> _updateGroupName() async {
-    final l10n = context.l10n;
-    final newName = await showDialog<String>(
-      context: context,
-      builder: (_) => RenameDialog(
-        title: l10n.edit_group_name,
-        hintText: l10n.new_group_name,
-        initialValue: _group.name,
-        emptyError: l10n.group_name_empty,
-        maxLength: 19,
-        onSubmit: (value) async {
-          final res = await _instance.api.updateGroupName(_group.id, value);
-          return res.success ? null : describeError(l10n, res.error);
-        },
-      ),
-    );
+    final newName = await _actions.rename();
     if (newName == null || !mounted) return;
     setState(() => _group = _group.copyWith(name: newName));
-    showSnackBar(context.l10n.group_name_updated_success,
-        tone: SnackTone.success);
   }
 
   Future<void> openEditIconDialog() async {
@@ -208,34 +179,7 @@ class GroupSettingsPageState extends State<GroupSettingsPage> {
       );
 
   Future<void> _deleteGroup() async {
-    final l10n = context.l10n;
-    final confirm = await showTypeToConfirmDialog(
-      context,
-      title: l10n.delete_group,
-      message: l10n.delete_group_confirmation,
-      prompt: l10n.delete_group_type_confirm(_group.name),
-      expectedText: _group.name,
-      hintText: l10n.group_name,
-      confirmLabel: l10n.delete_group,
-      maxLength: 19,
-    );
-    if (!confirm || !mounted) return;
-
-    final res = await _instance.api.deleteGroup(_group.id);
-    if (!mounted) return;
-    if (!res.success) {
-      showSnackBar(
-          context.l10n.error_deleting_group(context.errorText(res.error)),
-          tone: SnackTone.failure);
-      return;
-    }
-
-    // Only once the group is actually gone.
-    await UserPreferences.removeFavoriteGroup(_group.instanceId, _group.id);
-    if (!mounted) return;
-
-    cacheUserGroupsForWidget();
-    showSnackBar(context.l10n.group_deleted_success, tone: SnackTone.success);
+    if (!await _actions.delete() || !mounted) return;
     Navigator.of(context).popUntil((r) => r.isFirst);
   }
 

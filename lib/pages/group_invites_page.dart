@@ -305,6 +305,7 @@ class _CreateInviteDialogState extends State<CreateInviteDialog> {
           SoftButton(
             onPressed: _create,
             label: context.l10n.create_invite,
+            icon: Symbols.add_link_rounded,
             color: Theme.of(context).colorScheme.primary,
           ),
       ],

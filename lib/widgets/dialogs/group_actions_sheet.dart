@@ -6,6 +6,7 @@ import 'package:krab/models/group.dart';
 import 'package:krab/widgets/floating_snack_bar.dart';
 import 'package:krab/widgets/dialogs/rename_dialog.dart';
 import 'package:krab/widgets/dialogs/dialogs.dart';
+import 'package:krab/widgets/dialogs/type_to_confirm_dialog.dart';
 import 'package:krab/user_preferences.dart';
 import 'package:krab/services/instance/instances.dart';
 import 'package:krab/services/home_widget_updater.dart';
@@ -126,12 +127,15 @@ class GroupActions {
   Future<bool> delete({bool confirm = true}) async {
     final l10n = _l10n;
     if (confirm) {
-      final confirmed = await showConfirmDialog(
+      final confirmed = await showTypeToConfirmDialog(
         context,
         title: l10n.delete_group,
         message: l10n.delete_group_confirmation,
+        prompt: l10n.delete_group_type_confirm(group.name),
+        expectedText: group.name,
+        hintText: l10n.group_name,
         confirmLabel: l10n.delete_group,
-        destructive: true,
+        maxLength: 19,
       );
       if (!confirmed || !context.mounted) return false;
     }
