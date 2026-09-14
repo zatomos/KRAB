@@ -38,19 +38,6 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
     super.dispose();
   }
 
-  String _localizeAuthError(String? error) {
-    switch (error) {
-      case 'invalid_email_or_password':
-        return context.l10n.invalid_email_or_password;
-      case 'email_already_exists':
-        return context.l10n.email_already_exists;
-      case 'password_too_weak':
-        return context.l10n.password_too_weak;
-      default:
-        return error ?? '';
-    }
-  }
-
   Future<void> _save() async {
     final current = _currentController.text;
     final next = _newController.text;
@@ -78,7 +65,7 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
     } else {
       setState(() {
         _saving = false;
-        _error = _localizeAuthError(response.error);
+        _error = context.errorText(response.error);
       });
     }
   }

@@ -50,25 +50,6 @@ class LoginPageState extends State<LoginPage> {
   final _passwordConfirmController = TextEditingController();
   final _forgotPasswordController = TextEditingController();
 
-  String _localizeAuthError(String? error) {
-    switch (error) {
-      case 'network_error':
-        return context.l10n.error_network;
-      case 'auth_error':
-        return context.l10n.error_server;
-      case 'invalid_email_or_password':
-        return context.l10n.invalid_email_or_password;
-      case 'email_already_exists':
-        return context.l10n.email_already_exists;
-      case 'password_too_weak':
-        return context.l10n.password_too_weak;
-      case 'email_not_confirmed':
-        return context.l10n.email_not_confirmed;
-      default:
-        return error ?? '';
-    }
-  }
-
   /// Shown under the error when a login is blocked by an unconfirmed email, so
   /// the user can trigger a fresh confirmation link.
   bool _showResendConfirmation = false;
@@ -81,7 +62,7 @@ class LoginPageState extends State<LoginPage> {
     if (res.success) {
       showSnackBar(context.l10n.confirmation_email_resent);
     } else {
-      showSnackBar(_localizeAuthError(res.error), tone: SnackTone.failure);
+      showSnackBar(context.errorText(res.error), tone: SnackTone.failure);
     }
   }
 
@@ -127,7 +108,7 @@ class LoginPageState extends State<LoginPage> {
     if (!response.success) {
       setState(() {
         _isLoading = false;
-        _errorMessage = _localizeAuthError(response.error);
+        _errorMessage = context.errorText(response.error);
       });
       return;
     }
@@ -193,7 +174,7 @@ class LoginPageState extends State<LoginPage> {
     } else {
       setState(() {
         _isLoading = false;
-        _errorMessage = _localizeAuthError(response.error);
+        _errorMessage = context.errorText(response.error);
         _showResendConfirmation = response.error == 'email_not_confirmed';
       });
     }
@@ -262,7 +243,7 @@ class LoginPageState extends State<LoginPage> {
                       } else {
                         setDialogState(() {
                           sending = false;
-                          dialogError = _localizeAuthError(response.error);
+                          dialogError = context.errorText(response.error);
                         });
                       }
                     },

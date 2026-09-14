@@ -115,7 +115,6 @@ class AccountPageState extends State<AccountPage> {
       return;
     }
 
-    // Get user info
     final (userResponse, commentSetting, reactionSetting) = await (
       _api.getUserDetails(userId),
       _api.getGroupCommentNotificationSetting(),
@@ -256,7 +255,6 @@ class AccountPageState extends State<AccountPage> {
 
     final message = context.l10n.account_deleted_success;
 
-    // Forget server
     await InstanceRegistry.instance.remove(widget.instance.id);
     if (!mounted) return;
 
@@ -413,7 +411,7 @@ class AccountPageState extends State<AccountPage> {
     final failed = !commentRes.success ? commentRes : reactionRes;
     if (!failed.success) {
       showSnackBar(
-          l10n.error_updating_setting(failed.error ?? l10n.unknown_error),
+          l10n.error_updating_setting(describeError(l10n, failed.error)),
           tone: SnackTone.failure);
     }
   }

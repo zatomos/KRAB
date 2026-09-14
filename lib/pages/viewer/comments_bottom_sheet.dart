@@ -707,7 +707,6 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
                             ),
                           ),
                           const SizedBox(height: 4),
-                          // Comment text
                           if (comment.isDeleted)
                             Text(
                               context.l10n.comment_deleted,
@@ -731,7 +730,6 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
             },
           ),
         ),
-        // Render replies recursively
         ...comment.replies.map(
             (reply) => _buildCommentItem(reply, section, depth: depth + 1)),
       ],
@@ -953,7 +951,6 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
           Text(context.l10n.comments,
               style: const TextStyle(
                   fontSize: 18,
@@ -962,7 +959,6 @@ class CommentsBottomSheetState extends State<CommentsBottomSheet> {
 
           const SizedBox(height: 12),
 
-          // Comments list
           Flexible(
             child: DelayedLoading(
               loading: _loading,

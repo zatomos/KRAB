@@ -59,13 +59,13 @@ class _ZoomableImageState extends State<ZoomableImage>
     _mover = AnimationController(vsync: this, duration: _moveDuration)
       ..addListener(_onMoveTick);
     _view.addListener(_onViewChanged);
-    _measureimage();
+    _measureImage();
   }
 
   @override
   void didUpdateWidget(ZoomableImage old) {
     super.didUpdateWidget(old);
-    if (widget.image != old.image) _measureimage();
+    if (widget.image != old.image) _measureImage();
   }
 
   @override
@@ -79,7 +79,7 @@ class _ZoomableImageState extends State<ZoomableImage>
   }
 
   /// Takes the image's size off the decoded image.
-  void _measureimage() {
+  void _measureImage() {
     final stream = widget.image.resolve(const ImageConfiguration());
     late final ImageStreamListener listener;
     listener = ImageStreamListener((info, _) {
@@ -223,8 +223,8 @@ class _ZoomableImageState extends State<ZoomableImage>
     final zoomedIn = from > _zoomedSlop;
     final to = zoomedIn ? _minScale : _doubleTapScale;
 
-    final onimage = (tap - _offset) / from;
-    final offset = tap - onimage * to;
+    final onImage = (tap - _offset) / from;
+    final offset = tap - onImage * to;
 
     _animateTo(_matrixOf(to, _homeFor(offset, to) ?? offset));
   }

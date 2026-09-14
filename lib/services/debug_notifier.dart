@@ -29,11 +29,9 @@ class DebugNotifier {
     if (_initialized) return;
 
     try {
-      // Load preference
       final prefs = await SharedPreferences.getInstance();
       _enabled = prefs.getBool(_prefKey) ?? false;
 
-      // Initialize notifications plugin
       const androidSettings =
           AndroidInitializationSettings('@mipmap/ic_launcher');
       const initSettings = InitializationSettings(android: androidSettings);

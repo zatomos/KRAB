@@ -24,6 +24,16 @@ String describeError(AppLocalizations l10n, String? error) {
       return l10n.error_image_too_large(maxImageUploadBytes ~/ (1024 * 1024));
     case errorNameTooShort:
       return l10n.error_name_too_short;
+    case errorInvalidCredentials:
+      return l10n.invalid_email_or_password;
+    case errorEmailExists:
+      return l10n.email_already_exists;
+    case errorPasswordTooWeak:
+      return l10n.password_too_weak;
+    case errorEmailNotConfirmed:
+      return l10n.email_not_confirmed;
+    case errorAuth:
+      return l10n.error_server;
     default:
       return error;
   }

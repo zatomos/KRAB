@@ -518,7 +518,6 @@ class _ImageViewerPageState extends State<ImageViewerPage>
     );
   }
 
-
   MediaQueryData _pagingMedia(MediaQueryData media) => media.copyWith(
         gestureSettings: const DeviceGestureSettings(
           touchSlop: kPagingTouchSlop,
@@ -552,17 +551,17 @@ class _ImageViewerPageState extends State<ImageViewerPage>
                       : const _SnappyPageScrollPhysics(),
                   itemBuilder: (context, index) {
                     _touch(index);
-                    final pageimage = widget.images[index];
+                    final pageImage = widget.images[index];
                     final page = ViewerImage(
-                      key: ValueKey(pageimage.identity),
+                      key: ValueKey(pageImage.identity),
                       imageCacheName: viewerImageCacheName,
                       displaySize: _displaySizeFor(index, viewport),
                       heroTag: index == _heroIndex
-                          ? "image_${pageimage.identity}"
+                          ? "image_${pageImage.identity}"
                           : null,
                       initialBytes: _pageBytes[index],
                       imageDataFuture: _imageDataFor(index),
-                      fullFuture: widget.cache.fullResBytes(pageimage),
+                      fullFuture: widget.cache.fullResBytes(pageImage),
                       onLowBytes: (bytes) => _cachePageBytes(index, bytes),
                       onNaturalSize: (size) => _setChildSize(index, size),
                       onZoomChanged: _onPageZoomChanged,

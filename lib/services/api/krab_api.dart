@@ -64,23 +64,28 @@ extension FanOutRead<T> on Future<SupabaseResponse<T>> {
       );
 }
 
-/// The server was reached, but the call failed.
 const String errorServer = 'server_error';
-
-/// The call needs a signed-in user and there isn't one.
 const String errorNotLoggedIn = 'not_logged_in';
-
 const String errorImageTooLarge = 'image_too_large';
-
 const String errorNameTooShort = 'name_too_short';
+const String errorInvalidCredentials = 'invalid_email_or_password';
+const String errorEmailExists = 'email_already_exists';
+const String errorPasswordTooWeak = 'password_too_weak';
+const String errorEmailNotConfirmed = 'email_not_confirmed';
+const String errorAuth = 'auth_error';
 
-/// Failure codes we produces
+/// Failure codes KRAB produces.
 const Set<String> errorCodes = {
   errorNetwork,
   errorServer,
   errorNotLoggedIn,
   errorImageTooLarge,
   errorNameTooShort,
+  errorInvalidCredentials,
+  errorEmailExists,
+  errorPasswordTooWeak,
+  errorEmailNotConfirmed,
+  errorAuth,
 };
 
 /// Everything the app asks of one KRAB backend.

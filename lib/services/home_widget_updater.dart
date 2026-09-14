@@ -324,8 +324,7 @@ Future<({bool changed, bool newImage})> _syncWidget(
   if (api == null) return (changed: false, newImage: false);
 
   final lastId = await HomeWidget.getWidgetData<String>('lastImageId_$id');
-  // TODO: remove later, along with the rest of the single-instance migration.
-  final showing = lastId == latestId || lastId == latest.id;
+  final showing = lastId == latestId;
   bool changed = false;
   bool newImage = false;
 

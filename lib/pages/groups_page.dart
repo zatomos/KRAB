@@ -295,7 +295,7 @@ class GroupsPageState extends State<GroupsPage> {
       ),
       body: Column(
         children: [
-          _RecentimagesCard(),
+          _RecentImagesCard(),
           Expanded(
             child: DelayedLoading(
               loading: _loading,
@@ -361,12 +361,12 @@ class _GroupsSkeleton extends StatelessWidget {
 }
 
 /// Pinned card opening the cross-group gallery of recent images
-class _RecentimagesCard extends StatefulWidget {
+class _RecentImagesCard extends StatefulWidget {
   @override
-  State<_RecentimagesCard> createState() => _RecentimagesCardState();
+  State<_RecentImagesCard> createState() => _RecentImagesCardState();
 }
 
-class _RecentimagesCardState extends State<_RecentimagesCard> {
+class _RecentImagesCardState extends State<_RecentImagesCard> {
   int _unopened = 0;
 
   StreamSubscription<NewImageEvent>? _newImageSub;
@@ -466,7 +466,7 @@ class JoinGroupDialog extends StatelessWidget {
             await instance.api.joinGroupByInvite(extractInviteToken(token));
         return res.success
             ? null
-            : l10n.group_code_invalid(res.error ?? l10n.unknown_error);
+            : l10n.group_code_invalid(describeError(l10n, res.error));
       },
     );
   }
@@ -650,7 +650,7 @@ class CreateGroupDialog extends StatelessWidget {
         final res = await instance.api.createGroup(name);
         return res.success
             ? null
-            : l10n.error_creating_group(res.error ?? l10n.unknown_error);
+            : l10n.error_creating_group(describeError(l10n, res.error));
       },
     );
   }

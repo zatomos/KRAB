@@ -47,63 +47,7 @@ void main() {
     storage = _FakeSecureStorage()..install();
   });
 
-  group('migration off the single-instance layout', () {
-    test('adopts the backend the old build was pointed at', () async {
-      SharedPreferences.setMockInitialValues({
-        'supabaseUrl': 'https://one.example/',
-        'supabaseAnonKey': 'anon-key',
-        'fcmAppId': 'app',
-        'fcmApiKey': 'key',
-        'fcmSenderId': 'sender',
-        'fcmProjectId': 'project',
-        'passwordResetUrl': 'https://one.example/reset',
-      });
-
-      await InstanceRegistry.instance.load();
-
-      final instance = InstanceRegistry.instance.all.single;
-      expect(instance.id, 'inst_1');
-      expect(instance.url, 'https://one.example',
-          reason: 'a trailing slash must not make one server look like two');
-      expect(instance.anonKey, 'anon-key');
-      expect(instance.config.hasFcm, isTrue,
-          reason: 'losing the cached FCM config would silently stop push '
-              'until the next instance-config fetch');
-      expect(instance.config.passwordResetUrl, 'https://one.example/reset');
-    });
-
-    test('carries the session over, so migrating is not a sign-out', () async {
-      SharedPreferences.setMockInitialValues({
-        'supabaseUrl': 'https://one.example',
-        'supabaseAnonKey': 'anon-key',
-      });
-      storage.items[legacySessionStorageKey] = _session('refresh-token');
-
-      await InstanceRegistry.instance.load();
-      await InstanceRegistry.instance.loadSessions();
-
-      expect(InstanceRegistry.instance.all.single.auth.isLoggedIn, isTrue);
-      expect(storage.items[sessionStorageKey('inst_1')], isNotNull);
-      expect(storage.items[legacySessionStorageKey], isNull,
-          reason: 'a stale copy of a live refresh token is worth nothing and '
-              'would only rot');
-    });
-
-    test('scopes the favorite and muted lists to the instance', () async {
-      SharedPreferences.setMockInitialValues({
-        'supabaseUrl': 'https://one.example',
-        'supabaseAnonKey': 'anon-key',
-        'favoriteGroups': ['g1', 'g2'],
-        'mutedGroups': ['g3'],
-      });
-
-      await InstanceRegistry.instance.load();
-
-      final prefs = await SharedPreferences.getInstance();
-      expect(prefs.getStringList('favoriteGroups'), ['inst_1/g1', 'inst_1/g2']);
-      expect(prefs.getStringList('mutedGroups'), ['inst_1/g3']);
-    });
-
+  group('a build that names no instance', () {
     test('a fresh install has nothing to connect to', () async {
       SharedPreferences.setMockInitialValues({});
 

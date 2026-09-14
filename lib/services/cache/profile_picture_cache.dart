@@ -78,17 +78,15 @@ class ProfilePictureCache {
     await prefs.remove(_prefsKey);
   }
 
-  /// Get a signed URL
+  /// A signed URL for id
   Future<String?> getUrl(String id,
       {String bucket = 'profile-pictures',
       Duration ttl = const Duration(hours: 1)}) async {
-    // Try memory
     final cached = _memory[id];
     if (cached != null && cached.isValid) {
       return cached.url;
     }
 
-    // Fetch new signed URL
     try {
       final url = await _supabase.storage
           .from(bucket)
@@ -107,7 +105,7 @@ class ProfilePictureCache {
     }
   }
 
-  /// Force refresh
+  /// Drops the cached URL for this id and signs a new one.
   Future<String?> refresh(String id,
       {String bucket = 'profile-pictures',
       Duration ttl = const Duration(hours: 1)}) async {

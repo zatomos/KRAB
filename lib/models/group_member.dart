@@ -22,7 +22,7 @@ class GroupMember {
     );
   }
 
-  // Empty
+  /// Member could not be resolved
   factory GroupMember.empty({String instanceId = ''}) {
     return GroupMember(
         user: krab_user.User(

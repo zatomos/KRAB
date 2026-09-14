@@ -91,7 +91,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
   bool get _selecting => _selected.isNotEmpty;
 
   /// True once a `new_image` push lands for this feed while it's open
-  bool _hasNewimages = false;
+  bool _hasNewImages = false;
   StreamSubscription<NewImageEvent>? _newImageSub;
   StreamSubscription<NewCommentEvent>? _commentSub;
   StreamSubscription<NewReactionEvent>? _reactionSub;
@@ -226,12 +226,12 @@ class ImageFeedPageState extends State<ImageFeedPage> {
   /// Surface the new images pill when an incoming image belongs to this feed
   void _onNewImage(NewImageEvent event) {
     final relevant = _groupId == null || event.groupId == _groupId;
-    if (!relevant || _hasNewimages || !mounted) return;
-    setState(() => _hasNewimages = true);
+    if (!relevant || _hasNewImages || !mounted) return;
+    setState(() => _hasNewImages = true);
   }
 
   /// Refresh to the top in response to the new images pill.
-  Future<void> _loadNewimages() async {
+  Future<void> _loadNewImages() async {
     await _refreshGroupImages();
     if (_scrollController.hasClients) {
       _scrollController.animateTo(
@@ -599,7 +599,7 @@ class ImageFeedPageState extends State<ImageFeedPage> {
   /// Pull-to-refresh
   Future<void> _refreshGroupImages() async {
     _cache.clear();
-    if (mounted) setState(() => _hasNewimages = false);
+    if (mounted) setState(() => _hasNewImages = false);
     await _fetchPages(reset: true);
   }
 
@@ -703,31 +703,31 @@ class ImageFeedPageState extends State<ImageFeedPage> {
             top: 8,
             left: 0,
             right: 0,
-            child: Center(child: _newimagesPill(context)),
+            child: Center(child: _newImagesPill(context)),
           ),
         ],
       ),
     );
   }
 
-  Widget _newimagesPill(BuildContext context) {
+  Widget _newImagesPill(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return AnimatedSlide(
-      offset: _hasNewimages ? Offset.zero : const Offset(0, -2),
+      offset: _hasNewImages ? Offset.zero : const Offset(0, -2),
       duration: const Duration(milliseconds: 250),
       curve: Curves.easeOut,
       child: AnimatedOpacity(
-        opacity: _hasNewimages ? 1 : 0,
+        opacity: _hasNewImages ? 1 : 0,
         duration: const Duration(milliseconds: 250),
         child: IgnorePointer(
-          ignoring: !_hasNewimages,
+          ignoring: !_hasNewImages,
           child: Material(
             color: scheme.primary,
             elevation: 4,
             borderRadius: BorderRadius.circular(20),
             child: InkWell(
               borderRadius: BorderRadius.circular(20),
-              onTap: _loadNewimages,
+              onTap: _loadNewImages,
               child: Padding(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

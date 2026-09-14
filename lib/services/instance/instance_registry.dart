@@ -2,12 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:krab/config.dart';
 import 'package:krab/services/auth/app_auth.dart';
-import 'package:krab/services/instance/instance_config.dart';
 import 'package:krab/services/instance/krab_instance.dart';
 
 /// An auth event, and which instance it came from.
@@ -28,8 +26,6 @@ class InstanceRegistry {
 
   /// Highest instance id handed out so far.
   static const String counterPrefsKey = 'krab_instance_counter';
-
-  static const FlutterSecureStorage _storage = FlutterSecureStorage();
 
   final List<KrabInstance> _instances = [];
 
@@ -97,9 +93,9 @@ class InstanceRegistry {
     }
 
     if (_instances.isEmpty) {
-      final migrated = await _migrateLegacyInstance(prefs);
-      if (migrated != null) {
-        _instances.add(migrated);
+      final baked = _bakedInstance();
+      if (baked != null) {
+        _instances.add(baked);
         await _persist(prefs);
       }
     }
@@ -107,9 +103,6 @@ class InstanceRegistry {
     for (final instance in _instances) {
       _attach(instance);
     }
-
-    // Remove leftover, TODO: remove later
-    await prefs.remove('krab_active_instance');
 
     debugPrint('InstanceRegistry: ${_instances.length} instance(s)');
   }
@@ -278,92 +271,19 @@ class InstanceRegistry {
     _authSubscriptions.clear();
   }
 
-  // ---------------------------------------------------------------------------
-  // Migration off the single-instance layout: TODO: remove later
-  // ---------------------------------------------------------------------------
-
-  /// Prefs keys the single-instance build used, cleared once migrated.
-  static const List<String> _legacyKeys = [
-    'supabaseUrl',
-    'supabaseAnonKey',
-    'fcmAppId',
-    'fcmApiKey',
-    'fcmSenderId',
-    'fcmProjectId',
-    'passwordResetUrl',
-    'emailConfirmUrl',
-  ];
-
-  /// Build the first instance from whatever the single-instance build left
-  /// behind.
-  Future<KrabInstance?> _migrateLegacyInstance(SharedPreferences prefs) async {
-    final url = _clean(prefs.getString('supabaseUrl') ?? bakedSupabaseUrl);
-    final anonKey =
-        _clean(prefs.getString('supabaseAnonKey') ?? bakedSupabaseAnonKey);
+  /// The instance a build can name for itself, for the first run of a build
+  /// that ships pointed at one server. Null when this build names none, which
+  /// leaves the connect screen to ask.
+  KrabInstance? _bakedInstance() {
+    final url = _clean(bakedSupabaseUrl);
+    final anonKey = _clean(bakedSupabaseAnonKey);
     if (url.isEmpty || anonKey.isEmpty) return null;
 
-    final instance = KrabInstance(
+    return KrabInstance(
       id: 'inst_1',
       url: _normalizeUrl(url),
       anonKey: anonKey,
-      config: InstanceConfig(
-        fcmAppId: prefs.getString('fcmAppId') ?? '',
-        fcmApiKey: prefs.getString('fcmApiKey') ?? '',
-        fcmSenderId: prefs.getString('fcmSenderId') ?? '',
-        fcmProjectId: prefs.getString('fcmProjectId') ?? '',
-        passwordResetUrl: prefs.getString('passwordResetUrl') ?? '',
-        emailConfirmUrl: prefs.getString('emailConfirmUrl') ?? '',
-      ),
     );
-
-    await _migrateLegacySession(prefs, instance);
-    await _migrateGroupLists(prefs, instance.id);
-
-    for (final key in _legacyKeys) {
-      await prefs.remove(key);
-    }
-
-    debugPrint('InstanceRegistry: migrated ${instance.url} to ${instance.id}');
-    return instance;
-  }
-
-  Future<void> _migrateGroupLists(
-      SharedPreferences prefs, String instanceId) async {
-    for (final key in ['favoriteGroups', 'mutedGroups']) {
-      final existing = prefs.getStringList(key);
-      if (existing == null || existing.isEmpty) continue;
-      await prefs.setStringList(
-        key,
-        existing
-            .map((id) => id.contains('/') ? id : '$instanceId/$id')
-            .toList(),
-      );
-    }
-  }
-
-  Future<void> _migrateLegacySession(
-      SharedPreferences prefs, KrabInstance instance) async {
-    final target = sessionStorageKey(instance.id);
-    try {
-      if (await _storage.read(key: target) != null) return;
-
-      var session = await _storage.read(key: legacySessionStorageKey);
-
-      if (session == null || session.isEmpty) {
-        final host = Uri.tryParse(instance.url)?.host ?? '';
-        if (host.isNotEmpty) {
-          session = prefs.getString('sb-${host.split('.').first}-auth-token');
-        }
-      }
-
-      if (session == null || session.isEmpty) return;
-
-      await _storage.write(key: target, value: session);
-      await _storage.delete(key: legacySessionStorageKey);
-      debugPrint('InstanceRegistry: moved the stored session to $target');
-    } catch (e) {
-      debugPrint('InstanceRegistry: session migration failed: $e');
-    }
   }
 
   /// Trims a config value and strips a matching pair of surrounding quotes.

@@ -30,12 +30,10 @@ List<Comment> buildCommentTree(List<Comment> flatComments) {
   final Map<String, Comment> commentMap = {};
   final List<Comment> rootComments = [];
 
-  // Index comments by id
   for (final comment in flatComments) {
     commentMap[comment.id] = comment;
   }
 
-  // Build tree
   for (final comment in flatComments) {
     if (comment.parentId == null) {
       rootComments.add(commentMap[comment.id]!);
@@ -44,7 +42,6 @@ List<Comment> buildCommentTree(List<Comment> flatComments) {
       if (parent != null) {
         parent.replies.add(comment);
       } else {
-        // Orphaned comment, treat as root
         rootComments.add(comment);
       }
     }

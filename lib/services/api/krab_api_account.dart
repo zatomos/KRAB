@@ -7,16 +7,16 @@ String _mapAuthError(String? code) {
   switch (code) {
     case 'invalid_credentials':
     case 'invalid_grant':
-      return 'invalid_email_or_password';
+      return errorInvalidCredentials;
     case 'user_already_exists':
     case 'email_exists':
-      return 'email_already_exists';
+      return errorEmailExists;
     case 'weak_password':
-      return 'password_too_weak';
+      return errorPasswordTooWeak;
     case 'email_not_confirmed':
-      return 'email_not_confirmed';
+      return errorEmailNotConfirmed;
     default:
-      return code ?? 'auth_error';
+      return code ?? errorAuth;
   }
 }
 

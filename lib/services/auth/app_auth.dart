@@ -52,10 +52,6 @@ bool isFatalRefreshCode(String code) => fatalRefreshCodes.contains(code);
 /// The secure-storage key holding one instance's session.
 String sessionStorageKey(String instanceId) => 'krab_session_$instanceId';
 
-/// The secure-storage key sessions lived under before KRAB knew about more than
-/// one instance. The registry moves it onto the migrated instance's key once.
-const String legacySessionStorageKey = 'krab_session';
-
 /// Result of an auth action. error is a GoTrue error code when success is false
 class AuthResult {
   const AuthResult(this.success, [this.error]);

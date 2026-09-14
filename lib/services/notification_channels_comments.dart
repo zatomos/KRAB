@@ -3,58 +3,32 @@ part of 'notification_channels.dart';
 Future<void> dispatchCommentNotification(
     KrabInstance instance, Map<String, dynamic> data, String type) async {
   final commentId = data['comment_id'] ?? '';
+  if (commentId.isEmpty) return;
 
-  String groupId;
-  String imageId;
-  String commenterId;
-  String groupName;
-  String commenterUsername;
-  String commentText;
-  String? uploaderUsername;
-  DateTime? createdAt;
+  // The push carries only the id: everything shown is read back from the
+  // instance, so the payload itself never holds anyone's words.
+  final ctx = await instance.api.getCommentNotificationContext(commentId);
+  if (!ctx.success || ctx.data == null) return;
+  final d = ctx.data!;
 
-  var uploaderIsMe = false;
-  var uploaderIsCommenter = false;
-  var parentAuthorIsMe = false;
-  var parentAuthorIsUploader = false;
-  var parentAuthorUsername = '';
+  final groupId = (d['group_id'] as String?) ?? '';
+  final imageId = (d['image_id'] as String?) ?? '';
+  final commenterId = (d['commenter_id'] as String?) ?? '';
+  final groupName = (d['group_name'] as String?) ?? '';
+  final commentText = (d['comment_text'] as String?) ?? '';
+  final uploaderUsername = d['uploader_username'] as String?;
+  final createdAt = _eventTime(d['created_at']);
+  var commenterUsername = (d['commenter_username'] as String?) ?? '';
 
-  if (commentId.isNotEmpty) {
-    final ctx = await instance.api.getCommentNotificationContext(commentId);
-    if (!ctx.success || ctx.data == null) return;
-    final d = ctx.data!;
-    groupId = (d['group_id'] as String?) ?? '';
-    imageId = (d['image_id'] as String?) ?? '';
-    commenterId = (d['commenter_id'] as String?) ?? '';
-    groupName = (d['group_name'] as String?) ?? '';
-    commenterUsername = (d['commenter_username'] as String?) ?? '';
-    commentText = (d['comment_text'] as String?) ?? '';
-    uploaderUsername = d['uploader_username'] as String?;
-    createdAt = _eventTime(d['created_at']);
-
-    final uploaderId = (d['uploader_id'] as String?) ?? '';
-    final parentAuthorId = (d['parent_author_id'] as String?) ?? '';
-    uploaderIsMe = d['uploader_is_me'] == true;
-    uploaderIsCommenter = uploaderId.isNotEmpty && uploaderId == commenterId;
-    parentAuthorIsMe = d['parent_author_is_me'] == true;
-    parentAuthorIsUploader =
-        parentAuthorId.isNotEmpty && parentAuthorId == uploaderId;
-    parentAuthorUsername = (d['parent_author_username'] as String?) ?? '';
-  } else {
-    // Legacy plaintext payload. TODO: remove
-    groupId = data['group_id'] ?? '';
-    imageId = data['image_id'] ?? '';
-    commenterId = data['commenter_id'] ?? '';
-    final groupResponse = await instance.api.getGroupDetails(groupId);
-    groupName = (groupResponse.success && groupResponse.data != null)
-        ? groupResponse.data!.name
-        : '';
-    commenterUsername = (data['commenter_username'] as String?) ?? '';
-    commentText = (data['comment_text'] as String?) ?? '';
-    uploaderUsername = data['uploader_username'] as String?;
-    uploaderIsMe = type == 'new_comment';
-    parentAuthorIsMe = type == 'comment_reply';
-  }
+  final uploaderId = (d['uploader_id'] as String?) ?? '';
+  final parentAuthorId = (d['parent_author_id'] as String?) ?? '';
+  final uploaderIsMe = d['uploader_is_me'] == true;
+  final uploaderIsCommenter =
+      uploaderId.isNotEmpty && uploaderId == commenterId;
+  final parentAuthorIsMe = d['parent_author_is_me'] == true;
+  final parentAuthorIsUploader =
+      parentAuthorId.isNotEmpty && parentAuthorId == uploaderId;
+  final parentAuthorUsername = (d['parent_author_username'] as String?) ?? '';
 
   if (groupId.isEmpty || groupName.isEmpty) return;
   if (await UserPreferences.isGroupMuted(instance.id, groupId)) return;
