@@ -11,7 +11,6 @@ class FrostedSurface extends StatelessWidget {
   final Widget child;
   final double sigma;
   final double progress;
-  final Color? borderColor;
 
   const FrostedSurface({
     super.key,
@@ -20,12 +19,11 @@ class FrostedSurface extends StatelessWidget {
     required this.child,
     this.sigma = 8,
     this.progress = 1,
-    this.borderColor,
   });
 
   @override
   Widget build(BuildContext context) {
-    final edge = borderColor ?? context.frostedBorder;
+    final edge = context.frostedBorder;
     return ClipRRect(
       borderRadius: borderRadius,
       child: ClipRect(
